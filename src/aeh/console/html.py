@@ -15,8 +15,8 @@ def _now() -> str:
 
 
 def _row_get(row: Any, key: str, default: Any = "") -> Any:
-    """A field off a store row, whichever shape the tier returned. Real handles hand back
-    `sqlite3.Row` (indexable, not a dict); the audit double hands back dicts."""
+    """One field from a store row, whatever shape the tier returned: real handles return
+    `sqlite3.Row` (indexable, not a dict) and the audit double returns dicts."""
     if isinstance(row, dict):
         return row.get(key, default)
     try:
@@ -79,9 +79,9 @@ def _label_line(label: str, value: Any) -> str:
 
 
 def _skip_control(cost: str) -> str:
-    """One first-class skip control with its cost beside it — the two are read together
-    or the cost is not informing the decision (`R62`). The affordance and the cost live
-    in one `data-role="skip"` element so the same-view rule is structural, not layout."""
+    """A skip button with its cost shown next to it; the cost only informs the decision if both are
+    read together (R62). Both live in one `data-role="skip"` element, so keeping them together does
+    not depend on layout."""
     return (
         '<div data-role="skip"><p>Not now — skip this step.</p>'
         f"<p>If you skip: {escape(cost)}</p></div>"
@@ -89,10 +89,9 @@ def _skip_control(cost: str) -> str:
 
 
 def _prompt_section(title: str, body: str, cost: str) -> str:
-    """One non-blocking prompt: what it asks, and the skip control **with its cost in the
-    same view** (invariant 1). A prompt that renders without a skip is the third blocking
-    confirmation §11.6 forbids by count; one whose cost lives on another page is the
-    version of it R62 rejects."""
+    """One non-blocking prompt: its question, plus a skip button with its cost in the same view
+    (invariant 1). A prompt with no skip would be a third blocking confirmation, which §11.6
+    forbids; a cost shown on another page is what R62 rejects."""
     return (
         f'<section data-role="prompt"><h2>{escape(title)}</h2>'
         f"<p>{escape(body)}</p>"
@@ -102,8 +101,8 @@ def _prompt_section(title: str, body: str, cost: str) -> str:
 
 
 def _band_control(name: str) -> str:
-    """One editable band select. The control is never `disabled` — a disabled select is
-    the shape a read-only view takes, and invariant 16 exists to forbid that shape."""
+    """One editable band dropdown. It is never `disabled`, because a disabled dropdown is how a
+    read-only view looks, and invariant 16 forbids that."""
     options = "".join(
         f'<option value="{escape(band)}">{escape(band)}</option>' for band in REVIEW_BANDS
     )
@@ -114,9 +113,9 @@ def _band_control(name: str) -> str:
 
 
 def _band_section(scope: str) -> str:
-    """The correction interface a grade-bearing screen carries even when the store
-    returns no rows: the band interface is the view's structure, not its data, so an
-    empty read leaves the teacher the same way to change a band."""
+    """The band-correction controls a grade screen shows even when the store returns no rows. They
+    are part of the screen's structure, not its data, so an empty result still lets the teacher
+    change a band."""
     return _section(
         "band-correction",
         f"Change a band for {escape(scope)}: choose the corrected band; the amendment "
@@ -125,7 +124,7 @@ def _band_section(scope: str) -> str:
 
 
 def n_value(row: Any) -> int:
-    """The `n` column off a grouped row, whichever shape the tier returned."""
+    """The `n` column from a grouped row, whatever shape the tier returned."""
     try:
         return int(_row_get(row, "n", 0) or 0)
     except (TypeError, ValueError):
@@ -135,7 +134,7 @@ def n_value(row: Any) -> int:
 # --- serving: one in-process HTTP server (ADR-17) ----------------------------------------------
 
 def _stylesheet_bytes() -> bytes:
-    """The packaged stylesheet's bytes (`aeh/console_assets/console.css`).
+    """The bytes of the packaged stylesheet (`aeh/console_assets/console.css`).
 
     Read from the installed package rather than from a path relative to the source tree, so
     an installed wheel serves the same bytes a checkout does (#358's packaging)."""

@@ -22,9 +22,8 @@ class FinalizationMixin:
     """Counts grades by state and settles provisional grades in one batch."""
 
     def coverage(self, run_id: str) -> CoverageSummary:
-        """The run's grade-state counts, named BEFORE any batch action (`FR-GRADE-09`).
-        All three state keys are always present, zero included — a missing key is not
-        a zero.
+        """The run's grade counts by state, reported before any batch action (FR-GRADE-09). All
+        three states are always present, including zeros; a missing key is not a zero.
 
         The counts are the class's states AS THEY STAND, not the stored rows alone
         (`CT-SYNTH-05`'s consumer differential reads them before any pass runs): a
@@ -42,11 +41,10 @@ class FinalizationMixin:
         )
 
     def _grades_by_state(self, run: Any, cohort: Any) -> dict[str, int]:
-        """The state counts behind `coverage` and behind every action that names its
-        coverage — one derivation, so the coverage an action names is the coverage
-        the method reports (`TC-GRADE-09`). Stored current rows count by their state;
-        the derivation adds only `incomplete`, for a submission the ledger has no
-        current grade for but whose criterion data is missing inputs."""
+        """The state counts behind `coverage` and behind every batch action, computed in one place
+        so an action reports exactly the coverage the method reports (TC-GRADE-09). Current stored
+        grades count by their state; a submission with no current grade but missing inputs counts
+        as `incomplete`."""
         counts = {state: 0 for state in GRADE_STATES}
         for row in cohort.query(
             GRADE_STATEMENTS["count_run_grades_by_state"], run_id=run["run_id"]
@@ -91,8 +89,8 @@ class FinalizationMixin:
         return counts
 
     def has_criterion_scores(self, run_id: str) -> bool:
-        """Whether any submission of the run holds a criterion score (FR-PIPE-16, #526): a
-        run with none has nothing to grade, and recovery leaves it alone. Read-only."""
+        """Whether any submission of the run has a criterion score (FR-PIPE-16). A run with none
+        has nothing to grade, and recovery leaves it alone. Read-only."""
         run = self._run_row(run_id)
         cohort = self._store.cohort(run["cohort_id"])
         for row in cohort.query(
@@ -107,10 +105,9 @@ class FinalizationMixin:
         return False
 
     def has_ungraded_scores(self, run_id: str) -> bool:
-        """Whether some submission of the run holds criterion scores but no current grade
-        row (FR-PIPE-16, #526): the killed-after-completion state
-        `NFR-PIPE-01` names, which `coverage` deliberately does not count (an uncomputed,
-        fully-scored submission is not yet a grade). Read-only."""
+        """Whether some submission of the run has criterion scores but no current grade
+        (FR-PIPE-16): the state a process killed right after scoring leaves behind (NFR-PIPE-01).
+        `coverage` does not count these. Read-only."""
         run = self._run_row(run_id)
         cohort = self._store.cohort(run["cohort_id"])
         current_ids = {
@@ -134,11 +131,9 @@ class FinalizationMixin:
         return False
 
     def finalize_batch(self, run_id: str, actor: str) -> FinalizationRecord:
-        """The ONE finalization action, batch-shaped (§3.14's Protocol member): it
-        names its coverage first (`FR-GRADE-09`), settles every current provisional
-        grade of the run, and returns the record that echoes the coverage it was
-        named with. There is no per-student finalization entry point — the API
-        carries exactly one `final` name, this one (`TC-GRADE-09`'s API clause)."""
+        """Finalize the run's grades in one batch (design §3.14): report the coverage first
+        (FR-GRADE-09), settle every current provisional grade, and return a record repeating that
+        coverage. There is no way to finalize one student at a time (TC-GRADE-09)."""
         run = self._run_row(run_id)
         cohort = self._store.cohort(run["cohort_id"])
         named = self._grades_by_state(run, cohort)

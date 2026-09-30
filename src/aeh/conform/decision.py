@@ -30,7 +30,8 @@ DECISION_GATE_BIN = 0.05
 
 @dataclasses.dataclass(frozen=True)
 class DecisionCell:
-    """One F-JEV cell: the scoring request and the recorded LLM-panel median band ordinal."""
+    """One F-JEV cell: the scoring request and the recorded median band ordinal of the LLM panel.
+    """
 
     cell_id: str
     request: Any
@@ -39,9 +40,9 @@ class DecisionCell:
 
 @dataclasses.dataclass(frozen=True)
 class DecisionConformanceReport:
-    """Per decision backend: the four CT-CONFORM-15 figures plus the gate histogram and the
-    ineligibility reasons, and one backend-scoped validation record each. No pass/fail: Q-J5
-    sets no threshold, so nothing here is a verdict."""
+    """Results per decision backend: the four CT-CONFORM-15 figures, the gate histogram, the
+    ineligibility reasons, and one validation record per backend. There is no pass/fail, because no
+    threshold has been set (Q-J5)."""
 
     per_backend: Mapping[str, Mapping[str, Any]]
     validation_records: tuple[ValidationRecord, ...]
@@ -50,7 +51,7 @@ class DecisionConformanceReport:
 
 
 def load_f_jev_cells(corpus_root: Path | None = None) -> tuple[DecisionCell, ...]:
-    """F-JEV's cells as `DecisionCell`s, in manifest order (FR-CONFORM-10)."""
+    """The F-JEV fixture cells as `DecisionCell`s, in manifest order (FR-CONFORM-10)."""
     from aeh.judge import ScoringRequest
 
     root = (corpus_root or CORPUS_ROOT) / F_JEV_CORPUS
@@ -76,9 +77,9 @@ def load_f_jev_cells(corpus_root: Path | None = None) -> tuple[DecisionCell, ...
 
 
 def _decide_cell(cell: DecisionCell, provider: Any, engine: Any) -> dict[str, Any]:
-    """One cell through the decision path: eligibility, the one `decide`, the gate. A request
-    the engine refuses or answers malformed is an outcome; a missing fixture is not. It
-    propagates, so the E1 arm fails loudly rather than reporting a hole as a fallback."""
+    """Run one cell through the decision path: eligibility, one `decide` call, the gate. A refused
+    or malformed answer is an outcome; a missing fixture is not, and is raised so the run fails
+    loudly instead of reporting a gap as a fallback."""
     from aeh.judge import Accepted, Ineligible, decision_eligibility, decision_request, gate_decision
     from aeh.prov import DecisionRequestRejectedError, MalformedResponseError
 
@@ -115,7 +116,8 @@ def run_decision_conformance(
     fixture_set_version: str = "1",
     fixture_set_id: str | None = None,
 ) -> DecisionConformanceReport:
-    """FR-CONFORM-10/11: F-JEV through the decision path on each configured backend.
+    """Run the F-JEV fixtures through the decision path on each configured backend (FR-CONFORM-10,
+    FR-CONFORM-11).
 
     `backends` maps a decision provider name (`openrouter-jev`, `openjev`) to
     `(provider, DecisionEngine, backend_profile)`. The E1 arm passes the fixture double and the

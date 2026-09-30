@@ -47,8 +47,9 @@ _WILSON_Z = 1.96
 
 
 def engine_partition(handle: Any, run_id: str, student_ref: str, criterion_id: str) -> str | None:
-    """FR-STATS-26: the engine partition of one labelled cell — `decision`, `llm_fallback` or
-    `llm_engine_off` — or `None` when the student has no submission in the run's cohort."""
+    """Which engine partition one labelled cell belongs to: `decision`, `llm_fallback` or
+    `llm_engine_off`, or None when the student has no submission in the run's cohort (FR-STATS-26).
+    """
     rows = handle.query(STATS_STATEMENTS["select_submission_for_ref"], student_ref=student_ref)
     if not rows:
         return None
@@ -63,8 +64,8 @@ def engine_partition(handle: Any, run_id: str, student_ref: str, criterion_id: s
 
 @dataclass(frozen=True)
 class EngineAgreement:
-    """One engine partition's blind-label agreement. `ordinal_alpha` is `None` whenever
-    `insufficient_data` is true — below the minimum a number would be read as a finding."""
+    """One engine partition's blind-label agreement. `ordinal_alpha` is None whenever
+    `insufficient_data` is true, because below the minimum a number would be read as a finding."""
 
     partition: str
     n: int
@@ -74,10 +75,9 @@ class EngineAgreement:
 
 def agreement_by_engine(labels: Iterable[Any], partition_of: Callable[[Any], str | None], *,
                         minimum: int | None = None) -> dict[str, EngineAgreement]:
-    """FR-STATS-26: ordinal alpha per engine partition over the **admissible** labels only.
-    `partition_of(label)` names a label's partition (`engine_partition` bound to a store is
-    the production resolver); a label it maps to `None`, or an inadmissible label, is in no
-    partition's `n`. Every declared partition is reported, empty ones as insufficient."""
+    """Ordinal alpha for each engine partition, over admissible labels only (FR-STATS-26).
+    `partition_of(label)` names a label's partition; a label it maps to None, or an inadmissible
+    label, counts in no partition. Every partition is reported, empty ones as insufficient data."""
     floor = minimum if minimum is not None else _env_int(ENGINE_MIN_LABELS_ENV, ENGINE_MIN_LABELS)
     pairs: dict[str, list[tuple[Any, Any]]] = {name: [] for name in ENGINE_PARTITIONS}
     for label in labels:
@@ -102,7 +102,7 @@ def agreement_by_engine(labels: Iterable[Any], partition_of: Callable[[Any], str
 
 
 def _wilson(successes: int, n: int) -> tuple[float, float]:
-    """The Wilson score interval at 95%."""
+    """The 95% Wilson score interval."""
     p = successes / n
     z2 = _WILSON_Z * _WILSON_Z
     centre = (p + z2 / (2 * n)) / (1 + z2 / n)
@@ -124,7 +124,8 @@ class CalibrationBin:
 
 @dataclass(frozen=True)
 class GateCalibrationReport:
-    """FR-STATS-27: accepted decision-engine verdicts binned by band confidence above the gate."""
+    """Accepted decision-engine verdicts grouped by band confidence above the gate (FR-STATS-27).
+    """
 
     threshold: float
     bins: tuple[CalibrationBin, ...]
@@ -132,11 +133,11 @@ class GateCalibrationReport:
 
 def decision_gate_calibration(records: Iterable[tuple[float, int, int]], *, threshold: float = 0.80,
                               bin_width: float = 0.05, minimum: int | None = None) -> GateCalibrationReport:
-    """FR-STATS-27, pure: `records` are `(band_confidence, system_ordinal, teacher_ordinal)` for
-    accepted decision-engine verdicts with an admissible blind label. Bins of `bin_width` from
-    the threshold to 1.0; per bin exact and adjacent (within one band) agreement with a Wilson
-    95% interval on exact agreement. A bin with fewer than `minimum` labels (default 20)
-    reports `insufficient_data` and no number (CT-STATS-03)."""
+    """How well the decision engine's confidence matches reality (FR-STATS-27). Pure. `records` are
+    `(band_confidence, system_ordinal, teacher_ordinal)` for accepted verdicts with an admissible
+    blind label. Bins of `bin_width` run from the threshold to 1.0; each reports exact and
+    within-one-band agreement, with a 95% Wilson interval on exact agreement. A bin with fewer than
+    `minimum` labels (default 20) reports insufficient data and no number (CT-STATS-03)."""
     floor = minimum if minimum is not None else _env_int(CALIBRATION_MIN_LABELS_ENV, CALIBRATION_MIN_LABELS)
     edges: list[float] = []
     edge = threshold
@@ -166,11 +167,11 @@ def decision_gate_calibration(records: Iterable[tuple[float, int, int]], *, thre
 
 def decision_engine_noninferior(by_engine: Mapping[str, EngineAgreement], *,
                                 delta: float | None = None) -> bool | str:
-    """NFR-STATS-06: `True` iff the decision engine's alpha ≥ the LLM base-verdict alpha − δ
-    (default 0.05), `False` otherwise, and `insufficient_data` when either partition is below
-    its minimum. The LLM reference is `llm_engine_off`, the unscreened baseline: pooling in
-    `llm_fallback` would mix in exactly the cells the engine found hard, which is a different
-    claim. The harness never switches engines on this (CT-CONF-14)."""
+    """Whether the decision engine is no worse than the LLM baseline (NFR-STATS-06): True when its
+    alpha is at least the baseline's alpha minus delta (default 0.05), False otherwise, and
+    `insufficient_data` when either group is too small. The baseline is `llm_engine_off` only;
+    including `llm_fallback` would mix in the cells the engine found hard. The system never
+    switches engines because of this (CT-CONF-14)."""
     margin = delta if delta is not None else _env_float(NONINFERIORITY_DELTA_ENV, NONINFERIORITY_DELTA)
     decision = by_engine.get("decision")
     baseline = by_engine.get("llm_engine_off")

@@ -29,8 +29,8 @@ from .decision_types import (
 
 
 def derived_confidence(probabilities: Sequence[float]) -> float:
-    """TypeSafe's published statistic, `(n·peak − 1)/(n − 1)` (FR-PROV-19). With `n = 2` over
-    `{p, 1 − p}` it is `|2p − 1|`, which is a Noul's confidence."""
+    """TypeSafe's published confidence statistic, `(n·peak - 1)/(n - 1)` (FR-PROV-19). For a yes/no
+    question with probabilities `{p, 1 - p}` it is `|2p - 1|`."""
     values = list(probabilities)
     n = len(values)
     if n < 2:
@@ -39,7 +39,8 @@ def derived_confidence(probabilities: Sequence[float]) -> float:
 
 
 def _number(value: Any, where: str) -> float:
-    """A JSON number in [0, 1], or a `MalformedResponseError`. Booleans are not numbers here."""
+    """A JSON number between 0 and 1, or `MalformedResponseError`. Booleans do not count as
+    numbers."""
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         raise MalformedResponseError(f"{where} is {value!r}, not a number")
     if not 0.0 <= float(value) <= 1.0:
@@ -63,8 +64,9 @@ CONFIDENCE_RULES = ("jev", "small")
 
 
 def confidence_rule(model_ref: Any) -> str:
-    """The FR-PROV-19 rule for `model_ref`: `small` for `openjev-small`, `jev` for every other
-    provider (`openrouter-jev`, `openjev`, and the fixture double standing in for either)."""
+    """Which confidence rule applies to a model reference (FR-PROV-19): `small` for
+    `openjev-small`, `jev` for every other provider, including the fixture that stands in for them.
+    """
     return "small" if getattr(model_ref, "provider", None) == "openjev-small" else "jev"
 
 
@@ -82,7 +84,8 @@ def _confidence(answer: Mapping[str, Any], values: Sequence[float], where: str,
 
 def parse_decision(document: Any, request: DecisionRequest, *, fallback_build: str,
                    latency_ms: int = 0, cost: Decimal | None = None, rule: str = "jev") -> Decision:
-    """A §1.2-shaped response document to a validated `Decision`, or `MalformedResponseError`.
+    """Turn an engine response document (design §1.2) into a checked `Decision`, or raise
+    `MalformedResponseError`.
 
     The only place a decision response is interpreted, shared by every implementation so the
     fixture double refuses exactly what a live provider refuses (CT-PROV-18, CT-PROV-23)."""
@@ -160,8 +163,8 @@ def parse_decision(document: Any, request: DecisionRequest, *, fallback_build: s
 
 
 def decision_questions_document(request: DecisionRequest) -> dict[str, Any]:
-    """The §1.2 `questions` object, in the caller's question order. The one encoder the live
-    providers build their bodies from, so every backend receives the same questions."""
+    """The `questions` object of an engine request (design §1.2), in the caller's order. Every live
+    provider builds its request body from this, so every backend receives the same questions."""
     out: dict[str, Any] = {}
     for q in request.questions:
         if isinstance(q, ChoiceQuestion):
@@ -178,8 +181,9 @@ def decision_questions_document(request: DecisionRequest) -> dict[str, Any]:
 
 
 def decision_request_key(request: DecisionRequest, model_ref: ModelRef) -> str:
-    """`sha256` over the full `DecisionRequest` and `ModelRef` (FR-PROV-25), framed as
-    `request_key` is. A distinct scheme tag, so no completion fixture can answer a decision."""
+    """SHA-256 over the whole `DecisionRequest` and `ModelRef` (FR-PROV-25), framed like
+    `request_key`. It uses its own scheme tag, so a completion recording can never answer a
+    decision."""
     digest = hashlib.sha256()
     digest.update(_frame(DECISION_KEY_SCHEME))
     digest.update(_frame(b"state"))

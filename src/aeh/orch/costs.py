@@ -19,7 +19,7 @@ class CostsMixin:
     # -- the cost seam (FR-ORCH-15) --------------------------------------------------------------
 
     def _run_ceiling(self, run_row: Any) -> Decimal | None:
-        """The cost ceiling the run **froze** at creation, or None.
+        """The cost ceiling the run froze when it was created, or None.
 
         Read from the run row's frozen `provider_config` — never from the current
         environment (`FR-CONF-07`'s freeze: a ceiling changed mid-run would let spend
@@ -57,7 +57,8 @@ class CostsMixin:
         return ceiling
 
     def _normalize_figure(self, answer: Any, run_id: str) -> Decimal | None:
-        """One provider answer → the Decimal the ledger accrues, or None (not billed).
+        """Turn one provider cost answer into the Decimal the ledger adds up, or None if the call
+        is not billed.
 
         The seam's declared protocol: `estimate_cost(unit) -> Decimal | CostEstimate`. A
         bare `Decimal` is the figure; a `CostEstimate`-shaped answer contributes its
@@ -80,7 +81,7 @@ class CostsMixin:
         return figure
 
     def _cost_figure(self, cohort: Any, unit_row: Any, ceiling: Decimal) -> Decimal:
-        """The billed figure one unit adds to its run's spend, before it is dispatched.
+        """The cost one unit will add to its run's spend, computed before it is dispatched.
 
         Consults the injected provider seam — **the measured protocol**, never an
         estimated optimism (`FR-PROV-12/04`: the ceiling is enforced from the same
@@ -107,10 +108,9 @@ class CostsMixin:
         return llm + self._decision_seat_figure(cohort, unit_row)
 
     def _decision_seat_figure(self, cohort: Any, unit_row: Any) -> Decimal:
-        """The per-seat decision figure a claim of `unit_row` accrues, or zero when the unit
-        is not a decision seat (a score unit judged by the first arm of a run that froze a
-        decision engine), when no decision provider is bound, or when the engine is
-        unbilled."""
+        """The decision-engine cost charged when `unit_row` is claimed. Zero when the unit is not a
+        decision seat (a score unit judged by the run's first arm, in a run that froze a decision
+        engine), when no decision provider is bound, or when the engine is not billed."""
         if self._decision_provider is None:
             return Decimal("0")
         if _mapping_get(unit_row, "stage") != STAGE_SCORE:
@@ -128,7 +128,7 @@ class CostsMixin:
         return self._decision_per_seat_cost(1)
 
     def _run_cost_estimate(self, cohort: Any, run_id: str) -> Decimal | None:
-        """The run's estimated cost: the sum of its units' seam figures (`FR-ORCH-15`).
+        """The run's estimated cost: the sum of its units' estimates (FR-ORCH-15).
 
         None when there is no seam (no figure is displayed — a fabricated zero would
         read as a measured price) or nothing is enumerated yet (an empty run's estimate
@@ -152,12 +152,14 @@ class CostsMixin:
         return total + self._decision_cost_estimate(cohort, run_id, rows)
 
     def _decision_cost_estimate(self, cohort: Any, run_id: str, rows: Any) -> Decimal:
-        """FR-ORCH-37: one decision call per decision seat, **on top of** the unchanged LLM
-        estimate for every arm — i.e. assuming a 100% fallback rate, so the ceiling is never
-        optimistic. A seat is a score unit judged by the run's first arm when the run froze a
-        decision engine. Costed by the decision provider's own `estimate_cost` over
-        `HARNESS_ORCH_DECISION_TOKENS_PER_SEAT` input tokens (output is free); zero without a
-        decision provider or engine, or when the engine is unbilled."""
+        """The extra estimated cost of the decision engine (FR-ORCH-37): one decision call per
+        decision seat, added on top of the normal model estimate for every arm. This assumes every
+        decision falls back to the models, so the ceiling is never optimistic.
+
+        A seat is a score unit judged by the run's first arm when the run froze a decision engine.
+        Each call is priced by the decision provider's `estimate_cost` over
+        `HARNESS_ORCH_DECISION_TOKENS_PER_SEAT` input tokens (output is free). Zero with no
+        decision provider or engine, or when the engine is not billed."""
         if self._decision_provider is None:
             return Decimal("0")
         run_row = self._run_row_in(cohort, run_id)
@@ -175,10 +177,10 @@ class CostsMixin:
         return self._decision_per_seat_cost(seats)
 
     def _decision_per_seat_cost(self, seats: int) -> Decimal:
-        """The decision provider's `estimate_cost` over `seats` calls of
-        `HARNESS_ORCH_DECISION_TOKENS_PER_SEAT` input tokens (output is free); zero when the
-        engine is unbilled. One definition for the start estimate (FR-ORCH-37) and the
-        claim-time charge (FR-ORCH-41)."""
+        """The decision provider's `estimate_cost` for `seats` calls of
+        `HARNESS_ORCH_DECISION_TOKENS_PER_SEAT` input tokens each (output is free); zero when the
+        engine is not billed. Used for both the start estimate (FR-ORCH-37) and the charge at claim
+        time (FR-ORCH-41)."""
         from aeh.prov import CallPlan
 
         tokens = _env_int(DECISION_TOKENS_PER_SEAT_ENV, DECISION_TOKENS_PER_SEAT_DEFAULT)
@@ -187,7 +189,7 @@ class CostsMixin:
         return Decimal("0") if cost is None else Decimal(cost)
 
     def charge_post_dispatch(self, run_id: str, cost: Decimal) -> None:
-        """Add a post-dispatch model call's actual cost to the run's ceiling spend (#596).
+        """Add the actual cost of a model call made after dispatch to the run's spend (#596).
 
         Synthesis runs after the last claim, so no claim-time figure ever charged it
         (`FR-ORCH-15`, ADR-33); it is charged its measured cost instead. A run that froze no
@@ -203,7 +205,7 @@ class CostsMixin:
                        cost_spend=str(spend + Decimal(cost)))
 
     def post_dispatch_ceiling_reached(self, run_id: str) -> str | None:
-        """Why a post-dispatch model call must not be made, or None (#596).
+        """The reason a model call after dispatch must not be made, or None if it may (#596).
 
         The claim path's strict reading: spend AT the ceiling stops further spend. Returns the
         reason text for the caller's trace, naming the spend and the ceiling.

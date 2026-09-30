@@ -33,9 +33,9 @@ CALIB_MAX_QUESTIONS_ENV: str = "HARNESS_CALIB_MAX_QUESTIONS"
 
 
 def _max_questions(environ: Mapping[str, str] | None = None) -> int:
-    """The elicitation cap, read at call time (seam 3). A value below 1 would ask the
-    teacher nothing and call it calibration — outside the knob's meaning — so it falls
-    back to the declared default like any other mis-set value."""
+    """The cap on questions put to the teacher, read from its knob at call time. A value below 1
+    would ask nothing and still call it calibration, so it falls back to the declared default like
+    any other bad value."""
     source = os.environ if environ is None else environ
     raw = source.get(CALIB_MAX_QUESTIONS_ENV)
     if raw is None or not raw.strip():
@@ -69,7 +69,7 @@ _FIXTURE_PRE_LOCK_VERSION = "pkg-v1-pre-lock"
 
 
 def package_version_predating_schema_lock() -> str:
-    """Declare (and return) a package version born before the §6.2 lock existed.
+    """Test seam: declare and return a package version created before the schema lock existed.
 
     This is the seam a caller or test uses to name such a version — the registry above
     is deliberately not a thing the module populates from the store, because vintage is
@@ -82,7 +82,7 @@ def package_version_predating_schema_lock() -> str:
 
 
 def _refuse_pre_lock_vintage(version_id: str) -> None:
-    """Refuse an edit against a version created before the §6.2 lock existed."""
+    """Refuse an edit to a version created before the schema lock existed."""
     vintage = _VERSION_SCHEMA_VINTAGES.get(version_id, _LOCK_ARRIVAL_MIGRATION)
     if vintage < _LOCK_ARRIVAL_MIGRATION:
         raise PhaseDependencyError(
@@ -106,18 +106,16 @@ def _refuse_pre_lock_vintage(version_id: str) -> None:
 #: The options an elicitation question offers. A prompt to a person, not an API
 #: contract: the teacher may also answer in their own words, and `apply_answers`
 #: composes the edit from the band's current descriptor and the answer — with
-#: *keep as is* generating no edit at all (see the module docstring).
+#: *keep as is* generating no edit at all (see `docs/code-notes/calib.md`).
 QUESTION_OPTIONS: tuple[str, ...] = ("broaden", "narrow", "keep as is")
 
 
 @dataclass(frozen=True)
 class Finding:
-    """One ambiguity a calibration run would elicit on: the criterion it lives in, the
-    triage category it was given (`CT-CALIB-04`'s required field — a finding without
-    one is not elicitable), how many submissions the ambiguity affects (`FR-CALIB-05`'s
-    ranking input), the two examples the question shows side by side, and the band
-    ordinal whose descriptor the ambiguity lives in — a criterion's bands each say
-    something, and an edit that clarifies one must not silently touch another."""
+    """One ambiguity the teacher would be asked about: its criterion, its triage category
+    (required, CT-CALIB-04), how many submissions it affects (used for ranking, FR-CALIB-05), the
+    two examples shown side by side, and which band's descriptor is ambiguous, so clarifying one
+    band never silently changes another."""
 
     criterion_id: str
     category: str
@@ -128,10 +126,9 @@ class Finding:
 
 @dataclass(frozen=True)
 class ElicitationQuestion:
-    """One question the teacher is asked. Options are present, examples are exactly the
-    two NFR-CALIB-01 budgets, and — the load-bearing shape — there is NO edit field on
-    this value at all: `proposed_edit` is not merely unset (`CT-CALIB-05`). An edit
-    arrives into the world only when the teacher's answer is applied."""
+    """One question put to the teacher: options and exactly two examples (NFR-CALIB-01). It has no
+    edit field at all (CT-CALIB-05); an edit only comes into being when the teacher's answer is
+    applied."""
 
     question_id: str
     criterion_id: str
@@ -220,7 +217,7 @@ LOCKED_FIELD_NAMES: tuple[str, ...] = (
 
 @dataclass(frozen=True)
 class LockedFieldEdit:
-    """An edit touching one §6.2-locked field — the input of the forced-edit door.
+    """An edit to one field frozen by the schema lock; the input to the forced-edit test.
 
     The door exists to demonstrate refusal, not to permit: every field in the
     vocabulary is locked, so every door call raises `SchemaLockViolation` raised by the
@@ -232,7 +229,7 @@ class LockedFieldEdit:
 
 
 def edit_touching(locked_field: str) -> LockedFieldEdit:
-    """Build the edit that would touch one locked field, for the refusal sweep.
+    """Build the edit that would change one locked field, for the refusal test.
 
     `criterion_count` is the one door whose target is not an existing criterion —
     adding one needs an id nothing is using yet; the rest address the criterion the
@@ -253,7 +250,7 @@ def edit_touching(locked_field: str) -> LockedFieldEdit:
 
 
 def _route_forced_edit(catalog: Any, base: str, edit: LockedFieldEdit) -> None:
-    """Send a forced edit through the catalog door whose guard covers its field.
+    """Send a forced edit through the catalog method whose guard covers its field.
 
     One route per vocabulary name, all on the PUBLISHED base — so the catalog's own
     `_guard` raises, which is the entire point: this module performs no lock check of
@@ -281,8 +278,8 @@ def _route_forced_edit(catalog: Any, base: str, edit: LockedFieldEdit) -> None:
 def _clarified_descriptor(
     current_descriptor: str, answer: str
 ) -> str | None:
-    """The descriptor the teacher's answer generates, or `None` when it generates none
-    (`CT-CALIB-05`: the answer, never the model, produces the edit).
+    """The band descriptor the teacher's answer produces, or None when it produces none. The
+    answer, never the model, creates the edit (CT-CALIB-05).
 
     Composition, not replacement: the band's descriptor as it stands is the base of
     every result, because a revision that erased what the band means would be the
@@ -309,15 +306,15 @@ def _clarified_descriptor(
 
 
 #: The session question ids are `q1..qn`; the number picks the criterion positionally
-#: when the session and the version disagree (see the module docstring).
+#: when the session and the version disagree (see `docs/code-notes/calib.md`).
 _QUESTION_ID_PATTERN = re.compile(r"q(\d+)")
 
 
 def _resolve_criterion(
     question_id: str, criterion_ids: Sequence[str], base: str
 ) -> tuple[str, str, int]:
-    """Resolve one answer's question id to a criterion of the version being edited,
-    with the question text the history row will record and the band ordinal to clarify.
+    """Find the criterion an answer's question id refers to in the version being edited, with the
+    question text the history will record and the band ordinal to clarify.
 
     The session's own mapping wins only when its criterion still exists in the version
     being edited — discovery and elicitation can run against different revisions of the
@@ -355,7 +352,7 @@ def apply_answers(
     package_version: str | None = None,
     forced_edit: LockedFieldEdit | None = None,
 ) -> str | None:
-    """Apply the teacher's answers as rubric clarifications, written through `M-PKG`.
+    """Apply the teacher's answers as rubric clarifications, written through M-PKG.
 
     Every edit follows the catalog's own revision flow (`FR-PKG-04`): a new version is
     created as a copy of the one being clarified, the descriptor edit lands on the

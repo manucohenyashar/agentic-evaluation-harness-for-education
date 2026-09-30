@@ -32,9 +32,8 @@ from .prompt import prompt_fields
 
 
 def _field_of(unit: Any, key: str) -> Any:
-    """Read one identity field off a work unit or an arm row — attribute access for a
-    `WorkUnit`, key access for a mapping (the contract door's `sqlite3.Row` arms).
-    Missing is `None`, not an error: the arms are rows stripped to identity."""
+    """Read one identity field of a work unit or an arm row: attribute access for a `WorkUnit`, key
+    access for a mapping such as a `sqlite3.Row`. A missing field is None, not an error."""
     if hasattr(unit, key):
         value = getattr(unit, key)
         if not callable(value):
@@ -46,9 +45,8 @@ def _field_of(unit: Any, key: str) -> Any:
 
 
 def _current_document(store: Any, submission_id: str) -> Any:
-    """The submission's CURRENT document row — `aeh.extract`'s own resolver, mirrored:
-    the head of `select_document_head`'s ordering over the cohort files discovered with
-    the orchestrator's own function (`FR-ORCH-02`, consumed not re-spelled)."""
+    """The submission's current document row, found the same way `aeh.extract` finds it: the head
+    of `select_document_head` over the cohort files (FR-ORCH-02)."""
     for key in _cohort_keys_on_filesystem(store):
         rows = store.cohort(key).query(
             INGEST_STATEMENTS["select_document_head"], submission_id=submission_id
@@ -62,10 +60,9 @@ def _current_document(store: Any, submission_id: str) -> Any:
 
 
 def _canonical_document_bytes(store: Any, submission_id: str) -> "bytes | None":
-    """The submission's canonical document BYTES, resolved through the store's own
-    doors — the head document row (`_current_document`) and its canonical text by
-    `aeh.extract.document_bytes`' rule (the `markdown` column the gateway wrote,
-    the blob fallback, the hash checked against the bytes read).
+    """The bytes of the submission's canonical document: the head document row's Markdown, or its
+    blob when the column is empty, checked against its hash (the same rule as
+    `aeh.extract.document_bytes`).
 
     Returns `None` on EVERY unresolvable shape — no store bound, no document row, a
     pairing that satisfies neither source, a read that raises — because the citation gate's
@@ -85,8 +82,8 @@ def _canonical_document_bytes(store: Any, submission_id: str) -> "bytes | None":
 
 
 def _find_cohort(store: Any, work_id: str) -> Any:
-    """The cohort handle that holds `work_id`, by walking the cohort files — the
-    no-side-index discovery the extract driver uses (`FR-ORCH-02`)."""
+    """The cohort handle that holds this `work_id`, found by walking the cohort files (FR-ORCH-02).
+    """
     for key in _cohort_keys_on_filesystem(store):
         cohort = store.cohort(key)
         rows = cohort.query(
@@ -102,21 +99,20 @@ def _find_cohort(store: Any, work_id: str) -> Any:
 
 
 def _pseudonymize(text: str, name: Any, ref: Any) -> str:
-    """§3.2's pseudonymization at assembly: every occurrence of the roster name in
-    submission-derived text becomes the pseudonymous ref. A unit with no name — every
-    leased one — is already clean and passes through unchanged."""
+    """Replace every occurrence of the student's roster name in submission text with the student's
+    pseudonym (design §3.2). A unit with no name, which includes every leased unit, passes through
+    unchanged."""
     if name and ref and isinstance(name, str) and name in text:
         return text.replace(name, str(ref))
     return text
 
 
 def _pseudonymized_spans(spans: tuple, name: Any, ref: Any) -> tuple:
-    """The same replacement over evidence spans (#593, NFR-PROV-08): a span is a verbatim
-    slice of the submission, so a roster name the student wrote travels in its `text` as
-    surely as in the transcript. Only `text` changes: the offsets keep indexing the stored
-    document, and the citation gate verifies a cited span of this form against it through
-    `_verifies_as_pseudonymized`. A span that carries no name is forwarded as the same
-    object."""
+    """The same name replacement over evidence spans (NFR-PROV-08). A span is an exact slice of the
+    submission, so a name the student wrote appears in its `text`. Only `text` changes: the offsets
+    still point into the stored document, and the citation check accepts a span of this form
+    through `_verifies_as_pseudonymized`. A span without the name is passed on as the same object.
+    """
     out = []
     for span in spans:
         text = span.get("text") if isinstance(span, dict) else None
@@ -131,8 +127,8 @@ def _pseudonymized_spans(spans: tuple, name: Any, ref: Any) -> tuple:
 def _ordered_exemplars(
     exemplars: tuple[ExemplarView, ...], *, question_id: str, criterion_id: str
 ) -> tuple[ExemplarView, ...]:
-    """`FR-JUDGE-08`'s exemplar presentation order: a seeded permutation keyed on
-    (question, criterion) and the `HARNESS_JUDGE_EXEMPLAR_SEED` salt.
+    """The worked examples in presentation order: a permutation seeded by (question, criterion) and
+    the `HARNESS_JUDGE_EXEMPLAR_SEED` salt (FR-JUDGE-08).
 
     Fixed WITHIN a (judge, question, criterion) batch — every submission in the batch
     renders the same exemplar bytes, which is what keeps the invariant prefix one
@@ -155,12 +151,10 @@ def _ordered_exemplars(
 def _rubric_of(
     store: Any, run_row: Any, criterion_id: str
 ) -> tuple[CriterionView, QuestionView]:
-    """The criterion's rubric as the request carries it, through the shipped
-    `PackageCatalog` (built with the store's blob store attached, so exemplar material
-    resolves): the wording (the criterion's question prompt text — the package's
-    criterion rows carry identity, not prose), the declared band set as names,
-    ordinals and descriptors, and the criterion's exemplars in `FR-JUDGE-08`'s
-    presentation order. A band's points column never leaves the package tier."""
+    """The criterion's rubric as the request carries it, read through `PackageCatalog`: its wording
+    (the question's prompt text), its declared bands as names, ordinals and descriptors, and its
+    worked examples in presentation order (FR-JUDGE-08). A band's score value never leaves the package
+    tier."""
     package_id = run_row["package_id"]
     version = run_row["package_version_id"]
     catalog = PackageCatalog(
@@ -212,11 +206,9 @@ def _rubric_of(
 
 
 def _evidence_spans(cohort: Any, run_id: str, submission_id: str, criterion_id: str) -> tuple:
-    """The criterion's extracted spans for one (run, submission, criterion) — the rows
-    the judgeless extraction wrote, keyed with no judge dimension (FR-EXTRACT-02), so
-    every judge on the panel reads byte-identical evidence (CT-EXTRACT-03). Spans come
-    back verbatim from the payload's own JSON: the request re-checks the span schema
-    and forwards them unchanged."""
+    """The spans extracted for one (run, submission, criterion). Extraction has no judge dimension
+    (FR-EXTRACT-02), so every judge on the panel reads exactly the same evidence (CT-EXTRACT-03).
+    Spans are returned unchanged; the request checks their shape."""
     rows = cohort.query(
         JUDGE_STATEMENTS["select_judge_run_evidence"],
         run_id=run_id,
@@ -234,11 +226,10 @@ def _evidence_spans(cohort: Any, run_id: str, submission_id: str, criterion_id: 
 
 
 def assemble(unit: Any, *, store: Any = None) -> ScoringRequest:
-    """Assemble §3.10's `ScoringRequest` from ONE work unit — exactly one criterion,
-    exactly one submission, and a context built fresh from nothing else (`FR-JUDGE-02`,
-    `FR-JUDGE-05`).
+    """Build the `ScoringRequest` for one work unit: exactly one criterion and one submission, in a
+    context built from nothing else (FR-JUDGE-02, FR-JUDGE-05, design §3.10).
 
-    This is BOTH the design's pure method and the contract door (the module docstring's
+    This is BOTH the design's pure method and the contract door (`docs/code-notes/judge.md`'s
     first disclosed interpretation): a shipped `WorkUnit` in, a `ScoringRequest` out —
     no provider call, no store write, no clock read. The `store=` keyword is the
     `M-EXTRACT` disclosure verbatim: the lease resolves identities, the assembler the
@@ -338,9 +329,9 @@ def assemble(unit: Any, *, store: Any = None) -> ScoringRequest:
 
 
 def _dependency_parents(store: Any, run_row: Any, criterion_id: str) -> tuple:
-    """The criterion's declared parents, from the package's dependency graph — the
-    orchestrator's topological order is what guarantees a parent's evidence exists
-    (CT-ORCH-05); this reads the graph, never a verdict on it."""
+    """The criterion's declared parents, from the package's dependency graph. The orchestrator's
+    topological order guarantees their evidence exists (CT-ORCH-05); this reads the graph, never a
+    verdict."""
     package_id = run_row["package_id"]
     catalog = PackageCatalog(store.package(package_id), package_id=package_id)
     graph = catalog.dependency_graph(run_row["package_version_id"])
@@ -350,8 +341,8 @@ def _dependency_parents(store: Any, run_row: Any, criterion_id: str) -> tuple:
 def assemble_prompt(
     submission_id: str, criterion_id: str, *, rerun: bool = False
 ) -> PromptPayload:
-    """The rerun-review assembly door (`CT-REVIEW-14`'s judge half): the prompt a
-    re-run of one (submission, criterion) unit would assemble, keyed on ids alone.
+    """The prompt that re-running one (submission, criterion) unit would build, looked up by ids
+    alone. Used by review re-runs (CT-REVIEW-14).
 
     This is the second assembly door the rerun case's contract names — `assemble` is
     the unit-keyed door (the orchestrator's lease drives it); this one is id-keyed, so

@@ -52,9 +52,8 @@ _NO_FIGURE_PRESENTATION = "no agreement figure yet"
 
 
 def _coverage_text(row: Any) -> str:
-    """The five coverage counters, in the slash form the contract reads, from one grade
-    row: `total/auto/reviewed/provisional/missing` — the arithmetic a teacher can check
-    against the criterion count at a glance (`CT-GRADE-04`)."""
+    """The five coverage counters from one grade row, as `total/auto/reviewed/provisional/missing`,
+    so a teacher can check them against the criterion count at a glance (CT-GRADE-04)."""
     return (
         f"coverage {int(_row_get(row, 'criteria_total', 0))}/"
         f"{int(_row_get(row, 'criteria_auto', 0))}/"
@@ -66,9 +65,8 @@ def _coverage_text(row: Any) -> str:
 
 
 def _boundary_text(row: Any) -> str:
-    """The boundary-risk language (`CT-GRADE-19`'s consumer limb). Present only when the
-    flag is set — a quiet grade carries no boundary line at all, so the phrase cannot
-    render where there is nothing to flag."""
+    """The "could cross a grade boundary" warning (CT-GRADE-19). Only shown when the flag is set,
+    so a grade with nothing to flag has no boundary line at all."""
     if not int(_row_get(row, "boundary_at_risk", 0) or 0):
         return ""
     low = _row_get(row, "score_low")
@@ -82,15 +80,14 @@ def _boundary_text(row: Any) -> str:
 
 
 def _label_value(value: Any) -> str:
-    """One numeric label rendered as its value, or "unread" when the column is null —
-    a missing figure reads as missing, never as a boundary of zero."""
+    """One numeric value as text, or "unread" when it is null, so a missing figure never looks like
+    zero."""
     return "unread" if value is None else str(value)
 
 
 def _grade_line(submission_id: Any, row: Any) -> str:
-    """One grade line for the rollup's segments and the coverage renderer's headline:
-    the state's declared presentation, the grade — or the null-grade sentence, never a
-    blank that reads as fine (`CT-GRADE-05`) — and the total."""
+    """One grade line: the state's label, the grade (or the null-grade sentence, never a blank that
+    looks fine; CT-GRADE-05), and the total."""
     state = str(_row_get(row, "state") or "provisional")
     state_text = _STATE_PRESENTATION.get(state, state)
     grade = _row_get(row, "grade")
@@ -103,10 +100,9 @@ def _grade_line(submission_id: Any, row: Any) -> str:
 
 
 def _criterion_figure_lines(score_rows: Any, kinds: Any) -> str:
-    """One line per stored criterion figure: the band and points beside the figure's
-    honesty marker — not-applicable for a deterministic criterion (`CT-GRADE-13`), the
-    recorded agreement for a judged one, and the absence sentence where no figure has
-    landed yet. A criterion with no stored row is absent from the figures, never a
+    """One line per stored criterion score: the band and points, plus either "not applicable" for a
+    deterministic criterion (CT-GRADE-13), the recorded agreement for a judged one, or the absence
+    sentence if no figure exists yet. A criterion with no stored row is left out, never shown as
     zero."""
     lines = ""
     for row in score_rows:
@@ -132,14 +128,13 @@ def _criterion_figure_lines(score_rows: Any, kinds: Any) -> str:
 def render_grade_coverage(
     run_id: str, submission_id: str, *, store: Any = None
 ) -> str:
-    """One submission's grade with everything the grade owes its reader, as markup
-    (`CT-GRADE-04`'s consumer obligation, M-CONSOLE): the five coverage counters
-    (`CT-GRADE-04`), the null grade as unresolved — never fine (`CT-GRADE-05`), the
-    boundary flag as "could cross" (`CT-GRADE-19`), and one line per stored criterion
-    figure with a deterministic criterion's withheld figure as not-applicable
-    (`CT-GRADE-13`). Module-level and store-fed so the headless driver and the contract
-    limbs can render one grade without a route; the rollup's segments render the same
-    presentation from their batch read.
+    """One submission's grade as HTML, with everything a reader needs (CT-GRADE-04): the five
+    coverage counters, a null grade shown as unresolved (CT-GRADE-05), the boundary warning
+    (CT-GRADE-19), and one line per criterion score, with deterministic criteria marked not
+    applicable (CT-GRADE-13).
+
+    It is a module-level function reading from the store, so the headless driver and the contract
+    tests can render a grade without a route. The rollup screen uses the same presentation.
 
     Reads only. The grade row is the run's current revision; the figures are the
     submission's stored criterion scores; the kinds come from the version the grade

@@ -14,10 +14,9 @@ from .errors import IsolationViolation
 
 @dataclass(frozen=True)
 class BandView:
-    """One band of the criterion's DECLARED set, as the request carries it: the name,
-    its position in the set, and the descriptor that says what the band means. **No
-    points** (`FR-JUDGE-03`): the package tier's points column never reaches a scoring
-    request — a judge that can see what a band is worth is not judging."""
+    """One declared band as the request carries it: its name, its position in the set, and the
+    descriptor saying what it means. It has no score value (FR-JUDGE-03): a judge that can see what a
+    band is worth is not judging."""
 
     band: str
     ordinal: int
@@ -26,12 +25,9 @@ class BandView:
 
 @dataclass(frozen=True)
 class ExemplarView:
-    """One worked example the criterion's package declares (`FR-PKG-07`), as the
-    request carries it: its id, the band it exemplifies, and the material itself (the
-    blob's text, resolved at assembly). The material is CONTENT — the prohibition's
-    scan reads it at content strictness, so a student's "12 kg" survives — while the
-    band label it anchors to is rubric surface and renders in the bands field's
-    vocabulary."""
+    """One worked example from the package (FR-PKG-07): its id, the band it illustrates, and the
+    example text. The text is content, so the numeral scan checks it leniently (a student's "12 kg"
+    is fine); the band label is rubric."""
 
     exemplar_id: str
     band: str
@@ -40,7 +36,7 @@ class ExemplarView:
 
 @dataclass(frozen=True)
 class CriterionView:
-    """§9.9's `criterion` object: the single criterion this request judges.
+    """The request's `criterion` object: the one criterion being judged (design §9.9).
 
     `text` is the wording being judged (the question's prompt text — the package's
     criterion rows carry identity, not prose), `bands` the declared set ordered by
@@ -57,9 +53,9 @@ class CriterionView:
 
 @dataclass(frozen=True)
 class QuestionView:
-    """§9.9's `question` object — the assignment's prompt and reference solution,
-    when the criterion is keyed to a question. Empty, not absent, when it does not:
-    the request shape is stable across both."""
+    """The request's `question` object: the question's prompt and reference solution when the
+    criterion belongs to a question, and empty (not missing) when it does not, so the request shape
+    never changes (design §9.9)."""
 
     prompt_text: str
     reference_solution: str
@@ -67,9 +63,8 @@ class QuestionView:
 
 @dataclass(frozen=True)
 class SubmissionView:
-    """§9.9's `submission` object: the unit's submission id and the pseudonymous
-    handle the boundary is allowed to carry (`NFR-JUDGE-04`). The student's NAME has no
-    field here to live in — that is the whitelist working."""
+    """The request's `submission` object: the submission id and the student's pseudonym
+    (NFR-JUDGE-04). There is no field for the student's name."""
 
     submission_id: str
     student_ref: str
@@ -77,7 +72,7 @@ class SubmissionView:
 
 @dataclass(frozen=True)
 class DependencyEvidence:
-    """A parent criterion's already-extracted spans, as §9.9's request carries them.
+    """A parent criterion's already-extracted spans, as the request carries them (design §9.9).
 
     Spans only: the schema carries no verdict on a dependency — there is no field for
     one, so a parent's band is not merely unfilled but **unrepresentable**
@@ -92,7 +87,7 @@ class DependencyEvidence:
 
 @dataclass(frozen=True)
 class ScoringRequest:
-    """§9.9's scoring request — the whitelist, exactly the declared seven keys.
+    """The scoring request: the whitelist, exactly the seven declared keys (design §9.9).
 
     Construction is the validation: a kwarg outside the whitelist is a `TypeError`
     (the schema is closed — adding a field is a schema change, not a call-site
@@ -171,7 +166,7 @@ _DEPENDENCY_ENTRY_KEYS = frozenset({"criterion_id", "spans"})
 
 
 def _sequence_of(raw: Any, where: str) -> tuple:
-    """A sequence, or the empty tuple for `None` — a bare scalar is a refusal."""
+    """A sequence, or an empty tuple for None. A single value is refused."""
     if raw is None:
         return ()
     if isinstance(raw, (list, tuple)):
@@ -180,8 +175,8 @@ def _sequence_of(raw: Any, where: str) -> tuple:
 
 
 def _band_of(raw: Any) -> BandView:
-    """One band of the declared set, as the whitelist carries it: name, ordinal,
-    descriptor — a band's points never leave the package tier (`FR-JUDGE-03`)."""
+    """One declared band as the whitelist carries it: name, ordinal and descriptor, never a score value
+    (FR-JUDGE-03)."""
     if isinstance(raw, BandView):
         return raw
     if not isinstance(raw, dict):
@@ -204,9 +199,8 @@ def _band_of(raw: Any) -> BandView:
 
 
 def _exemplar_of(raw: Any) -> ExemplarView:
-    """One exemplar as the whitelist carries it: id, anchoring band, material. A
-    verdict-shaped key has no slot here — the exemplar channel carries worked
-    examples, never a judgment."""
+    """One worked example as the whitelist carries it: id, band and text. There is no slot for
+    anything verdict-like."""
     if isinstance(raw, ExemplarView):
         return raw
     if not isinstance(raw, dict):
@@ -229,9 +223,8 @@ def _exemplar_of(raw: Any) -> ExemplarView:
 
 
 def _criterion_of(raw: Any) -> "CriterionView":
-    """The request's `criterion` object: identity, wording, the declared bands and the
-    criterion's exemplars — the whole rubric the judgment rests on, and nothing
-    verdict-shaped."""
+    """The request's `criterion` object: identity, wording, the declared bands and the worked
+    examples. It is the whole rubric, and nothing verdict-like."""
     if isinstance(raw, CriterionView):
         bands = tuple(_band_of(band) for band in raw.bands)
         exemplars = tuple(_exemplar_of(exemplar) for exemplar in raw.exemplars)
@@ -264,8 +257,8 @@ def _criterion_of(raw: Any) -> "CriterionView":
 
 
 def _question_of(raw: Any) -> QuestionView:
-    """The request's `question` object: absent means empty, not missing — the request
-    shape is stable across runs that carry a question and runs that do not."""
+    """The request's `question` object. A missing question becomes an empty one, so the request has
+    the same shape whether or not the run has a question."""
     if raw is None:
         return QuestionView(prompt_text="", reference_solution="")
     if isinstance(raw, QuestionView):
@@ -287,9 +280,8 @@ def _question_of(raw: Any) -> QuestionView:
 
 
 def _submission_of(raw: Any) -> SubmissionView:
-    """The request's `submission` object: the ids the whitelist allows — the
-    submission's id and the student's pseudonymous ref. A `student_name` cannot even
-    be passed: the schema has no field for it (`NFR-JUDGE-04`)."""
+    """The request's `submission` object: only the submission id and the student's pseudonym. A
+    `student_name` cannot be passed at all (NFR-JUDGE-04)."""
     if isinstance(raw, SubmissionView):
         return raw
     if isinstance(raw, dict):
@@ -311,11 +303,9 @@ def _submission_of(raw: Any) -> SubmissionView:
 
 
 def _span_of(raw: Any, *, where: str) -> Any:
-    """One evidence span, checked against the span shape and returned VERBATIM: a
-    verdict-shaped key (`band`, `confidence`, ...) is a refusal, which is
-    what makes a verdict impossible to smuggle through an evidence channel
-    (`FR-JUDGE-14`). Nothing is re-typed: the caller's span is the span the request
-    carries."""
+    """Check one evidence span against the span shape and return it unchanged. A verdict-like key
+    such as `band` or `confidence` is refused, so no verdict can travel through an evidence channel
+    (FR-JUDGE-14)."""
     if not isinstance(raw, dict):
         if dataclasses.is_dataclass(raw) and not isinstance(raw, type):
             return raw  # a span object travels verbatim, as the extractor typed it
@@ -332,9 +322,8 @@ def _span_of(raw: Any, *, where: str) -> Any:
 
 
 def _dependency_entry_of(raw: Any) -> DependencyEvidence:
-    """One `dependency_evidence` entry: `{criterion_id, spans}` and nothing else — a
-    verdict-shaped key at the ENTRY level is the same refusal (`TC-EXTRACT-03`'s
-    schema form, mirrored for the scoring request)."""
+    """One `dependency_evidence` entry: `{criterion_id, spans}` and nothing else. A verdict-like
+    key at this level is refused too."""
     if isinstance(raw, DependencyEvidence):
         return raw
     if isinstance(raw, dict):
@@ -408,10 +397,9 @@ _DETERMINISTIC_STEMS: tuple[str, ...] = (
 
 
 def _request_names(value: Any, _depth: int = 0) -> Any:
-    """Every field NAME in the request tree, whatever shape it has — the same
-    shape-agnostic walk the consumers' scans run, because the whitelist is a property
-    of the whole assembled object and not of a field list somebody remembered to
-    enumerate. Yields from dataclass fields, mapping keys and sequence members."""
+    """Every field name anywhere in the request, from dataclass fields, mapping keys and list
+    items. The whitelist is checked over the whole assembled object, not over a list of fields
+    someone remembered."""
     if _depth > 12:
         return
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
@@ -428,7 +416,8 @@ def _request_names(value: Any, _depth: int = 0) -> Any:
 
 
 def assert_isolated(request: Any) -> None:
-    """§3.10's machine-checkable form of §7.2 Rule 1 over an assembled request.
+    """Check that an assembled request holds nothing outside the whitelist (design §3.10, §7.2 Rule
+    1).
 
     Every field name the request carries, at any depth, against the contaminating
     stems (`_PROHIBITED_STEMS`) and the deterministic-criterion stems

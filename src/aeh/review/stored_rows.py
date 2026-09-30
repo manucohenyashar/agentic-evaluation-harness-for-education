@@ -10,17 +10,15 @@ from .schema import REVIEW_STATEMENTS
 
 
 def _newest_run_id(store: Any, cohort_id: str) -> str | None:
-    """The run a cohort's score reads are scoped to (#359, CT-AGG-20): the
-    cohort's newest run, or ``None`` for a cohort with no run — whose ledger then
-    holds no score row either, since every score row names its run."""
+    """The run a cohort's score reads are limited to: the newest run, or None for a cohort with no
+    runs (CT-AGG-20)."""
     rows = store.cohort(cohort_id).query(REVIEW_STATEMENTS["select_newest_run"])
     return str(_row_mapping(rows[0])["run_id"]) if rows else None
 
 
 def _store_cohort_ids(store: Any) -> list[str]:
-    """The cohort ids a store carries, in stable id order — the same discovery
-    the store's own surfaces use (`cohorts/<cohort_id>.sqlite`, one file per
-    administration; `aeh.det` and `aeh.orch` walk the identical layout)."""
+    """The cohort ids a store holds, sorted: one `cohorts/<cohort_id>.sqlite` file per
+    administration, the same layout M-DET and M-ORCH use."""
     return sorted(
         path.stem for path in Path(store.data_dir, "cohorts").glob("*.sqlite")
     )
@@ -33,8 +31,8 @@ def _given(
     *,
     default: "Callable[[], Any] | None" = None,
 ) -> Any:
-    """One ranking input: what the CALLER supplied, else what the store column carries,
-    else what the run's package says.
+    """One ranking input: the caller's value if given, else the stored column, else the run's
+    package.
 
     The precedence matters and is not arbitrary. `rank_queue_items` is public and takes
     mappings in the ranking's own vocabulary — a caller that says `grade_boundary_delta`
@@ -54,7 +52,7 @@ def _given(
 
 
 def _adverse_signal_count(mapping: Mapping[str, Any]) -> int:
-    """`FR-REVIEW-18`'s adverse-signal count, through M-AGG's declared polarity.
+    """How many integrity signals are adverse, using M-AGG's definition (FR-REVIEW-18).
 
     Imported at call time: `aeh.agg` and `aeh.review` both own cohort migrations, and a
     module-level import would pin the order in which their chains register."""
@@ -64,7 +62,7 @@ def _adverse_signal_count(mapping: Mapping[str, Any]) -> int:
 
 
 class _ScoreRowContext:
-    """The per-run package facts a stored score row cannot carry itself (`FR-REVIEW-18`).
+    """Facts from the run's package that a stored score row does not carry itself (FR-REVIEW-18).
 
     A `criterion_score` row knows what the panel did; it does not know what the criterion
     is WORTH, which model scores it, where the submission's total sits relative to a grade
@@ -95,19 +93,18 @@ class _ScoreRowContext:
         self._knobs = dict(knobs or {})
 
     def weight(self, criterion_id: Any) -> float:
-        """The criterion's weight — M-GRADE's reading, so the ranking's idea of a
-        criterion's share matches the grade's (`grade.py:474`)."""
+        """The criterion's weight, read the way M-GRADE reads it, so the ranking's view of a
+        criterion's share matches the grade's."""
         return float(self._weights.get(criterion_id, 1.0))
 
     def declared_models(self) -> "Mapping[str, str]":
-        """Every criterion the run's package version declares, with its model —
-        `FR-REVIEW-19`'s authority for "does this criterion exist"."""
+        """Every criterion the run's package version declares, with its scoring model; this decides
+        whether a criterion exists (FR-REVIEW-19)."""
         return dict(self._models)
 
     def model_for(self, criterion_id: Any) -> str | None:
-        """The criterion's model as the package declares it, or `None` where it declares
-        none. Carried, never interpreted: the hard-coded `"atomic"` this replaces was an
-        interpretation, and it budgeted every holistic criterion at half a teacher's time."""
+        """The criterion's scoring model as the package declares it, or None. It is passed on,
+        never guessed."""
         model = self._models.get(criterion_id)
         return str(model) if model else None
 
@@ -118,9 +115,8 @@ class _ScoreRowContext:
         return self._override_rates.get(criterion_id)
 
     def est_seconds(self, model: str | None, default: float) -> float:
-        """`FR-REVIEW-18`'s per-model estimate: a LOOKUP in the declared map, so a model
-        the design has not declared takes the model-free default instead of falling into
-        whichever branch happened to be written last."""
+        """The review-time estimate for the criterion's scoring model, looked up in the declared
+        table; an undeclared model gets the model-free default (FR-REVIEW-18)."""
         declared = SCORING_MODEL_EST_SECONDS.get(model or "")
         if declared is None:
             return float(default)
@@ -131,7 +127,7 @@ class _ScoreRowContext:
 def _run_row_context(
     store: Any, cohort_id: str, run_id: str, knobs: Mapping[str, float]
 ) -> "_ScoreRowContext":
-    """The run's package facts, resolved once per build (`FR-REVIEW-18`).
+    """The run's package facts, read once per queue build (FR-REVIEW-18).
 
     Every lookup here is best-effort by design: this is the RANKING, and a run whose
     package file has been archived, or which has not been graded yet, must still produce
@@ -208,11 +204,9 @@ _EMPTY_ROW_CONTEXT = _ScoreRowContext()
 
 
 class _StoredScoreRow:
-    """One stored ``criterion_score`` row as the ranking reads it: the store's
-    column names mapped onto the score-row vocabulary, with the row's own
-    values wherever the store carries them and honest defaults where it does
-    not (the review inputs the store does not carry yet arrive with their
-    stories — an override history the store has none of reads as no data)."""
+    """One stored criterion-score row as the ranking reads it: store columns mapped to the
+    ranking's field names, with the row's own values where the store has them and plain defaults
+    where it does not (for example, no override history reads as no data)."""
 
     def __init__(
         self,
@@ -298,8 +292,7 @@ class _StoredScoreRow:
 
 
 def _row_mapping(row: Any) -> dict[str, Any]:
-    """One store row as a plain mapping, whatever ``Row`` shape the tier hands
-    back."""
+    """A store row as a plain mapping, whatever row type the tier returns."""
     try:
         return {key: row[key] for key in row.keys()}
     except AttributeError:

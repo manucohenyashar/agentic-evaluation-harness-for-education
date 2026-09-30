@@ -21,7 +21,7 @@ from .package_checks import validate_grade_policy
 
 
 class RunLifecycleMixin:
-    """Creates runs and moves them through the declared states."""
+    """Creates runs and moves them through their allowed states."""
 
     # -- run creation ---------------------------------------------------------------------------
 
@@ -33,31 +33,9 @@ class RunLifecycleMixin:
         *,
         run_id: str | None = None,
     ) -> str:
-        """Create the run row and its audit record; return the run id.
+        """Create the run row and its audit record, and return the run id.
 
-        `run_id` is minted as ``run-<uuid4 hex>`` — two runs of the same (cohort, package
-        version, config) are *different runs* and must not share work ids, which is why
-        `run_id` is a hash input. Keyword override for a caller (or test) that names its
-        own. The row is born `status='pending'`; `FR-ORCH-25`'s status transitions are
-        control-row territory (#61) and #57 flips none of them.
-
-        `provider_config` is the run's frozen backend snapshot, serialized canonically —
-        the HLD's "provider, per-judge model ref, retention setting in force, concurrency
-        cap, cost ceiling", every field the audit may one day ask the run to account for.
-
-        The run start is logged here too: exactly one `run_start` line through
-        `aeh.conf.log_run_start`, whose returned summary is the one the audit record stores.
-
-        The audit record is written here, on the durable tier, by `record_run_start` —
-        the run's configuration is frozen the moment the row exists, and the audit trail
-        should not depend on a later story landing. The two writes are two transactions
-        on two tiers (a cross-tier transaction is refused by design, `CT-STORE-06`): the
-        run row commits first, so a crash between them leaves a run whose audit record
-        is absent — visible in the durable tier, and repairable without touching the
-        ledger: read the run's id back from the run table and call
-        `record_run_start(store, cfg, run_id=<that id>)` to write the missing record.
-        Creating the run "again" would mint a second `run_id` and a second audit
-        record, which is not a retry. Never a half-written ledger.
+        More detail: `docs/code-notes/orch.md`, section `run_lifecycle.py: RunLifecycleMixin.create_run`.
         """
         package_id = self._package_id_for(package_version)
         # FR-ORCH-31: the version's own declarations must hang together before the run row
@@ -146,7 +124,8 @@ class RunLifecycleMixin:
         return run_id
 
     def _verify_retention_at_start(self, cfg: Any) -> Any:
-        """`FR-PROV-14` at run start, fail-closed.
+        """Check the provider's data-retention setting at run start, and refuse if it cannot be
+        confirmed (FR-PROV-14).
 
         `None` for a profile that sends nothing off the machine. For `cloud-hosted`, the
         provider seam's `RetentionReport`, confirmed for every panel member. A missing seam,
@@ -200,7 +179,7 @@ class RunLifecycleMixin:
     # -- the run lifecycle: start, pause, resume (FR-ORCH-15/16/17/25, CT-ORCH-12/13) -----------
 
     def start(self, run_id: str) -> str:
-        """Dispatch a `pending` run: `pending → running` (`FR-ORCH-25`'s declared edge).
+        """Start a `pending` run: `pending` becomes `running` (FR-ORCH-25).
 
         **The estimate precedes dispatch** (`FR-ORCH-15`): before the status flips, the
         run's estimated cost is obtained from the provider seam — the per-unit figures the
@@ -275,31 +254,9 @@ class RunLifecycleMixin:
     def pause(
         self, run_id: str, cause: BaseException | str | None = None
     ) -> str:
-        """Pause a run: write the **control row**, then let the control-read pass apply it.
+        """Pause a run: write a control row, which the next control-read pass applies.
 
-        The two-step is the point, not overhead: the control row is the durable request
-        (`CT-ORCH-13` — request ≠ effect, the orchestrator reads control rows on its own
-        schedule), and applying through the same pass the claim loop reads means a pause
-        lands identically whether it was requested a second ago or written while the
-        orchestrator was down. On a `running` run the read pass runs immediately and the
-        effect is immediate; on a `pending` run the row stays queued and the effect lands
-        at the next `start` — a run that has not begun dispatching is not torn down for a
-        stop it can simply honour first. An already-`paused` run records the request as
-        satisfied (applied at once): the state the request asks for already holds.
-        Terminal states (`complete`, `failed`) refuse with `RunStateError` — a stop is
-        not a result.
-
-        `cause` is one of `CT-ORCH-12`'s four pause conditions: a `ProviderUnavailableError`
-        (`FR-ORCH-16`), a `BuildChangedError` (`FR-ORCH-17`), the cost ceiling (the claim
-        pass pauses on its own — it writes a sensed pause naming spend and remaining, never
-        calling this), or `None` for an operator request. The rendered reason lands on the
-        run row (`pause_reason`) so the operator surface can say *why* the run stopped,
-        never just that it did.
-
-        The pause touches lifecycle columns only — never `provider_config`/`panel_config`
-        (`FR-ORCH-16`'s resume-same-backend: the backend the run was frozen with is the
-        backend it resumes with, because nothing here can change it). Returns the status
-        the run row carries after the call.
+        More detail: `docs/code-notes/orch.md`, section `run_lifecycle.py: RunLifecycleMixin.pause`.
         """
         cohort, row = self._find_run(run_id)
         status = row["status"]
@@ -334,42 +291,9 @@ class RunLifecycleMixin:
         return status_after
 
     def resume(self, run_id: str | None = None) -> None:
-        """Resume work with **no arguments** — the requirement, not ergonomics.
+        """Resume work. It takes no arguments on purpose: it finds every open run by itself.
 
-        With no argument, the open runs are discovered from the ledger itself: every run
-        whose status is `pending`, `running` or `paused`, across every cohort file the
-        store holds. No side file, no cursor, no operator input — `resume` requires no
-        bookkeeping beyond the ledger (`FR-ORCH-02`), and an argument would be a place
-        for an operator to be wrong under time pressure.
-
-        Resuming re-enumerates, and re-enumeration is where "skip every unit with
-        `status='done'`" is realized: a done unit's `work_id` is already in the ledger,
-        `INSERT OR IGNORE` leaves it untouched, and no result is recomputed or duplicated.
-        A completed run resumed — by discovery's omission or by explicit id — enumerates
-        to a no-op. Invoked when nothing is wrong, it inserts nothing and changes
-        nothing: the safe no-op the acceptance criterion asks for.
-
-        **Control rows are both the input and the effect here** (`CT-ORCH-13`): the
-        no-argument form reads each open run's unapplied control rows first — a resume
-        written while the orchestrator was down flips its paused run back to `running`
-        through the same guarded transition an explicit resume uses. **An explicit
-        `run_id` is itself written as a control row** — request ≠ effect applies to
-        every resume, no-argument or named: the row is the durable request, the read
-        pass the effect. On a paused run the pass effects the `paused → running` edge
-        (`FR-ORCH-25`) and supersedes the pauses queued before it; on a pending or
-        running one the request is vacuous and is marked applied. Either way the resume
-        re-binds to nothing and consults no current configuration — the run's frozen
-        `provider_config`/`panel_config` are the backend (`FR-ORCH-16`'s
-        resume-same-backend is structural: the lifecycle transitions write status
-        columns only, so *no code path exists* by which a resume could substitute a
-        backend). An operator's pause stays sticky across a restart:
-        the no-argument form applies control rows and enumerates but does not auto-unpause
-        a run nobody asked to resume — a stop an operator requested outranks a scheduler's
-        restart.
-
-        The dispatch half of resume — leasing the pending units to workers — is #58's
-        `lease` landing on this same ledger; the ledger half (nothing done is re-run,
-        nothing lost, nothing duplicated) is complete here.
+        More detail: `docs/code-notes/orch.md`, section `run_lifecycle.py: RunLifecycleMixin.resume`.
         """
         if run_id is not None:
             cohort, row = self._find_run(run_id)
@@ -407,7 +331,7 @@ class RunLifecycleMixin:
     def _apply_control_rows(
         self, cohort: Any, run_id: str, *, honour_queued_pause: bool = False
     ) -> tuple[str, str | None]:
-        """Read and apply a run's unapplied control rows, oldest request first.
+        """Read and apply a run's unapplied control rows, oldest first.
 
         Returns `(status, queued_pause_reason)`: the run row's status after application,
         and the reason of a pause still queued on a `pending` run (queued, not dropped —
@@ -500,8 +424,8 @@ class RunLifecycleMixin:
         return status, queued_reason
 
     def _mark_control_applied(self, cohort: Any, control_id: str) -> None:
-        """Mark one control row applied (`applied_at` read-back is the operator's
-        evidence the request was honoured, not just recorded)."""
+        """Mark one control row as applied. `applied_at` shows the operator the request was carried
+        out, not just recorded."""
         with cohort.transaction() as tx:
             tx.execute(
                 ORCH_STATEMENTS["mark_control_applied"],
@@ -519,7 +443,7 @@ class RunLifecycleMixin:
         completed_at: str | None,
         from_status: str,
     ) -> bool:
-        """One guarded run-state transition (`FR-ORCH-25`'s edges, nothing else).
+        """Change a run's state, only along an edge FR-ORCH-25 allows.
 
         The `WHERE status = :from_status` guard is the same write-time discipline as the
         claim's: two writers racing to move the same run resolve by the row's state at
@@ -538,7 +462,7 @@ class RunLifecycleMixin:
             return bool(int(tx.execute(ORCH_STATEMENTS["select_changes"])[0]["n"]))
 
     def _maybe_complete_run(self, cohort: Any, run_id: str) -> None:
-        """Flip a `running` run to `complete` when its last open unit closed.
+        """Mark a `running` run `complete` once its last open unit is finished.
 
         Deliberately **conservative**: the probe only fires from a `running` run that
         holds at least one `work_unit` row and zero open ones (`pending` or `leased`).
@@ -573,7 +497,7 @@ class RunLifecycleMixin:
 
     @staticmethod
     def _pause_reason_text(cause: BaseException | str | None) -> str:
-        """The reason text a pause writes on the run row — always say *why*.
+        """The reason a pause writes on the run row; a pause always says why.
 
         An operator request (`None`) says so plainly rather than rendering an empty
         string; an exception renders `Type: message` so the operator surface can name
@@ -587,7 +511,7 @@ class RunLifecycleMixin:
         return str(cause)
 
     def has_queued_resume(self, run_id: str) -> bool:
-        """Whether an unapplied **resume** request is waiting on this run.
+        """Whether an unapplied resume request is waiting for this run.
 
         The distinction a recovery pass depends on. `resume()`'s no-argument form applies
         queued control rows and deliberately never lifts a bare operator pause — "a stop an
@@ -608,7 +532,7 @@ class RunLifecycleMixin:
         )
 
     def record_pause_reason(self, run_id: str, cause: "BaseException | str") -> None:
-        """Record WHY an already-paused run is staying paused, with no state change.
+        """Record why an already-paused run stays paused, without changing its state.
 
         `pause()` is the right call to stop a run and the wrong one to annotate a stopped one:
         on a `paused` run it records the request as satisfied and changes nothing, which is

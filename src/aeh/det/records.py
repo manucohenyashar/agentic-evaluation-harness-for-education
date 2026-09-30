@@ -11,9 +11,8 @@ from typing import Any
 
 @dataclass(frozen=True)
 class SelectionRead:
-    """What M-INGEST recorded about one question's answer, as the kernel's
-    inputs. `selection` is a tuple of option ids (one per resolved option;
-    today's ingest delivers at most one) or None when nothing was read."""
+    """What M-INGEST recorded about one question's answer, as the scoring rule's input. `selection`
+    is a tuple of option ids, or None when nothing was read."""
 
     content_state: str
     selection_state: str | None
@@ -22,8 +21,7 @@ class SelectionRead:
 
 @dataclass(frozen=True)
 class CriterionScore:
-    """The score row this module wrote, returned to the caller — per-field,
-    never a bare status (`CLAUDE.md` seam 4)."""
+    """The score row M-DET wrote, returned field by field rather than as a bare status."""
 
     run_id: str
     submission_id: str
@@ -42,12 +40,10 @@ class CriterionScore:
 
 @dataclass(frozen=True)
 class CriterionSummary:
-    """One question's item summary (`FR-DET-07`): n, correct rate, and — the
-    separation that is contract (`CT-DET-08`) — blank count and unresolved
-    count as separate figures. `most_chosen_distractor` is the highest-count
-    non-key option (ties broken lexicographically, so the report is
-    deterministic). `unresolved_rate` above the threshold alerts as a
-    SCANNING problem; it is never item difficulty."""
+    """One question's item summary (FR-DET-07): n, correct rate, and blank and unresolved counts
+    kept separate (CT-DET-08). `most_chosen_distractor` is the most-chosen wrong option, ties
+    broken alphabetically. An `unresolved_rate` above the threshold is a scanning alert, never item
+    difficulty."""
 
     criterion_id: str
     question_id: str
@@ -62,9 +58,8 @@ class CriterionSummary:
 
 @dataclass(frozen=True)
 class DeterministicReport:
-    """What one cohort pass did (`CLAUDE.md` seam 4): counts, per-question
-    summaries, and the scanning alerts — a bare success on an empty detail is
-    the silent-failure trap this exists to refuse."""
+    """What one cohort pass did: counts, per-question summaries and scanning alerts, so an empty
+    result can never look like a success."""
 
     run_id: str
     cohort_id: str
@@ -79,7 +74,7 @@ class DeterministicReport:
     unresolved_alert_rate: float
     #: Audit records appended for this pass's scored rows (`FR-DET-10`). Unresolved
     #: rows write none — no grade, no points, nothing for `final_points NOT NULL`
-    #: to carry (see the module docstring's interpretations).
+    #: to carry (see `docs/code-notes/det.md`'s interpretations).
     audit_records_written: int
     summaries: tuple[CriterionSummary, ...]
     alerts: tuple[dict[str, Any], ...]
@@ -87,9 +82,8 @@ class DeterministicReport:
 
 @dataclass(frozen=True)
 class ItemOptionCount:
-    """One option's chosen count within one question's stats (`FR-DET-07`):
-    the count, and the denormalized key flag (`CT-DET-08`'s rollup needs no
-    join)."""
+    """How many students chose one option of one question, with a flag for whether it is in the key
+    (FR-DET-07, CT-DET-08)."""
 
     criterion_id: str
     option: str
@@ -99,10 +93,8 @@ class ItemOptionCount:
 
 @dataclass(frozen=True)
 class ItemStatsEntry:
-    """One question's read-back statistics (`FR-DET-07`): the summary figures
-    and the per-option counts they were built from. blank_count and
-    unresolved_count stay separate figures here for the same reason they are
-    separate columns (`CT-DET-08`)."""
+    """One question's statistics as read back: the summary figures and the per-option counts behind
+    them, with blank and unresolved counts kept separate (FR-DET-07, CT-DET-08)."""
 
     criterion_id: str
     n: int
@@ -114,10 +106,8 @@ class ItemStatsEntry:
 
 @dataclass(frozen=True)
 class ItemStatsReport:
-    """What `item_stats` returns for one cohort (`FR-DET-07`, `CT-DET-08`).
-    `package_version_id` is None exactly when the cohort has no run rows — an
-    empty report on an evaluated cohort is impossible, because the cohort pass
-    writes the stats it summarizes."""
+    """What `item_stats` returns for one cohort (FR-DET-07, CT-DET-08). `package_version_id` is
+    None exactly when the cohort has no runs."""
 
     cohort_id: str
     package_version_id: str | None
@@ -126,10 +116,9 @@ class ItemStatsReport:
 
 @dataclass(frozen=True)
 class RederiveChange:
-    """One submission's score difference under the corrected key (`FR-DET-08`).
-    `old_band` is None when no score row existed — the re-derivation created
-    one. Unresolved rows appear here only as no-changes: they never depended on
-    the key."""
+    """How one submission's score changed under the corrected key (FR-DET-08). `old_band` is None
+    when there was no score row before. Unresolved rows never change, because they never depended
+    on the key."""
 
     submission_id: str
     old_band: str | None
@@ -140,10 +129,9 @@ class RederiveChange:
 
 @dataclass(frozen=True)
 class RederiveReport:
-    """What one key-correction re-derivation did (`FR-DET-08`, `CT-DET-07`):
-    the versions involved, the diff, and the declared zeros — zero panel work
-    enqueued is a FIELD, not an absence, so the refusal to enqueue is visible
-    in the result (`CLAUDE.md` seam 4, `TC-DET-C07`'s exact zero)."""
+    """What one key-correction re-derivation did: the versions involved, the changes, and explicit
+    zero counts, such as zero panel units enqueued, so the absence of panel work is visible in the
+    result (FR-DET-08, CT-DET-07)."""
 
     cohort_id: str
     criterion_id: str

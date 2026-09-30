@@ -205,7 +205,7 @@ DISPATCH_OWNER = "orchestrator-dispatch"
 
 
 def _env_int(name: str, default: int) -> int:
-    """One integer environment knob, read at call time (`store._int_env`'s shape).
+    """One integer setting from the environment, read each call.
 
     Invalid and negative values refuse rather than fall back to the default: a typo in an
     operator's override silently taking the production value is the phantom-bug shape the
@@ -224,7 +224,7 @@ def _env_int(name: str, default: int) -> int:
 
 
 def _env_float(name: str, default: float, *, low: float, high: float) -> float:
-    """One float environment knob, read at call time — the rate knobs' seam.
+    """One decimal setting from the environment, read each call and checked against its range.
 
     The same refusal posture as `_env_int`: a typo'd override silently taking the
     production value is the phantom-bug shape the seam exists to prevent, so an
@@ -248,12 +248,12 @@ def _env_float(name: str, default: float, *, low: float, high: float) -> float:
 
 
 def _now() -> str:
-    """The one wall-clock read the ledger writes, UTC ISO-8601 (`ingest._now`'s form)."""
+    """The current time in UTC ISO-8601; the only clock read the ledger writes."""
     return datetime.now(timezone.utc).isoformat()
 
 
 def _elapsed_seconds_since(timestamp: str | None) -> float:
-    """Wall seconds since a ledger timestamp, or 0.0 when there is no honest one.
+    """Seconds since a stored timestamp, or 0.0 if it cannot be read.
 
     The report-only path's elapsed anchor (`#62`): a poll with no dispatch state has
     no monotonic start of its own, so the run's own `started_at` is the throughput

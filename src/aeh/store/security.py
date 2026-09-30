@@ -15,7 +15,8 @@ from .errors import ConfigurationProblem, InsecureLocationError
 
 
 def _harden_files(path: Path) -> None:
-    """`OWNER_ONLY_FILE` on a database file and its `-wal`/`-shm` siblings.
+    """Make a database file and its `-wal` and `-shm` files readable and writable by the owner
+    only.
 
     Called on the writable open path once the file certainly exists (`_open_tier`) and after
     purge's `VACUUM` (which rewrites the file and re-creates the siblings). POSIX-honoured;
@@ -30,7 +31,7 @@ def _harden_files(path: Path) -> None:
 
 
 def _harden_dir(path: Path) -> None:
-    """`OWNER_ONLY_DIR` on a directory this module just created or manages.
+    """Make a directory the store created or manages accessible by the owner only.
 
     Applied after `mkdir` because `mkdir`'s mode argument is filtered through the process
     umask — see `OWNER_ONLY_DIR`. Windows: no-op, as `_harden_files` documents.
@@ -41,33 +42,9 @@ def _harden_dir(path: Path) -> None:
 def _insecure_location_reason(
     path: Path, *, os_name: str | None = None, stat_fn: Callable[[Path], os.stat_result] | None = None
 ) -> str | None:
-    """Why `path` is an insecure location for student data, or `None` if it is not.
+    """Why a path is not safe for student data, or None if it is.
 
-    The rule `FR-STORE-09` states and `CT-STORE-16` makes contract: refuse a data directory
-    that **resolves inside a world-writable temporary path**. Mechanically:
-
-    - **Resolve first.** `os.path.realpath` follows the whole symlink chain, so a data
-      directory that is a symlink pointing into `/tmp` is judged by where it *lands* — the
-      bypass a naive prefix check on the configured path misses, and the exact case
-      `TC-STORE-C16` names.
-    - **Walk the ancestors.** The first directory from the resolved path up to the root whose
-      POSIX mode is world-writable (`mode & 0o002`) is the reason — `/tmp` at `1777` is the
-      canonical hit, and any world-writable ancestor is the same disclosure: files created
-      beneath it are reachable by every other account on the host. A directory that is only
-      group-writable is **not** refused; `TC-STORE-10`'s expected result names world-writable
-      and temp, and a check that refused group-write would red the correct case.
-    - **POSIX only.** On Windows the check returns `None` by design, not by omission: `os.stat`
-      fabricates `0o777` for every directory there, so a bit test would refuse *every* data
-      directory, and `%TEMP%` is ACL-scoped to the user, so the requirement's precondition —
-      a world-writable temporary path — is unconstructible. Known residual limits, stated
-      rather than hidden: an UNC share is writable across machines by nature, and a FAT/exFAT
-      volume has no ACLs at all; neither is detectable through `os.stat` and neither is
-      refused here. `NFR-STORE-05`'s platform-encryption placement is the compensating
-      deployment control.
-
-    `os_name` and `stat_fn` are injectable so both branches are exercisable from one host —
-    this repository's suite runs on Windows only, and a refusal path nothing can run is a
-    refusal path nobody can trust. `TC-STORE-10` drives them directly.
+    More detail: `docs/code-notes/store.md`, section `security.py: _insecure_location_reason`.
     """
     platform = os.name if os_name is None else os_name
     stat = os.stat if stat_fn is None else stat_fn
@@ -111,7 +88,7 @@ _SAFE_ID = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\Z")
 
 
 def _validated_component(kind: str, value: str) -> str:
-    """Refuse an identifier that cannot safely become a filename (`FR-STORE-09`'s posture).
+    """Refuse an id that cannot safely be used as a file name (FR-STORE-09).
 
     `TC-STORE-22` fixes the principle for the blob store's accessors — input validation at
     the operation that could leave the data directory — and purge is the operation where

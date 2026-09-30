@@ -40,6 +40,8 @@ Files:
     run_planning.py     building a console and planning runs
     queue_renderers.py  the review queue rendered at module level
     driver.py           `run_pipeline_for_test`, the headless end-to-end driver
+
+Detailed design notes (the full original module description): `docs/code-notes/console.md`.
 """
 
 from __future__ import annotations

@@ -99,7 +99,7 @@ class ResultsScreensMixin:
         )
 
     def _rollup_agreement(self, run_id: str) -> str:
-        """S12's agreement block on a real store (FR-CONSOLE-24, #529)."""
+        """The agreement block on screen S12, on a real store (FR-CONSOLE-24, #529)."""
         row = self._run_row(run_id)
         record = None
         if row is not None:
@@ -127,13 +127,11 @@ class ResultsScreensMixin:
             population=run_id, package_version=str(row["package_version_id"]))
 
     def _render_rubric_findings(self, run_id: str, queries: list[str]) -> str:
-        """S12's findings block (§3.19): the criteria the panel could not apply, read
-        through M-GRADE's `rollup_findings` — the escalation breaker's
-        `ungradeable_by_panel` criteria and the ones whose review-queue rows exhausted
-        the review budget, each with its affected-student count. A run that carries no
-        such criterion renders the absence sentence, which is itself the record: an
-        empty findings block that looked like data would be a finding nobody could
-        tell apart from a clean run.
+        """The findings block on screen S12 (§3.19): criteria the panel could not apply, read
+        through M-GRADE's `rollup_findings`. These are the breaker's `ungradeable_by_panel`
+        criteria and the ones whose review items used up the review budget, each with the number of
+        students affected. A run with none shows the absence sentence, so an empty block is never
+        mistaken for a clean run.
 
         A real store only — a render never creates a ledger to read from (the same
         rule `_tier` states), so the storeless and audit-double paths render the
@@ -176,14 +174,11 @@ class ResultsScreensMixin:
         )
 
     def _render_key_correction(self, run_id: str, queries: list[str]) -> str:
-        """S12's correction half as a screen element (§3.19, `FR-CONSOLE-30`): the
-        section names what the correction does — a new key version, the affected
-        deterministic scores re-derived by lookup, the grade policy re-run, and no
-        panel judgment enqueued — and, on a real store, renders the run's
-        deterministic audit records, each naming `answer_key_ref`, so the page a
-        teacher reads afterwards says which key version produced which grade
-        (acceptance criterion 2's console face; the records themselves are
-        M-DET's, written at derivation time)."""
+        """The answer-key correction section on screen S12 (§3.19, FR-CONSOLE-30). It explains what
+        a correction does: creates a new key version, re-derives the affected deterministic scores,
+        re-runs the grade policy, and sends nothing to the panel. On a real store it also lists the
+        run's deterministic audit records, each naming its `answer_key_ref`, so the teacher can see
+        which key version produced which grade."""
         flow = _section(
             "key-correction",
             "Correct an answer key after a run: the console writes a new key version "
@@ -279,12 +274,11 @@ class ResultsScreensMixin:
         )
 
     def _render_export_gate(self, queries: list[str], params: dict[str, Any]) -> str:
-        """S14 — the provenance gate as a screen (`FR-CONSOLE-23`). The decision is the
-        teacher's: exemplar paraphrases are approved at export, and approving them is a
-        judgment about somebody's work leaving the building. The screen reads the
-        package's validation record and shows the export preview — the grades as they
-        would leave, each with its provenance — so the approval is made over the real
-        artifact, and the outcome lands in the validation record either way."""
+        """Screen S14, the export gate (FR-CONSOLE-23). The teacher decides: approving paraphrased
+        examples means approving someone's work leaving the school. The screen shows the package's
+        validation record and a preview of the grades as they would be exported, each with its
+        provenance, so the decision is made on the real content. The outcome is recorded either
+        way."""
         package_version = str(params.get("package_version") or params.get("version")
                               or "pkg-unaddressed")
         record = self.validation_record(package_version, queries=queries)
@@ -313,10 +307,10 @@ class ResultsScreensMixin:
 
     def _provenance_line(self, *, run_id: str | None = None, submission_id: str | None = None,
                          package_version: str | None = None) -> str:
-        """FR-CONSOLE-40 / CT-CONSOLE-29 (#533): the provenance under a grade, from the run
-        that produced it — named directly, or the newest run holding the submission's
-        scores or the package version. The storeless audit double keeps `GRADE_PROVENANCE`;
-        a real store with no such run says so instead of printing a constant."""
+        """The provenance shown under a grade (FR-CONSOLE-40, CT-CONSOLE-29, #533), from the run
+        that produced it: named directly, or the newest run holding the submission's scores or the
+        package version. The storeless double uses `GRADE_PROVENANCE`; a real store with no
+        matching run says so rather than printing a constant."""
         if getattr(self._store, "data_dir", None) is None:
             return _PROVENANCE_FOOTER
         log: list[str] = []

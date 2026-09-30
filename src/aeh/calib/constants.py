@@ -59,7 +59,7 @@ PIPELINE_STAGES: tuple[str, ...] = ("extraction", "decomposition", "panel_compos
 #: Where a scored-band disagreement is observed when the caller declares no
 #: deeper stage: the panel's composition of the verdict. Disclosed as an
 #: interpretation — it names where the disagreement was *seen*, never where it
-#: was *caused* (see the module docstring).
+#: was *caused* (see `docs/code-notes/calib.md`).
 DEFAULT_PIPELINE_STAGE = "panel_composition"
 
 
@@ -91,9 +91,8 @@ CALIB_AMBIGUITY_ALERT_AFTER_ENV: str = "HARNESS_CALIB_AMBIGUITY_ALERT_AFTER"
 
 
 def _ambiguity_alert_after(environ: Mapping[str, str] | None = None) -> int:
-    """The alert threshold, read at call time (seam 3). A value below 1 would
-    alert on any discovery at all — outside the knob's meaning — so it falls
-    back to the declared default like any other mis-set value."""
+    """The ambiguity alert threshold, read from its knob at call time. A value below 1 would alert
+    on every discovery, so it falls back to the declared default like any other bad value."""
     source = os.environ if environ is None else environ
     raw = source.get(CALIB_AMBIGUITY_ALERT_AFTER_ENV)
     if raw is None or not raw.strip():

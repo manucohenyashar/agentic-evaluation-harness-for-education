@@ -35,12 +35,9 @@ class SubmissionIngestionMixin:
     def _absent_regions(self, package_version: str, document_id: DocumentId,
                         declared_regions: Sequence[tuple[str, str]],
                         package_catalog: Any) -> list[tuple[str, str]]:
-        """The package's declared questions MINUS the regions the document records:
-        each missing question becomes its own `absent` row — absent (a scanning
-        failure, routed to triage) and blank (a legitimate zero) are distinct rows
-        and are never collapsed (`FR-INGEST-16`). Called from the V2 ladder
-        (`FR-INGEST-23`'s declared-set check, #219); its return names the gap the
-        gate reports."""
+        """The package's declared questions that the document has no region for. Each becomes its
+        own `absent` row. Absent (a scanning failure, sent to triage) and blank (a legitimate zero)
+        are separate rows and never merged (FR-INGEST-16). The V2 gate uses this."""
         recorded = {question for question, _ in declared_regions}
         absent: list[tuple[str, str]] = []
         rows = package_catalog.criteria(package_version)
@@ -88,9 +85,8 @@ class SubmissionIngestionMixin:
     def _declared_options(
         package_catalog: Any | None, package_version: str | None, question_id: str
     ) -> frozenset[str]:
-        """The option ids declared for one question, or the empty set when the caller named no
-        package. Exact ids: `'c'` is not `'C'`, and a case-folded match would resolve a tick to
-        an option the package never declared (TC-INGEST-50 row 6)."""
+        """The option ids declared for one question, or an empty set when no package was given. Ids
+        match exactly: `c` is not `C` (TC-INGEST-50)."""
         if package_catalog is None or package_version is None or not question_id:
             return frozenset()
         reader = getattr(package_catalog, "question_options", None)
@@ -121,15 +117,12 @@ class SubmissionIngestionMixin:
         filenames: dict[str, str] | None = None,
         package_catalog: Any | None = None,
     ) -> IngestReport:
-        """Ingest one submission through the validation ladder (`FR-INGEST-21..24`,
-        `FR-INGEST-29`): V0 file integrity, V1 page completeness, V2 structural
-        completeness — reading the question structure FROM the package
-        (`FR-INGEST-18`/`19`), never classified per submission — and V3 identity
-        against the roster. Each gate records its own outcome in its own column
-        (`FR-INGEST-29`); a failure quarantines the submission (`ingest_status` one
-        of the five) and a quarantined submission NEVER reaches the teacher review
-        queue (`FR-INGEST-30`) — the operator surface reads the row's quarantine
-        state.
+        """Ingest one submission through the validation ladder (FR-INGEST-21..24): V0 file
+        integrity, V1 page completeness, V2 structural completeness (question structure read from
+        the package, FR-INGEST-18, FR-INGEST-19), and V3 identity against the roster. Each gate
+        records its own outcome in its own column (FR-INGEST-29). A failure quarantines the
+        submission, and a quarantined submission never reaches the teacher's review queue
+        (FR-INGEST-30).
 
         Fail the unit, never the run (`NFR-INGEST-02`): a page that fails
         transcription the configured number of times quarantines THIS submission;
@@ -508,9 +501,9 @@ class SubmissionIngestionMixin:
 
     @staticmethod
     def _extract_identity(markdown: str) -> str | None:
-        """The submission's declared identity: a leading 'Student: <name>' line the
-        pinned prompt asks the model to carry over verbatim (FR-INGEST-24). None when
-        the transcript declares none — V3 routes the absence; it never guesses."""
+        """The student named on the paper: a leading `Student: <name>` line that the prompt asks
+        the model to copy exactly (FR-INGEST-24). None when there is none; V3 handles the absence
+        and never guesses."""
         match = re.search(r"^Student:\s*(.+)$", markdown, re.MULTILINE)
         return match.group(1).strip() if match else None
 
@@ -537,10 +530,8 @@ class SubmissionIngestionMixin:
 
     @staticmethod
     def _extract_assessment_identifier(markdown: str) -> str | None:
-        """The declared assessment: a leading 'Assessment: <name>' line the pinned
-        prompt carries over verbatim (`FR-INGEST-25`'s explicit-identifier signal).
-        None when the paper names none — the signal reads `absent`; it never guesses.
-        The same extraction reads a candidate assessment artifact's own header when a
-        mismatch proposes ranked candidates."""
+        """The assessment named on the paper: a leading `Assessment: <name>` line copied exactly
+        (FR-INGEST-25). None when the paper names none; the signal then reads `absent`. The same
+        reading is used on candidate assessment documents when a mismatch proposes alternatives."""
         match = re.search(r"^Assessment:\s*(.+)$", markdown, re.MULTILINE)
         return match.group(1).strip() if match else None

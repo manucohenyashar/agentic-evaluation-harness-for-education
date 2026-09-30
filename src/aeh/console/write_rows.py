@@ -12,10 +12,9 @@ from .html import _now
 
 
 def _rows_for(action: str, params: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
-    """The rows `action` writes: one per declared effect, each carrying only the fields
-    §11.8 declares for it. Values come from `params` where the caller supplied them, and
-    are honest placeholders where a bare call did not — the sweep drives all fifteen
-    bare, and the field contract is what the payloads are assertable against."""
+    """The rows `action` writes: one per declared effect, each with only the fields §11.8 declares.
+    Values come from `params` when given, and are clear placeholders otherwise; the tests call all
+    fifteen actions with no arguments and check the fields."""
     by_action: dict[str, list[str]] = {}
     for dotted in CONSOLE_WRITE_FIELDS[action]:
         table, field = dotted.split(".", 1)

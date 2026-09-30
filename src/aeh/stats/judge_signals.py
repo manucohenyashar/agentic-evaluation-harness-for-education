@@ -52,9 +52,8 @@ JUDGE_SIGNAL_FIELDS: tuple[str, ...] = (
 
 
 def _percentile(values: Sequence[float], q: float) -> float | None:
-    """The value at rank `q·(n−1)` over the sorted sample, linearly interpolated between
-    closest ranks (NumPy's default; `statistics.quantiles(..., method="inclusive")`). `None`
-    for an empty sample — a percentile of nothing is absent, never zero."""
+    """The `q` percentile of a sample, linearly interpolated between the closest ranks (NumPy's
+    default method). None for an empty sample."""
     ordered = sorted(float(value) for value in values)
     if not ordered:
         return None
@@ -68,7 +67,8 @@ def _percentile(values: Sequence[float], q: float) -> float | None:
 
 @dataclass(frozen=True)
 class JudgeSignals:
-    """One run's per-(criterion, judge) judge signals and the concentration alert.
+    """One run's signals for each (criterion, judge), and the alert when violations concentrate on
+    one judge.
 
     `cells` maps `(criterion_id, judge_id)` to a mapping carrying exactly
     `JUDGE_SIGNAL_FIELDS`. The object iterates and indexes as that mapping does — `dict(signals)`
@@ -124,7 +124,7 @@ JUDGE_VIOLATION_ALERT = "judge_contract_violations_concentrated"
 
 
 def _cohort_handle_for_run(source: Any, run_id: str, durable: Any) -> tuple[Any, Any]:
-    """The cohort handle holding `run_id` and the durable handle, from a store or a handle.
+    """The cohort handle holding `run_id`, and the durable handle, from a store or a handle.
 
     `FR-STATS-20` names a handle; `CT-JUDGE-16` drives the emitter with the store. Both are
     accepted — a store resolves its own cohort by walking the tier's files (the no-side-index
@@ -162,7 +162,7 @@ def _cohort_handle_for_run(source: Any, run_id: str, durable: Any) -> tuple[Any,
 
 
 def judge_signals(source: Any, run_id: str, *, durable: Any = None) -> JudgeSignals:
-    """One run's judge signals, per (criterion, judge) (`FR-STATS-20`, `CT-JUDGE-16`).
+    """One run's judge signals, per (criterion, judge) (FR-STATS-20, CT-JUDGE-16).
 
     The cells are exactly the (criterion, judge) pairs the run's ledger judged — the
     dimensionality IS the contract, because "violations concentrated on one judge" is
@@ -244,7 +244,7 @@ def judge_signals(source: Any, run_id: str, *, durable: Any = None) -> JudgeSign
 def _signals_by_engine(verdicts: Mapping[tuple[str, str], list[Any]], cache_hit_rate: float,
                        violations: Mapping[tuple[str, str], float]
                        ) -> dict[tuple[str, str, str], Mapping[str, Any]]:
-    """FR-STATS-25: every judge signal per `(criterion, judge, scoring_engine)`."""
+    """Every judge signal per (criterion, judge, scoring engine) (FR-STATS-25)."""
     partitions: dict[tuple[str, str, str], list[Any]] = {}
     for (criterion_id, judge_id), rows in verdicts.items():
         for row in rows:
@@ -279,8 +279,8 @@ def _signals_by_engine(verdicts: Mapping[tuple[str, str], list[Any]], cache_hit_
 
 
 def _decision_outcomes(handle: Any, run_id: str) -> Mapping[str, Any] | None:
-    """The run's pre-screen outcome mix, through `M-JUDGE`'s contract-named metrics
-    (CT-JUDGE-28). `None` when the run has no pre-screens or predates the table."""
+    """The run's decision-engine pre-screen outcomes, from M-JUDGE's metrics (CT-JUDGE-28). None
+    when the run has no pre-screens."""
     import sqlite3
 
     from aeh.judge import decision_engine_metrics

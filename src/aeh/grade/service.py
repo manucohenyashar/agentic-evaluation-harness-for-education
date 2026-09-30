@@ -39,10 +39,9 @@ from .reporting import ReportingMixin
 
 
 class GradingService(FinalizationMixin, AmendmentMixin, ReportingMixin):
-    """The M-GRADE service (§3.14's Protocol): compute, finalize, amend, roll up,
-    export. Sole writer of `submission_grade` (`CT-GRADE-14`); never writes
-    `criterion_score`, `verdict` or `narrative` — those are M-AGG's, M-JUDGE's and
-    M-SYNTH's to write.
+    """The grading service (design §3.14): compute, finalize, amend, roll up and export grades. It
+    is the only writer of `submission_grade`, and never writes criterion scores, verdicts or
+    narratives (CT-GRADE-14).
 
     The service reads the run's package version from the run row and resolves policy,
     boundaries, criteria and answer keys through M-PKG's shipped API — the policy is
@@ -56,11 +55,8 @@ class GradingService(FinalizationMixin, AmendmentMixin, ReportingMixin):
     # -- reads ------------------------------------------------------------------
 
     def _cohort_keys(self) -> tuple[str, ...]:
-        """The store's cohort tier keys, in sorted order — the same discovery surface
-        the orchestrator's resume walks (aeh/orch.py `_cohort_keys_on_filesystem`):
-        the ledger's own files, one per cohort under `<data_dir>/cohorts/`. There is
-        deliberately no index of run ids outside the ledger; a scan is a handful of
-        indexed queries over small cohort counts."""
+        """The store's cohort ids, sorted: one ledger file per cohort under `<data_dir>/cohorts/`,
+        the same discovery the orchestrator uses. There is no separate index of run ids."""
         data_dir = getattr(self._store, "data_dir", None)
         if data_dir is None:
             raise GradeError(
@@ -72,11 +68,8 @@ class GradingService(FinalizationMixin, AmendmentMixin, ReportingMixin):
         )
 
     def _find_run(self, run_id: str) -> tuple[Any, Any]:
-        """(cohort handle, run row) for one run — the writers need both, and
-        re-walking the cohorts to turn the row back into its handle would be the same
-        scan twice. The run row lives in its cohort's Tier C file (§9.6 puts run state
-        beside cohort state); there is no side index (`FR-ORCH-02`'s rule, orch.py's
-        precedent)."""
+        """`(cohort handle, run row)` for one run; the writers need both. The run row lives in its
+        cohort's Tier C file (FR-ORCH-02)."""
         for key in self._cohort_keys():
             cohort = self._store.cohort(key)
             rows = cohort.query(GRADE_STATEMENTS["select_grade_run"], run_id=run_id)
@@ -87,12 +80,9 @@ class GradingService(FinalizationMixin, AmendmentMixin, ReportingMixin):
         )
 
     def _run_row(self, run_id: str) -> Any:
-        """The run row, or a refusal that names the run — a missing run is a caller
-        mistake, not an empty batch. Every resolution also registers the store under
-        the run id, the module-level seam the observability accessors read back
-        (`record_grade_signals` / `evaluate_grade_alerts` resolve their store the same
-        way `class_rollup` resolves its cohort's — the `_MIXED_REVISION_COHORTS`
-        precedent: the headless constructor that built the ledger leaves it findable)."""
+        """The run row, or a refusal naming the run: a missing run is a caller mistake, not an
+        empty batch. It also registers the store under the run id, which is how
+        `record_grade_signals` and `evaluate_grade_alerts` find it later."""
         row = self._find_run(run_id)[1]
         _GRADE_RUN_STORES[run_id] = self._store
         return row
@@ -100,10 +90,9 @@ class GradingService(FinalizationMixin, AmendmentMixin, ReportingMixin):
     def _policy_surface(
         self, package_handle: Any, package_id: str, version: str
     ) -> dict[str, Any]:
-        """Everything Tier P contributes to one grading pass: the effective policy,
-        its content ref, the boundary table, the criteria list, the key ref, and each
-        criterion's declared band range (the conservative interval source for
-        `boundary_risk` — the full band range per provisional criterion, TBD §7.4)."""
+        """Everything the package contributes to a grading pass: the effective policy and its hash,
+        the boundary table, the list of criteria, the answer-key hash, and each criterion's band
+        range (the cautious range source for `boundary_risk`)."""
         catalog = PackageCatalog(package_handle, package_id=package_id)
         policy = catalog.grade_policy(version)
         boundaries = [
@@ -145,11 +134,9 @@ class GradingService(FinalizationMixin, AmendmentMixin, ReportingMixin):
     def _submission_computation(
         self, surface: dict[str, Any], rows: Iterable[Any]
     ) -> dict[str, Any]:
-        """One submission's computation from its stored criterion-score rows: the pure
-        seams composed — coverage, policy application, band resolution, boundary risk.
-        This is the function recomputation replays: the stored scores plus the policy
-        version reproduce the grade exactly (`FR-GRADE-13`), because every step is
-        arithmetic over the rows."""
+        """Compute one submission's grade from its stored criterion scores: coverage, the policy,
+        the band and the boundary risk. Recomputation replays this; the stored scores plus the
+        policy version reproduce the grade exactly (FR-GRADE-13)."""
         inputs = [
             CriterionInput(
                 criterion_id=row["criterion_id"],
@@ -225,11 +212,9 @@ class GradingService(FinalizationMixin, AmendmentMixin, ReportingMixin):
 
     @staticmethod
     def _content_of(computed: dict[str, Any]) -> tuple:
-        """The change-detection tuple (`NFR-GRADE-05`): the computed content a
-        revision persists. Deliberately WITHOUT state, provenance or timestamps —
-        those are settlements and recordings, not recomputations, so a re-run under a
-        copied-forward version writes nothing (TC-GRADE-12's unaffected-submission
-        limb)."""
+        """The content a revision stores, used to detect change (NFR-GRADE-05). It excludes state,
+        provenance and timestamps, so a re-run under a copied-forward version writes nothing
+        (TC-GRADE-12)."""
         return (
             computed["grade"],
             computed["total"],
@@ -251,10 +236,9 @@ class GradingService(FinalizationMixin, AmendmentMixin, ReportingMixin):
         fresh_issuance: bool = False,
         input_missing: bool = False,
     ) -> str:
-        """The state a grade reads after this pass: `incomplete` while an input is
-        missing (never settled — a missing input awaits an operator, not a window);
-        otherwise `final` when the run completed or the review window lapsed
-        (`FR-GRADE-10`, ADR-3's null-window reading), else `provisional`.
+        """The state a grade has after this pass: `incomplete` while an input is missing (it waits
+        for an operator, not a window); otherwise `final` when the run completed or the review
+        window lapsed, else `provisional` (FR-GRADE-10, ADR-3).
 
         `input_missing` is THIS pass's verdict — the computed outcome's
         `criteria_missing`, which the caller owns. The prior revision's counters are
@@ -284,10 +268,9 @@ class GradingService(FinalizationMixin, AmendmentMixin, ReportingMixin):
     # -- the passes ---------------------------------------------------------------
 
     def compute_all(self, run_id: str) -> GradeReport:
-        """Grade every submission in the run's cohort in one pass — no per-student
-        action anywhere in the path (`FR-GRADE-01`, `NFR-SYS-04`); the review queue
-        gains a row only where an input is missing (the operator routing of
-        `TC-GRADE-07`), never for a scored one.
+        """Grade every submission in the run's cohort in one pass, with no per-student action
+        anywhere (FR-GRADE-01, NFR-SYS-04). A review-queue row is added only where an input is
+        missing (TC-GRADE-07).
 
         One pass = one batch: reads first, then a single write transaction, so a
         350-submission class is one transaction (`NFR-GRADE-03`'s sizing class).
@@ -448,10 +431,9 @@ class GradingService(FinalizationMixin, AmendmentMixin, ReportingMixin):
         )
 
     def compute_one(self, run_id: str, submission_id: str) -> SubmissionGrade:
-        """Grade one submission — the same computation as the batch pass, scoped to a
-        single student (§3.14's Protocol member). The one per-student entry point the
-        design declares, for corrections and re-grades; the batch path never routes
-        through it (`FR-GRADE-01`'s zero-teacher-action clause)."""
+        """Grade one submission with the same computation as the batch pass (design §3.14). It
+        exists for corrections and re-grades; the batch pass never goes through it (FR-GRADE-01).
+        """
         run = self._run_row(run_id)
         cohort = self._store.cohort(run["cohort_id"])
         surface = self._policy_surface(
@@ -473,10 +455,9 @@ class GradingService(FinalizationMixin, AmendmentMixin, ReportingMixin):
 
     def _grade_one(self, cohort: Any, surface: dict[str, Any], run: Any,
                    submission_id: str) -> None:
-        """The single-submission write half of a pass (shared by `compute_one` and
-        `amend`): compute, compare, insert-or-settle, queue missing inputs. The same
-        amendment replay as the batch pass — an unchanged re-run of an amended
-        submission writes nothing rather than reverting the amendment."""
+        """The write half of grading one submission, shared by `compute_one` and `amend`: compute,
+        compare, insert or settle, and queue missing inputs. Stored amendments are applied first,
+        so an unchanged re-run of an amended submission writes nothing."""
         rows = cohort.query(
             GRADE_STATEMENTS["select_submission_scores"], run_id=run["run_id"],
             submission_id=submission_id,
@@ -589,8 +570,8 @@ class GradingService(FinalizationMixin, AmendmentMixin, ReportingMixin):
 
     @staticmethod
     def _stored_content(current: Mapping[str, Any]) -> tuple:
-        """The change-detection tuple as the stored row reads it — the same fields
-        `_content_of` computes, read back off the row (`NFR-GRADE-05`'s comparison)."""
+        """The content fields read back from a stored grade row, for comparison with `_content_of`
+        (NFR-GRADE-05)."""
         return (
             current["grade"],
             current["total"],
@@ -641,7 +622,5 @@ class GradingService(FinalizationMixin, AmendmentMixin, ReportingMixin):
 
 
 def open_grade(store: Store, *, clock: Callable[[], str] | None = None) -> GradingService:
-    """Open the grading service over a store — the rung-2 constructor (the
-    `open_review` precedent; §3.14 declares the service Protocol but no constructor,
-    so the name is the vocabulary's declared invention, landed as declared)."""
+    """Open the grading service over a store."""
     return GradingService(store, clock=clock)

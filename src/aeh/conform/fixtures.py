@@ -20,7 +20,7 @@ from .reports import DistributionReport
 
 @dataclasses.dataclass(frozen=True)
 class FixtureSubmission:
-    """One fixture, with everything known about it declared rather than guessed.
+    """One fixture, with everything about it declared rather than guessed.
 
     Field-for-field the manifest entry's surface: the known reference score on its scale, the
     media and legibility class, the injection pairing and PDF threat, the consent declaration,
@@ -44,14 +44,12 @@ class FixtureSubmission:
     reference_score_basis: str | None = None
 
     def with_reference_score(self, score: float) -> "FixtureSubmission":
-        """The same fixture with a different reference score — the differential behind
-        `NFR-CONFORM-01`'s identity assertion: changing one declared value must change the
-        set's hash."""
+        """A copy of the fixture with a different reference score. Changing any declared value must
+        change the set's hash (NFR-CONFORM-01), and this is how that is tested."""
         return dataclasses.replace(self, reference_score=score)
 
     def declared_digest(self) -> str:
-        """The digest of everything this fixture declares — the identity one fixture contributes
-        to the set's hash.
+        """The digest of everything this fixture declares: its contribution to the set's hash.
 
         Over the **declared** fields rather than the source bytes: the set's identity is what a
         result cites, and a reference score corrected in the manifest must move it even though
@@ -64,7 +62,7 @@ class FixtureSubmission:
 
 @dataclasses.dataclass(frozen=True)
 class FixtureSet:
-    """The loaded fixture set: a version, an order, and a hash over both.
+    """A loaded fixture set: a version, an order, and a hash over both.
 
     The submissions carry the manifest's order, and the hash is computed over the ordered
     `(id, declared_digest)` pairs with the same function the corpora manifests use — a set
@@ -103,9 +101,8 @@ class FixtureSet:
     def replace_submission(
         self, submission_id: str, replacement: FixtureSubmission
     ) -> "FixtureSet":
-        """One submission replaced by name. Refuses a rename: the call names which fixture it is
-        replacing, and a replacement carrying a different id would silently change what the set
-        is addressed by."""
+        """Replace one submission by name. A replacement with a different id is refused, because it
+        would silently change what the set is identified by."""
         if not any(s.submission_id == submission_id for s in self.submissions):
             raise ConformanceError(
                 f"no fixture {submission_id!r} in the set; the set holds "
@@ -128,7 +125,7 @@ class FixtureSet:
     def run(
         self, backend: str = "recorded-fixture", *, simulate_build_change: bool = False
     ) -> "DistributionReport":
-        """The set's declared per-criterion score distribution, as a run of one backend.
+        """The set's declared score distribution per criterion, as if one backend had run it.
 
         This is `TC-REG-05`'s surface: the frozen corpus re-run and its per-criterion band
         shares recomputed, so a *shift* on an unchanged package can be detected as build
@@ -187,7 +184,7 @@ def _fixture_root() -> Path:
 
 
 def _version_for_pin(pin: str) -> str:
-    """The manifest version a pin label names: `v1` and `1` are the same set.
+    """The manifest version a pin label names; `v1` and `1` are the same set.
 
     The corpora manifests version with the bare string (`version: "1"`); the suite's callers
     pass the label (`run("v1", ...)`). Normalizing here, once, keeps the two spellings from
@@ -220,7 +217,7 @@ def _submission_from_row(row: Mapping[str, Any]) -> FixtureSubmission:
 
 
 def _materialize_bytes(submission: FixtureSubmission) -> bytes:
-    """The source bytes a fixture cites, verified against the digest it cites them with.
+    """A fixture's source bytes, checked against the digest it records.
 
     `F-CONFORM` is a selection, not a source: the bytes live in the corpus each entry cites,
     so the manifest is only as good as its citations. This is the one place they are checked,
@@ -247,7 +244,7 @@ def _materialize_bytes(submission: FixtureSubmission) -> bytes:
 
 
 def load_fixture_set(pin: str) -> FixtureSet:
-    """The version-pinned fixture set (`FR-CONFORM-01`, `NFR-CONFORM-01`).
+    """Load the fixture set for a pinned version (FR-CONFORM-01, NFR-CONFORM-01).
 
     Reads `F-CONFORM`'s manifest from the corpora root (`HARNESS_FIXTURE_ROOT` overrides it),
     refuses a pin that does not name the manifest's version, and verifies every entry against
@@ -286,7 +283,7 @@ def load_fixture_set(pin: str) -> FixtureSet:
 
 
 def _load_corpus_fixture_set(corpus: str, corpus_root: Path) -> FixtureSet:
-    """Load a source corpus (`F-FROZEN`, ...) as a fixture set, with its declared bands.
+    """Load a source corpus (such as `F-FROZEN`) as a fixture set, with its declared bands.
 
     The regression surface re-runs a frozen corpus whose rows carry their per-criterion
     reference bands directly; those bands ride on the set (`reference_bands`) so `run` is a

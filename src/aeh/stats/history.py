@@ -28,10 +28,8 @@ if TYPE_CHECKING:
 def criterion_override_history(
     self: "ValidationStats", criterion_id: str
 ) -> "CriterionOverrideHistory | NoValidationData":
-    """One criterion's override history (`CT-STATS-09`): the reviews it has,
-    how many overrode the panel, and the rate. The population is the
-    admissible one — the filter exists once (`NFR-STATS-04`) and this member
-    routes through it like every figure here.
+    """One criterion's override history (CT-STATS-09): how many reviews it has, how many overrode
+    the panel, and the rate, over admissible labels only (NFR-STATS-04).
 
     A criterion nobody has reviewed returns `NoValidationData` — the clause's
     own distinction: a zero rate on a reviewed criterion is evidence the
@@ -64,10 +62,10 @@ def criterion_override_history(
 def criterion_disagreement_rate(
     self: "ValidationStats", criterion_id: str
 ) -> "CriterionDisagreement | NoValidationData":
-    """FR-STATS-28 (#433): the criterion's disagreement rate over EVERY blind or operational
-    label carrying both bands (not only the admissible blind ones FR-STATS-24 reads). A
-    disagreement is `system_band != teacher_band`, i.e. `agreed = 0` (FR-REVIEW-21). The same
-    minimum-n rule and no-data reasons as FR-STATS-24; never `0.0` for no data (CT-STATS-09)."""
+    """The criterion's disagreement rate over every blind or operational label that carries both
+    bands, not only admissible blind ones (FR-STATS-28). A disagreement is `system_band !=
+    teacher_band`, that is `agreed = 0` (FR-REVIEW-21). Same minimum-n rule and no-data reasons as
+    the override history; no data is never reported as 0.0 (CT-STATS-09)."""
     _require_str_or_none("criterion_disagreement_rate", criterion_id=criterion_id)
     # EVERY label carrying both bands: blind labels and the queue's own decisions alike.
     # ("Operational" is a category, not a stored label_type: the review flow stores
@@ -93,10 +91,9 @@ def criterion_disagreement_rate(
 def stored_disagreement_rates(
     store: Any, package_version_id: str
 ) -> dict[str, "CriterionDisagreement | NoValidationData"]:
-    """FR-STATS-28's store-backed reader (#433): one entry per criterion of
-    `package_version_id`, over the stored labels of that package's lineage (a label whose
-    `package_version_id` names a version of the same package), plus labels that record no
-    version at all (the collection route writes none), read through M-STATS alone."""
+    """The stored disagreement rate for each criterion of `package_version_id` (FR-STATS-28), over
+    the stored labels of that package's lineage (labels naming any version of the same package,
+    plus labels naming no version)."""
     from .service import ValidationStats  # here, not at the top: .service imports this file
     from aeh.pkg import PackageCatalog
 
@@ -116,8 +113,8 @@ def stored_disagreement_rates(
 
 
 def _lineage_stats(store: Any, package_version_id: str) -> tuple["ValidationStats", list[str]]:
-    """A `ValidationStats` over one package lineage's stored labels (a label naming a version
-    of the same package, or recording no version), and the version's criteria."""
+    """A `ValidationStats` over one package lineage's stored labels (labels naming a version of the
+    same package, or no version), and the version's criteria."""
     from .service import ValidationStats  # here, not at the top: .service imports this file
     from aeh.pkg import PackageCatalog
 
@@ -137,23 +134,18 @@ def _lineage_stats(store: Any, package_version_id: str) -> tuple["ValidationStat
 def stored_override_histories(
     store: Any, package_version_id: str
 ) -> dict[str, "CriterionOverrideHistory | NoValidationData"]:
-    """FR-STATS-24's figure per criterion of `package_version_id`, over the package lineage's
-    stored labels, read through M-STATS alone: M-PIPE's escalation `history` input
-    (FR-PIPE-15, #525)."""
+    """The override history for each criterion of `package_version_id`, over the package lineage's
+    stored labels (FR-STATS-24). M-PIPE uses this as the escalation `history` input (FR-PIPE-15).
+    """
     stats, criteria = _lineage_stats(store, package_version_id)
     return {criterion: stats.criterion_override_history(criterion) for criterion in criteria}
 
 
 def narrative_quality(self: "ValidationStats", cohort_id: str | None = None) -> NarrativeQualityReport:
-    """The narrative-quality figures, separate from criterion-score agreement
-    (`FR-STATS-12`, `CT-STATS-14`): the citation validity rate, the
-    hallucinated-claim rate, and the teacher rating where one was collected.
-    The metrics come from the ``narrative_metrics=`` channel the constructor
-    declares — this module measures agreement, and a narrative channel's
-    numbers are reported beside it, never merged into an agreement figure
-    (`CT-STATS-14`'s prohibition, held by giving the channel its own report
-    type). A metric whose channel was not declared is ``None``: the absence
-    is the value, never a zero."""
+    """The narrative-quality figures, kept separate from score agreement (FR-STATS-12,
+    CT-STATS-14): citation validity rate, hallucinated-claim rate, and the teacher's rating when
+    collected. They come from the `narrative_metrics=` input given to the constructor and are never
+    merged into an agreement figure. A metric with no input is None, never zero."""
     _require_str_or_none("narrative_quality", cohort_id=cohort_id)
     _refuse_foreign_cohort(self, cohort_id, "narrative_quality")
     channel = self._narrative_metrics
@@ -169,9 +161,8 @@ def narrative_quality(self: "ValidationStats", cohort_id: str | None = None) -> 
 def operational_signal(
     self: "ValidationStats", cohort_id: str | None = None
 ) -> OperationalSignal:
-    """The weighted operational signal `FR-STATS-14` declares: the weighted
-    mean agreement over the paired population, the evidence weights beside
-    the number they produced.
+    """The weighted operational signal (FR-STATS-14): the weighted mean agreement over the paired
+    labels, with the weights that produced it.
 
     The weights key on the label's evidence class (`OPERATIONAL_EVIDENCE_ORDER`
     through ``_label_evidence_key``): an override informative, an acceptance
@@ -207,12 +198,9 @@ def operational_signal(
 
 
 def observability_counters(self: "ValidationStats") -> dict[str, Any]:
-    """The four counters `CT-STATS-19` declares the module emits: label counts
-    by type and by origin (two counters, because *"label counts by type and
-    origin"* is two — type is blind versus operational and origin is
-    `CT-ORCH-15`'s random arm versus the rest, and collapsing them makes the
-    random arm invisible), the blind coverage per administration, and the
-    duration of the most recent statistics recomputation this instance ran.
+    """The four counters M-STATS emits (CT-STATS-19): label counts by type (blind or operational),
+    label counts by origin (the random arm or the rest; kept separate so the random arm stays
+    visible), blind coverage per administration, and how long the last recomputation took.
 
     Names are the contract: an operator's dashboard binds them, which is why
     the values ride a plain mapping rather than a type a dashboard would have

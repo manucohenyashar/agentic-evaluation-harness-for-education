@@ -256,7 +256,7 @@ STATS_BLIND_SKIP_ALERT_AFTER: int = 2
 
 
 def _env_flag(name: str, default: bool) -> bool:
-    """One boolean environment knob, read at call time (seam 3).
+    """Read one boolean knob from the environment at call time.
 
     The declared production value is the default; the knob exists so an
     installation adjusts without a code change. An unset or empty variable
@@ -280,7 +280,7 @@ def _env_flag(name: str, default: bool) -> bool:
 
 
 def _env_float(name: str, default: float) -> float:
-    """One numeric environment knob, read at call time (seam 3).
+    """Read one numeric knob from the environment at call time.
 
     Non-finite values are refused along with unparseable ones: a threshold of
     ``nan`` or ``inf`` would silently disable the detector it calibrates — a
@@ -305,7 +305,7 @@ def _env_float(name: str, default: float) -> float:
 
 
 def _env_int(name: str, default: int) -> int:
-    """One integer environment knob, read at call time (seam 3).
+    """Read one integer knob from the environment at call time.
 
     The same loud-failure discipline the other knob readers hold: an
     unparseable or non-integer value raises with the knob's name, so a
@@ -324,9 +324,8 @@ def _env_int(name: str, default: int) -> int:
 
 
 def _subgroup_analysis_enabled() -> bool:
-    """The subgroup gate's effective state: the declared default, overridden by
-    the environment knob of the same name where an installation declares the
-    analysis locally lawful (`NFR-STATS-05`)."""
+    """Whether subgroup analysis is on: the declared default, unless an installation where it is
+    lawful turns it on with the environment knob of the same name (NFR-STATS-05)."""
     return _env_flag("STATS_SUBGROUP_ANALYSIS_ENABLED", STATS_SUBGROUP_ANALYSIS_ENABLED)
 
 
@@ -348,11 +347,9 @@ def _drift_tolerance() -> float:
 
 
 def _blind_skip_alert_after() -> int:
-    """How many consecutive blind-skipped administrations provoke the record's
-    alert (`CT-STATS-19`), the declared default overridden by the env knob of
-    the same name. The effective floor is one: a threshold below one would
-    alert on an empty run, raising the skip alert for every administration
-    that *ran* its blind sample."""
+    """How many consecutive administrations without a blind sample trigger the alert (CT-STATS-19):
+    the default, or the knob of the same name. At least one, because a lower threshold would alert
+    on administrations that did run their blind sample."""
     return max(_env_int("STATS_BLIND_SKIP_ALERT_AFTER", STATS_BLIND_SKIP_ALERT_AFTER), 1)
 
 
@@ -365,8 +362,8 @@ REVIEW_OVERRIDE_MIN_N_DEFAULT = 5
 
 
 def _override_min_n() -> int:
-    """The minimum n, read the way M-REVIEW reads the same knob (a number, at least 1), so
-    the two layers can never disagree on the threshold or one refuse what the other took."""
+    """The minimum number of reviews, read the same way M-REVIEW reads it (a number of at least 1),
+    so the two never disagree on the threshold."""
     raw = os.environ.get(REVIEW_OVERRIDE_MIN_N_ENV, "").strip()
     if not raw:
         return REVIEW_OVERRIDE_MIN_N_DEFAULT

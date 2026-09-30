@@ -26,7 +26,7 @@ from .errors import TransportError
 
 @dataclass(frozen=True)
 class HttpRequest:
-    """One request as a `Transport` receives it. Plain data, no logic."""
+    """One request as a `Transport` receives it. Plain data."""
 
     method: str
     url: str
@@ -36,9 +36,9 @@ class HttpRequest:
 
 @dataclass(frozen=True)
 class HttpResponse:
-    """One response as a `Transport` returns it. `status` is the HTTP code; a connection
-    failure never produces an `HttpResponse` — it raises `TransportError`, which is the
-    classification the retry loop trusts."""
+    """One response as a `Transport` returns it; `status` is the HTTP code. A connection failure
+    never produces a response: it raises `TransportError`, which is what the retry loop relies on.
+    """
 
     status: int
     headers: Mapping[str, str]
@@ -46,7 +46,7 @@ class HttpResponse:
 
 
 class Transport(Protocol):
-    """One HTTP attempt, and no retry logic (`FR-PROV-15`).
+    """One HTTP attempt, with no retry logic (FR-PROV-15).
 
     Implementations raise `TransportError` for a connection failure or timeout, and return
     an `HttpResponse` otherwise — including for 429 and 5xx, whose *classification* is this
@@ -59,7 +59,7 @@ class Transport(Protocol):
 
 
 class Clock(Protocol):
-    """The two things a retry loop needs from time: a monotonic reading and a way to wait.
+    """What a retry loop needs from time: a monotonic reading and a way to wait.
 
     Injected so `Retry-After: 2` honoured twenty times consumes no wall time in a test —
     test plan §4.6 makes `TC-ORCH-09` the suite's one sanctioned sleep, and a retry loop
@@ -72,7 +72,7 @@ class Clock(Protocol):
 
 
 class SystemClock:
-    """The real clock. The default, and the only thing in the module that touches `time`."""
+    """The real clock, used by default; the only code in M-PROV that uses `time`."""
 
     def monotonic(self) -> float:
         return time.monotonic()
@@ -82,7 +82,7 @@ class SystemClock:
 
 
 def _wait(clock, seconds: float) -> None:
-    """Wait `seconds`, through whatever the injected clock offers.
+    """Wait `seconds` using whatever the injected clock provides.
 
     `SystemClock` sleeps for real. A test clock implements `advance` (the suite's
     `FrozenClock` does), and advancing is the honest equivalent: the wait consumes fake
@@ -98,9 +98,9 @@ def _wait(clock, seconds: float) -> None:
 
 
 class _DefaultTransport:
-    """The real transport: one HTTP POST/GET via urllib, raising `TransportError` for any
-    connection failure or timeout. This is the module's egress point (`CT-PROV-15`) — the
-    only code in the tree that opens a socket to a model endpoint."""
+    """The real transport: one HTTP request through urllib, raising `TransportError` on any
+    connection failure or timeout. This is the system's only egress point, the only code that opens
+    a connection to a model endpoint (CT-PROV-15)."""
 
     def __init__(self, timeout_s: float = 120.0) -> None:
         self._timeout_s = timeout_s

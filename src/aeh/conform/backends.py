@@ -26,13 +26,13 @@ def _build_id_of(ref: Any) -> str:
 
 
 def _requested_builds(backend_config: Mapping[str, Any]) -> tuple[str, ...]:
-    """What the caller asked for, read off the config (`CT-CONFORM-13`'s source of truth)."""
+    """The builds the caller asked for, read from the configuration (CT-CONFORM-13)."""
     refs = list(backend_config.get("panel") or ()) + [backend_config.get("transcriber")]
     return tuple(sorted(_build_id_of(ref) for ref in refs if ref is not None))
 
 
 def _resolved_builds(backend_config: Mapping[str, Any]) -> tuple[str, ...]:
-    """The serving identities the transport resolved, per profile.
+    """The builds the transport actually served, per profile.
 
     An honest recorded transport resolves exactly what was requested. A substituted backend
     resolved a different serving identity while reporting the requested build — which is why
@@ -49,18 +49,17 @@ def _resolved_builds(backend_config: Mapping[str, Any]) -> tuple[str, ...]:
 
 
 def _live_backend_profiles() -> frozenset[str]:
-    """The profiles the live-backend env knob (`HARNESS_CONFORM_LIVE_BACKENDS`) declares —
-    the shared gate in the clause suite. Naming a profile commits its run to a REAL dispatch:
-    the transcription stage drives the backend's own live transport (`_live_provider_for`),
-    and the dispatch field reports the transcriber build because that is what actually served.
-    """
+    """The profiles named in `HARNESS_CONFORM_LIVE_BACKENDS`. Naming a profile makes its run call
+    the real backend: transcription goes through that backend's live transport
+    (`_live_provider_for`), and the dispatch field reports the transcriber build, because that is
+    what actually served."""
     return frozenset(
         name.strip() for name in os.environ.get(LIVE_BACKENDS_ENV, "").split(",") if name.strip()
     )
 
 
 def _live_provider_for(backend_config: Mapping[str, Any]) -> Any:
-    """The live transport one live-tier backend's transcription dispatches through.
+    """The live transport one live backend's transcription goes through.
 
     Built from the backend's own transcriber ref via `aeh.prov.provider_for` — M-PROV owns
     the provider-name mapping (`CT-PROV-15`: the only place in the tree that names a
@@ -78,7 +77,7 @@ def _live_provider_for(backend_config: Mapping[str, Any]) -> Any:
 
 
 def _transcription_dispatch(backend_config: Mapping[str, Any]) -> str:
-    """What the transcription stage dispatched through, named per backend (`TC-CONFORM-04`).
+    """What the transcription stage went through, per backend (TC-CONFORM-04).
 
     The recorded transport reports `recorded_fixture`; a profile the live-backend env knob
     declares (`HARNESS_CONFORM_LIVE_BACKENDS`) reports the transcriber build it actually
@@ -99,7 +98,7 @@ def _panel_build_ref(backend_config: Mapping[str, Any]) -> str:
 
 
 def _promotion_store_dir() -> Path:
-    """The ephemeral durable store the validation administrations are promoted into.
+    """The temporary durable store the validation records are promoted into.
 
     Created once per process: the migrations run when `durable()` first opens (the
     eleven-module chain, imported here), and `record_promotion` connects to
@@ -134,7 +133,7 @@ def _promotion_store_dir() -> Path:
 
 
 def _promote_validation(record: ValidationRecord) -> None:
-    """Promote one backend's validation record through `M-PKG` (`CT-CONFORM-12`).
+    """Promote one backend's validation record through M-PKG (CT-CONFORM-12).
 
     The write goes through `aeh.pkg.record_promotion` — the durable `package_validation` row —
     keyed on the record's administration, which names the backend profile the figures speak
@@ -163,7 +162,7 @@ def _promote_validation(record: ValidationRecord) -> None:
 
 
 def _write_report_artifact(report: ConformanceReport, fixture_set: FixtureSet) -> Path:
-    """The run's own report artifact — the one write kind `CT-CONFORM-12` permits by hand."""
+    """Write the run's own report file, the one direct write CT-CONFORM-12 allows."""
     target = Path(tempfile.gettempdir()) / (
         f"conformance-report-{fixture_set.version}-{uuid4().hex[:8]}.json"
     )
@@ -194,7 +193,7 @@ def _write_report_artifact(report: ConformanceReport, fixture_set: FixtureSet) -
 
 
 def recorded_provider_for_fixture_set(version: str) -> Any:
-    """The deterministic transport for a fixture set's ingest surface (`CT-PROV-10`).
+    """The deterministic, network-free transport for a fixture set's ingest (CT-PROV-10).
 
     Socket-free and cost-free: the completions are derived from the request itself, so a suite
     built without an injected provider can still drive the real ingest ladder (the malicious

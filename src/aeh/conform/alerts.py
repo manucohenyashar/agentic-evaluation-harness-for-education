@@ -17,7 +17,7 @@ from .divergence import _divergence_tolerance
 
 
 def _score_distributions_of(report: Any) -> Mapping[str, Mapping[str, Mapping[str, float]]]:
-    """The per-backend score distributions a report carries, whatever its shape."""
+    """The per-backend score distributions in a report, whatever shape the report has."""
     per_backend = getattr(report, "per_backend", None)
     if per_backend is not None:
         return {
@@ -57,7 +57,8 @@ def detect_build_substitution(
     *,
     tolerance: float | None = None,
 ) -> BuildSubstitutionFinding | None:
-    """Detect a provider-side build substitution between two runs of the same frozen set.
+    """Detect that the provider silently swapped a model build, by comparing two runs of the same
+    frozen fixture set.
 
     Both report shapes the suites drive are accepted: a `ConformanceReport` (per-backend
     figures) and a `DistributionReport` (`TC-REG-05`'s single-backend re-run). The comparison
@@ -108,7 +109,7 @@ def detect_build_substitution(
 
 
 def evaluate_conformance_alerts(report: Any) -> list[ConformanceAlert]:
-    """The alerts a report fires, each keyed on its own condition (`CT-CONFORM-13`).
+    """The alerts a report fires, each on its own condition (CT-CONFORM-13).
 
     `divergence_gate_crossed` fires exactly when the live gate blocked the run;
     `build_substitution_detected` exactly when some profile's resolved builds differ from what

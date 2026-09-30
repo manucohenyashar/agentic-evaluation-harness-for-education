@@ -55,13 +55,12 @@ SIGNATURE_COMPONENTS: tuple[str, ...] = (
 
 
 def _signature_of(row: Any) -> dict[str, Any]:
-    """The five-component signature of one row (`CT-REVIEW-20`), as a mapping
-    keyed by the declared component names."""
+    """A row's five-part grouping signature, as a mapping by component name (CT-REVIEW-20)."""
     return {component: getattr(row, component) for component in SIGNATURE_COMPONENTS}
 
 
 def _group_key(row: Any) -> tuple:
-    """Two rows group only when they share a criterion *and* the signature."""
+    """The key two rows must share to be grouped: the criterion and the signature."""
     signature = _signature_of(row)
     return (str(getattr(row, "criterion_id", "")),) + tuple(
         signature[component] for component in SIGNATURE_COMPONENTS
@@ -69,9 +68,13 @@ def _group_key(row: Any) -> tuple:
 
 
 def _admitted(rows: Iterable[Any]) -> list[Any]:
-    """The rows the queue may render: the teacher's population by routing and
-    mode (`CT-AGG-06`, `FR-REVIEW-06/-07`), minus the never-rendered origins
-    (`FR-REVIEW-07`), and only work still awaiting it (`CT-REVIEW-05`).
+    """The rows the queue may show: the teacher's population by routing and evaluation mode
+    (CT-AGG-06, FR-REVIEW-06, FR-REVIEW-07), without the origins that are never shown
+    (FR-REVIEW-07), and only work still waiting (CT-REVIEW-05).
+
+    The state is passed through rather than used to filter: `ungradeable_by_panel` rows must be
+    shown differently from ordinary provisional ones (CT-AGG-07), and a state filter would hide
+    them.
 
     The state column rides through to the presentation rather than gating
     admission: `CT-AGG-07` binds consumers to surface ``ungradeable_by_panel``
@@ -93,8 +96,8 @@ def _score_id_of(row: Any) -> str:
 
 
 def _est_seconds_of(row: Any, default: float) -> float:
-    """The row's cost estimate, or the default when it carries none (`FR-REVIEW-16`;
-    a missing or non-positive estimate is missing data, not a free item)."""
+    """The row's review-time estimate, or the default when it has none (FR-REVIEW-16). A missing or
+    non-positive estimate is missing data, not a free item."""
     raw = getattr(row, "est_seconds", None)
     if raw is None:
         return default
@@ -103,9 +106,8 @@ def _est_seconds_of(row: Any, default: float) -> float:
 
 
 def _override_rate_of(row: Any, knobs: Mapping[str, float]) -> float:
-    """The criterion's measured override rate — or the no-data default
-    (`CT-STATS-09`: a criterion nobody has reviewed is not a criterion nobody
-    disagrees with, so no data is not read as a zero)."""
+    """The criterion's measured override rate, or the no-data default (CT-STATS-09): a criterion
+    nobody has reviewed is not one nobody disagrees with."""
     rate = getattr(row, "historical_override_rate", None)
     if rate is None:
         return knobs["override_rate_no_data"]
@@ -113,8 +115,8 @@ def _override_rate_of(row: Any, knobs: Mapping[str, float]) -> float:
 
 
 def _p_error(row: Any, knobs: Mapping[str, float]) -> float:
-    """P(score wrong) from the four observable signals (`FR-REVIEW-03`), equal
-    weights, integrity normalized by its cap. ``self_confidence`` is unread (R22)."""
+    """The chance the score is wrong, from the four observable signals, equally weighted, with
+    integrity divided by its cap (FR-REVIEW-03). `self_confidence` is not used (R22)."""
     integrity = min(
         float(getattr(row, "adverse_integrity_signals", 0) or 0),
         knobs["integrity_signal_cap"],
@@ -129,7 +131,8 @@ def _p_error(row: Any, knobs: Mapping[str, float]) -> float:
 
 
 def _impact_of(row: Any, knobs: Mapping[str, float]) -> float:
-    """The criterion's share of the final grade, weighted by boundary proximity."""
+    """The criterion's share of the final grade, weighted by how close the grade is to a boundary.
+    """
     weight = float(getattr(row, "criterion_weight", 0.0) or 0.0)
     delta = float(getattr(row, "grade_boundary_delta", 0.0) or 0.0)
     proximity = 1.0 / (1.0 + abs(delta) / knobs["boundary_half_width"])
@@ -137,7 +140,8 @@ def _impact_of(row: Any, knobs: Mapping[str, float]) -> float:
 
 
 def _expected_value(row: Any, knobs: Mapping[str, float]) -> float:
-    """`FR-REVIEW-03`'s score: ``(P(score wrong) × impact) / est_seconds``."""
+    """The ranking score: `(chance the score is wrong × impact) / estimated seconds`
+    (FR-REVIEW-03)."""
     est = _est_seconds_of(row, knobs["default_est_seconds"])
     return (_p_error(row, knobs) * _impact_of(row, knobs)) / est
 
@@ -146,9 +150,8 @@ def _expected_value(row: Any, knobs: Mapping[str, float]) -> float:
 
 
 def _itemize(row: Any, knobs: Mapping[str, float]) -> ReviewItem:
-    """One score row as the queue presents it (§3.15's wire shape). The fields
-    the row does not carry stay None/empty: the teacher's view is filled by
-    whoever has the package context, and the queue does not invent one."""
+    """One score row as the queue shows it (design §3.15). Fields the row does not carry stay
+    empty; the queue does not invent package context."""
     return ReviewItem(
         score_id=_score_id_of(row),
         criterion_id=str(getattr(row, "criterion_id", "") or ""),
@@ -179,8 +182,8 @@ def _opt_float(value: Any) -> float | None:
 
 
 def _ranked_rows(rows: Sequence[Any], knobs: Mapping[str, float]) -> list[Any]:
-    """The rows ranked best-first: expected value per review second, holistic
-    first at ties (`FR-AGG-06`), stable otherwise (`NFR-REVIEW-02`)."""
+    """The rows ranked best first by expected value per review second, holistic criteria first on
+    ties (FR-AGG-06), otherwise stable (NFR-REVIEW-02)."""
     return sorted(
         rows,
         key=lambda row: (
@@ -193,11 +196,9 @@ def _ranked_rows(rows: Sequence[Any], knobs: Mapping[str, float]) -> list[Any]:
 def _group_identical(
     ranked_rows: Sequence[Any], knobs: Mapping[str, float]
 ) -> tuple[list[ReviewGroup], list[ReviewItem]]:
-    """Collapse signature-identical rows into group entries (`CT-REVIEW-20`'s
-    exact Phase 1 rule): same criterion, same band, same four integrity
-    signals. Groups form at two or more members; singletons stay per-item
-    entries. Groups rank above per-item entries (`FR-REVIEW-05`) and are
-    ordered among themselves by expected value."""
+    """Collapse rows with identical signatures into groups (CT-REVIEW-20): same criterion, same
+    band, same four integrity signals. A group needs two or more members; single rows stay as
+    items. Groups rank above single items and among themselves by expected value (FR-REVIEW-05)."""
     items = [(_itemize(row, knobs), row) for row in ranked_rows]
     buckets: dict[tuple, list[ReviewItem]] = {}
     signatures: dict[tuple, dict[str, Any]] = {}
@@ -234,11 +235,9 @@ def _group_identical(
 
 
 def _fill_to_budget(entries: Sequence[Any], available_seconds: float) -> list[Any]:
-    """Greedy fill in entry order: take every entry that fits, pass over one
-    that does not, never reorder (`NFR-REVIEW-02`/`-05`). Over a non-empty
-    entry list the queue never shows nothing: when no entry fits, the single
-    top-ranked entry is shown and the residual states the truth (the recorded
-    5-minute interpretation)."""
+    """Fill the budget greedily in ranked order: take every entry that fits, skip one that does
+    not, never reorder (NFR-REVIEW-02, NFR-REVIEW-05). If nothing fits, the top entry is still
+    shown and the residual says so, so a non-empty queue never shows nothing."""
     shown: list[Any] = []
     spent = 0.0
     for entry in entries:
@@ -251,8 +250,7 @@ def _fill_to_budget(entries: Sequence[Any], available_seconds: float) -> list[An
 
 
 def _items_shown_count(shown: Iterable[Any]) -> int:
-    """How many review *items* a shown list covers — a group counts its members
-    (`CT-REVIEW-04`'s arithmetic is about items, not entries)."""
+    """How many review items the shown entries cover; a group counts each member (CT-REVIEW-04)."""
     total = 0
     for entry in shown:
         members = getattr(entry, "members", None)
@@ -264,7 +262,7 @@ def _items_shown_count(shown: Iterable[Any]) -> int:
 
 
 def rank_queue_items(items: Sequence[Any] | None = None, *, criteria: Any = None) -> Any:
-    """The ranking, at both of its declared shapes.
+    """Rank queue items, in either of the two declared forms.
 
     ``items`` (the ``#95 TS-36`` limb): review-queue items carrying
     ``expected_value`` and ``scoring_model`` — ordered best-first, expected
@@ -316,9 +314,9 @@ def rank_queue_items(items: Sequence[Any] | None = None, *, criteria: Any = None
 
 
 def _rank_criteria(criteria: Any) -> tuple[CriterionOverrideRank, ...]:
-    """The criteria form — ``aeh.agg.rank_criteria_for_escalation``'s semantics,
-    mirrored so both consumers answer `CT-STATS-09` the same way: no data
-    first, then override rate descending, ties keeping the caller's order."""
+    """Rank criteria the same way `aeh.agg.rank_criteria_for_escalation` does (CT-STATS-09):
+    no-data criteria first, then by override rate descending, keeping the caller's order on ties.
+    """
     ranks: list[tuple[tuple[int, float], CriterionOverrideRank]] = []
     for criterion_id, payload in dict(criteria).items():
         if isinstance(payload, dict):

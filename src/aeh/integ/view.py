@@ -9,7 +9,8 @@ from .schema import INTEG_STATEMENTS
 
 
 class StoreExtractionView:
-    """The extraction view the gate reads in production (`FR-INTEG-09`).
+    """The gate's production view of a cell's extraction results, read from the store
+    (FR-INTEG-09).
 
     `M-INTEG` publishes it because the five reads ARE this module's declared *Requires*
     surface (`CT-INTEG-17`): `spans`, `second_family_spans`, `regions`, `panel_sufficiency` and
@@ -34,7 +35,7 @@ class StoreExtractionView:
         self._run_id = run_id
 
     def _cell_query(self, key: str, submission_id: str, criterion_id: str) -> list:
-        """One cell read, scoped to this view's run when it has one."""
+        """Read one cell, limited to this view's run when it has one."""
         if self._run_id:
             return list(self._handle.query(
                 INTEG_STATEMENTS[f"{key}_in_run"], run_id=self._run_id,
@@ -46,7 +47,7 @@ class StoreExtractionView:
         ))
 
     def _payloads(self, submission_id: str, criterion_id: str) -> list:
-        """Every extraction payload the cell carries, in `work_id` order.
+        """Every extraction payload stored for the cell, in `work_id` order.
 
         A cell that was re-extracted has more than one, and the last is the current
         one — reading only the first would hand the gate the rejected extraction
@@ -63,12 +64,12 @@ class StoreExtractionView:
         return payloads
 
     def _payload(self, submission_id: str, criterion_id: str) -> dict:
-        """The cell's CURRENT extraction payload — the last one written."""
+        """The cell's current extraction payload: the last one written."""
         payloads = self._payloads(submission_id, criterion_id)
         return payloads[-1] if payloads else {}
 
     def spans(self, submission_id: str, criterion_id: str) -> list:
-        """The cell's extracted spans, as `M-EXTRACT` wrote them.
+        """The cell's extracted spans, as M-EXTRACT wrote them.
 
         Every payload's spans, not just the current one's: a span the gate has already
         verified stays verified, and a re-extraction that dropped it should not make the
@@ -79,15 +80,15 @@ class StoreExtractionView:
         return spans
 
     def second_family_spans(self, submission_id: str, criterion_id: str) -> "list | None":
-        """The second family's spans, or `None` where no second family ran — `None` is
-        "not measured" and the gate reads it as such, never as agreement."""
+        """The second extractor's spans, or None when it did not run. None means not measured, and
+        the gate never reads it as agreement."""
         second = self._payload(submission_id, criterion_id).get("second_family")
         if not isinstance(second, dict) or "spans" not in second:
             return None
         return list(second.get("spans") or ())
 
     def regions(self, document_id: str) -> list:
-        """The document's stored regions, in position order, each carrying its extent.
+        """The document's stored regions in position order, each with its extent.
 
         The gate asks by its own `doc-<submission_id>` spelling; the store's document ids
         are minted (`doc-<uuid12>`), so the request resolves through the submission foreign
@@ -130,8 +131,8 @@ class StoreExtractionView:
         return items
 
     def panel_sufficiency(self, submission_id: str, criterion_id: str) -> tuple:
-        """Each landed verdict's `evidence_sufficient` answer for the cell, in `work_id`
-        order — the panel's own flags, never a computed substitute."""
+        """Each stored verdict's own `evidence_sufficient` answer for the cell, in `work_id` order.
+        """
         return tuple(
             None if row["evidence_sufficient"] is None else bool(row["evidence_sufficient"])
             for row in self._cell_query(
@@ -140,8 +141,7 @@ class StoreExtractionView:
         )
 
     def criterion_requires_citation(self, criterion_id: str) -> bool:
-        """Whether the criterion's declaration requires cited evidence (`M-PKG`'s own
-        reading, read through the catalog rather than re-derived here)."""
+        """Whether the criterion requires cited evidence, as M-PKG's catalog reports it."""
         for row in self._catalog.criteria(self._package_version_id):
             row_id = row["criterion_id"] if isinstance(row, dict) else row.get("criterion_id")
             if str(row_id) == str(criterion_id):

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 
 class _ViolationCounter:
-    """The monotone count of refused §6.2-locked edits (`CT-PKG-16`'s alert signal).
+    """Counts refused edits to locked fields; the count only goes up (CT-PKG-16).
 
     The NAME is contract (`RISK-35`): a rising `schema_lock_violation_count` means a
     caller is attempting something the design forbids, and an alert on a renamed signal
@@ -29,9 +29,8 @@ SCHEMA_LOCK_VIOLATIONS = _ViolationCounter()
 
 
 def schema_lock_violation_count() -> int:
-    """`CT-PKG-16`'s stable-name accessor: §6.2-locked edits refused, monotone over the
-    process lifetime. A rising rate is an alert signal meaning a caller is attempting
-    something the design forbids."""
+    """How many edits to locked fields have been refused in this process (CT-PKG-16). A rising
+    count means some caller is trying something the design forbids."""
     return SCHEMA_LOCK_VIOLATIONS.value
 
 

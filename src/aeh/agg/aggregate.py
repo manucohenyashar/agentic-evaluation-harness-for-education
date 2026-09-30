@@ -24,16 +24,16 @@ from .agreement import ordinal_alpha, _verdict_ordinal
 
 
 def _band_row(row: Any, field_name: str) -> Any:
-    """A band row's field, whether the row is a store mapping (M-PKG's catalog
-    cache) or the declared band value the criterion carries (`CT-PKG-04`)."""
+    """Read one field of a band, whether the band is a store row (from M-PKG's catalog cache) or a
+    band value carried on the criterion (CT-PKG-04)."""
     if isinstance(row, dict):
         return row[field_name]
     return getattr(row, field_name)
 
 
 def _band_by_ordinal(criterion: Any, ordinal: int) -> Any:
-    """The criterion's declared band carrying `ordinal` — bands are unique by
-    ordinal (`CT-PKG-04`: ordered ascending), so the scan is exact."""
+    """The criterion's declared band with this ordinal. Ordinals are unique (CT-PKG-04), so the
+    match is exact."""
     for row in criterion.bands:
         if _band_row(row, "ordinal") == ordinal:
             return row
@@ -43,9 +43,8 @@ def _band_by_ordinal(criterion: Any, ordinal: int) -> Any:
 
 
 def _verdict_cited(verdict: Any) -> bool:
-    """Whether one judge's verdict cites its evidence (§3.12: "uncited verdicts
-    arrive marked" — M-JUDGE marks them, so the absence of a mark is not
-    evidence of absence: an unmarked verdict is read as cited).
+    """Whether a judge's verdict cites its evidence. M-JUDGE marks uncited verdicts, so a verdict
+    without the mark counts as cited (design §3.12).
 
     `cited` is the declared field (the test vocabulary's shape); `cited_spans`
     is the consumer-constructed shape the `#76` file reconciled (an uncited
@@ -62,8 +61,8 @@ def _verdict_cited(verdict: Any) -> bool:
 
 
 def _band_position_prior(ordinal: int, band_count: int) -> float:
-    """§3.12's single-judge base — `prior_for_band_position(band, criterion)` —
-    under the design's one declared property: "extreme bands score higher".
+    """The confidence base for a single judge: a prior that depends only on the band's position,
+    higher for the extreme bands (design §3.12).
 
     The design names the shape and no numbers; this implementation declares them
     (the α-convention precedent, recorded for review): the prior rises linearly
@@ -86,8 +85,8 @@ def _band_position_prior(ordinal: int, band_count: int) -> float:
 
 
 def _confidence_base(verdicts: Sequence[Any], criterion: Any) -> float:
-    """§3.12's base figure: `base = ordinal_alpha(verdicts)` for a panel of
-    three or more judges; the band-position prior for a single judge.
+    """The starting confidence figure: the panel's ordinal alpha for three or more judges, or the
+    band-position prior for a single judge (design §3.12).
 
     The α term is computed **without** the criterion — §3.12's literal form —
     so the base is a property of the panel's own scale. For a panel whose
@@ -114,83 +113,10 @@ def aggregate(
     breaker_tripped: bool = False,
     deterministic_score: Any = None,
 ) -> CriterionScore:
-    """Aggregate a panel's verdicts into one criterion score (`FR-AGG-01/02/03/04`)
-    with its confidence (`FR-AGG-05`, `FR-AGG-13`, `NFR-AGG-04`), its routing
-    and its state (`FR-AGG-07/10/11/12`).
+    """Combine a panel's verdicts into one criterion score (FR-AGG-01..04), with its confidence
+    (FR-AGG-05, FR-AGG-13, NFR-AGG-04), its routing and its state (FR-AGG-07, -10, -11, -12).
 
-    Pure (`CT-AGG-01`): the verdicts, the criterion's declared band set, the
-    integrity signals and the configuration are values; nothing here reads a
-    store, a clock, or any configuration beyond its arguments — `config` is
-    `None` (the module constants above are the production defaults) or a value
-    carrying any of `auto_threshold_atomic`, `auto_threshold_holistic`,
-    `uncited_multiplier`, `holistic_multiplier` and `caps` (a mapping from each
-    of the six signal names to its hard cap; absent it entirely, `AGG_CAP_TABLE`
-    applies).
-
-    The aggregation is the **median band ordinal**, mapped to points exactly
-    once through M-PKG's canonical `points_for_band` (`CT-PKG-05`,
-    `NFR-AGG-02`) — never a mean of bands, never a mean of points, and never a
-    per-judge average (RISK-05).
-
-    The confidence (`FR-AGG-05`, ADR-10) is §3.12's computation in three steps:
-
-    1. **Base** — the panel's own agreement figure (`ordinal_alpha(verdicts)`,
-       criterion-free) for a panel of three or more; the band-position prior
-       for a single judge ("extreme bands score higher").
-    2. **Multipliers** — `× uncited_multiplier` when any verdict is uncited,
-       `× holistic_multiplier` for a holistic criterion. Multipliers shape the
-       base; they never touch a cap.
-    3. **Caps** — each adverse integrity signal's cap is a hard `min` (ADR-10:
-       a cap is a `min`, never a penalty term, so no amount of panel agreement
-       can lift the figure past the worst adverse signal — R19). Fail-closed:
-       `None` ("not measured") is adverse, never favourable, never absent, and
-       binds the same cap as a measured-adverse value (`NFR-INTEG-03`); a
-       signal with no entry in the injected table binds nothing. One cap is
-       conditional (§3.12): `evidence_present` binds only where the criterion
-       requires evidence — read fail-closed when the criterion does not
-       declare the flag.
-
-    Routing and state (`#93`) are assigned **per cause**, in precedence order —
-    breaker, then panel size, then the threshold:
-
-    * `breaker_tripped=True` — the criterion's `M-ORCH` circuit breaker tripped
-      (`CT-ORCH-16`): the score is routed `provisional` and its state is
-      `ungradeable_by_panel`. It is surfaced, never treated as an ordinary
-      provisional, and never auto-accepted — no confidence can lift it.
-    * a single-judge panel — routed `provisional`, state
-      `provisional_unreviewed`: one judge's word awaits its panel
-      (`FR-ORCH-13`'s "scored single-judge provisional"), never auto-accepted.
-    * otherwise — `auto` iff `confidence >= auto_threshold_for(scoring_model)`
-      (§3.12), else `queued`; state `final`.
-
-    The four integrity inputs `FR-AGG-13` records are carried on the score
-    exactly as received, beside the pre-cap base — the fields that make the
-    figure reconstructible from the stored row alone (`recompute_confidence`).
-    `notes` records what this call did, one clause per cause (`FR-AGG-12`'s
-    discard, the single-judge mark, the breaker mark, the pass-through).
-
-    The two marked alternative entries (`#93`):
-
-    * `deterministic_score=` (`FR-AGG-10`) — an M-DET row judged without a
-      panel (`judge_count` 0). It is its own entry and is checked first,
-      because an empty panel is exactly how such a row arrives. The row is
-      **echoed, never re-aggregated**: band, points, ordinal, judge_count,
-      agreement and the recorded signals are carried as received, and
-      `routing`/`state` are taken off the row (`unresolved_selection` arrives
-      routed `triage`), with `auto`/`final` as the fallbacks when a row omits
-      them. A non-empty panel alongside a row is a contradictory call and
-      raises `ValueError`.
-    * `fallback=True` (`FR-AGG-12`) — the one even case with a declared
-      fallback: a panel **left at exactly two** by an unrecoverable judge
-      failure. The second verdict is discarded — never adjudicated between,
-      since a tie broken by rule is a coin flip presented as a judgement
-      (R48) — and the base single-judge band is kept, provisional. Any other
-      even size still raises `EvenPanelError`; an odd panel aggregates
-      normally regardless of the mark.
-
-    An empty panel with no deterministic row raises `EmptyVerdictsError` (a
-    programming error, `CT-AGG-12`); any other even panel raises
-    `EvenPanelError` before any median is taken (`FR-AGG-03`).
+    More detail: `docs/code-notes/agg.md`, section `aggregate.py: aggregate`.
     """
     # The deterministic pass-through (FR-AGG-10) is its own entry and is checked
     # first: an empty panel is exactly how a row judged without a panel arrives,
@@ -390,7 +316,7 @@ def aggregate(
 
 
 def _passthrough_score(row: Any, criterion: Any) -> CriterionScore:
-    """Echo a deterministic M-DET row through as a score (`FR-AGG-10`).
+    """Pass a deterministic M-DET row through unchanged as a score (FR-AGG-10).
 
     The row judged without a panel arrives **already scored** — M-DET mapped the
     band and its mapped value, or left it `NULL` for an unresolved choice — so
@@ -453,7 +379,8 @@ EVEN_PANEL_AFTER_QUARANTINE = "even_panel_after_quarantine"
 def aggregate_even_panel_after_quarantine(
     verdicts: Sequence[Any], criterion: Any, signals: Any, *, config: Any = None,
 ) -> CriterionScore:
-    """The score of a cell an even panel left ungradeable (FR-PIPE-18, CT-PIPE-12, ADR-34).
+    """The score of a cell that an even-sized panel left ungradeable after a judge was quarantined
+    (FR-PIPE-18, CT-PIPE-12, ADR-34).
 
     Quarantine left the widened panel even and its replacement arm was refused (budget or
     breaker). An even panel is never aggregated as one (FR-AGG-03), so the row states what

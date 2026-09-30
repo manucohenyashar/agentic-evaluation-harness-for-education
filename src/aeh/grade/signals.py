@@ -43,10 +43,8 @@ from .service import GradingService
 
 @dataclass(frozen=True)
 class GradeAlert:
-    """One fired grading alert (`TC-GRADE-24`'s alert half): the condition's kind,
-    the run it fired on, how many grades it covers, and a detail line naming the
-    submissions — an alert an operator cannot act on is noise, so the row names its
-    grades, not only their count."""
+    """One fired grading alert (TC-GRADE-24): the kind, the run, how many grades it covers, and a
+    detail line naming the submissions, so an operator can act on it."""
 
     kind: str
     run_id: str
@@ -55,8 +53,8 @@ class GradeAlert:
 
 
 def _signal_store(run_id: str, store: Store | None) -> Store:
-    """The observability accessors' store resolution: explicit, else the registry the
-    service's run resolutions populate, else a refusal that says how to satisfy it."""
+    """The store the signal and alert functions read: the one passed in, else the one the service
+    registered for the run, else a refusal explaining what to do."""
     if store is not None:
         return store
     registered = _GRADE_RUN_STORES.get(run_id)
@@ -72,9 +70,8 @@ def _signal_store(run_id: str, store: Store | None) -> Store:
 def record_grade_signals(
     run_id: str, *, store: Store | None = None
 ) -> dict[str, float]:
-    """The grading stage's signal set (CT-GRADE-18), flushed to the durable
-    `run_metrics` EAV rows (the TC-ORCH-35 write contract, `INSERT OR REPLACE` —
-    re-flushing a run updates its figures in place, never duplicates them):
+    """Write the grading stage's signals (CT-GRADE-18) to the durable `run_metrics` rows. Writing
+    again updates the run's figures in place (insert-or-replace), never duplicates them:
 
     - **grades by state** — one row per state literal (`grades_by_state_incomplete`
       / `..._provisional` / `..._final`), the `CoverageSummary.grades_by_state`
@@ -102,8 +99,7 @@ def record_grade_signals(
 
 
 def _emit_grade_signals(run_id: str, store: Store) -> dict[str, float]:
-    """The signal computation `record_grade_signals` flushes: read the run's current
-    revisions, derive every CT-GRADE-18 figure, write them in one durable
+    """Read the run's current revisions, compute every grading signal, write them in one durable
     transaction, and return what was written."""
     service = GradingService(store)
     run = service._run_row(run_id)
@@ -175,9 +171,8 @@ def _emit_grade_signals(run_id: str, store: Store) -> dict[str, float]:
 def evaluate_grade_alerts(
     run_id: str, *, store: Store | None = None
 ) -> tuple[GradeAlert, ...]:
-    """The grading stage's alert evaluation (`TC-GRADE-24`'s alert half): the
-    conditions that fire over the run's current ledger, each on its own condition
-    (the OBS-05 discipline):
+    """The grading alerts that fire on the run's current ledger (TC-GRADE-24), each checked on its
+    own condition:
 
     - **`incomplete_grades_outstanding`** — current grades still `incomplete` past
       their settlement pressure: the run has completed, or the review window has

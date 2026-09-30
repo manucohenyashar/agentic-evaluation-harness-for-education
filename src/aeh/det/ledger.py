@@ -10,7 +10,7 @@ from .errors import DeterministicError
 
 
 def _declared_mode(criterion: Any) -> str:
-    """One criterion row's declared evaluation mode (`FR-PKG-22`, `FR-ORCH-35`).
+    """The evaluation mode a criterion row declares (FR-PKG-22, FR-ORCH-35).
 
     A row read through this module's own statements always carries the column; the shape
     fallback covers only the in-memory doubles that predate it. `kind` is not a test any
@@ -30,23 +30,20 @@ def _declared_mode(criterion: Any) -> str:
 
 
 def _now() -> str:
-    """The one wall-clock read the audit trail writes, UTC ISO-8601 — the same
-    form `ingest._now` and `orch._now` use, so every recorded_at in the store
-    reads the same way."""
+    """The current time in UTC, ISO-8601: the one clock read the audit trail writes, in the same
+    format M-INGEST and M-ORCH use."""
     return datetime.now(timezone.utc).isoformat()
 
 
 def _newest_run(runs: list[Any]) -> Any:
-    """The cohort's newest run — latest non-null `started_at`, then `run_id` —
-    the run a re-derivation attributes its audit rows to: the one whose grades
-    the correction supersedes."""
+    """The cohort's newest run (latest `started_at`, then `run_id`). A re-derivation attributes its
+    audit rows to this run, whose grades the correction replaces."""
     return max(runs, key=lambda row: (row["started_at"] or "", row["run_id"]))
 
 
 def _cohort_keys_on_filesystem(store: Any) -> tuple[str, ...]:
-    """The default cohort-key discovery, same layout the orchestrator walks:
-    one `cohorts/<cohort_id>.sqlite` file per administration (§3.3). A store
-    that lays the tier out differently injects its own key function."""
+    """The cohort ids found on disk, one `cohorts/<cohort_id>.sqlite` file per administration
+    (design §3.3). A store with a different layout passes its own function."""
     data_dir = getattr(store, "data_dir", None)
     if data_dir is None:
         raise DeterministicError(

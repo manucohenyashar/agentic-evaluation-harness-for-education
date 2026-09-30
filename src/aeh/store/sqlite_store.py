@@ -49,7 +49,8 @@ from .tier_handle import SqliteTierHandle
 
 
 class SqliteStore:
-    """`Store` over a data directory. One file per package, one per cohort, one shared durable.
+    """The store over a data directory: one database file per package, one per cohort, and one
+    shared durable file.
 
     Handles are cached per id, so two calls to `cohort("c-1")` return one handle over one
     connection. That matters more than it looks: `CT-STORE-04` promises readers never observe a
@@ -92,16 +93,16 @@ class SqliteStore:
 
     @property
     def limits(self) -> StoreLimits:
-        """The knob values this store was constructed with. See `StoreLimits`."""
+        """The knob values this store was opened with (see `StoreLimits`)."""
         return self._limits
 
     @property
     def lease_clock_instance(self) -> Any:
-        """This store's `LeaseClock`, or `None`. Set by `lease_clock()`; see why it is cached."""
+        """This store's `LeaseClock`, or None. Set by `lease_clock()`, which caches it here."""
         return self._lease_clock
 
     def attach_lease_clock(self, clock: Any) -> None:
-        """Record the store's one lease clock. Called by `lease_clock()`, not by callers."""
+        """Record the store's lease clock. Called by `lease_clock()`, not by other callers."""
         self._lease_clock = clock
 
     def package_path(self, package_id: str) -> Path:
@@ -115,7 +116,7 @@ class SqliteStore:
 
     @property
     def opened(self) -> tuple[TierOpened, ...]:
-        """One record per database this store has opened, in the order it opened them."""
+        """One record per database this store has opened, in opening order."""
         return tuple(self._opened)
 
     # -- the three handle kinds ------------------------------------------------------------------
@@ -149,7 +150,7 @@ class SqliteStore:
         return handle
 
     def package(self, package_id: str, *, read_only: bool | None = None) -> SqliteTierHandle:
-        """Tier P — one file per package, permanent, no PII by construction.
+        """Tier P: one permanent file per package, holding no personal data.
 
         `read_only=True` is `FR-STORE-13`: an imported package is inspected *before* it is
         trusted, and inspecting it through a writable handle would let the inspection itself
@@ -161,19 +162,19 @@ class SqliteStore:
         )
 
     def cohort(self, cohort_id: str) -> SqliteTierHandle:
-        """Tiers C **and** R — one file, per administration, heavy PII."""
+        """Tiers C and R: one file per administration, holding the students' personal data."""
         return self._handle(
             Tier.COHORT, cohort_id, self.cohort_path(cohort_id), read_only=self._read_only
         )
 
     def durable(self) -> SqliteTierHandle:
-        """Tier D — one shared file, permanent, pseudonymized."""
+        """Tier D: one shared, permanent, pseudonymized file."""
         return self._handle(Tier.DURABLE, "", self.durable_path(), read_only=self._read_only)
 
     # -- the two surfaces later stories fill in ---------------------------------------------------
 
     def blobs(self) -> ContentAddressedBlobStore:
-        """The content-addressed blob directory (`FR-STORE-06`).
+        """The content-addressed blob store (FR-STORE-06).
 
         Cached, so two calls return one store over one directory — the same reason handles are
         cached. It holds no connection and no thread, so this is about identity rather than
@@ -189,54 +190,9 @@ class SqliteStore:
         return self._blobs
 
     def purge_cohort(self, cohort_id: str) -> PurgeReport:
-        """Delete Tiers C and R and `VACUUM` (`FR-STORE-07`, `CT-STORE-10`).
+        """Delete a cohort's Tier C and R data and compact the file (FR-STORE-07, CT-STORE-10).
 
-        Irreversible, and the only operation in this module that deletes student work.
-
-        The precondition is checked **against Tier D, before anything is deleted**:
-        `audit_record`, `label` and `criterion_stats` must each exist, carry the `cohort_id`
-        scoping column, and hold at least one row for this cohort. Any unmet gate raises
-        `PurgePreconditionError` naming every missing promotion, and the cohort file is left
-        byte-for-byte as it was. Inspecting Tier D opens it: on a store whose Tier D never
-        existed this creates the empty, migrated file and then refuses — nothing of the
-        cohort's is touched either way.
-
-        What purge deletes is the **content** of Tiers C and R — every row of every table in
-        the cohort file — inside one transaction with foreign keys deferred to the commit,
-        followed by a `VACUUM` and a truncate checkpoint. The vacuum is why a sentinel
-        embedded in a submission is gone from the file's raw bytes afterward: a `DELETE`
-        alone leaves text recoverable in freed pages, which is the reason the requirement
-        names `VACUUM` — and the checkpoint is why it is gone from the `-wal` too, where the
-        freed pages would otherwise sit until the last connection closed. The file itself
-        remains, empty and migrated — and `schema_version` survives with it, because wiping
-        it would make the next open re-run migration 001 against the surviving tables and
-        leave the file permanently unopenable.
-
-        Around the caller:
-
-        - The cached cohort handle is **closed and evicted first**. Its queued writes are
-          flushed (a flush failure aborts the purge before anything is deleted — rows that
-          could not commit would otherwise land in the emptied file), Windows file locks are
-          released, and no queued write can repopulate the tables after the delete. A handle
-          a caller still holds past this point fails with a raw `sqlite3.ProgrammingError` —
-          declared here rather than discovered there.
-        - Blobs **are** reclaimed (#225): the cohort's hash-shaped references are read
-          inside the transaction, and after the commit every hash no other database in
-          the data directory still holds is unlinked from the content-addressed store —
-          a blob shared with a surviving cohort keeps resolving (test plan §7.4's
-          dedup-vs-purge tension resolves in favor of the survivor), and a blob
-          referenced by nothing loses its student bytes. The count is
-          `PurgeReport.blobs_deleted`.
-        - On a read-only store this raises `ReadOnlyTierError` — a purge is a write by any
-          definition that matters.
-
-        A purge that fails partway (say, `VACUUM` cannot get its temp copy) has already
-        committed its deletes; re-running it completes the vacuum — the tables are empty and
-        the preconditions still hold. One asymmetry #225 makes explicit: if the **blob**
-        phase fails after the commit, re-running cannot finish it — the rows that named the
-        cohort's hashes are gone, so the error names the hash it stopped on and the
-        leftover blob is unreferenced orphan. The scan-before-any-unlink discipline keeps
-        that window as small as a post-commit phase can be.
+        More detail: `docs/code-notes/store.md`, section `sqlite_store.py: SqliteStore.purge_cohort`.
         """
         cohort_id = _validated_component("cohort id", cohort_id)
         if self._read_only:
@@ -430,7 +386,8 @@ class SqliteStore:
         )
 
     def _blob_hashes_referenced_elsewhere(self, purged_path: Path) -> set[str]:
-        """Hash-shaped values any OTHER database in the data directory still holds (#225).
+        """Hash-like values still held by any other database in the data directory, so their blobs
+        are kept.
 
         The blob directory is shared across the whole data directory — the other cohort
         files, the package tier and Tier D — so "shared blob" means referenced from any
@@ -493,7 +450,7 @@ class SqliteStore:
         return referenced
 
     def _purge_precondition_failures(self, cohort_id: str) -> list[str]:
-        """The unmet Tier D promotion gates for `cohort_id`; empty when purge may run.
+        """The Tier D promotion checks this cohort has not yet passed; empty when purge may run.
 
         A gate (`CT-STORE-10`'s three, in its words) passes iff Tier D holds the table, the
         table carries the `cohort_id` scoping column, and the table holds a row for this
@@ -522,7 +479,7 @@ class SqliteStore:
     # -- lifecycle ---------------------------------------------------------------------------------
 
     def close(self) -> None:
-        """Close every handle, then report the first write failure any of them recorded.
+        """Close every handle, then raise the first write failure any of them recorded.
 
         Every handle is closed even if one raises. A store that abandoned the remaining tiers on
         the first bad one would leave open connections behind while reporting the failure, and on
@@ -548,7 +505,7 @@ class SqliteStore:
 
 def open_store(data_dir: Path | str | None = None, *, read_only: bool = False,
                environ: Mapping[str, str] | None = None) -> SqliteStore:
-    """Open the store rooted at `data_dir`, or at `HARNESS_DATA_DIR` when none is given.
+    """Open the store at `data_dir`, or at `HARNESS_DATA_DIR` when none is given.
 
     Positional **and** by keyword, because both forms are already in the suite:
     `open_store(tmp_data_dir)` in `TC-CONF-17` and `FUZZ-07`, `open_store(data_dir=tmp_data_dir)`
@@ -591,7 +548,7 @@ def open_store(data_dir: Path | str | None = None, *, read_only: bool = False,
 
 
 def store_metrics(store: SqliteStore) -> dict[str, Any]:
-    """`CT-STORE-17`'s five signals, the two alerts, and the configured values behind them.
+    """The store's five signals, its two alerts, and the settings behind them (CT-STORE-17).
 
     *"Emits write-queue depth, batch commit latency, database file sizes, free disk space, and
     `VACUUM` duration under those names. Free-disk and queue-depth are alert inputs and their

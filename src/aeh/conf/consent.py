@@ -29,7 +29,8 @@ REMOTE_PROFILES: frozenset[str] = frozenset({"cloud-hosted", "dev-ci"})
 @_typeerror_on_mutation
 @dataclass(frozen=True)
 class ConsentOverride:
-    """The record `FR-CONF-08` requires when real work is sent to a remote provider anyway.
+    """The record kept when real student work is sent to a remote provider by explicit override
+    (FR-CONF-08).
 
     *"the override and its supplier are written to the audit record"* — but `CT-CONF-09` says
     this module writes **nothing**, and `CT-CONF-C02` leaves no free field on `RunConfig`. So
@@ -44,7 +45,8 @@ class ConsentOverride:
 
 
 def consent_override_for(cfg: Mapping[str, Any], cohort: CohortRef) -> ConsentOverride | None:
-    """The audit record for this resolution's consent override, or `None` if none was needed.
+    """The audit record for this configuration's consent override, or None when no override was
+    needed.
 
     `M-ORCH` calls this and writes the result. It shares `_check_consent`'s logic, so a run that
     resolved under an override and the record of that override cannot disagree — two
@@ -69,7 +71,7 @@ def consent_override_for(cfg: Mapping[str, Any], cohort: CohortRef) -> ConsentOv
 def _check_consent(
     cfg: Mapping[str, Any], cohort: CohortRef, backend_profile: Any
 ) -> ConsentOverride | None:
-    """Refuse a remote binding for work that is neither synthetic nor consented.
+    """Refuse a remote provider for work that is neither synthetic nor consented.
 
     RISK-10 is student work leaving the machine without consent, and this is the pre-dispatch
     check ADR-5 added the `consent_class` column for. Fails **closed** twice over: an undeclared

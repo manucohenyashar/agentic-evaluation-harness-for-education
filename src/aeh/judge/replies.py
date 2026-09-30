@@ -22,8 +22,8 @@ from .assembly import _canonical_document_bytes, _pseudonymize
 
 @dataclass(frozen=True)
 class _Verdict:
-    """One parsed judge reply. Internal: the fields the result and the verdict row
-    carry, after the reply's own field order has been checked."""
+    """One parsed judge reply: the fields the result and the verdict row carry, after the reply's
+    field order has been checked."""
 
     cited_spans: tuple
     evidence_assessment: str
@@ -68,9 +68,8 @@ _ASSESSMENT_SPAN_MARKS = re.compile(
 def _references_evidence(
     assessment: str, cited: tuple, request: ScoringRequest
 ) -> bool:
-    """Whether the assessment references spans or band conditions (`FR-JUDGE-10`'s
-    inventory reading): span vocabulary named, a cited span's text quoted, or a
-    declared band's descriptor quoted."""
+    """Whether the assessment refers to the evidence: it names spans, quotes a cited span's text,
+    or quotes a declared band's descriptor (FR-JUDGE-10)."""
     if _ASSESSMENT_SPAN_MARKS.search(assessment):
         return True
     for span in cited:
@@ -84,12 +83,10 @@ def _references_evidence(
 
 
 def _prose_only(assessment: str, cited: tuple, request: ScoringRequest) -> bool:
-    """`FR-JUDGE-10`'s free-evaluative-prose test: the assessment matches the configured
-    magnitude-phrase list AND references no span and no band condition. BOTH arms must
-    hold — prose that names evidence is an inventory even when it also says "good", and
-    an assessment with no magnitude word in it is not evaluative-only prose however
-    vague it is (the gate's rejection is the magnitude vocabulary's, not a general
-    prose ban)."""
+    """Whether the assessment is free evaluative prose (FR-JUDGE-10): it uses a configured
+    magnitude phrase and refers to no span or band condition. Both must hold. Prose that names
+    evidence is fine even if it also says "good", and vague text with no magnitude word is not
+    refused."""
     lowered = assessment.lower()
     return (
         not _references_evidence(assessment, cited, request)
@@ -98,7 +95,7 @@ def _prose_only(assessment: str, cited: tuple, request: ScoringRequest) -> bool:
 
 
 def _verdict_of(text: str, request: ScoringRequest) -> _Verdict:
-    """Parse and VALIDATE one judge reply against the pinned response contract.
+    """Parse one judge reply and check it against the pinned response contract.
 
     The five fields must arrive in `REPLY_FIELDS`' exact order — a re-ordered reply is
     not a format variation, it is a different contract (`FR-JUDGE-09`, `CT-JUDGE-05`) —
@@ -190,9 +187,9 @@ def _verdict_of(text: str, request: ScoringRequest) -> _Verdict:
 
 
 def _verifies_as_pseudonymized(raw: bytes, span: Any, name: Any, ref: Any) -> bool:
-    """A cited span whose text is the document's own bytes with the unit's roster name replaced
-    by its `student_ref` (#593). Assembly rewrites a span's text and keeps its offsets, so a
-    judge or the engine cites the pseudonymized text at the stored offsets.
+    """Whether a cited span's text equals the document's bytes at its offsets with the student's
+    roster name replaced by their pseudonym (#593). Assembly rewrites span text but keeps offsets,
+    so judges cite the pseudonymized text at the stored offsets.
 
     Exact: the stored slice at those offsets, with THIS unit's name replaced by the ref, must
     equal the cited text byte for byte. With no name known (a request this worker did not
@@ -217,11 +214,9 @@ def _verifies_as_pseudonymized(raw: bytes, span: Any, name: Any, ref: Any) -> bo
 def _refuse_unverified_citations(
     cited: tuple, request: ScoringRequest, store: Any, roster_name: Any = None
 ) -> None:
-    """Verify every cited span byte-exactly against the canonical document, and refuse
-    the reply when one fails (`FR-JUDGE-17` acceptance (iv): a forged citation fails
-    span verification; `FR-INTEG-01`'s invariant composed at the judge boundary, per
-    §3.10's consumers — M-JUDGE consumes M-INTEG's pure verifier, it does not re-spell
-    it: `aeh.integ.verify_span` is the one implementation of the shared invariant).
+    """Check every cited span, byte for byte, against the canonical document, and refuse the reply
+    if any fails (FR-JUDGE-17): a forged citation fails. It uses M-INTEG's `verify_span`, the one
+    implementation of this check (FR-INTEG-01).
 
     A reply that cites NOTHING passes vacuously — an uncited verdict is `FR-JUDGE-12`'s
     marked downgrade, not a verification failure. A reply that cites anything cannot
@@ -282,15 +277,14 @@ _AMENDMENT_TEXT = (
 
 
 def _amended_payload(payload: PromptPayload) -> PromptPayload:
-    """The amended render the `FR-JUDGE-10` re-request goes out with: the same pinned
-    field order with the assessment ground-rules correction inserted immediately BEFORE
-    the final field (the submission — `prompt_fields` guarantees it last, and the
-    insertion keeps it last). The amendment is a different fully-assembled request —
-    a different fixture key (`CT-PROV-05`) and a different call in `FR-PROV-06`'s
-    sense, which is what makes the re-request legal where a verbatim replay would be a
-    re-sampled verdict. Because the amendment text is static, the amended render's
-    invariant prefix stays prefix-invariant across the batch (`FR-JUDGE-06`): every
-    judge re-requesting on the same batch inserts the same bytes in the same place."""
+    """The prompt for the re-request after a prose-only assessment (FR-JUDGE-10): the same fields
+    in the same order, with the assessment rules restated just before the final field (the
+    submission, which stays last).
+
+    The amended prompt is a different request with a different fixture key (CT-PROV-05), which is
+    what makes the re-request legal where replaying the same prompt would re-sample a verdict
+    (FR-PROV-06). The added text is fixed, so every judge re-requesting in a batch inserts the same
+    bytes in the same place and the shared prefix is kept (FR-JUDGE-06)."""
     fields = list(payload.fields)
     fields.insert(len(fields) - 1, (_ASSESSMENT_AMENDMENT_FIELD, _AMENDMENT_TEXT))
     return PromptPayload(fields=tuple(fields))

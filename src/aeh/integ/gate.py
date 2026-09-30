@@ -30,7 +30,7 @@ from .signals import (
 
 
 class IntegrityGate:
-    """The verification-and-routing half of M-INTEG (design §3.9's Protocol).
+    """The integrity gate: verifies a cell's evidence and routes the cell (design §3.9).
 
     `handle` is the cohort handle documents and the work ledger are read
     through; `blobs` the content-addressed store a superseded document and a
@@ -62,7 +62,7 @@ class IntegrityGate:
     # -- reads ---------------------------------------------------------------------------------------
 
     def _document_bytes(self, submission_id: str, run_id: str = "") -> "bytes | None":
-        """The submission's canonical document bytes, or None on any fault.
+        """The submission's canonical document bytes, or None if the read fails.
 
         The row's Markdown column is the canonical text when it carries one;
         otherwise the content-addressed blob named by `content_hash` is. The
@@ -111,7 +111,8 @@ class IntegrityGate:
         return raw
 
     def _cache_document(self, run_id: str, content_hash: str, raw: bytes) -> None:
-        """Hold one verified document, evicting the least recently used past the bound."""
+        """Keep one verified document in the cache, dropping the least recently used one when the
+        cache is full."""
         limit = _document_cache_entries()
         cache = self._document_cache
         cache[(run_id, content_hash)] = raw
@@ -120,7 +121,7 @@ class IntegrityGate:
             cache.popitem(last=False)
 
     def _spans(self, submission_id: str, criterion_id: str) -> "list[tuple[int, int, bytes]] | None":
-        """The extraction's spans for the cell, or None when the read faults."""
+        """The cell's extracted spans, or None if the read fails."""
         try:
             return _span_items(self._view.spans(submission_id, criterion_id))
         except Exception:
@@ -133,8 +134,8 @@ class IntegrityGate:
             return None
 
     def _panel_flags(self, submission_id: str, criterion_id: str) -> "tuple[bool, ...] | None":
-        """Per-judge sufficiency flags, or None when the read faults or the
-        answer is not a sequence of plain booleans."""
+        """Each judge's sufficiency flag, or None if the read fails or the answer is not a list of
+        plain booleans."""
         try:
             panel = self._view.panel_sufficiency(submission_id, criterion_id)
             flags = getattr(panel, "evidence_sufficient", None)
@@ -149,8 +150,8 @@ class IntegrityGate:
         return None
 
     def _requires_citation(self, criterion_id: str) -> bool:
-        """Whether the criterion's evidence type requires a citation — True on
-        any fault, the routing-conservative reading (FR-INTEG-03)."""
+        """Whether the criterion's evidence type requires a citation. A failed read counts as True,
+        the cautious choice for routing (FR-INTEG-03)."""
         try:
             value = self._view.criterion_requires_citation(criterion_id)
         except Exception:
@@ -166,11 +167,10 @@ class IntegrityGate:
     def _max_pending_attempts(
         self, run_id: str, submission_id: str, criterion_id: str,
     ) -> "int | None":
-        """The highest attempt count among the cell's live extract units, read
-        BEFORE this verify's bump — the repeat detector behind route 3's
-        escalation half. A read fault returns None, which suppresses the
-        escalation rather than firing it (the escalation is a widening, not a
-        safety action; its trigger must be measured, not assumed)."""
+        """The highest attempt count among the cell's live extraction units, read before this
+        verification adds one; route 3 uses it to detect repeats. A failed read returns None, which
+        suppresses the escalation: widening a panel is not a safety action, so its trigger must be
+        measured, not assumed."""
         try:
             rows = self._handle.query(
                 INTEG_STATEMENTS["max_retry_attempts"],
@@ -192,8 +192,8 @@ class IntegrityGate:
         criterion_id: str,
         panel_flags: "tuple[bool, ...] | None",
     ) -> bool:
-        """The REPORTED sufficiency flag: conservative while the cell is
-        unjudged, computed once verdicts exist.
+        """The sufficiency flag to report: cautious while the cell has no verdicts, computed once
+        it has.
 
         Until the cell carries BOTH work units and verdict rows, a panel read
         cannot be believed either way — the flags describe judges who have not
@@ -227,7 +227,7 @@ class IntegrityGate:
     # -- the durable metrics surface (opened lazily, cached per gate) --------------------------------
 
     def _metrics_target(self) -> Any:
-        """The durable handle the per-cell rates are written through.
+        """The durable handle the per-cell rates are written to.
 
         The cohort file lives under the store's `cohorts/` directory, so the
         file this handle's own connection has open names the data directory two
@@ -275,7 +275,7 @@ class IntegrityGate:
         disagreement: "bool | None",
         failure_value: float,
     ) -> None:
-        """Emit all six per-cell rates for this cell — latest value wins.
+        """Write all six per-cell rates for this cell; the latest value wins.
 
         The keys below are the SIGNAL names, zipped positionally against
         `INTEG_RATE_METRICS`: declared write set and emission order in one
@@ -340,7 +340,8 @@ class IntegrityGate:
     def _panel_state(
         self, run_id: str, submission_id: str, criterion_id: str
     ) -> str | None:
-        """The cell's panel state (`FR-INTEG-10`): its terminal extract and score `work_id`s.
+        """The cell's panel state: the `work_id`s of its finished extraction and scoring units
+        (FR-INTEG-10).
 
         A string rather than a count, because the question is "has the evidence MOVED", and
         two units finishing while two others were requeued is not the same panel. A faulted
@@ -359,7 +360,7 @@ class IntegrityGate:
     def _already_routed(
         self, run_id: str, submission_id: str, criterion_id: str, panel_state: str | None
     ) -> bool:
-        """Whether this cell was already routed on exactly this panel state."""
+        """Whether this cell was already routed for exactly this panel state."""
         if panel_state is None:
             return False
         key = (run_id, submission_id, criterion_id)
@@ -385,7 +386,7 @@ class IntegrityGate:
     def _record_routed(
         self, run_id: str, submission_id: str, criterion_id: str, panel_state: str | None
     ) -> None:
-        """Record the panel state this cell was routed on, in `cell_phase`.
+        """Record, in `cell_phase`, the panel state this cell was routed on.
 
         Best-effort, deliberately: a gate that cannot write the phase keeps the record in
         memory for this instance and re-routes after a restart. Re-routing costs a retry;
@@ -410,7 +411,7 @@ class IntegrityGate:
             return
 
     def verify(self, run_id: str, submission_id: str, criterion_id: str) -> IntegritySignals:
-        """Re-derive the six signals for one cell, route on them, emit the rates.
+        """Recompute the six signals for one cell, route the cell on them, and write the rates.
 
         Every read is fault-injected (a raising view method, a malformed
         payload, a missing document) and every fault lands on the adverse
@@ -589,8 +590,8 @@ class IntegrityGate:
         )
 
     def verify_span(self, doc: Any, span: Any) -> bool:
-        """The Protocol's second member (design §3.9's `IntegrityGate`), the
-        pure verifier as a method of the gate that holds the store seams.
+        """`verify_span` as a method of the gate, the second member of the design's `IntegrityGate`
+        interface (§3.9).
 
         A pure delegation to the module-level `verify_span`: the rung-0 cases
         (TC-INTEG-01/09, FUZZ-03) call the function because they have no gate to

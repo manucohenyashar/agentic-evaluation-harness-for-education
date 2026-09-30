@@ -11,7 +11,7 @@ from typing import Any
 
 @dataclass(frozen=True)
 class CriterionScore:
-    """One aggregated criterion score — the value §3.14's `apply_policy` consumes.
+    """One aggregated criterion score: the value M-GRADE's `apply_policy` reads (design §3.14).
 
     The shipped `criterion_score` columns (det migration v9: band, points,
     judge_count, agreement, state, routing) plus `FR-AGG-01`'s recorded modal band

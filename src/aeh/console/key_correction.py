@@ -16,36 +16,12 @@ class KeyCorrectionMixin:
     def _correct_answer_key(
         self, cohort_key: str, run_id: str, criterion_id: str, raw_key: Any
     ) -> tuple[str, bool]:
-        """S12's correction control as rows on a real store (`FR-CONSOLE-30`, §3.19's
-        first half). The sequence is M-PKG's, M-DET's and M-GRADE's, driven through
-        their landed APIs — the console reimplements none of it:
+        """Screen S12's answer-key correction on a real store (FR-CONSOLE-30, §3.19). The steps
+        belong to M-PKG, M-DET and M-GRADE and are called through their APIs; the console
+        reimplements none of them:
 
-        1. the run row names the cohort, package and version the grades were produced
-           against. The GRAIN pre-checks run before any write — a re-derivation is
-           cohort-grain (M-DET re-derives the criterion's scores for the whole cohort and
-           attributes its audit rows to the cohort's NEWEST run), so a cohort whose runs
-           name several packages, or a correction naming a run that is not that newest
-           one, refuses honestly and writes nothing, rather than minting a version and
-           then refusing (CT-CONSOLE-03's never-partially-applied rule) or filing the
-           trail under a run whose grades it did not supersede. A criterion the version
-           does not carry, a criterion that is not a multiple-choice one (its scores are
-           panel outputs, not key lookups), or a key already equal to the stored one also
-           refuses honestly and writes nothing;
-        2. the correction is a NEW package version (`FR-PKG-18`): the parent is
-           copied verbatim, the corrected key lands on the unlocked child, and the
-           parent — and every audit record that resolves to it — stays exact;
-        3. `M-DET` re-derives the affected deterministic scores BY LOOKUP against the
-           corrected key (`rederive_for_key_change`) — no panel work anywhere: the
-           report's `panel_units_enqueued` is a declared zero, and the detail below
-           prints it, because a correction that quietly asked a panel to re-judge
-           would be the exact violation the clause forbids;
-        4. the run re-points to the corrected version and M-GRADE re-runs the grade
-           policy over the run (`compute_all`), so the settled grades are re-derived
-           from the corrected scores.
-
-        The run re-point is TC-GRADE-12's disclosed stand-in: M-ORCH owns the run row
-        and no landed API re-points it, so the console writes the one column the
-        correction owes — and retires the site to M-ORCH's call when that lands."""
+        More detail: `docs/code-notes/console.md`, section `key_correction.py: KeyCorrectionMixin._correct_answer_key`.
+        """
         key_ids = (
             [str(raw_key)] if isinstance(raw_key, str) else [str(option) for option in raw_key]
         )

@@ -55,7 +55,7 @@ from .backends import (
 
 @dataclasses.dataclass(frozen=True)
 class IngestOutcome:
-    """What ingesting one fixture did — the per-gate trace next to the status (seam 4).
+    """What ingesting one fixture did: the per-gate trace next to the status.
 
     `quarantined_at` names the FIRST gate that failed, in the ladder's order, as the gate's
     report key upper-cased (`V0`): the malicious-PDF clause (`FR-CONFORM-09`) is about the first
@@ -71,7 +71,8 @@ class IngestOutcome:
 
 
 class ConformanceSuite:
-    """The suite surface design §3.18 declares: a run, a comparison, and the fixture seam.
+    """The conformance suite (design §3.18): run the fixture set on every backend, compare the
+    results, and access the fixtures.
 
     Built by `build_conformance_suite(provider=...)`. `provider` is the deterministic transport
     the transcription stage dispatches through (`CT-PROV-10`): the suite never opens a socket
@@ -86,7 +87,7 @@ class ConformanceSuite:
     # -- CT-CONFORM-10: the consent boundary ------------------------------------------------------
 
     def _enforce_consent(self, backend_config: Mapping[str, Any], cohort: Any) -> None:
-        """The consent decision, delegated whole to `M-CONF` (`CT-CONFORM-10`).
+        """Leave the consent decision entirely to M-CONF (CT-CONFORM-10).
 
         `aeh.conf.consent_override_for` is the one implementation of the rule — this module
         calls it and reports the refusal under its own exception name. A second copy of the
@@ -109,7 +110,7 @@ class ConformanceSuite:
         cohort: Any,
         tier: str | None = None,
     ) -> Any:
-        """Run the identical fixture set through the full pipeline on every backend.
+        """Run the same fixture set through the full pipeline on every backend.
 
         The consent gate is the surface and it is live: every backend config is checked against
         the cohort through `M-CONF` before anything else happens, and a cohort not so flagged is
@@ -257,7 +258,7 @@ class ConformanceSuite:
         return report
 
     def compare(self, a: Any, b: Any) -> Any:
-        """The divergence comparison — design §3.18's Protocol, as `CT-CONFORM-04` reads it.
+        """Compare two backends dimension by dimension (design §3.18, CT-CONFORM-04).
 
         Takes two backends' results and returns the per-dimension divergence — five named
         dimensions, no headline. Induced dimensions active at the call drive their values, so
@@ -274,7 +275,7 @@ class ConformanceSuite:
         provider: Any | None = None,
         transcriber: Any | None = None,
     ) -> IngestOutcome:
-        """Ingest one fixture through the real pipeline on an ephemeral store.
+        """Ingest one fixture through the real pipeline on a temporary store.
 
         The fixture's bytes are materialized (committed files for the file-backed corpora; the
         generator's output, digest-verified, for the malicious PDFs) and run through the landed
@@ -289,7 +290,7 @@ class ConformanceSuite:
         the suite's injected provider and the fixture transcriber.
 
         The declared refusal world's knobs (the strip knob and the decompressed-bytes ceiling —
-        see the module docstring) are held for the ingest: the adversarial tier's contract
+        see `docs/code-notes/conform.md`) are held for the ingest: the adversarial tier's contract
         is *quarantine*, and SEC-05's fork is the declared choice between stripping and
         refusing. The caller's values are restored afterwards.
 
@@ -384,7 +385,7 @@ class ConformanceSuite:
 
 
 def _ingest_with_refusal_world(ingestor: Any, blob_hashes: Sequence[str], filename: str) -> Any:
-    """Run the ingest with the declared refusal world's knobs held, restoring them after.
+    """Run the ingest with the refusal scenario's knobs set, restoring them afterwards.
 
     The adversarial tier's declared reading (SEC-05's other half): an active construct
     **quarantines** and reaches no model call, rather than being stripped and processed. Two
@@ -393,7 +394,7 @@ def _ingest_with_refusal_world(ingestor: Any, blob_hashes: Sequence[str], filena
     (`MAX_DECOMPRESSED_BYTES_ENV`). The strip knob alone does not refuse the decompression
     bomb: it carries no active content, so at M-INGEST's 512 MiB production default it
     passes V0, is rasterized, and is transcribed — three model calls, quarantine at V1, the
-    exact failure the first-pass review caught (see the module docstring). The ceiling rides
+    exact failure the first-pass review caught (see `docs/code-notes/conform.md`). The ceiling rides
     alongside at the value the declaration supports, and both are restored to whatever the
     caller had, so a run never leaks the refusal world into a pipeline that did not ask
     for it.
@@ -423,10 +424,9 @@ def _ingest_with_refusal_world(ingestor: Any, blob_hashes: Sequence[str], filena
 
 
 def _first_refused_gate(gates: Mapping[str, str]) -> str | None:
-    """The first gate in the ladder whose value is one M-INGEST declares a refusal —
-    `V0` for the malicious-PDF clause, `None` when every gate passed. The failing
-    values are M-INGEST's fact (`GATE_FAIL_VALUES`), read from it rather than
-    restated here."""
+    """The first gate in the ladder whose value M-INGEST counts as a refusal (`V0` for a malicious
+    PDF), or None when every gate passed. The failing values come from M-INGEST
+    (`GATE_FAIL_VALUES`), not from a copy here."""
     from aeh.ingest import GATE_FAIL_VALUES
 
     for gate in _GATE_ORDER:
@@ -436,7 +436,7 @@ def _first_refused_gate(gates: Mapping[str, str]) -> str | None:
 
 
 def _markdown_pages(text: str) -> list[str]:
-    """The printed pages of a Markdown fixture, split on the page markers the corpora carry.
+    """The printed pages of a Markdown fixture, split on the corpora's page markers.
 
     The marker line itself is dropped — the typed rendering re-prints each page's own header
     line ("Page N of M - id"), which is the assembly source the ingest ladder reads.
@@ -450,8 +450,8 @@ def _markdown_pages(text: str) -> list[str]:
 
 
 def build_conformance_suite(provider: Any | None = None) -> ConformanceSuite:
-    """The headless entry to the conformance surface: a suite that runs from code, with the
-    deterministic transport injected (`CT-PROV-10`).
+    """Build a conformance suite that runs from code, with the deterministic transport injected
+    (CT-PROV-10).
 
     `provider=None` is legal and useful for the refusal half of the surface — the consent gate
     is checked before any provider could be touched, so `run` refuses unconsented work without
@@ -465,7 +465,7 @@ def build_conformance_suite(provider: Any | None = None) -> ConformanceSuite:
 
 
 def _quarantined_pdf_outcome(submission: FixtureSubmission) -> IngestOutcome:
-    """The real ladder's verdict for one malicious PDF, memoized per content digest.
+    """The real ingest ladder's verdict on one malicious PDF, cached per content digest.
 
     `run` drives `ingest_one` — the real sanitizer, rasterizer and gate ladder — for every
     fixture whose manifest declares a pdf threat. The outcome is provider-independent (the
@@ -489,7 +489,7 @@ def _ladder_outcome(
     transcriber: Any = None,
     memoize: bool,
 ) -> IngestOutcome:
-    """The real ladder's outcome for one text fixture on one backend, driven once.
+    """The real ingest ladder's outcome for one text fixture on one backend, computed once.
 
     `ingest_one` IS the ingest stage's real machinery — sanitizer, rasterizer and the
     transcription dispatch through the drive suite's provider (`FR-CONFORM-04`'s no-stubs
@@ -519,7 +519,8 @@ def _run_backend(
     backend_config: Mapping[str, Any],
     bands_by_id: Mapping[str, Mapping[str, str]],
 ) -> BackendResult:
-    """One backend's pass over the identical set: verify, stage, derive, compare-ready."""
+    """One backend's pass over the fixture set: check the fixtures, stage them, replay the
+    judgments and prepare the figures for comparison."""
     started = time.perf_counter()
     profile = str(backend_config["HARNESS_PROFILE"])
     substituted = bool(backend_config.get(_SUBSTITUTION_MARKER))

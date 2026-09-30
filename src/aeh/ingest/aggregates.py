@@ -11,43 +11,13 @@ class RunAggregatesMixin:
     """Computes the cohort's run-level ingestion signals."""
 
     def run_aggregates(self, cohort_id: str) -> RunAggregates:
-        """The cohort's run-level aggregates (`CT-INGEST-19`, OBS-01) — #222's
-        F3/G4 emitter, the single path that produces every signal the report
-        surface names. Each is computed from the STORED rows (the same rows a
-        consumer could read), never from in-memory state: the per-gate pass
-        counts over raw rows are honest exactly because the F4 fix made an
-        unreached gate record `not_reached` — counting over raw rows equals
-        counting over construction-known reachability.
+        """The cohort's run-level ingestion signals (CT-INGEST-19, OBS-01), computed in this one
+        place. Every figure comes from the stored rows a consumer could read, never from memory.
+        Counting gate passes over raw rows is accurate because a gate that was never reached
+        records `not_reached`.
 
-        Signal definitions (each also stated in `basis`, with its denominator):
-
-        - `ocr_failure_rate`: submissions whose V0 or V1 gate failed, over all
-          submissions — the file/OCR pipeline failed to deliver a usable
-          transcript (remedy: re-scan/re-ingest). V2–V4's remedies differ,
-          which is the clause's reason the rates are separate signals.
-        - `unresolved_mark_rate`: selection-mark regions whose
-          `selection_state` is not `resolved`, over all selection-mark regions
-          (remedy: operator reading — CT-INGEST-05).
-        - `pages_with_text_layer`: the count over the cohort's submission
-          documents; 0 with no documents is the honest zero (a count, not a
-          rate).
-        - `mean`/`max_text_layer_divergence`: over the documents that carry a
-          measurement (each recorded value is that document's per-page
-          maximum, F6); None when none measured.
-        - `gate_pass_counts`/`gate_fail_counts`: per gate over the five
-          columns under `GATE_PASS_VALUES`/`GATE_FAIL_VALUES`;
-          `not_reached`/`not_run` count in neither.
-        - `quarantine_counts_by_gate`: each quarantined row attributed to the
-          FIRST failing gate in ladder order (the C19 derivation: a
-          quarantined row names exactly one failing gate). A quarantined row
-          that names none counts under `unattributed` — surfaced, never
-          folded away.
-        - `second_pass_disagreement_rate`: second-described regions whose two
-          descriptions disagree on a load-bearing fact or fall under the content
-          floor (`description_disagreement`, FR-INGEST-14), over second-described
-          regions; None when no region carries a second description, so a zero
-          would lie. Failed second calls carry no second description and are not
-          in this rate — they are in each document's `second_description_pass`."""
+        More detail: `docs/code-notes/ingest.md`, section `aggregates.py: RunAggregatesMixin.run_aggregates`.
+        """
         gate_rows = self._handle.query(
             INGEST_STATEMENTS["select_cohort_gate_rows"], cohort_id=cohort_id)
         documents = self._handle.query(

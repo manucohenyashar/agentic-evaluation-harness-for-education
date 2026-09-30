@@ -49,7 +49,8 @@ _WRITTEN_SIGNAL_FIELDS: tuple[str, ...] = ("described_evidence", "extractor_disa
 
 
 def _signal_adverse(value: Any, favourable: bool) -> bool:
-    """Whether one integrity signal's value is adverse (fail-closed, §3.12).
+    """Whether one integrity signal's value is adverse. Unknown values count as adverse (design
+    §3.12).
 
     `None` means "not measured" — no second extraction ran, the span check did
     not fire — and is adverse, never favourable and never absent (CT-INTEG-02's
@@ -64,7 +65,7 @@ def _signal_adverse(value: Any, favourable: bool) -> bool:
 
 
 def adverse_signal_count(row: Any) -> int:
-    """How many of the row's stored integrity signals read adverse (`FR-REVIEW-18`).
+    """How many of a score row's stored integrity signals are adverse (FR-REVIEW-18).
 
     M-REVIEW's ranking input, computed HERE because the polarity that makes a signal
     adverse is declared here once (`_AGG_FAVOURABLE`) and a second copy in the ranker
@@ -91,7 +92,7 @@ def adverse_signal_count(row: Any) -> int:
 
 
 def _row_value(row: Any, field: str) -> Any:
-    """A tolerant read of one field off a stored score row.
+    """Read one field of a stored score row, whatever shape the row has.
 
     `row` is the stored `criterion_score` mapping — a `sqlite3.Row`, a `dict`,
     or a dataclass; the accessor is whichever the row answers to. A missing
@@ -109,7 +110,7 @@ def _row_value(row: Any, field: str) -> Any:
 
 
 def _stored_signal(value: Any) -> int | None:
-    """One integrity signal as the row stores it: 0/1, or `NULL` for "not measured"."""
+    """An integrity signal as the row stores it: 0 or 1, or NULL for "not measured"."""
     return None if value is None else int(bool(value))
 
 
@@ -137,7 +138,8 @@ _AGG_ABSENT = object()
 
 
 def _row_field(row: Any, field: str) -> Any:
-    """A tolerant read that distinguishes absent from `None` (see `_AGG_ABSENT`).
+    """Read one field of a row, telling a missing field apart from a field that holds None (see
+    `_AGG_ABSENT`).
 
     The same accessor forms `_row_value` accepts — a mapping, a `sqlite3.Row`,
     an object — returning the `_AGG_ABSENT` sentinel where `_row_value` would

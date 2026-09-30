@@ -18,10 +18,10 @@ class SetupScreensMixin:
     # -- S3/S4/S5: setup -----------------------------------------------------------------------------
 
     def _inventory_target(self, params: dict[str, Any], queries: list[str]) -> Any:
-        """The package S3 confirms (#599): `package_id` names it, or a run id names the run's
-        own package and version. Returns `(catalog, package_id, version_or_None)`; `(None,
-        package_id, None)` when a package is addressed but its file does not exist (a render
-        never creates one); or None when nothing is addressed."""
+        """The package screen S3 confirms (#599): named by `package_id`, or by a run id (the run's
+        package and version). Returns `(catalog, package_id, version_or_None)`; `(None, package_id,
+        None)` when the package's file does not exist (showing a screen never creates one); or None
+        when nothing is named."""
         data_dir = getattr(self._store, "data_dir", None)
         if data_dir is None:
             return None
@@ -114,8 +114,8 @@ class SetupScreensMixin:
         )
 
     def _inventory_unread(self) -> str:
-        """S3 when the package could not be read just now (locked, busy): FR-CONSOLE-37 skips
-        and counts the ledger, and the screen shows no count rather than a wrong one."""
+        """Screen S3 when the package could not be read right now (locked or busy): the screen
+        shows no count rather than a wrong one, and the skipped read is counted (FR-CONSOLE-37)."""
         self._skipped_ledgers += 1
         return _section(
             "blocking",

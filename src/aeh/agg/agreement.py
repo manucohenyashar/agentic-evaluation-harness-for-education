@@ -6,52 +6,10 @@ from typing import Any, Sequence
 
 
 def ordinal_alpha(verdicts: Sequence[Any], criterion: Any = None) -> float | None:
-    """Krippendorff's α with the **ordinal metric** (`FR-AGG-04`, `CT-AGG-04`).
+    """Krippendorff's alpha with the ordinal metric, over the panel's band ordinals (FR-AGG-04,
+    CT-AGG-04).
 
-    The design requires the ordinal metric but records a `TBD`: the textbook
-    coincidence-matrix α is degenerate here, because a criterion's panel is a
-    **single unit** — over one unit, observed and expected disagreement are the
-    same pair population, so the textbook α collapses to 0 for any disagreeing
-    panel and 1 for a unanimous one, under *any* per-pair distance. No convention
-    built on the observed marginal alone can satisfy the plan's requirement that
-    adjacent-band disagreement score **higher** than distant disagreement at
-    equal raw agreement. The convention this module commits to is the one that
-    can, and it is the one `tests/unit/agg/test_ordinal_alpha.py` pins by hand:
-
-        alpha  = 1 - D_o / D_e
-        D_o    = mean pairwise distance among the panel's valuations
-        delta  = |i - j| / (K - 1)     over the criterion's *declared* band scale
-        D_e    = mean pairwise distance over all ordered pairs of distinct
-                 declared bands
-
-    `D_e` is a property of the criterion alone, so two panels of equal raw
-    agreement differ only through `D_o` — which is exactly the differential the
-    requirement is: a `[B0, B1, B1, B1, B2]` panel and a `[B0, B1, B1, B1, B3]`
-    panel agree at the same raw rate (3 of 5 modal, three agreeing and seven
-    disagreeing pairs of ten) and score 0.52 against 0.28 on the four-band scale.
-
-    Returns `None` where α is **undefined** rather than a substitute number
-    (`CT-AGG-04`): fewer than two verdicts (no pairs), or a scale with fewer than
-    two declared bands carrying actual disagreement (`D_e` would be zero). A
-    unanimous panel is *defined*, not degenerate-by-absence: D_o = 0 gives α = 1
-    exactly — including the two-band case, where the design's `TBD` pins α = 1
-    **by construction** (`TC-AGG-19`) and the score carries
-    `agreement_degenerate` so no consumer renders that 1 as if it were
-    information (`CT-AGG-17`) — and including the criterion-free call on a panel
-    whose valuations all sit at one ordinal, where the inferred scale is one
-    band and unanimity is still defined.
-
-    When `criterion` is omitted the declared scale is inferred from the panel's
-    own highest ordinal (`K = max(ordinal) + 1`) — the reading a caller can take
-    holding nothing but the verdicts. `aggregate` always passes the criterion, so
-    every score row's agreement is computed on the full declared scale.
-
-    The convention bounds nothing below: unlike `aggregate`, this function does
-    not refuse an even panel, and a panel spread across the full scale (or using
-    ordinals outside any declared scale) can score below −1. Only the
-    fewer-than-two and one-band cases are `None`; callers needing a figure from
-    a legal panel should route through `aggregate`, whose odd panels stay within
-    the familiar range on a declared scale.
+    More detail: `docs/code-notes/agg.md`, section `agreement.py: ordinal_alpha`.
     """
     if len(verdicts) < 2:
         return None
@@ -99,9 +57,8 @@ def ordinal_alpha(verdicts: Sequence[Any], criterion: Any = None) -> float | Non
 
 
 def _verdict_ordinal(verdict: Any) -> int:
-    """One judge's band ordinal (`CT-JUDGE`: each judge names a declared band with
-    an ordinal, and carries no mapped value of its own — M-JUDGE validated it
-    before here)."""
+    """The ordinal of the band one judge chose. M-JUDGE has already checked that it names a
+    declared band."""
     return int(verdict.ordinal)
 
 
@@ -109,7 +66,7 @@ def _verdict_ordinal(verdict: Any) -> int:
 
 
 def describe_agreement(figure: Any, population: str) -> str:
-    """The module's own description of an agreement figure (`CT-STATS-21`).
+    """How M-AGG describes an agreement figure in words (CT-STATS-21).
 
     M-AGG is one of the consumers the clause binds: a two-band criterion's α is
     **degenerate** — the ordinal and nominal metrics coincide there, so a

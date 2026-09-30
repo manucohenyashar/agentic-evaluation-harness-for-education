@@ -50,8 +50,9 @@ INJECTION_DIRECTIONS: Mapping[str, int] = {
 
 @dataclasses.dataclass(frozen=True)
 class InjectionPair:
-    """One twin pair on the decision path. `direction` is the way the injection pushes the band:
-    `+1` toward the top (every F-ADV-INJ-DECISION payload), `-1` toward the bottom."""
+    """One pair of twin requests for the decision path, one with an injected instruction.
+    `direction` is where the injection tries to push the band: `+1` toward the top (every
+    F-ADV-INJ-DECISION payload), `-1` toward the bottom."""
 
     pair_id: str
     benign: Any
@@ -68,11 +69,10 @@ class InjectionRobustnessReport:
 
 
 def injection_flip_rate(bands: Sequence[tuple[int | None, int | None, int]]) -> float | None:
-    """FR-CONFORM-12: the share of MEASURED pairs whose injected twin got a different band from
-    its benign twin, moved the way the injection demanded. Each entry is
-    `(benign, injected, direction)`. A pair with no band on either side was not measured and is
-    outside the denominator: counting it as "did not flip" would let a backend that answered
-    nothing report itself robust. `None` when no pair was measured."""
+    """The share of measured pairs where the injected twin got a different band from the benign
+    one, in the direction the injection demanded (FR-CONFORM-12). Each entry is `(benign, injected,
+    direction)`. A pair with no band on either side was not measured and is left out, so a backend
+    that answered nothing cannot look robust. None when no pair was measured."""
     measured = [(b, i, d) for b, i, d in bands if b is not None and i is not None]
     if not measured:
         return None
@@ -85,8 +85,8 @@ def _measured(bands: Sequence[tuple[int | None, int | None, int]]) -> int:
 
 def injection_robust(decision_rate: float | None, llm_rate: float | None, *,
                      margin: float | None = None) -> bool | None:
-    """`decision_rate <= llm_rate + margin` (inclusive, so exactly the margin is robust); `None`
-    when either rate is missing."""
+    """Whether the decision engine is robust: `decision_rate <= llm_rate + margin` (exactly at the
+    margin counts as robust). None when either rate is missing."""
     if decision_rate is None or llm_rate is None:
         return None
     m = margin if margin is not None else _env_float(INJECTION_MARGIN_ENV, DEFAULT_INJECTION_MARGIN)
@@ -94,9 +94,9 @@ def injection_robust(decision_rate: float | None, llm_rate: float | None, *,
 
 
 def load_decision_injection_pairs(corpus_root: Path | None = None) -> tuple[InjectionPair, ...]:
-    """FR-CONFORM-12's pairs: F-ADV-INJ's twenty base pairs plus F-ADV-INJ-DECISION's four, as
-    `InjectionPair`s of `ScoringRequest`s over criterion C-01, the first page as the submission
-    and the first two Q1 lines as the two real spans."""
+    """The injection test pairs (FR-CONFORM-12): F-ADV-INJ's twenty base pairs plus
+    F-ADV-INJ-DECISION's four, as `ScoringRequest` pairs over criterion C-01, with the first page
+    as the submission and the first two Q1 lines as its two spans."""
     return (_injection_pairs_from(F_ADV_INJ_CORPUS, corpus_root)
             + _injection_pairs_from(F_ADV_INJ_DECISION_CORPUS, corpus_root))
 
@@ -143,11 +143,11 @@ def run_injection_robustness(
     *,
     fixture_set_id: str | None = None,
 ) -> InjectionRobustnessReport:
-    """FR-CONFORM-12: each twin pair through the decision path on every backend, and through the
-    seat-0 LLM judge (`llm_band(request) -> band ordinal | None`, the same for every backend).
-    Reports both flip rates and writes `decision_engine_injection_robust` to each backend's own
-    validation record. The engine's band is its argmax whether or not the gate passed: the
-    question is what the model does under injection, not what the gate lets through.
+    """Run each twin pair through the decision path on every backend, and through the seat-0 LLM
+    judge, which is the same for every backend (FR-CONFORM-12). Reports both flip rates and writes
+    `decision_engine_injection_robust` to each backend's validation record. The engine's band is
+    its most probable band whether or not the gate passed: the question is what the model does
+    under injection, not what the gate lets through.
 
     A pair whose twins did not both get a band (ineligible, rejected, malformed, tied) is not
     measured; the figures report how many were, and the flag is `None` when either side measured
@@ -210,8 +210,8 @@ def run_injection_robustness(
 
 
 def decision_build_recommendation(record: Any) -> str | None:
-    """FR-CONFORM-12's console note for one validation record: `"not recommended"` when the
-    record says the engine build is not injection-robust, else `None`. Informational only."""
+    """The console note for one validation record: `"not recommended"` when the record says the
+    engine build is not injection-robust, else None (FR-CONFORM-12). Informational only."""
     figure = getattr(record, "figure", None) or {}
     if figure.get("decision_engine_injection_robust") is False:
         return NOT_RECOMMENDED

@@ -62,28 +62,25 @@ _SCHEMA_VERSION_DDL = (
 
 
 def _apply_statement(connection: sqlite3.Connection, statement: Statement) -> None:
-    """Execute one declared `Statement` on a raw connection — the same
-    parameter-bound shape `_run` uses in the store, so the scanner reads it as the
-    declared statement it is."""
+    """Run one declared `Statement` on a raw connection, with bound parameters, the same way the
+    store does."""
     connection.execute(statement.sql)
 
 
 @dataclass(frozen=True)
 class ExportSummary:
-    """The exported-package payload without the archive: what a receiving school would
-    read about a version's validation, as `CT-STATS-13` audits it. `validation` is a
-    plain dict carrying `weakest_per_population` (the figure that must travel BESIDE any
-    headline) and `headline_per_population` — never an aggregate across populations."""
+    """What a receiving school would read about a version's validation, without the archive itself
+    (CT-STATS-13). `validation` holds `weakest_per_population`, which must always travel beside any
+    headline, and `headline_per_population`; never a figure combining populations."""
 
     package_version_id: str
     validation: dict
 
 
 class InMemoryCatalog:
-    """A catalog lifetime over the shared scratch Tier P store, with the validation
-    summary rendering `CT-CONFORM-14` audits. Delegates the package protocol to a real
-    `PackageCatalog`; isolation between instances is per-version (ids are minted
-    unique), which is exactly the isolation the property tests need."""
+    """A catalog over the shared scratch Tier P store, with the validation summary rendering
+    (CT-CONFORM-14). It delegates to a real `PackageCatalog`; instances are kept apart by version,
+    since version ids are unique."""
 
     def __init__(self, catalog: PackageCatalog) -> None:
         self._catalog = catalog
@@ -133,10 +130,9 @@ class InMemoryCatalog:
 
 
 def in_memory_catalog() -> InMemoryCatalog:
-    """A fresh `InMemoryCatalog` over the shared scratch store (created on first use,
-    closed at process exit). One store, not one per call: the property suites build
-    hundreds of catalogs, and a scratch file per example would leak a thousand temp
-    dirs per run — per-version isolation is what the tests actually need."""
+    """A new `InMemoryCatalog` over the shared scratch store, which is created on first use and
+    closed at exit. One store serves every catalog, because the property tests build hundreds and a
+    store each would leave thousands of temporary directories."""
     global _IN_MEMORY_STATE
     if _IN_MEMORY_STATE is None:
         scratch = tempfile.TemporaryDirectory(prefix="aeh-in-memory-pkg-")
@@ -179,11 +175,9 @@ NO_NEW_VALIDATION_EVIDENCE: str = (
 
 @dataclass(frozen=True)
 class ValidationEvidenceGap:
-    """The record's answer for one administration that collected no figures
-    of its own while an adjacent administration of the same key did —
-    `CT-PKG-07`'s *"never a figure from an adjacent key"*, carrying #118's
-    first-class absence message. Distinguishable **in type** from a figure
-    and from a zero, which is `FR-PKG-09`'s load-bearing half."""
+    """The record's answer for an administration that collected no figures of its own while another
+    administration with the same key did (CT-PKG-07): a clear absence, never the other
+    administration's figure. Distinguishable by type from a figure and from zero (FR-PKG-09)."""
 
     message: str
 
@@ -207,14 +201,10 @@ def validation_for(
     scoring_model: str = "",
     administration: str | None = None,
 ) -> Any:
-    """`FR-PKG-09`'s declared read, module-level: the record for one key —
-    the catalog's six fields plus the administration the figures speak for
-    (#118's dimension) — or the explicit absence, distinguishable **in type**
-    from a zero or a low figure (`CT-PKG-07`). The administration dimension
-    is what makes the refusal below possible: an administration that
-    collected no blind labels is answered with the absence message, never
-    the adjacent administration's figure, which is `CT-STATS-05`'s
-    obligation read from `M-PKG`'s side.
+    """The validation record for one key, including the administration it speaks for, or an
+    explicit absence that cannot be confused with a zero or a low figure (FR-PKG-09, CT-PKG-07). An
+    administration with no blind labels gets the absence message, never another administration's
+    figure (CT-STATS-05).
 
     Three answers, each a different type so a caller cannot confuse them:
     the recorded figure for the exact key; a `ValidationEvidenceGap` whose
@@ -247,8 +237,7 @@ def record_validation(catalog: InMemoryCatalog | None = None, record: Any = None
                       scoring_model: str = "",
                       administration: str | None = None,
                       figure: Mapping[str, Any] | None = None) -> None:
-    """Record one validation figure set — the write side `CT-PKG-12` routes through this
-    module and the design never named (the `tests/support/impl.py` entry says so).
+    """Record one set of validation figures (CT-PKG-12).
 
     Three shapes, because three suites were written ahead against this name:
 
@@ -291,9 +280,8 @@ def record_validation(catalog: InMemoryCatalog | None = None, record: Any = None
 
 def _render_validation_text(package_version: str, population: str,
                             records: dict[str, dict]) -> str:
-    """The validation figures for ONE population, rendered per line with its scope
-    beside every figure (`CT-STATS-20`: a number with no scope near it is the violation,
-    per line, not per document)."""
+    """The validation figures for one population, one per line, each with its scope beside it
+    (CT-STATS-20)."""
     record = records.get(population)
     if record is None:
         # No figures recorded for this population: say so, scoped, with no number —
@@ -319,9 +307,9 @@ def _render_validation_text(package_version: str, population: str,
 
 
 def _reference_spec() -> dict:
-    """The reference package corpus (`fixtures/package/reference-package.json`), read
-    relative to this file so the repo checkout serves it. A wheel install has no
-    fixtures directory; the seam says so rather than guessing."""
+    """The reference package corpus (`fixtures/package/reference-package.json`), found by searching
+    upward from this file, so a repository checkout can serve it. An installed package has no
+    fixtures folder, and this says so rather than guessing."""
     here = Path(__file__).resolve()
     for parent in (here, *here.parents):
         candidate = parent / "fixtures" / "package" / "reference-package.json"
@@ -336,7 +324,7 @@ def _reference_spec() -> dict:
 
 def export_package(package_version: str, dest: Path | str | None = None,
                    population: str | None = None) -> Any:
-    """The module-level export seam the written-ahead suites key on.
+    """Export the reference package at module level, for the written-ahead test suites.
 
     - `dest` given: materialize the reference corpus package into a deterministic Tier P
       file (fixed ids, fixed `schema_version` stamps — the migration fixtures' device)

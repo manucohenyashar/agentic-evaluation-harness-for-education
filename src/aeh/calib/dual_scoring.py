@@ -25,7 +25,7 @@ from .rosters import (
 
 @dataclass
 class DualScoringPlan:
-    """The disclosed cost of one dual-scoring pass (`NFR-CALIB-03`, `CT-CALIB-12`).
+    """The disclosed cost of one dual-scoring pass (NFR-CALIB-03, CT-CALIB-12).
 
     ``disclosed_at`` is set at plan time, ``authorized_at`` only by `authorize`, and
     ``executed_at`` only by `run_dual_scoring` — the observed order is the contract, and
@@ -62,8 +62,8 @@ PLAN_DEFAULT_CRITERIA_COUNT: int = 1
 
 
 def plan_dual_scoring(cohort_id: str, r0: str, r1: str, provider: Any) -> DualScoringPlan:
-    """Disclose what one additional full-class dual-scoring pass will cost, **before**
-    the operator authorizes it (`NFR-CALIB-03`, `CT-CALIB-12`).
+    """Tell the operator what one more full-class dual-scoring pass will cost, before they
+    authorize it (NFR-CALIB-03, CT-CALIB-12).
 
     Plans against the registered roster's shape; for an unregistered cohort, against the
     declared example class, with the assumption in the plan's notes (see the module
@@ -101,7 +101,7 @@ def plan_dual_scoring(cohort_id: str, r0: str, r1: str, provider: Any) -> DualSc
 
 
 def authorize(plan: DualScoringPlan) -> datetime:
-    """Record the operator's authorization of the disclosed cost (`CT-CALIB-12`).
+    """Record the operator's authorization of the disclosed cost (CT-CALIB-12).
 
     The recorded timestamp is strictly after the disclosure's, so the observed order —
     disclose, then authorize, then run — is what distinguishes a budgeted cost from a
@@ -115,8 +115,8 @@ def authorize(plan: DualScoringPlan) -> datetime:
 
 
 def run_dual_scoring(plan: DualScoringPlan) -> DualScoringPlan:
-    """Run the authorized pass: exactly the disclosed number of calls, through the
-    injected provider (`NFR-CALIB-03`; seam 2 — the provider is the only egress point).
+    """Run the authorized pass: exactly the disclosed number of calls, through the provider passed
+    in (NFR-CALIB-03). The provider is the only egress point.
 
     One call per (submission, criterion) pair across the full class — the pass whose
     cost was disclosed and authorized — and the provider's bands land on the plan's

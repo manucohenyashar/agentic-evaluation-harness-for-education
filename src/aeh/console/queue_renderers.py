@@ -15,10 +15,8 @@ from .run_planning import build_console
 def render_review_queue(
     source: Any, *, run_id: str, budget_minutes: int | None = None
 ) -> RenderedPage:
-    """The review queue as a module-level renderer, over either source a queue screen
-    has: this module's `ConsoleApp` (the route's own view) or `M-REVIEW`'s
-    `ReviewService` (whose built queue this renders — `CT-REVIEW-04`'s consumer half,
-    the console side of the residual triple).
+    """Render the review queue from either source: a `ConsoleApp` (the route's own view) or
+    M-REVIEW's `ReviewService` (rendering the queue it built; the console side of CT-REVIEW-04).
 
     The service path renders the queue's **own** figures — `flagged_total`, the items its
     shown entries cover (the count `residual_provisional` was derived from), and
@@ -76,9 +74,8 @@ def render_review_queue(
 
 
 def _service_provenance(service: Any, run_id: str) -> str:
-    """The provenance line for a queue a `ReviewService` built (FR-CONSOLE-40, #533 review):
-    from the producing run when the service holds a real store, the storeless double's value
-    otherwise."""
+    """The provenance line for a queue a `ReviewService` built (FR-CONSOLE-40): from the run that
+    produced it when the service has a real store, otherwise the storeless double's fixed value."""
     store = getattr(service, "_store", None)
     if store is None or getattr(store, "data_dir", None) is None:
         return _PROVENANCE_FOOTER
@@ -86,7 +83,7 @@ def _service_provenance(service: Any, run_id: str) -> str:
 
 
 def review_queue_header(page: Any) -> dict[str, int]:
-    """The three §11.6 invariant-8 figures, read back off the **rendered** header.
+    """The three queue-header figures (§11.6 invariant 8), read back from the rendered page.
 
     Reads the data attributes the renderer plants (`data-flagged`, `data-shown`,
     `data-left-provisional`) rather than parsing the prose: a header whose figures moved

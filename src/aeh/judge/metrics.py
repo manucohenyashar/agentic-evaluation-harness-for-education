@@ -32,9 +32,10 @@ _FALLBACK_OUTCOMES = ("below_gate", "rejected", "malformed")
 
 @dataclass(frozen=True)
 class DecisionEngineMetrics:
-    """CT-JUDGE-28's names. `decision_prescreens` counts **every** pre-screen row, `ineligible`
-    included (design 1.6.1); `decision_fallback_rate` is (below_gate + rejected + malformed) /
-    prescreens. `per_criterion` holds the same figures keyed by criterion id."""
+    """The decision engine's outcome metrics, by their contract names (CT-JUDGE-28).
+    `decision_prescreens` counts every pre-screen row, including ineligible ones;
+    `decision_fallback_rate` is (below_gate + rejected + malformed) / prescreens. `per_criterion`
+    holds the same figures by criterion id."""
 
     decision_prescreens: int
     decision_accepted: int
@@ -54,7 +55,8 @@ class DecisionEngineMetrics:
 
 
 def _percentile(values: list[float], q: float) -> float | None:
-    """Linear interpolation between closest ranks (numpy's default method)."""
+    """The `q` percentile of a sample, linearly interpolated between the closest ranks (NumPy's
+    default method)."""
     if not values:
         return None
     ordered = sorted(values)
@@ -96,8 +98,8 @@ def _metrics_of(rows: list[Any], alert_rate: float, alert_min: int) -> DecisionE
 
 
 def decision_engine_metrics(handle: Any, run_id: str) -> DecisionEngineMetrics:
-    """FR-JUDGE-36: the run's decision-engine outcome mix, per criterion and overall, read from
-    the pre-screen rows (the only source; M-STATS reads it through here, never directly)."""
+    """The run's decision-engine outcome mix, per criterion and overall, read from the pre-screen
+    rows (FR-JUDGE-36). M-STATS reads these figures through this function, never directly."""
     alert_rate = _env_float(FALLBACK_ALERT_RATE_ENV, FALLBACK_ALERT_RATE_DEFAULT, low=0.0, high=1.0)
     alert_min = _env_int(ALERT_MIN_PRESCREENS_ENV, ALERT_MIN_PRESCREENS_DEFAULT)
     rows = list(handle.query(JUDGE_STATEMENTS["select_run_prescreens"], run_id=run_id))

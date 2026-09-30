@@ -325,7 +325,7 @@ _DURABLE_001: tuple[Statement, ...] = (
 
 @dataclass(frozen=True)
 class Migration:
-    """One numbered, forward-only schema step.
+    """One numbered, forward-only schema change.
 
     Forward-only and reversible **only by restoring a copy** (`NFR-STORE-04`). There is no `down`
     field and there will not be one: a reversal that runs against production data is how a
@@ -338,7 +338,7 @@ class Migration:
 
 
 class MigrationPrecondition(Statement):
-    """A declared read inside a migration whose rows decide whether the migration may proceed.
+    """A read declared inside a migration whose result decides whether the migration may run.
 
     `_migrate` runs it like any other statement, in the migration's own transaction, and hands
     the fetched rows to `check`, which raises `MigrationError` to refuse — the refusal rolls the
@@ -427,13 +427,9 @@ _DURABLE_011: tuple[Statement, ...] = (
 
 
 class _VersionOrderedRegistry(dict):
-    """Tier chains stay in ascending version order whatever order their owners get
-    imported in. Owners append by rebinding a tier's tuple
-    (`TIER_MIGRATIONS[tier] = TIER_MIGRATIONS[tier] + (m,)`) at module level, and
-    module import order is not controllable once several modules append — an
-    early-collected test that imports `aeh.det` before `aeh.ingest` used to land
-    cohort 9 ahead of cohort 2-6. Sorting at the write keeps the registry's order a
-    contract (TC-STORE-06's no-reverse-step) instead of an accident of collection."""
+    """Keeps each tier's migration chain in ascending version order, whatever order the owning
+    modules are imported in. Owners append at import time, and import order cannot be controlled
+    once several modules do, so the chain is sorted on every write (TC-STORE-06)."""
 
     def __setitem__(self, key: Tier, value: tuple[Migration, ...]) -> None:
         super().__setitem__(key, tuple(sorted(value, key=lambda m: m.version)))
@@ -453,7 +449,7 @@ TIER_MIGRATIONS: Mapping[Tier, tuple[Migration, ...]] = _VersionOrderedRegistry(
 
 
 def current_schema_version(tier: Tier) -> int:
-    """The schema version this binary implements for `tier`.
+    """The schema version this code implements for a tier.
 
     `max`, not `len`: a migration withdrawn before release leaves a gap in the numbering, and a
     count would then claim a version the binary does not implement.

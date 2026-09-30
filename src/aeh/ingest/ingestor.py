@@ -36,10 +36,10 @@ from .aggregates import RunAggregatesMixin
 
 
 class Ingestor(DocumentIngestionMixin, SourceChecksMixin, RevisionMixin, TokenClustersMixin, SubmissionIngestionMixin, AssessmentMatchMixin, RunAggregatesMixin):
-    """Tier C's gateway: `Ingestor(cohort_handle, blobs, provider, model_ref, params,
-    rasterizer)` — every model call through `M-PROV`, every PDF decode through the
-    `Rasterizer` seam, one document row per logical document, one region row per
-    region the model marked."""
+    """The ingestion gateway for one cohort: `Ingestor(cohort_handle, blobs, provider, model_ref,
+    params, rasterizer)`. Every model call goes through M-PROV and every PDF decode through the
+    rasterizer; it writes one document row per logical document and one region row per region the
+    model marked."""
 
     def __init__(
         self, handle: Any, blobs: Any, provider: InferenceProvider,
@@ -115,10 +115,9 @@ class Ingestor(DocumentIngestionMixin, SourceChecksMixin, RevisionMixin, TokenCl
 
     @staticmethod
     def _configured_transcription_attempts() -> int:
-        """The strike limit for one page's transcription (`NFR-INGEST-02`, #220),
-        read AT CALL TIME so a slower test box can tune it without a code change
-        (CLAUDE.md seam 3). At least one attempt: zero would quarantine a page
-        the model was never asked to read."""
+        """How many times one page's transcription may be tried (NFR-INGEST-02), read from its knob
+        at call time. At least one: zero would quarantine a page the model was never asked to read.
+        """
         raw = os.environ.get(TRANSCRIPTION_ATTEMPTS_ENV)
         if not raw:
             return DEFAULT_TRANSCRIPTION_ATTEMPTS
@@ -161,9 +160,7 @@ class Ingestor(DocumentIngestionMixin, SourceChecksMixin, RevisionMixin, TokenCl
 
     @staticmethod
     def _configured_seconds(env: str, default: float) -> float:
-        """A wall-clock ceiling: any positive number of seconds (the 0.0..1.0
-        validation of `_configured_float` is a similarity-threshold rule, not a
-        duration one)."""
+        """Read a time limit knob: any positive number of seconds."""
         raw = os.environ.get(env)
         if not raw:
             return default
@@ -177,10 +174,8 @@ class Ingestor(DocumentIngestionMixin, SourceChecksMixin, RevisionMixin, TokenCl
         return value
 
     def read_document(self, document_id: DocumentId) -> str:
-        """The document's canonical Markdown, as stored (`FR-INGEST-01`'s immutable
-        row) — the read surface for a module that works FROM the ingest store:
-        `M-SETUP`'s proposal reads the assessment here (`CT-SETUP-11`: setup reads
-        documents through `M-INGEST`, not around it).
+        """A document's stored canonical Markdown (FR-INGEST-01). Other modules read documents
+        through here; M-SETUP reads the assessment this way (CT-SETUP-11).
 
         Read-only by construction — no write path exists on this surface, and the
         canonical text is what the V0-V3 ladder left in the row (#40), so what a
@@ -193,9 +188,8 @@ class Ingestor(DocumentIngestionMixin, SourceChecksMixin, RevisionMixin, TokenCl
 
     @staticmethod
     def _configured_int(env: str, default: int) -> int:
-        """An integer knob read at call time; a malformed value refuses loudly rather
-        than silently meaning the default — a mis-set breaker minimum is exactly the
-        phantom bug the knob convention exists to avoid."""
+        """Read an integer knob at call time. A malformed value is refused loudly instead of
+        silently meaning the default."""
         raw = os.environ.get(env)
         if raw is None or raw == "":
             return default
@@ -209,15 +203,11 @@ class Ingestor(DocumentIngestionMixin, SourceChecksMixin, RevisionMixin, TokenCl
 
     def _transcribe_page(self, page: PageImage, source_hash: str,
                          attempt_log: list | None = None) -> Completion:
-        """One VLM call for one page (`FR-INGEST-02`), retried to the strike
-        limit (`NFR-INGEST-02`, #220): a model outage strikes and is re-asked
-        up to `HARNESS_INGEST_TRANSCRIPTION_ATTEMPTS` times (read at call
-        time); exhausting the limit raises `IngestTranscriptionError` — the
-        caller quarantines the unit, never the run. The payload carries the
-        page raster and the pinned transcription prompt; `M-PROV` answers.
-        Each strike (and a recovery) is appended to `attempt_log` when given —
-        the strike count is observable in the result's stage detail, not just
-        internal (CLAUDE.md seam 4)."""
+        """Transcribe one page with one vision-model call (FR-INGEST-02), retrying up to
+        `HARNESS_INGEST_TRANSCRIPTION_ATTEMPTS` times (NFR-INGEST-02). Running out of attempts
+        raises `IngestTranscriptionError`, and the caller quarantines the submission, never the
+        run. The request carries the page image and the pinned transcription prompt. Each failed
+        attempt, and a recovery, is added to `attempt_log` when one is given."""
         payload = PromptPayload(fields=(
             ("instruction", TRANSCRIPTION_PROMPT),
             ("prompt_template_version", TRANSCRIPTION_PROMPT_VERSION),
@@ -265,8 +255,8 @@ class Ingestor(DocumentIngestionMixin, SourceChecksMixin, RevisionMixin, TokenCl
 
     @staticmethod
     def _assemble(parts: Sequence[str]) -> str:
-        """Assemble page transcripts into the canonical Markdown: pages joined by a
-        fixed separator, in the order the preference ladder produced."""
+        """Join page transcripts into the canonical Markdown with a fixed separator, in the order
+        the preference ladder produced."""
         return "\n\n<!-- page break -->\n\n".join(parts)
 
     @staticmethod

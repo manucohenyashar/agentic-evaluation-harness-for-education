@@ -58,11 +58,9 @@ _SNAPSHOT_VACUUM = "VACUUM"
 
 
 def _zip_entry(archive: zipfile.ZipFile, name: str, data: bytes) -> None:
-    """Write one archive entry with a fixed timestamp and owner-only permissions, so the
-    member LISTING (names and digests, TC-REG-02's baseline) is stable for identical
-    content and the artifact is not world-readable where the filesystem honours it. The
-    manifest carries no timestamp for the same reason: every field in it is derived from
-    the content or the declared vocabulary."""
+    """Write one archive entry with a fixed timestamp and owner-only permissions, so identical
+    content gives an identical member listing (TC-REG-02) and the file is not world-readable. The
+    manifest has no timestamp for the same reason."""
     info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
     info.compress_type = zipfile.ZIP_DEFLATED
     info.external_attr = 0o600 << 16
@@ -70,7 +68,7 @@ def _zip_entry(archive: zipfile.ZipFile, name: str, data: bytes) -> None:
 
 
 def _signature_of(content_hash: str, key: str) -> str:
-    """HMAC-SHA256 over the content hash (NFR-PKG-04). The hash pins the database
-    bytes; the key pins who produced it."""
+    """HMAC-SHA256 over the content hash (NFR-PKG-04): the hash fixes the database bytes, and the
+    key identifies who produced them."""
     return hmac.new(key.encode("utf-8"), content_hash.encode("ascii"),
                     hashlib.sha256).hexdigest()

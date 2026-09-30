@@ -38,8 +38,8 @@ _MIXED_REVISION_COHORTS: dict[str, Any] = {}
 
 
 def class_rollup(*, cohort_id: str, store: Store | None = None) -> ClassRollup:
-    """A cohort-wide rollup, segmented by rubric version and annotated with the
-    versions covered (`CT-CALIB-09`'s consumer half, `FR-GRADE-15`).
+    """A cohort-wide rollup, split by rubric version and labelled with the versions covered
+    (CT-CALIB-09, FR-GRADE-15).
 
     R0-scored and R1-scored results never share one undifferentiated figure: the
     segments separate them, and the annotation names every instrument that
@@ -61,12 +61,10 @@ def class_rollup(*, cohort_id: str, store: Store | None = None) -> ClassRollup:
 
 
 def cohort_with_mixed_revisions(store: Store | None = None) -> str:
-    """A cohort whose current grades span two rubric revisions — the fixture
-    `CT-CALIB-09`'s consumer half grades against. Two runs' worth of grades, two
-    package versions (`pkg-v1`, `pkg-v2`), one cohort ledger; the store is registered
-    under the returned cohort id so `class_rollup` resolves it. Built through this
-    module's own insert statement, so the fixture rows are exactly the rows the
-    service writes."""
+    """Test seam: a cohort whose current grades come from two rubric revisions (`pkg-v1` and
+    `pkg-v2`), two runs in one cohort ledger, for CT-CALIB-09. The store is registered under the
+    returned cohort id so `class_rollup` finds it. It uses the service's own insert statement, so
+    the rows are exactly what the service writes."""
     from aeh.store import open_store
 
     if store is None:
@@ -131,12 +129,9 @@ def cohort_with_mixed_revisions(store: Store | None = None) -> str:
 def _judged_band_figure(
     criterion_id: str, bands: Sequence[str], band_order: Sequence[str]
 ) -> CriterionBandFigure:
-    """One judged criterion's band figure, computed without the vocabulary
-    heuristic — the caller (the rollup's judged block) already holds the kind
-    verdict from the package, so the figure is real entropy and a real interior
-    rate, whatever the band names say. The pure accessor
-    (`criterion_band_figures`) keeps its own band-reading contract; this is the
-    verdict-trusted variant the separation calls."""
+    """One judged criterion's band figure, without guessing from band names: the caller already
+    knows from the package that the criterion is judged, so this always computes real entropy and
+    interior rate."""
     histogram = {band: bands.count(band) for band in sorted(set(bands))}
     order = [str(band) for band in band_order]
     interior = set(order[1:-1]) if len(order) >= 2 else set()
@@ -153,10 +148,8 @@ def _judged_band_figure(
 
 
 def separated_rollup(run_id: str, store: Store) -> SeparatedRollup:
-    """The run's rollup with deterministic results in a block separate from judged
-    ones (`FR-GRADE-15`, `CT-GRADE-12`; `TC-GRADE-15`'s pinned surface) — and no
-    combined figure across the two, anywhere on the record: the refusal is the
-    record's shape, not a comment.
+    """The run's rollup with deterministic results in a separate block from judged ones, and no
+    combined figure anywhere (FR-GRADE-15, CT-GRADE-12, TC-GRADE-15).
 
     The blocks are classified by the package's declared `evaluation_mode`
     (`FR-ORCH-35`) — #369 shipped the column, so the shape-based reading this module
@@ -271,14 +264,10 @@ _BUDGET_FINDING_REASON = (
 
 
 def rollup_findings(run_id: str, store: Store) -> tuple[RollupFinding, ...]:
-    """The criteria the system could not apply, as findings (`FR-GRADE-16`,
-    `TC-GRADE-16`): the ones the escalation circuit breaker marked
-    `ungradeable_by_panel`, and the ones whose review queue rows exhausted the
-    review budget — each naming the count of **affected students** (submissions
-    carrying the mark or the exhausted row, not the class). A criterion both
-    breaker-marked and budget-exhausted is one finding whose count is the union —
-    the teacher reads how many students it swallowed, not how many marks it
-    produced. Findings are returned in sorted criterion-id order."""
+    """The criteria the system could not apply, as findings (FR-GRADE-16, TC-GRADE-16): those the
+    escalation breaker marked `ungradeable_by_panel`, and those whose review rows ran out of review
+    budget. Each finding counts the affected students; a criterion with both problems is one
+    finding counting the union. Sorted by criterion id."""
     service = GradingService(store)
     cohort, run = service._find_run(run_id)
     cohort_id = run["cohort_id"]

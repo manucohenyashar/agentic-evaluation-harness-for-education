@@ -11,7 +11,7 @@ from .schema import AGG_STATEMENTS
 
 @dataclass(frozen=True)
 class AggregationSignals:
-    """One run's aggregation signals, per criterion (`FR-AGG-17`, `CT-AGG-15`).
+    """One run's aggregation signals, per criterion (FR-AGG-17, CT-AGG-15).
 
     Every field is a mapping keyed by criterion id:
 
@@ -35,7 +35,7 @@ class AggregationSignals:
 
 
 def aggregation_signals(handle: Any, run_id: str) -> AggregationSignals:
-    """One run's aggregation signals, read only from stored rows (`FR-AGG-17`).
+    """Compute one run's aggregation signals from the stored score rows only (FR-AGG-17).
 
     The score rows carry the bands, spreads, α values, routings and fired caps; the work
     ledger carries the widenings (`origin='escalation'`). A second run of the same cohort

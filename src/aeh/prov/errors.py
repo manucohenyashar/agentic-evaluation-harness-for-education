@@ -7,7 +7,7 @@ from __future__ import annotations
 
 
 class ProviderError(Exception):
-    """Base for every `M-PROV` failure.
+    """Base class for every M-PROV failure.
 
     A **neutral** base with siblings under it, never a chain. `CT-PROV-07` asserts one case per
     named error with the *exact* type, so if `ProviderUnavailableError` subclassed
@@ -32,14 +32,14 @@ class TransportError(ProviderError):
 
 
 class RateLimitedError(ProviderError):
-    """HTTP 429. Retryable *with a wait* — `Retry-After` when present, jittered backoff
-    otherwise (`FR-PROV-07`, #19)."""
+    """HTTP 429. Retryable after a wait: `Retry-After` when present, jittered back-off otherwise
+    (FR-PROV-07)."""
 
     retryable = True
 
 
 class MalformedResponseError(ProviderError):
-    """The response failed structural parsing.
+    """The response could not be parsed into the expected structure.
 
     Retryable up to the retry budget; past it the *unit* quarantines and the run continues
     (`CT-PROV-07`, HLD §9.11 "fail the unit, never the run").
@@ -49,7 +49,7 @@ class MalformedResponseError(ProviderError):
 
 
 class MissingConfidenceError(MalformedResponseError):
-    """A Jev build's Choice or Score answer carries no `confidence` (absent or `null`).
+    """A Jev build's choice or score answer has no `confidence` (missing or null).
 
     Design 1.8 (FR-PROV-19/20, CT-PROV-20): the confidence that decides whether Jev or the LLM
     grades a unit is Jev's own, so the harness never derives one for a Jev build. Absence is a
@@ -62,7 +62,7 @@ class MissingConfidenceError(MalformedResponseError):
 
 
 class ProviderUnavailableError(ProviderError):
-    """Repeated 5xx or timeout beyond the retry budget. Terminal for the run.
+    """Repeated 5xx responses or timeouts beyond the retry budget. The run cannot continue.
 
     Never retried, and never a trigger for substitution: `CT-PROV-08` lets a caller receiving
     this rely on the fact that nothing was silently graded by something else.
@@ -70,7 +70,7 @@ class ProviderUnavailableError(ProviderError):
 
 
 class BuildChangedError(ProviderError):
-    """A response reported a served build differing from the one recorded at run start.
+    """A response reported a different served build from the one recorded at run start.
 
     Terminal for the run and explicitly **not** retried (`FR-PROV-05`), because a retry that
     happened to land on the original build would hide the fact that the panel changed
@@ -96,15 +96,15 @@ class RetentionPolicyError(ProviderError):
 
 
 class DecisionRequestError(ValueError):
-    """A `DecisionRequest` that cannot be sent: a caller defect caught at construction (or at
-    `validate_for`), before anything leaves the process. A `ValueError`, not a `ProviderError`,
-    for the reason `PromptPayload` raises one: a malformed request is not a provider failure."""
+    """A `DecisionRequest` that cannot be sent: a caller mistake caught when it is built (or in
+    `validate_for`), before anything leaves the process. It is a `ValueError`, not a
+    `ProviderError`, because a malformed request is not the provider's failure."""
 
 
 class DecisionRequestRejectedError(ProviderError):
-    """The engine refused the request (HTTP 400/422). **Not retryable** (CT-PROV-20): the same
-    bytes would be refused again. `M-JUDGE` treats it as a `rejected` pre-screen and falls back
-    to the LLM path; a harness that keeps producing rejected requests has a defect, which the
-    `decision_requests_rejected` alert surfaces."""
+    """The engine refused the request (HTTP 400 or 422). Not retryable: the same bytes would be
+    refused again (CT-PROV-20). M-JUDGE records it as a `rejected` pre-screen and falls back to the
+    LLM path; repeated rejections point to a defect, which the `decision_requests_rejected` alert
+    shows."""
 
     retryable = False

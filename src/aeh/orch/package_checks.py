@@ -12,7 +12,7 @@ from .errors import WorkLedgerError
 
 
 def _cohort_keys_on_filesystem(store: Any) -> tuple[str, ...]:
-    """The default cohort-key discovery: the ledger's own files.
+    """The default way to find cohorts: list the ledger's files.
 
     `SqliteStore` lays Tier C out as one file per cohort under `<data_dir>/cohorts/`
     (§3.3's layout); listing that directory is the no-bookkeeping way to find every
@@ -32,8 +32,8 @@ def _cohort_keys_on_filesystem(store: Any) -> tuple[str, ...]:
 
 
 def validate_grade_policy(catalog: Any, package_version_id: str) -> None:
-    """Refuse a version whose grade policy names criteria the version does not declare
-    (`FR-ORCH-31`, `CT-ORCH-25`, `CT-GRADE-15`'s run-start half).
+    """Refuse a package version whose grade policy mentions criteria the version does not have
+    (FR-ORCH-31, CT-ORCH-25, CT-GRADE-15).
 
     Called by `create_run` before the run row exists, so a refusal leaves nothing behind: the
     policy's ghost criterion is caught at run start rather than at grading time, where the
@@ -72,7 +72,7 @@ def validate_grade_policy(catalog: Any, package_version_id: str) -> None:
 
 
 def _criterion_id_of(row: Any) -> str:
-    """One criterion row's id, whatever shape the catalog hands back (mapping or object)."""
+    """One criterion row's id, whether the catalog returned a mapping or an object."""
     if isinstance(row, dict):
         return str(row.get("criterion_id"))
     try:
@@ -82,7 +82,7 @@ def _criterion_id_of(row: Any) -> str:
 
 
 def _policy_criterion_ids(policy: Any) -> set[str]:
-    """Every criterion id the policy references, across its referencing fields."""
+    """Every criterion id the policy mentions, in any of its fields."""
     referenced: set[str] = set()
     for criterion_id, _weight in getattr(policy, "weights", ()) or ():
         if criterion_id:

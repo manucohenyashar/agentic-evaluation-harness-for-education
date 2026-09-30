@@ -14,9 +14,8 @@ from .statements import PKG_STATEMENTS, _SELECT_PROMOTION_RECORD
 
 
 def promotion_record(store: Any, *, package_version_id: str, cohort_id: str) -> dict[str, Any] | None:
-    """The validation record `record_promotion` wrote for one administration (one
-    `package_version_id`, one `cohort_id`), or None when that administration has none
-    (FR-CONSOLE-24, #529). Read-only, through the store's durable tier."""
+    """The validation record `record_promotion` wrote for one administration (one package version,
+    one cohort), or None (FR-CONSOLE-24). Read-only."""
     rows = store.durable().query(_SELECT_PROMOTION_RECORD, package_version_id=package_version_id,
                                  cohort_id=cohort_id)
     return dict(rows[0]) if rows else None
@@ -37,14 +36,9 @@ def record_promotion(
     message: str,
     recorded_at: str | None = None,
 ) -> None:
-    """The validation record's durable write (`FR-STATS-10`, #118): one
-    ``package_validation`` row per (package_version_id, cohort_id), into Tier
-    D's durable file. `M-STATS`'s ``promote`` is the only intended caller —
-    the write exists on this side of the boundary so the attribution the
-    write audit records carries `M-PKG`'s frames (the table is this tier's
-    schema, and `CT-STATS-15`'s indirection says the record reaches the
-    package tier through it) with `M-STATS`'s initiation still visible in the
-    frame walk.
+    """Write the validation record's durable row (FR-STATS-10): one `package_validation` row per
+    (package version, cohort) in Tier D. M-STATS's `promote` is the only intended caller; the write
+    lives in M-PKG because the table belongs to this tier's schema (CT-STATS-15).
 
     The figures arrive as the caller computed them — counters, the nullable
     ``agreement_kappa``, the two JSON documents (``weakest_per_population``,
@@ -94,7 +88,7 @@ _BASELINE_UNDIMENSIONED = ""
 
 @dataclass(frozen=True)
 class BaselineWrite:
-    """`#373`: what `record_validation_baseline` did, and — when it did nothing — why.
+    """What `record_validation_baseline` did, and, when it did nothing, why.
 
     A bare ``bool`` was the first shape and it was the wrong one. Every refusal this
     function makes is a NORMAL event on the production path (the commonest by far is a
@@ -135,7 +129,7 @@ BASELINE_PUBLISHED = (
 
 
 def _population_mean_and_sd(weighted: Mapping[int, int]) -> tuple[float, float]:
-    """Mean and **population** standard deviation over a weighted histogram of ordinals.
+    """The mean and population standard deviation of a weighted histogram of ordinals.
 
     Population, not sample: the histogram IS the administration's judged distribution, not a
     draw from a larger one to be estimated. The baseline describes the labels that exist, so
@@ -165,11 +159,10 @@ def record_noninferiority(
     panel_build_ref: str = _BASELINE_UNDIMENSIONED,
     scoring_model: str = _BASELINE_UNDIMENSIONED,
 ) -> BaselineWrite:
-    """FR-PKG-23 (#454): write NFR-STATS-06's engine non-inferiority verdict onto the criterion's
-    validation record row under the six-part key. `verdict` is `True`, `False` or
-    `'insufficient_data'`. Same refusals as `record_validation_baseline`: the version not in
-    this data directory, or a published version (its records are frozen, FR-PKG-04), each
-    returned rather than raised, with the reason."""
+    """Write the decision engine's non-inferiority verdict (NFR-STATS-06) onto the criterion's
+    validation record under the six-part key (FR-PKG-23). `verdict` is True, False or
+    `'insufficient_data'`. Refuses, returning the reason rather than raising, when the version is
+    not in this data directory or is published (its records are frozen, FR-PKG-04)."""
     # The column's CHECK is the one authority on the domain (TC-PKG-33): a value outside it
     # surfaces as the database's IntegrityError, never as a quiet refusal.
     stored = ("true" if verdict is True else "false" if verdict is False else str(verdict))
@@ -223,40 +216,9 @@ def record_validation_baseline(
     panel_build_ref: str = _BASELINE_UNDIMENSIONED,
     scoring_model: str = _BASELINE_UNDIMENSIONED,
 ) -> BaselineWrite:
-    """`#373`: one criterion's baseline distribution onto its `validation_record` row.
+    """Write one criterion's baseline band distribution onto its `validation_record` row.
 
-    `M-STATS`'s ``promote`` is the intended caller, and the split of work between the two
-    modules is the point of this function's shape. `M-STATS` counts — it knows how many of
-    the administration's judged labels landed in each band, by NAME, because that is what a
-    label carries. It does not know what those names are worth: the ordinal scale lives in
-    Tier P's ``band`` table, which is this module's schema (`CT-PKG-12`). So the caller sends
-    the distribution and this side maps it, which is also why the write carries `M-PKG`'s
-    frames the way `record_promotion` does (`CT-STATS-15`'s indirection).
-
-    **The scale is the declared ordinal, and that is load-bearing.** `should_escalate`
-    computes ``z = (ordinal - expected_mean) / expected_sd`` where ``ordinal`` is the score's
-    DECLARED band ordinal (`agg._band_by_ordinal`). A baseline computed on any other scale —
-    the band's name read as a number, or `aeh.stats._band_ordinals`' inferred rank — would be
-    a z-score between two different spaces, wrong by a constant for every package and
-    silently so. Bands are 0-based (`store.py`'s ``CHECK (ordinal >= 0)``).
-
-    Refuses rather than guesses, in three cases, each returning ``False`` with nothing
-    written:
-
-    * The version is not in this data directory's packages.
-    * A band NAME in the histogram is not one the criterion declares. A mean over a scale the
-      package does not declare is a fabricated figure, and a partial mean over "the ones I
-      recognised" is worse — it would silently drop a band and shift the baseline.
-    * The version is published. `FR-PKG-04` makes a published version's rows immutable and
-      the triggers enforce it; a baseline is evidence about a version, and evidence arriving
-      after publication does not get to rewrite it. Skipped, not raised: a promote of an
-      administration against a published package is a normal thing to do, and it must not
-      fail because one optional record could not be filed.
-
-    Returns a `BaselineWrite` — the status AND the reason — so the caller reports what
-    happened rather than assuming it worked. Every refusal above is an ordinary event on
-    the production path, so a caller that cannot name the reason cannot tell a promote
-    that stored a baseline from one that quietly did not.
+    More detail: `docs/code-notes/pkg.md`, section `validation.py: record_validation_baseline`.
     """
     if not band_histogram or sum(band_histogram.values()) <= 0:
         return BaselineWrite(False, BASELINE_NO_HISTOGRAM)

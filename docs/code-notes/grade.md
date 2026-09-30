@@ -213,3 +213,71 @@ land with the statistics story that consumes them (#118's M-STATS surface) rathe
 invented here. The figures above are computed at read time over the stored
 criterion-score rows; persisting them into Tier D is that landing's schema change, not
 this one's (#104 pins the figures and the rollup surfaces, no migration).
+
+## Details moved out of the code
+
+These notes were the longer parts of docstrings in `aeh.grade`. Each section is named after the file and the function or class it describes.
+
+### amendments.py: AmendmentMixin.amend
+
+The overrides are stored on the grade row (`amendments`), which keeps the revision
+recomputable (FR-GRADE-13): a later pass applies the stored overrides before comparing, so
+an unchanged re-run reproduces the amended grade instead of undoing it.
+
+The settlement follows the state model, not the action: an amendment of a
+grade with all inputs present settles `final` (the teacher just reviewed it),
+preserving the prior revision's `finalized_at`; one whose inputs are still
+missing stays `incomplete` — an edit never launders an absence into a
+deliverable. An edit naming a criterion with no stored score row is refused,
+naming it: recording an edit that applied nowhere would claim a change that
+never happened, and a missing input is the operator routing's to fill.
+
+**No new revision without a change** (`NFR-GRADE-05`, TC-GRADE-13's no-op
+variant): an edit whose application reproduces the current revision's content
+EXACTLY — re-entering the points a revision already carries — writes no
+revision. The comparison is the compute passes' own change-detection tuple, so
+"changed" means the same thing here as everywhere else in the module. The
+review the call records is still real: a no-op amendment settles the current
+revision `final` in place when the state model pressures it (the teacher
+reviewed it), and the call is appended to the audit trail either way — the
+ledger records content changes, the audit trail records human actions.
+
+Every amendment call — minting or not — also appends one `audit_record` row to
+Tier D (the durable form of the who/what/when/why record; the `amendments` JSON
+on the grade row stays the revision-local record the recomputation replays):
+one row per call, `decided_by` the actor, `evaluation_mode='judged'` (a
+teacher's decision, never a derivation), the full criterion-level detail
+canonical-JSON in `profile_summary`. The write follows the cohort
+transaction's commit — tiers are separate files, so the two writes cannot share
+one transaction, and an audit row is never written for a revision that failed
+to land.
+
+### policy.py: apply_policy
+
+The rule vocabulary, exactly as shipped on `aeh.pkg.GradePolicy`:
+
+- `weighted_sum` — each criterion's points multiplied by its declared weight
+  (a criterion with no declared weight weighs 1.0), summed. With no weights at all
+  this is the plain sum (`FR-SETUP-12`'s default).
+- `best_k_of_n` — the k highest points, summed. Ties at the cut are broken by
+  criterion id for determinism; because tied values are equal, the total is
+  invariant under every arrival order either way (`TC-GRADE-03`).
+- `drop_lowest_n` — the n lowest points dropped before summing (scored out, never
+  scored as zero).
+- `gate` — the named criterion must reach `minimum`, inclusively (`TC-GRADE-03`'s
+  pinned reading). A criterion with no row refuses the gate: absence is not a zero.
+  A refusal is a `None` total, never an exception (`CT-GRADE-02`).
+- `scale` — the combined total multiplied by the factor, after combination.
+- `rounding` — applied last: `nearest` is HALF-UP at exactly .5 (`TC-GRADE-03`'s
+  pinned reading — Python's `round()` is half-even and would fail the case),
+  `up` rounds away from zero's floor, `down` truncates.
+
+Sums run through `math.fsum` (exactly rounded, therefore order-independent over
+criteria — `TC-GRADE-21`'s permutation limb reads the same total in every order).
+
+The result also surfaces the population's breaker-refused criteria in
+`panel_refused` (`CT-AGG-07`): a criterion the escalation breaker marked
+`ungradeable_by_panel` contributes its stored figure — CT-ORCH-16 leaves it scored
+single-judge provisional — and is named in the result, so the grade's presentation
+of the breaker-refused row differs from its presentation of the identical
+ordinary-provisional row.

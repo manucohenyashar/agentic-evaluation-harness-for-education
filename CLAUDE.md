@@ -138,7 +138,7 @@ eleven contributors: `import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.inges
 Durable's last migration (#514's `review_label_backend_profile`, 12), `aeh.store` itself owns
 the one before it (#375's `calib_dual_scored_roster`, 11 — it is M-CALIB's table, but
 `TC-REQ-89` runs the console with `aeh.calib` absent, so no module the system must run WITHOUT
-may own a mandatory link in a chain; that is why this one is declared in `store.py` against the
+may own a mandatory link in a chain; that is why this one is declared in `aeh.store` (`store/migrations.py`) against the
 convention, and it stays there), `aeh.review` owns the one before it (#368's
 `review_label_columns`, 10), `aeh.judge` the one before it
 (#361's `judge_run_metrics_judge_dimension`, 9), `aeh.pkg` the one
@@ -151,7 +151,7 @@ that (#97's `synth_narrative_key`, 13), `aeh.orch` the one before that (#61's
 truncated chain builds the file at the base schema and the missing columns surface later, far
 from the open, as a distant `no such column: parent_version_id`. The open site refuses a short
 chain — `IncompleteMigrationChainError`, pinned per tier by `COMPLETE_SCHEMA_VERSIONS` in
-`store.py` (`#234`) — so the failure names its cause at the open, never at a distance. Chain
+`store/migrations.py` (`#234`) — so the failure names its cause at the open, never at a distance. Chain
 *order* is not the caller's duty: `_VersionOrderedRegistry` (`#269`) sorts each tier's chain at
 write time, so import order cannot produce a reverse version step — only completeness is on
 the caller. A migration added to a chain bumps its pin in the same change; the pin's gate test

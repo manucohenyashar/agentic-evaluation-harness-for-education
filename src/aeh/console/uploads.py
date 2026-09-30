@@ -22,11 +22,10 @@ def upload_scans(
     filename: str = "",
     record: bool = True,
 ) -> UploadOutcome:
-    """The upload handler (`FR-CONSOLE-04`, `NFR-CONSOLE-06`). Long work never happens
-    here: the handler walks the declared size in chunk-sized steps and dispatches, and
-    the orchestrator picks the intake up on its own schedule. The declared size is never
-    materialised — nothing of it is ever allocated, which is what the ratio budget and
-    the 1-second handler budget measure.
+    """The upload handler (FR-CONSOLE-04, NFR-CONSOLE-06). It does no long work: it walks the
+    declared size in chunks and hands them off, and the orchestrator picks up the intake on its own
+    schedule. It never allocates the full declared size, which is what the memory and one-second
+    time budgets measure.
 
     Two walks, disclosed. With a **stream**, each chunk is read off the stream, digested
     over the bytes actually read, and staged into the blob store. With only a **declared
@@ -125,9 +124,9 @@ def _chunk_ref(chunk: bytes) -> str:
 
 
 def _record_upload_part(app: Any, cohort_id: str, filename: str, blob_ref: str) -> None:
-    """Record one uploaded part through M-INGEST (via M-PIPE, the console's declared seam), and
-    only for a cohort whose ledger file already exists: the id arrives from a request, and a
-    free-form id must never name a file (a traversal, or a stray cohort) (#531 review)."""
+    """Record one uploaded part through M-INGEST (via M-PIPE, the console's declared entry point),
+    only if the cohort's file already exists. The id comes from a request, and it must never be
+    allowed to name a new file (path traversal or a stray cohort) (#531)."""
     store = getattr(app, "_store", None) if app is not None else None
     if store is None or getattr(store, "data_dir", None) is None:
         return
@@ -139,9 +138,8 @@ def _record_upload_part(app: Any, cohort_id: str, filename: str, blob_ref: str) 
 
 
 def _stage_chunk(chunk: bytes, app: Any) -> None:
-    """Hand one chunk to the blob store when a console carries one. The blob store's put
-    is idempotent and content-addressed, so a replayed chunk is a no-op; the bytes are
-    not retained here."""
+    """Pass one chunk to the blob store, if the console has one. Storing is content-addressed and
+    idempotent, so a repeated chunk does nothing; the bytes are not kept here."""
     store = getattr(app, "_store", None) if app is not None else None
     if store is None:
         return

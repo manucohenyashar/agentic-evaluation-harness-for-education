@@ -29,6 +29,8 @@ Files:
     tier_handle.py   `SqliteTierHandle`, one tier's database
     sqlite_store.py  `SqliteStore`, `open_store`, and the store's metrics
     statements.py    the shared `STATEMENTS` registry
+
+Detailed design notes (the full original module description): `docs/code-notes/store.md`.
 """
 
 from __future__ import annotations

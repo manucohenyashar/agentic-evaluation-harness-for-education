@@ -109,3 +109,212 @@ module imports no orchestrator and offers no enqueue; the dependency stays
 one-way. The write set is unchanged and stays empty of SQL (`CT-AGG-11`):
 every value here is returned for the caller's transaction, so `M-AGG` has no
 write path to `narrative` and none to anything else.
+
+## Details moved out of the code
+
+These notes were the longer parts of docstrings in `aeh.agg`. Each section is named after the file and the function or class it describes.
+
+### aggregate.py: aggregate
+
+Pure (`CT-AGG-01`): the verdicts, the criterion's declared band set, the
+integrity signals and the configuration are values; nothing here reads a
+store, a clock, or any configuration beyond its arguments — `config` is
+`None` (the module constants above are the production defaults) or a value
+carrying any of `auto_threshold_atomic`, `auto_threshold_holistic`,
+`uncited_multiplier`, `holistic_multiplier` and `caps` (a mapping from each
+of the six signal names to its hard cap; absent it entirely, `AGG_CAP_TABLE`
+applies).
+
+The aggregation is the **median band ordinal**, mapped to points exactly
+once through M-PKG's canonical `points_for_band` (`CT-PKG-05`,
+`NFR-AGG-02`) — never a mean of bands, never a mean of points, and never a
+per-judge average (RISK-05).
+
+The confidence (`FR-AGG-05`, ADR-10) is §3.12's computation in three steps:
+
+1. **Base** — the panel's own agreement figure (`ordinal_alpha(verdicts)`,
+   criterion-free) for a panel of three or more; the band-position prior
+   for a single judge ("extreme bands score higher").
+2. **Multipliers** — `× uncited_multiplier` when any verdict is uncited,
+   `× holistic_multiplier` for a holistic criterion. Multipliers shape the
+   base; they never touch a cap.
+3. **Caps** — each adverse integrity signal's cap is a hard `min` (ADR-10:
+   a cap is a `min`, never a penalty term, so no amount of panel agreement
+   can lift the figure past the worst adverse signal — R19). Fail-closed:
+   `None` ("not measured") is adverse, never favourable, never absent, and
+   binds the same cap as a measured-adverse value (`NFR-INTEG-03`); a
+   signal with no entry in the injected table binds nothing. One cap is
+   conditional (§3.12): `evidence_present` binds only where the criterion
+   requires evidence — read fail-closed when the criterion does not
+   declare the flag.
+
+Routing and state (`#93`) are assigned **per cause**, in precedence order —
+breaker, then panel size, then the threshold:
+
+* `breaker_tripped=True` — the criterion's `M-ORCH` circuit breaker tripped
+  (`CT-ORCH-16`): the score is routed `provisional` and its state is
+  `ungradeable_by_panel`. It is surfaced, never treated as an ordinary
+  provisional, and never auto-accepted — no confidence can lift it.
+* a single-judge panel — routed `provisional`, state
+  `provisional_unreviewed`: one judge's word awaits its panel
+  (`FR-ORCH-13`'s "scored single-judge provisional"), never auto-accepted.
+* otherwise — `auto` iff `confidence >= auto_threshold_for(scoring_model)`
+  (§3.12), else `queued`; state `final`.
+
+The four integrity inputs `FR-AGG-13` records are carried on the score
+exactly as received, beside the pre-cap base — the fields that make the
+figure reconstructible from the stored row alone (`recompute_confidence`).
+`notes` records what this call did, one clause per cause (`FR-AGG-12`'s
+discard, the single-judge mark, the breaker mark, the pass-through).
+
+The two marked alternative entries (`#93`):
+
+* `deterministic_score=` (`FR-AGG-10`) — an M-DET row judged without a
+  panel (`judge_count` 0). It is its own entry and is checked first,
+  because an empty panel is exactly how such a row arrives. The row is
+  **echoed, never re-aggregated**: band, points, ordinal, judge_count,
+  agreement and the recorded signals are carried as received, and
+  `routing`/`state` are taken off the row (`unresolved_selection` arrives
+  routed `triage`), with `auto`/`final` as the fallbacks when a row omits
+  them. A non-empty panel alongside a row is a contradictory call and
+  raises `ValueError`.
+* `fallback=True` (`FR-AGG-12`) — the one even case with a declared
+  fallback: a panel **left at exactly two** by an unrecoverable judge
+  failure. The second verdict is discarded — never adjudicated between,
+  since a tie broken by rule is a coin flip presented as a judgement
+  (R48) — and the base single-judge band is kept, provisional. Any other
+  even size still raises `EvenPanelError`; an odd panel aggregates
+  normally regardless of the mark.
+
+An empty panel with no deterministic row raises `EmptyVerdictsError` (a
+programming error, `CT-AGG-12`); any other even panel raises
+`EvenPanelError` before any median is taken (`FR-AGG-03`).
+
+### agreement.py: ordinal_alpha
+
+The design requires the ordinal metric but records a `TBD`: the textbook
+coincidence-matrix α is degenerate here, because a criterion's panel is a
+**single unit** — over one unit, observed and expected disagreement are the
+same pair population, so the textbook α collapses to 0 for any disagreeing
+panel and 1 for a unanimous one, under *any* per-pair distance. No convention
+built on the observed marginal alone can satisfy the plan's requirement that
+adjacent-band disagreement score **higher** than distant disagreement at
+equal raw agreement. The convention this module commits to is the one that
+can, and it is the one `tests/unit/agg/test_ordinal_alpha.py` pins by hand:
+
+    alpha  = 1 - D_o / D_e
+    D_o    = mean pairwise distance among the panel's valuations
+    delta  = |i - j| / (K - 1)     over the criterion's *declared* band scale
+    D_e    = mean pairwise distance over all ordered pairs of distinct
+             declared bands
+
+`D_e` is a property of the criterion alone, so two panels of equal raw
+agreement differ only through `D_o` — which is exactly the differential the
+requirement is: a `[B0, B1, B1, B1, B2]` panel and a `[B0, B1, B1, B1, B3]`
+panel agree at the same raw rate (3 of 5 modal, three agreeing and seven
+disagreeing pairs of ten) and score 0.52 against 0.28 on the four-band scale.
+
+Returns `None` where α is **undefined** rather than a substitute number
+(`CT-AGG-04`): fewer than two verdicts (no pairs), or a scale with fewer than
+two declared bands carrying actual disagreement (`D_e` would be zero). A
+unanimous panel is *defined*, not degenerate-by-absence: D_o = 0 gives α = 1
+exactly — including the two-band case, where the design's `TBD` pins α = 1
+**by construction** (`TC-AGG-19`) and the score carries
+`agreement_degenerate` so no consumer renders that 1 as if it were
+information (`CT-AGG-17`) — and including the criterion-free call on a panel
+whose valuations all sit at one ordinal, where the inferred scale is one
+band and unanimity is still defined.
+
+When `criterion` is omitted the declared scale is inferred from the panel's
+own highest ordinal (`K = max(ordinal) + 1`) — the reading a caller can take
+holding nothing but the verdicts. `aggregate` always passes the criterion, so
+every score row's agreement is computed on the full declared scale.
+
+The convention bounds nothing below: unlike `aggregate`, this function does
+not refuse an even panel, and a panel spread across the full scale (or using
+ordinals outside any declared scale) can score below −1. Only the
+fewer-than-two and one-band cases are `None`; callers needing a figure from
+a legal panel should route through `aggregate`, whose odd panels stay within
+the familiar range on a declared scale.
+
+### escalation.py: should_escalate
+
+Pure (`NFR-ORCH-04`, `CT-AGG-01`): the score row, the criterion, the
+criterion's override history and the package baseline are values; no
+store, no clock, no model call, no network, and no configuration beyond
+the arguments — `config` may carry any of `escalation_threshold`,
+`escalation_signal_weight`, `escalation_no_data_weight`,
+`escalation_self_confidence_weight`, `escalation_anomaly_sigma` and
+`escalation_override_rate` (each defaulting to its module constant).
+
+The decision is a concern level against the threshold. Each observable
+signal contributes `AGG_ESCALATION_SIGNAL_WEIGHT` when it fires (§7.1's
+enumeration, in order):
+
+1. **Interior band position** — the score sits in a declared band that is
+   neither the top nor the bottom of the criterion's scale: the panel did
+   not reach a scale edge, where bands are best discriminated. Read off
+   the row's `ordinal` against `band_count` (the row's, else the
+   criterion's); a row carrying neither is not making the claim, and the
+   limb is skipped.
+2. **Adverse integrity signals** — each of the six M-INTEG fields read
+   off the row: adverse (the opposite polarity, or a recorded `None` =
+   not measured, fail-closed) fires; an absent field is no claim and
+   skips its limb.
+3. **Uncited verdict** — the row's `uncited` mark.
+4. **Criterion override history** — `history.override_rate` above
+   `AGG_ESCALATION_OVERRIDE_RATE` (more than half of the criterion's
+   reviewed scores were overridden, the breaker's strict "more than
+   half"), or the criterion already escalated before
+   (`history.escalations`). A recorded no-data rate contributes
+   `AGG_ESCALATION_NO_DATA_WEIGHT` — not a zero (CT-STATS-09), but not a
+   trigger either.
+5. **Distributional anomaly** — the score's ordinal sits
+   `AGG_ESCALATION_ANOMALY_SIGMA` standard deviations or further from the
+   package baseline's expected band position. A baseline without a usable
+   `std` is unmeasurable, not anomalous.
+
+Model self-confidence (`score.self_confidence`) enters once, weighted:
+`AGG_ESCALATION_SELF_CONFIDENCE_WEIGHT × (1 − self_confidence)`. It is
+never appended to `reasons` — a decision escalated on self-confidence
+alone is structurally impossible (its full-sweep contribution stays below
+the threshold, R22), so every reason is an observable a reviewer can go
+and look at. Absent, it contributes nothing: absence is no claim.
+
+Returns the `EscalationDecision`: `escalate`, the target panel depth (the
+next odd at least two above the current panel — 1 → 3, never 2,
+`FR-AGG-09`; `validate_escalation_plan` in `aeh.orch` is the consumer's
+odd-plan check) and `reasons`. Under the production constants a decision
+not to escalate carries the current panel depth unchanged and no reasons
+(every weight is sub-threshold alone, so nothing fires without escalating);
+an injected sub-threshold signal weight can fire a reason without reaching
+the threshold — the fired observables are recorded either way.
+
+### recompute.py: recompute_confidence
+
+The reconstruction contract: what `FR-AGG-13` records is enough. The four
+integrity inputs ride the row itself (`spans_verified`, `evidence_present`,
+`sufficiency_flag`, `ocr_overlap_risk` — each as received, `NULL` = not
+measured = adverse), and the pre-cap base rides `confidence_base`. So the
+figure is re-derived by replaying the same computation the aggregator ran,
+from fields a reader of the database can see:
+
+1. **Base** — `confidence_base` (the post-multiplier, pre-cap figure the
+   aggregator consumed) when the row carries it; else `agreement` for a
+   panel of three or more, exact whenever the panel touched the declared
+   top band (where the criterion-free and criterion-declared alpha readings
+   coincide); else the band-position prior for a single-judge row, from the
+   row's own `ordinal`.
+2. **Caps** — the recorded signals' caps, fail-closed, as hard `min`s
+   (ADR-10), exactly as `aggregate` applied them.
+
+`None` is returned, never zero, when the row cannot support a re-derivation:
+no panel (a deterministic row's `judge_count` is 0), an even panel (a failed
+write), or no base derivable at all. The four recorded signals cap the
+figure exactly as before. A row `write_score` wrote (#360: its `caps_fired`
+is recorded) carries `described_evidence` and `extractor_disagreement` too,
+and their caps are re-applied the same way, so the residual `TC-AGG-C15`
+disclosed closes for such rows; an older row without them re-derives from
+the four. The multipliers' inputs (the uncited mark) ride `confidence_base`,
+which already has them applied.
+`config` carries an injected cap table the same way `aggregate`'s does.

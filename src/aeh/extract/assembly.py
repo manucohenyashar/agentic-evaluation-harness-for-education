@@ -64,13 +64,14 @@ def _criterion_parts(catalog: Any, criterion: Any, questions: dict[str, Any]
 
 def _criterion_of_run(store: Any, work_id: str, criterion_id: str
                       ) -> tuple[str, str, dict[str, str] | None]:
-    """The criterion the unit's run pinned, as the extractor needs it (#516, CT-PKG-01/06):
-    wording built from what the package version declares (the construct the criterion
-    measures and each band's descriptor, in ordinal order), the criterion's
-    `evidence_type`, and the criterion's question (prompt and reference solution) when the
-    version declares one. Read through `PackageCatalog` from the run's own version, so a
-    later draft never changes a running unit's request. A unit whose run the store does not
-    hold keeps the empty criterion (the storeless assembly path)."""
+    """The criterion as the unit's run pinned it, in the form the extractor needs (CT-PKG-01,
+    CT-PKG-06): its wording (what it measures and each band's descriptor, in ordinal order), its
+    `evidence_type`, and its question's prompt and reference solution when the version declares
+    one.
+
+    It is read through `PackageCatalog` from the run's own package version, so a later draft cannot
+    change a running unit's request. A unit whose run is not in the store keeps the empty criterion
+    (the storeless path)."""
     version_row = None
     for key in _cohort_keys_on_filesystem(store):
         rows = store.cohort(key).query(
@@ -86,7 +87,7 @@ def _criterion_of_run(store: Any, work_id: str, criterion_id: str
 
 
 def _current_document(store: Any, submission_id: str) -> Any:
-    """The submission's CURRENT document row, from the ledger files.
+    """The submission's current document row, read from the ledger files.
 
     Current = the head of `select_document_head`'s ordering (`created_at`,
     `document_id`) — the same ordering `M-INGEST` defines, so a superseding
@@ -108,8 +109,8 @@ def _current_document(store: Any, submission_id: str) -> Any:
 
 
 def document_bytes(store: Any, head: Any) -> bytes:
-    """The canonical document's bytes — the basis `FR-EXTRACT-01`'s byte offsets
-    address: "`document.markdown` of the submission's canonical artifact".
+    """The bytes of the submission's canonical document; span offsets are byte positions into these
+    (FR-EXTRACT-01).
 
     The head row's `markdown` column is the canonical artifact — `FR-INGEST-04`
     inserts the `document` row carrying the Markdown its `content_hash` was hashed
@@ -161,7 +162,7 @@ def assemble_request(
     question: Any = None,
     store: Any = None,
 ) -> ExtractionRequest:
-    """Assemble §3.8's `ExtractionRequest` from one work unit.
+    """Build the `ExtractionRequest` for one work unit (design §3.8).
 
     Pure with respect to the model: no provider call, no prompt render. The inputs
     beyond the unit are the two the §3.8 shape needs that a shipped `WorkUnit` has no

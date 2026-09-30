@@ -23,7 +23,7 @@ class ActionsMixin:
         new_band: str | None = None,
         review_seconds: float = 0,
     ) -> str | None:
-        """One teacher decision on one queue item (§3.15's Protocol member).
+        """Record one teacher decision on one queue item (design §3.15).
 
         ``accept`` keeps the proposed band; ``edit``/``override`` name a new one
         — an edit without a band is refused, because there is nowhere to put a
@@ -68,10 +68,9 @@ class ActionsMixin:
         return label.label_id
 
     def act_on_group(self, group: Any, band: str, review_seconds: float = 0) -> list[str]:
-        """One band decision over a whole group (§3.15's Protocol member): one
-        label per member (`CT-REVIEW-13`) — a single group label would
-        under-weight bulk decisions in every agreement figure — each carrying
-        the member's own identity and the per-member share of the time."""
+        """Apply one band decision to a whole group (design §3.15). It writes one label per member
+        (CT-REVIEW-13), each with the member's identity and its share of the time; a single label
+        for the group would under-count bulk decisions in every agreement figure."""
         members = tuple(getattr(group, "members"))
         if not members:
             return []
@@ -101,7 +100,7 @@ class ActionsMixin:
     # -- the label store (FR-REVIEW-09 / FR-REVIEW-15, #110) ------------------------------------------
 
     def label(self, label_id: str) -> LabelRecord:
-        """One label this service wrote, by id (`CT-REVIEW-07`'s read back)."""
+        """One label this service wrote, by id (CT-REVIEW-07)."""
         label = self._labels_by_id.get(label_id)
         if label is None:
             raise ReviewError(
@@ -111,9 +110,8 @@ class ActionsMixin:
         return label
 
     def edit_views(self) -> tuple[str, ...]:
-        """The views that display a band and can therefore carry a review
-        action (`FR-REVIEW-15`) — enumerable precisely so `CT-REVIEW-12`'s
-        parity sweep covers a view added later."""
+        """The views that show a band and so can carry a review action (FR-REVIEW-15). Listed
+        explicitly so the parity test (CT-REVIEW-12) also covers views added later."""
         return _EDIT_VIEWS
 
     def act_from_view(
@@ -125,12 +123,9 @@ class ActionsMixin:
         new_band: str | None = None,
         review_seconds: float = 0,
     ) -> str | None:
-        """One teacher decision made outside the budgeted queue (`FR-REVIEW-15`):
-        the same action from any view that displays a band. The validation is
-        the view's membership — and then the record is `act`'s, by *delegation*,
-        not by imitation: an edit made outside the queue runs the same code path
-        and so writes the same `review_queue` action and the same label type by
-        construction, which is the clause's whole point."""
+        """Record a teacher decision made outside the budgeted queue, from any view that shows a
+        band (FR-REVIEW-15). After checking the view, it calls `act`, so an edit made anywhere
+        writes the same queue action and the same label type."""
         if view not in self.edit_views():
             raise ReviewError(
                 f"{view!r} is not a view that displays a band; review actions "
@@ -139,9 +134,8 @@ class ActionsMixin:
         return self.act(item, action, new_band=new_band, review_seconds=review_seconds)
 
     def escalate(self, score_id: str) -> SupersededScore:
-        """Mark one score superseded (`CT-REVIEW-15`'s induced race): every queue
-        built before this call carries the old version, and an action on it is
-        refused with a refresh message."""
+        """Mark one score as superseded (CT-REVIEW-15). Every queue built before this call now
+        holds an old version, and an action on it is refused with a message to refresh."""
         current = self._versions.get(score_id)
         if current is None:
             row = self._rows_by_id.get(score_id)
@@ -151,9 +145,8 @@ class ActionsMixin:
         return SupersededScore(score_id=score_id, version=bumped)
 
     def _record_writes(self, item: ReviewItem, action: str, label: LabelRecord) -> None:
-        """Audit one action's writes (`CT-REVIEW-06`). The reduction through
-        the score row is recorded first — it is the write the clause asserts —
-        and the label second."""
+        """Record one action's writes in the audit list (CT-REVIEW-06): first the settlement of the
+        score row, then the label."""
         self._audit.append(
             WriteRecord(
                 table="criterion_score",
@@ -238,26 +231,24 @@ class ActionsMixin:
         return label
 
     def _mint_label_id(self) -> str:
-        """A label id. A store-backed service mints a globally unique one: every console
-        request builds a fresh service (#398), and a per-instance counter would mint
-        `label-0001` again and collide with the durable row an earlier request wrote. The
-        storeless double keeps the deterministic counter its rung-0 cases read."""
+        """A new label id. A store-backed service makes a globally unique id, because every console
+        request builds a fresh service and a per-instance counter would repeat ids already stored.
+        The storeless service keeps its deterministic counter for tests."""
         if self._store is not None:
             return f"label-{uuid.uuid4().hex}"
         return f"label-{len(self._labels) + 1:04d}"
 
     def _settle_score(self, item: Any, label: LabelRecord) -> None:
-        """The reduction CT-REVIEW-06 audits, made real (#517): the teacher's band lands on
-        the stored score row through M-AGG's writer (`record_review`), so M-GRADE's next pass
-        counts the criterion as reviewed. M-REVIEW writes no grade. A storeless service has
-        no score row to settle."""
+        """Settle the score row with the teacher's band through M-AGG's `record_review`, so
+        M-GRADE's next pass counts the criterion as reviewed (CT-REVIEW-06). M-REVIEW writes no
+        grade. A storeless service has no score row to settle."""
         self._settle_band(item, label.teacher_band)
 
     def _settle_band(self, item: Any, band: Any) -> None:
-        """Settle one score row on `band`. The points are the run's PACKAGE figure for the
-        band (never the service's default display scale, which M-GRADE would then sum): an
-        unchanged band keeps the row's own points, a moved band takes the package's points
-        for it, or NULL where the package figure cannot be read. Idempotent."""
+        """Settle one score row on `band`. The points are the package's points for that band (never
+        the default display scale, which M-GRADE would then add up): an unchanged band keeps the
+        row's points, a new band takes the package's points, or NULL if the package figure cannot
+        be read. Safe to repeat."""
         if self._store is None or band is None:
             return
         row = self._rows_by_id.get(item.score_id)
@@ -277,8 +268,8 @@ class ActionsMixin:
                           str(band), points)
 
     def _recorded_decision(self, item: Any, action: str, teacher_band: Any) -> str | None:
-        """The id of the score's latest durable label when it records this same decision,
-        or None. Only a store-backed service has a durable label store to consult."""
+        """The id of the score's latest stored label if it records this same decision, else None.
+        Only a store-backed service has stored labels to check."""
         run_id = self._attribution_run()
         if self._store is None or run_id is None or teacher_band is None:
             return None
@@ -292,13 +283,10 @@ class ActionsMixin:
         return None
 
     def _attribution_run(self) -> str | None:
-        """The run a label written now attributes to (`NFR-REVIEW-04`): the
-        queue this service last built, or — before any build — the sole cohort
-        the service was opened over. ``None`` when neither holds. The durable
-        row's ``cohort_id`` scoping column carries this same id — the run's id
-        is the administration's id in the store flow (`open_review` names the
-        cohort as the run), and the rule's full shape is disclosed in the
-        module interpretations."""
+        """The run a label written now belongs to (NFR-REVIEW-04): the queue this service last
+        built, or, before any build, the only cohort the service was opened over. None when neither
+        applies. The stored row's `cohort_id` holds the same id, because the store flow uses the
+        cohort id as the run id."""
         if self._current_run_id is not None:
             return self._current_run_id
         if len(self._cohort_ids) == 1:
@@ -308,16 +296,11 @@ class ActionsMixin:
     def _persist_label(
         self, label: LabelRecord, run_id: str, item: ReviewItem | BlindItem
     ) -> None:
-        """The durable half of a store-backed action (`FR-REVIEW-09`): the same
-        label this service holds in memory, written to Tier D's ``label`` table
-        in one statement. ``CT-STORE-03`` scopes atomicity to one transaction
-        body and cross-tier atomicity is deliberately not provided, so this
-        runs after the in-memory write: a failure here aborts the action with
-        the in-memory record already written. ``item`` is the identity the
-        label's student-reference column carries — the queue item an action
-        acted on, or the blind ref the flow drew (#111; a ``BlindItem`` carries
-        ``submission_id`` and nothing else, which is all the durable row
-        reads)."""
+        """Write the label to Tier D's `label` table in one statement, for a store-backed action
+        (FR-REVIEW-09). The store has no cross-tier transactions (CT-STORE-03), so this runs after
+        the in-memory record: a failure here aborts the action with the in-memory record already
+        written. `item` supplies the student reference: the queue item acted on, or the blind
+        reference drawn."""
         if label.teacher_band is None:
             raise ReviewError(
                 f"label {label.label_id!r} records no band; Tier D's label table "
@@ -362,8 +345,8 @@ class ActionsMixin:
     def _label_judgement_columns(
         self, label: LabelRecord, run_id: str
     ) -> dict[str, Any]:
-        """`FR-REVIEW-21`'s eight columns: what this label agreed with, recorded at the
-        moment it is written.
+        """The label's eight judgement columns: what the label agreed with, recorded when it is
+        written (FR-REVIEW-21).
 
         Everything here is resolved best-effort and defaults to `None`, never to a
         flattering value: a `band_distance` the band scale cannot supply is unknown, and

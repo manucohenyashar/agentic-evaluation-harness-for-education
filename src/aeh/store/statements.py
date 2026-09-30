@@ -59,7 +59,7 @@ def _owning_module(name: str) -> str:
 
 
 class _StatementRegistry(dict):
-    """The shared `STATEMENTS` registry: one SQL text per name (FR-STORE-16, ADR-32).
+    """The shared `STATEMENTS` registry: one SQL text per statement name (FR-STORE-16, ADR-32).
 
     `aeh.det`, `aeh.grade`, `aeh.ingest` and `aeh.pkg` merge their statements into this one
     dictionary at import. Before #511 a name two of them declared differently resolved to

@@ -55,10 +55,10 @@ _NO_PROVENANCE = (
 
 
 def _provenance_from(row: Mapping[str, Any], summary: Mapping[str, Any] | None) -> str:
-    """The provenance line of one run (FR-CONSOLE-40): the run row's package version and
-    rubric revision, and the persisted summary's backend profile and panel, plus the decision
-    engine and build when the summary carries one. Credential-free by construction: the
-    summary holds build identities only (CT-CONF-10)."""
+    """The provenance line for one run (FR-CONSOLE-40): the package version and rubric revision
+    from the run row, and the backend profile and panel from the saved summary, plus the decision
+    engine and build when the summary has one. It never contains credentials: the summary stores
+    only build identities (CT-CONF-10)."""
     version = str(row.get("package_version_id") or "")
     rubric = version.rpartition("@")[2] or version
     parts = [f"package version {version}", f"rubric version {rubric}"]

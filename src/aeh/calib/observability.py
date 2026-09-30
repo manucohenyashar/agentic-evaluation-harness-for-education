@@ -21,8 +21,8 @@ from .scenarios import cohort_with_band_shift, model_ref_off_panel, _off_panel_m
 
 @dataclass(frozen=True)
 class CalibrationMetric:
-    """One metric the module emits (seam 4, `CT-CALIB-14`): its name, its label
-    dimensions, and whether it is a distribution.
+    """One metric M-CALIB emits: its name, its label dimensions, and whether it is a distribution
+    (CT-CALIB-14).
 
     Dimensionality is the point: findings carry a ``triage_category`` label because the
     three categories mean different remedies; the class shift is a distribution because
@@ -35,7 +35,7 @@ class CalibrationMetric:
 
 
 def metrics_for_test() -> dict[str, CalibrationMetric]:
-    """The metric surface the module's structured records feed (`CT-CALIB-14`).
+    """Test seam: the metrics M-CALIB's structured records feed (CT-CALIB-14).
 
     The families, names and dimensionality are what the harness scrapes from the
     module's structured records — `DiscoveryReport` (findings by triage category),
@@ -76,8 +76,8 @@ def metrics_for_test() -> dict[str, CalibrationMetric]:
 
 @dataclass(frozen=True)
 class CalibrationAlert:
-    """One alert the module raises (seam 4): its scope, its wording, and the finding
-    count that fired it."""
+    """One alert M-CALIB raises: its scope, its wording, and the finding count that triggered it.
+    """
 
     scope: str
     message: str
@@ -85,8 +85,7 @@ class CalibrationAlert:
 
 
 def alerts_for_test(*, finding_count: int = 0) -> tuple[CalibrationAlert, ...]:
-    """The alert surface for a discovery that surfaced ``finding_count`` ambiguities
-    (`CT-CALIB-14`).
+    """Test seam: the alerts for a discovery that found `finding_count` ambiguities (CT-CALIB-14).
 
     More than a handful — the same call-time threshold discovery itself alerts under
     (`_ambiguity_alert_after`) — alerts **once, on the aggregate**: the rubric needs a
@@ -104,8 +103,8 @@ def alerts_for_test(*, finding_count: int = 0) -> tuple[CalibrationAlert, ...]:
 
 
 def simulate_failure(failure_mode: str, *, r0: str = _DEFAULT_R0_VERSION) -> CalibrationRunOutcome:
-    """Drive one of `CT-CALIB-02`'s eight failure modes through the module's real paths
-    and return the terminal outcome every one of them resolves to (`FR-CALIB-10`).
+    """Test seam: drive one of the eight failure modes (CT-CALIB-02) through the real code paths,
+    and return the fallback outcome every one of them ends in (FR-CALIB-10).
 
     The modes and the real path each drives: ``teacher_declines`` — the run's
     no-inputs branch (questions were elicited, the teacher answered nothing);
@@ -238,7 +237,7 @@ def simulate_failure(failure_mode: str, *, r0: str = _DEFAULT_R0_VERSION) -> Cal
 
 
 def _refusal_note(failure_mode: str, r0: str, reason: str) -> str:
-    """The terminal-state fairness note every failure mode resolves to (`FR-CALIB-10`)."""
+    """The fairness note every failure mode ends with (FR-CALIB-10)."""
     return (
         f"{failure_mode}: {reason}, so the run ended at R0 ({r0}) — the class is graded "
         "with the rubric as given and the ambiguous criteria are marked lower-confidence "

@@ -21,7 +21,7 @@ SELF_AGREEMENT_MINIMUM_RUNS = 3
 
 
 class _ExemplarSalt:
-    """`HARNESS_JUDGE_EXEMPLAR_SEED` set to one value for the duration of an assembly.
+    """Sets `HARNESS_JUDGE_EXEMPLAR_SEED` to one value while a request is assembled.
 
     The salt is read at CALL time inside `judge._ordered_exemplars`, so permuting the
     exemplar order means setting the environment around `assemble` and putting it back —
@@ -59,7 +59,7 @@ class _ExemplarSalt:
 
 
 def _score_units_for(store: Any, fixture_submissions: Sequence[str]) -> list[Any]:
-    """The score units of `fixture_submissions`, rebuilt as the lease resolved them.
+    """The scoring units of the given fixture submissions, rebuilt as leasing would produce them.
 
     The drivers re-score judgments that have already been made, so the units are the
     `done` ones — the statement says so — and `Orchestrator.lease`, which claims PENDING
@@ -115,7 +115,7 @@ def _score_units_for(store: Any, fixture_submissions: Sequence[str]) -> list[Any
 
 
 def _exemplar_order(request: Any) -> tuple:
-    """The exemplar ids of an assembled request, in presentation order.
+    """The worked-example ids of an assembled request, in presentation order.
 
     This is the thing the salt permutes, so comparing two of these is how the drivers
     tell a real permutation from one that changed nothing.
@@ -142,7 +142,7 @@ def _assemble_under(store: Any, provider: Any, ref: Any, unit: Any, salt: str | 
 
 
 def _band_of(store: Any, provider: Any, ref: Any, request: Any) -> str:
-    """Dispatch one assembled request and return the band answered."""
+    """Send one assembled request and return the band the judge chose."""
     from aeh.judge import ScoringWorker
 
     return ScoringWorker(store, provider, ref).dispatch(request, ref).band
@@ -156,55 +156,9 @@ def measure_position_bias(
     *,
     seed: Any,
 ) -> Mapping[str, float]:
-    """`FR-STATS-21`: each judge's band-change rate under a permuted exemplar order.
+    """Each judge's rate of changing band when the worked-example order is shuffled (FR-STATS-21).
 
-    Re-scores every fixture judgment twice through the real `ScoringWorker.assemble` /
-    `dispatch` path — once in the shipped default order, once with
-    `HARNESS_JUDGE_EXEMPLAR_SEED` set to `seed` — and reports, per judge, the fraction of
-    its judgments whose band MOVED. A judge whose verdict is a property of the work
-    answers the same band either way and rates 0; one whose verdict is a property of
-    where the exemplars sat rates above it. That is `FR-STATS-15`'s order/position swap,
-    measured.
-
-    **The denominator is each judge's own measured judgments — not the fixture-submission
-    count, and not the dispatch count.** All three coincide in the simple world (one run,
-    one criterion, every submission judged) and diverge everywhere else, silently:
-
-    * one (submission, judge) yields one judgment PER CRITERION, and one more per run the
-      fixture set was judged in. Dividing by `len(fixture_submissions)` counted those
-      extra judgments in the numerator while leaving the denominator at six — a fixture
-      set judged twice reported double the true rate, and `run_mvvp` then REFUSED the
-      result for leaving `[0, 1]`, turning a wrong figure into a crash one call later;
-    * a submission the store holds no judgment for inflated the denominator, understating
-      every rate (`2/7` where the truth is `2/6`);
-    * two dispatches make ONE comparison, so dividing by dispatches would halve
-      everything.
-
-    **A judge with no measured judgment is absent from the result, never `0.0`.** Zero is
-    a measurement — "this judge did not move" — and a judge the fixture set never reached
-    has not been measured at all. `run_mvvp` reports an absent judge as
-    `measured=False` with its declared reason, which is the true statement; a fabricated
-    `0.0` would have been stamped `measured=True`. This is the same rule the empty-fixture
-    guard below applies, held at per-judge granularity.
-
-    **A permutation that moved nothing is excluded from both sides of the fraction.**
-    `judge._ordered_exemplars` returns early for a criterion with fewer than two
-    exemplars, so the salt cannot reorder what is not there: the permuted request is
-    byte-identical to the default, the same recorded reply answers both, and the
-    comparison can only ever say "no change". Counting that as evidence of
-    order-insensitivity would manufacture a confident `0.0` out of a criterion that was
-    never permutable. Units whose order did not move are skipped; a judge left with no
-    movable judgment is absent, and a call where nothing at all was permutable raises
-    rather than returning a mapping of silent zeroes.
-
-    The return is a plain `Mapping[judge build_id, float]`, which is what
-    `run_mvvp(measured_position_bias=...)` validates and reports verbatim. No wrapper
-    type: a rate that cannot be compared with `==` to the figure a reader hand-computes
-    is a rate nobody can check.
-
-    Judges outside `panel` are ignored rather than measured — `run_mvvp` refuses rates for
-    judges its declared panel does not name, so emitting one here would produce a mapping
-    the consumer is required to reject.
+    More detail: `docs/code-notes/stats.md`, section `measurements.py: measure_position_bias`.
     """
     refs = {ref.build_id: ref for ref in panel}
     submissions = tuple(fixture_submissions)
@@ -254,32 +208,9 @@ def measure_self_agreement(
     *,
     runs: int = SELF_AGREEMENT_MINIMUM_RUNS,
 ) -> Mapping[str, float]:
-    """`FR-STATS-21`: each judge's self-agreement over `runs` replications per judgment.
+    """Each judge's self-agreement over `runs` repeats of each judgment (FR-STATS-21).
 
-    Every fixture judgment is dispatched `runs` times in the default exemplar order, and a
-    judgment counts as agreeing only when ALL its replications answered the same band. The
-    rate is the fraction of the judge's judgments that agreed — 1.0 for a judge that
-    repeated itself exactly, lower for one that did not.
-
-    **Replication is per judgment, not per judge.** `runs` dispatches of one submission
-    says nothing about the other five; the floor `FR-STATS-21` states is on each judgment,
-    so this issues ``runs`` dispatches for every judgment the judge actually made.
-
-    **The denominator is each judge's own measured judgments**, and a judge with none is
-    absent from the result rather than carrying `0.0` — for the reasons set out on
-    `measure_position_bias`, which apply here with the sign flipped: a fabricated `0.0`
-    self-agreement reads as "measured, and never stable", the harshest possible claim
-    about a judge that was never asked anything. The two drivers fabricating opposite
-    lies from the same empty input is what makes this a rule rather than a preference.
-
-    `runs` below `SELF_AGREEMENT_MINIMUM_RUNS` raises `ValueError` — a real refusal, not an
-    assertion, so it survives ``python -O`` and reads as a rejected argument rather than a
-    broken invariant.
-
-    Reported beside, never merged with, the backend's own
-    ``deterministic_at_temperature_zero`` claim: `run_mvvp`'s step 3 carries both, because
-    a measured rate and a vendor's assertion are different kinds of evidence
-    (`CT-PROV-04`).
+    More detail: `docs/code-notes/stats.md`, section `measurements.py: measure_self_agreement`.
     """
     if not isinstance(runs, int) or isinstance(runs, bool):
         raise ValueError(

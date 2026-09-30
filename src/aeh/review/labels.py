@@ -51,38 +51,10 @@ def record_label(
     label: Any = None,
     cohort_id: str | None = None,
 ) -> str:
-    """Write one label into the process-level store and return its id
-    (`FR-REVIEW-09`): the direct route for a label that does not ride an
-    action — and the vocabulary the C07/C08 contract reads.
+    """Write one label to the process-level label store and return its id (FR-REVIEW-09), for
+    labels that do not come from a queue action.
 
-    ``saw_system_output`` records whether the teacher saw the system's output
-    before deciding (`FR-REVIEW-09`'s visibility column): 1 means the system
-    output was visible, 0 means the label was written blind. It defaults from
-    the label type — a ``blind`` label is by definition blind, every other type
-    is by default an operational one — and an explicit value wins, so a caller
-    that knows better can record it. The label is fully typed: band, routing,
-    origin, attribution, the visibility flag — no field is left implicit. There
-    is deliberately no ``new_points`` parameter: a score edit is a band
-    choice (`FR-REVIEW-10`), and points enter only as the *derived* value a
-    service label carries — the mapping is never handed a caller's number.
-
-    Two routes, one signature (`#115`'s collection route completes the shape
-    this docstring anticipated at #110):
-
-    * **The in-memory route** — ``run_id=``, ``score_id=``, ``label_type=``
-      (the original #110 surface). The label lives in the process-level store
-      and dies with the process; this is the vocabulary the C07/C08 contract
-      reads.
-    * **The durable collection route** — ``label=`` with ``data_dir=`` (and an
-      optional ``cohort_id=``): the label object is written straight to Tier
-      D's ``label`` table through ``upsert_label``, the store being cached per
-      data directory so a collection loop pays the open once. The statistics
-      cases (`TC-STATS-C01` rung 2, `TC-STATS-C17`, `TC-STATS-C18`) collect
-      through this route, and `M-STATS` reads the same rows back.
-
-    The two are mutually exclusive by signature — a call carrying both is
-    refused rather than guessed at, and a call carrying neither route's
-    required arguments is a programming error, not a silent default.
+    More detail: `docs/code-notes/review.md`, section `labels.py: record_label`.
     """
     if label is not None:
         if run_id is not None or score_id is not None or label_type is not None:
@@ -144,9 +116,8 @@ def record_label(
 
 
 def labels_for(*, run_id: str) -> tuple[LabelRecord, ...]:
-    """Every label recorded into the process-level store for one run
-    (`CT-REVIEW-07`'s read back), in write order. A tuple, so a caller cannot
-    reorder the store's history in place."""
+    """Every label stored in the process-level store for one run, in write order, as a tuple
+    (CT-REVIEW-07)."""
     return tuple(_LABEL_STORE.get(run_id, ()))
 
 
@@ -160,7 +131,7 @@ _COLLECTED_STORES: dict[str, Any] = {}
 
 
 def _collection_store(data_dir: Path | str) -> Any:
-    """The open store behind the collection route, cached per data directory.
+    """The open store behind the label collection route, cached per data directory.
 
     The tier migration chains are concatenated at import time by the modules
     that own the schema they add (CLAUDE.md): the first open in a process must
@@ -192,9 +163,7 @@ def _collection_store(data_dir: Path | str) -> Any:
 def _write_collected_label(
     *, label: Any, data_dir: Path | str, cohort_id: str | None
 ) -> str:
-    """One collected label, durable (`#115`): the label object a caller holds
-    — the collection-side shape, not a service's ``LabelRecord`` — written to
-    Tier D through ``upsert_label`` and returned as its id.
+    """Store one collected label in Tier D through `upsert_label` and return its id.
 
     The column mapping reads whatever the label carries and refuses what the
     table cannot: a label with no id is a programming error, and a label with
@@ -292,10 +261,7 @@ def _write_collected_label(
 
 
 def blind_sample_skipped(service: Any, run_id: str = "run-1") -> BlindSampleSkipReport:
-    """The skip, read back from a service (`FR-REVIEW-13`'s reporting surface,
-    `CT-REVIEW-10`'s read side): whether this run's blind sample was skipped,
-    the consequence in words, and ``current_figure = None`` — always, whatever
-    a previous administration produced. The module-level form mirrors
-    ``record_label``/``labels_for``: the report is read *about* a service, so a
-    caller holding one asks here rather than reaching into its state."""
+    """Whether a service's run skipped the blind sample, the consequence in words, and
+    `current_figure = None` always (FR-REVIEW-13, CT-REVIEW-10). Like `record_label` and
+    `labels_for`, the report is read about a service from outside it."""
     return service.skip_report(run_id)

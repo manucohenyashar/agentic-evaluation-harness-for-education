@@ -23,10 +23,9 @@ class RevisionMixin:
     def revise_document(
         self, document_id: DocumentId, replacement_pages: Sequence[PageReplacement],
     ) -> DocumentId:
-        """Apply a correction (`FR-INGEST-05`): re-transcribe the replaced pages and
-        emit a NEW document row with `parent_doc_id` set and a new `content_hash`. The
-        original row is never touched — `revise_document` returns an id DIFFERENT from
-        the one passed in, always."""
+        """Apply a correction (FR-INGEST-05): re-transcribe the replaced pages and write a new
+        document row with `parent_doc_id` set and a new `content_hash`. The original row is never
+        changed, so the id returned always differs from the one passed in."""
         rows = self._handle.query(INGEST_STATEMENTS["select_document"],
                                   document_id=document_id)
         if not rows:

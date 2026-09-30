@@ -17,12 +17,11 @@ from .surfaces import render_package_catalog, render_preflight
 
 
 class ScreenRenderingMixin:
-    """Renders a route: resolves its parameters and dispatches to the screen."""
+    """Renders a route: fills in its parameters and calls the screen."""
 
     def render(self, route: str, **params: Any) -> RenderedPage:
-        """Render one route. Placeholders are filled from `params`; a missing parameter
-        renders its section honestly empty rather than crashing — a page is a read, and
-        a read of nothing says so."""
+        """Render one route, filling placeholders from `params`. A missing parameter shows its
+        section as empty instead of failing."""
         queries: list[str] = []
         screen, resolved = self._resolve(route, params)
         self._skipped_ledgers = 0
@@ -48,9 +47,8 @@ class ScreenRenderingMixin:
         )
 
     def api_payload(self, route: str, **params: Any) -> dict[str, Any]:
-        """The same view as data: what the page would have shown, as a payload — the
-        route, its resolved parameters, and the queries the render issued. Nothing a
-        control row could contribute is in it."""
+        """The same view as data: the route, its parameters and the queries the render ran. Nothing
+        a control row could add is included."""
         page = self.render(route, **params)
         return {
             "route": route,
@@ -161,7 +159,7 @@ class ScreenRenderingMixin:
     # -- S7: the monitor polls the ledger and writes nothing -------------------------------------------
 
     def _run_status_from_ledger(self) -> str | None:
-        """The run's latest status, read from the write log the console can see.
+        """The run's latest status, from the write log the console can see.
 
         The write log is the ledger: every control row the console has written is in it,
         and the last `run` payload names the status the orchestrator will apply. A fresh

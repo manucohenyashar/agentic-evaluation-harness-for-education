@@ -19,9 +19,8 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class RenderedPage:
-    """One rendered view: the markup, the queries that produced it and — for the run
-    monitor — the interval it polls the ledger at. Durations and memory are measured by
-    the tests, not reported by pages (the vocabulary's own rule).
+    """One rendered screen: the HTML, the queries that produced it and, for the run monitor, how
+    often it polls. Pages do not report timings or memory; the tests measure those.
 
     A page *is* its rendering for the consumers that sweep markup: the review
     vocabulary's detectors (`unstated_residual`, the budget- and clustering-language
@@ -47,19 +46,18 @@ class RenderedPage:
     read_error: str = ""
 
     def __contains__(self, text: Any) -> bool:
-        """Containment over the markup, so a rendered page reads as the rendering."""
+        """Search the HTML, so `"text" in page` works."""
         return text in self.html
 
     def lower(self) -> str:
-        """The markup lowercased, for the case-insensitive language sweeps."""
+        """The HTML in lowercase, for case-insensitive wording checks."""
         return self.html.lower()
 
 
 @dataclass(frozen=True)
 class ControlOutcome:
-    """What `perform` did, per stage: the rows written (none when refused, replayed or
-    held), whether the action was refused, and — for a stale-state refusal — the refresh
-    the §3.19 rule requires alongside it."""
+    """What `perform` did: the rows written (none if refused, replayed or paused), whether the
+    action was refused, and, for a stale-screen refusal, the refresh request §3.19 requires."""
 
     rows_written: tuple[Any, ...] = ()
     refused: bool = False
@@ -70,9 +68,9 @@ class ControlOutcome:
 
 @dataclass(frozen=True)
 class UploadOutcome:
-    """The upload handler's result. `blob_refs` are the content addresses the chunks
-    digested to; `staged_in_browser` is always False (`NFR-CONSOLE-06`); the walk never
-    materialises the declared size."""
+    """The upload handler's result. `blob_refs` are the content hashes of the chunks;
+    `staged_in_browser` is always False (NFR-CONSOLE-06). The handler never allocates the full
+    declared size."""
 
     dispatched: bool
     blob_refs: tuple[str, ...]
@@ -82,9 +80,9 @@ class UploadOutcome:
 
 @dataclass(frozen=True)
 class RunPlan:
-    """A planned run: a content-derived id (the persisted config, hashed — the same input
-    is the same run, and a retried plan over a different backend profile is a different
-    one, `FR-CONF-04`), the backend profile it plans, and its status."""
+    """A planned run: an id derived from a hash of the saved configuration (same config, same run;
+    a retry with a different backend profile is a different run, FR-CONF-04), the backend profile,
+    and the status."""
 
     run_id: str
     backend_profile: str
@@ -94,9 +92,9 @@ class RunPlan:
 
 @dataclass(frozen=True)
 class PreflightView:
-    """S6's view: the validation ladder per gate, the `FR-INGEST-28` cohort breaker, the
-    drift advisory, and the note that quarantine items outstanding do not withhold run
-    start. `start_run_available` is False exactly when the breaker has tripped."""
+    """Screen S6: the checks for each gate, the cohort-level breaker (FR-INGEST-28), the drift
+    warning, and a note that outstanding quarantine items do not block the run.
+    `start_run_available` is False exactly when the breaker has tripped."""
 
     cohort_id: str
     gates: dict[str, str]
@@ -147,8 +145,8 @@ class PreflightView:
 
 @dataclass(frozen=True)
 class CalibrationRender:
-    """A Phase 4 surface rendered present-and-unavailable, naming the version it arrives
-    in (`FR-CONSOLE-25`) — never silently absent."""
+    """A Phase 4 feature shown as present but not yet available, with the version it arrives in
+    (FR-CONSOLE-25), never silently missing."""
 
     present: bool
     available: bool
@@ -157,9 +155,9 @@ class CalibrationRender:
 
 @dataclass(frozen=True)
 class PipelineOutcome:
-    """The headless driver's result: the grades, whether they delivered and finalized, the
-    rubric version the run graded against, the criteria marked lower-confidence, the modules
-    the pipeline imported, and the per-stage trace.
+    """The headless driver's result: the grades, whether they were delivered and finalized, the
+    rubric version used, the criteria marked lower-confidence, the modules the pipeline imported,
+    and a trace of each stage.
 
     `lock_waits` (`#118`, the export seam's fourth half) is the store's SQLITE_BUSY-retry
     count over every handle the run opened — the observability figure that says a scoring
@@ -179,10 +177,9 @@ class PipelineOutcome:
 
 @dataclass(frozen=True)
 class ScorePresentation:
-    """A submission's score rows, presented per state. The presentation of the
-    breaker-refused row differs from the ordinary provisional row — a panel that refused
-    to grade never renders as a panel awaiting review (`CT-AGG-07`'s consumer
-    obligation)."""
+    """A submission's score rows, presented by state. A row the panel refused to grade (the
+    breaker) is shown differently from a normal provisional row, so it never looks like it is just
+    waiting for review (CT-AGG-07)."""
 
     submission_id: str
     rows: tuple[Any, ...]
@@ -203,11 +200,10 @@ class ScorePresentation:
 
 @dataclass(frozen=True)
 class QueueContents:
-    """A queue's badge figures, in `M-REVIEW`'s declared `ReviewQueue` shape (§3.16): the
-    flagged total, the items shown, and the review budget's numbers — the stated budget
-    and the reservation the blind sample subtracted from it before ranking
-    (`FR-CONSOLE-19`, `CT-REVIEW-02`). The queries the queue issued ride along, so a
-    reachability assertion can be taken over them rather than over the rendering."""
+    """A queue's badge figures in M-REVIEW's `ReviewQueue` shape (§3.16): the number flagged, the
+    number shown, the review budget, and the time reserved for the blind sample before ranking
+    (FR-CONSOLE-19, CT-REVIEW-02). The queries used are included, so tests can check what the queue
+    could reach."""
 
     flagged_total: int
     shown: tuple[Any, ...]
@@ -219,9 +215,8 @@ class QueueContents:
 
 @dataclass(frozen=True)
 class QueueView:
-    """One queue's view: its route (the two queues never share one, §11.3), its contents
-    in `M-REVIEW`'s declared shape, the ranked order the reservation was subtracted from,
-    and the queries that produced all three."""
+    """One queue's view: its route (the two queues never share one, §11.3), its contents, the
+    ranked order before the reservation, and the queries that produced them."""
 
     route: str
     queue: QueueContents
@@ -230,11 +225,9 @@ class QueueView:
 
 
 class ReviewQueueItem(NamedTuple):
-    """One entry the teacher's queue shows. A tuple, not a dict, deliberately: queue
-    membership is set algebra — "no item is in both queues" is a set intersection
-    (§11.3) — and a dict is unhashable, so the intersection would throw before it
-    could assert. The `kind` is the field `FR-CONSOLE-12` polices: `review_item`, the
-    one kind a review queue may render."""
+    """One item in the teacher's queue. It is a tuple, not a dict, so tests can intersect queues as
+    sets ("no item is in both queues", §11.3); dicts are unhashable. `kind` is always
+    `review_item`, the only kind a review queue may show (FR-CONSOLE-12)."""
 
     submission_id: Any
     criterion_id: Any
@@ -242,10 +235,9 @@ class ReviewQueueItem(NamedTuple):
 
 
 class QuarantineItem(NamedTuple):
-    """One entry the operator's queue shows — its flag state, the field a resolve
-    writes. A tuple for the same reason the review item is: the two queues' shown sets
-    must be able to intersect without colliding on rendering order, and a `QuarantineItem`
-    and a `ReviewQueueItem` are different tuples even over the same ids."""
+    """One item in the operator's queue, with its flag state (the field resolving it writes). A
+    tuple for the same reason as `ReviewQueueItem`; the two types are distinct even for the same
+    ids."""
 
     submission_id: Any
     ingest_status: Any
@@ -253,9 +245,9 @@ class QuarantineItem(NamedTuple):
 
 @dataclass(frozen=True)
 class ProgressReport:
-    """`CT-ORCH-10`'s shape, rendered: counts by the three declared dimensions plus the
-    totals and two derived figures, and **no per-student field** — the console derives
-    nothing beyond what `M-ORCH` exposes (`CT-CONSOLE-09`'s ceiling).
+    """Run progress in CT-ORCH-10's shape: counts by stage, criterion and judge, the totals and two
+    derived figures, and no per-student field. The console shows nothing finer than M-ORCH provides
+    (CT-CONSOLE-09).
 
     `counts` is a sequence of **rows**, each keyed by the three dimensions `CT-ORCH-10`
     declares (`stage`, `criterion`, `judge`) — not a string-keyed tally, which could not
@@ -307,9 +299,9 @@ class ProgressReport:
 
 @dataclass(frozen=True)
 class ValidationRecord:
-    """S1's validation record for one package version: what the package's own record
-    says, and the provenance gate outcome — which for a package never administered to the
-    asking population is the absence sentence, never a borrowed figure."""
+    """Screen S1's validation record for one package version: what the package's record says, and
+    the export-gate outcome. For a package never used with this population, it holds the absence
+    sentence, never another population's figure."""
 
     package_version: str
     provenance_gate_outcome: str
@@ -317,11 +309,9 @@ class ValidationRecord:
 
 @dataclass(frozen=True)
 class GradeRecord:
-    """A grade as the vocabulary's `Grade` shape carries it: when it finalized, which
-    revision it is, and the bands that compose it. A grade exported while its review
-    window is open is marked `provisional` — the window delays finalization and never
-    withholds the grade (`FR-CONSOLE-22`), and the mark is what tells a reader a
-    delivered grade from one still inside its window."""
+    """A grade in the vocabulary's `Grade` shape: when it was finalized, its revision, and its
+    bands. A grade exported while its review window is still open is marked `provisional`: the
+    window delays finalization but never withholds the grade (FR-CONSOLE-22)."""
 
     finalized_at: str | None
     revision: int
@@ -331,8 +321,8 @@ class GradeRecord:
 
 @dataclass(frozen=True)
 class ExportOutcome:
-    """What one export attempt did, next to the status (`CT-INGEST-08`'s per-stage
-    discipline): the package, the flag it was gated on, and the gate's own words."""
+    """What one export attempt did (CT-INGEST-08's style): the package, the flag it was checked on,
+    and the gate's message."""
 
     package_version: str
     contains_real_student_text: bool
@@ -342,10 +332,9 @@ class ExportOutcome:
 
 @dataclass(frozen=True)
 class TouchpointRender:
-    """One §7.9 touchpoint as the life cycle renders it (`FR-CONSOLE-25`): whether the
-    MVP implements it, whether it is present on the interface at all, whether it is
-    available to act through, and — when it is present but unavailable — the version
-    that arrives in. A labelled placeholder, never a gap (`R72`)."""
+    """How one §7.9 touchpoint appears (FR-CONSOLE-25): whether the MVP implements it, whether it
+    is shown, whether it can be used, and, if shown but unavailable, the version it arrives in. It
+    is always a labelled placeholder, never a gap (R72)."""
 
     implemented: bool
     present: bool = True
@@ -354,9 +343,9 @@ class TouchpointRender:
 
 
 class _HeldAction:
-    """The handle `hold_after` yields: `release()` resolves the held action against the
-    store as it now stands. The conservative outcome is the refusal with a refresh and no
-    write — §3.19 permits idempotent or refused-with-refresh, never partial."""
+    """What `hold_after` yields. `release()` resolves the paused action against the store as it is
+    now. The safe result is a refusal with a refresh request and no write; §3.19 allows either a
+    repeatable result or a refusal, never a partial write."""
 
     def __init__(self, app: "ConsoleApp", action: str) -> None:
         self._app = app

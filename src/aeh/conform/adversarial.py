@@ -14,7 +14,7 @@ from .suite import ConformanceSuite
 
 
 def run_adversarial_tier(corpus: str, provider: Any = None) -> AdversarialTierReport:
-    """Run one adversarial corpus through the tier (`TC-CONFORM-09`).
+    """Run one adversarial corpus through the conformance tier (TC-CONFORM-09).
 
     `F-ADV-INJ` derives the differential outcomes for every member from the declared reference
     bands — twins carry identical declarations, so the three paired properties compare equal

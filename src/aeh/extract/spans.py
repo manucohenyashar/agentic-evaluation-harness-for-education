@@ -23,8 +23,8 @@ _REGION_BLOCK = re.compile(
 
 
 def _kind_of(header: str) -> str | None:
-    """The region kind an ingest header declares — `kind=x` among the attributes, in
-    any order; an unknown or absent kind leaves the header unusable."""
+    """The region kind a region header declares (`kind=x` among its attributes, in any order). A
+    header with no known kind is unusable."""
     for token in header.split():
         if token.startswith("kind="):
             kind = token[len("kind="):]
@@ -33,8 +33,8 @@ def _kind_of(header: str) -> str | None:
 
 
 def _region_index(markdown: str, byte_offsets: Sequence[int]) -> tuple:
-    """`(start_byte, end_byte, kind)` per region, in document order — the byte map
-    turns the character-position regex into the byte positions the spans address."""
+    """`(start_byte, end_byte, kind)` for each region, in document order. It converts the regex's
+    character positions into the byte positions spans use."""
     regions = []
     for match in _REGION_BLOCK.finditer(markdown):
         kind = _kind_of(match.group("header"))
@@ -51,7 +51,7 @@ def _region_index(markdown: str, byte_offsets: Sequence[int]) -> tuple:
 def parse_spans(
     reply_text: str, markdown_bytes: bytes | None = None
 ) -> tuple[ExtractionSpan, ...]:
-    """The reply→spans conversion, run before persistence (`NFR-EXTRACT-02`).
+    """Turn the model's reply into spans, before anything is stored (NFR-EXTRACT-02).
 
     The reply is the disclosed format (`span_completion`'s shape): a JSON object with
     a `spans` list of `{start, end, ...}` — a bare list also parses. Every span is

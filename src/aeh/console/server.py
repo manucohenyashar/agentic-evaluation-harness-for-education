@@ -25,7 +25,7 @@ from .run_planning import build_console
 
 
 def _action_slug(action: str) -> str:
-    """One control action's URL spelling: lowercase, spaces and slashes to hyphens.
+    """A control action's URL form: lowercase, with spaces and slashes turned into hyphens.
 
     `CONTROL_SURFACE_ACTIONS` holds the actions verbatim, as prose — "start run",
     "pause/resume", "approve exemplar paraphrases at export" — because `FR-CONSOLE-32` pins
@@ -52,7 +52,7 @@ if len(CONTROL_ACTION_SLUGS) != len(CONTROL_SURFACE_ACTIONS):  # pragma: no cove
 
 
 class _BoundedReader:
-    """Exactly `limit` bytes of `stream`, and not one more.
+    """Reads exactly `limit` bytes of `stream` and no more.
 
     An upload reads from a keep-alive connection, where the bytes after the body are the NEXT
     request. Reading to EOF would swallow it, so the body is bounded by its declared length and
@@ -89,7 +89,7 @@ def _known_route(route: str) -> bool:
 
 
 class _ConsoleRequestHandler(BaseHTTPRequestHandler):
-    """The routes `FR-CONSOLE-33` declares, and nothing else.
+    """Serves the routes FR-CONSOLE-33 declares, and nothing else.
 
     Every response carries `Cache-Control: no-store`: the console renders student records, and
     a cached page is a record sitting in a browser's disk cache after the run it belongs to is
@@ -104,8 +104,8 @@ class _ConsoleRequestHandler(BaseHTTPRequestHandler):
         return self.server.console  # type: ignore[attr-defined]
 
     def log_message(self, fmt: str, *args: Any) -> None:  # noqa: A003
-        """Silent by default: the console's own observability is its pages and the ledger,
-        and an access log on stderr would interleave with the harness's output."""
+        """Silent by default: the console's record is its pages and the database, and an access log
+        on stderr would mix with test output."""
 
     def _respond(
         self, status: int, body: bytes, content_type: str, *, close: bool = False
@@ -122,7 +122,7 @@ class _ConsoleRequestHandler(BaseHTTPRequestHandler):
             self.close_connection = True
 
     def _not_found(self) -> None:
-        """404, and the connection ends here.
+        """Send 404 and end the connection.
 
         Every refusal path answers WITHOUT reading the request body, and this is HTTP/1.1, so
         leaving the connection open would have the unread body parsed as the next request:
@@ -132,8 +132,8 @@ class _ConsoleRequestHandler(BaseHTTPRequestHandler):
         self._respond(404, b"not found\n", "text/plain; charset=utf-8", close=True)
 
     def _serve_crop(self, crop_ref: str) -> None:
-        """S8's crop image (FR-CONSOLE-29, #530): served only when a stored region's
-        `crop_ref` names it, so the route never becomes a read of any other stored file."""
+        """Serve screen S8's crop image (FR-CONSOLE-29, #530), only when a stored region's
+        `crop_ref` names it, so this route can never read any other stored file."""
         app = self._console.app
         known = False
         try:
@@ -223,7 +223,7 @@ class _ConsoleRequestHandler(BaseHTTPRequestHandler):
         return {key: values[-1] for key, values in parse_qs(raw).items()}
 
     def _upload(self) -> None:
-        """Hand the request body to `upload_scans`, the module's upload handler.
+        """Pass the request body to `upload_scans`.
 
         Not a second implementation: `upload_scans` is where `FR-CONSOLE-04`'s chunked walk
         and `FR-CONSOLE-13`'s `%PDF-` magic check live, and a route that staged bytes itself
@@ -275,7 +275,7 @@ class _ConsoleRequestHandler(BaseHTTPRequestHandler):
 
 
 class _ConsoleHTTPServer(ThreadingHTTPServer):
-    """`ThreadingHTTPServer` carrying the `ConsoleServer` its handlers answer for."""
+    """A `ThreadingHTTPServer` that knows which `ConsoleServer` it serves."""
 
     daemon_threads = True
     allow_reuse_address = False
@@ -291,8 +291,8 @@ class _ConsoleHTTPServer(ThreadingHTTPServer):
 
 
 class ConsoleServer:
-    """A served console: one in-process `ThreadingHTTPServer` on the configured loopback
-    socket (ADR-17).
+    """A running console: one in-process `ThreadingHTTPServer` on the configured loopback address
+    (ADR-17).
 
     There is no child process. Runs execute in-process and the ledger makes them resumable,
     so killing the server stops them and `recover` picks them up (`NFR-CONSOLE-03`,
@@ -338,7 +338,7 @@ class ConsoleServer:
     # -- configuration (`FR-CONSOLE-36`) -----------------------------------------------------
 
     def _effective(self) -> dict:
-        """The effective config: the environment over `cfg`, every time it is asked for.
+        """The effective configuration: environment variables over `cfg`, recomputed each time.
 
         Asked again on every control action rather than cached, so `HARNESS_PROFILE` or
         `CONSOLE_BIND` changed after start is honoured — the whole point of resolving through
@@ -351,7 +351,7 @@ class ConsoleServer:
 
     @classmethod
     def _refuse_unless_servable(cls, config: dict, bind: str | None) -> None:
-        """The two refusals, in the order that makes them refusals.
+        """Run the two start-up refusals, in the order that makes them real refusals.
 
         The profile first (`CT-CONSOLE-20`): a routable bind must not be able to argue with
         it, so no bind validation happens before this line."""
@@ -370,7 +370,8 @@ class ConsoleServer:
             )
 
     def recheck_environment(self) -> None:
-        """Re-resolve and re-refuse, for one control action (`FR-CONSOLE-36`)."""
+        """Re-read the configuration and re-run the refusals before a control action
+        (FR-CONSOLE-36)."""
         self._refuse_unless_servable(self._effective(), self._bind)
 
     # -- lifecycle ---------------------------------------------------------------------------
@@ -385,12 +386,12 @@ class ConsoleServer:
 
     @property
     def pid(self) -> int:
-        """This process. The console serves in-process (ADR-17), so there is no other one —
-        the property stays because callers use it to name the process in a message."""
+        """This process's id. The console runs in-process (ADR-17), so there is no other process;
+        the property remains because callers use it in messages."""
         return os.getpid()
 
     def terminate(self) -> None:
-        """Stop serving: shut the loop down, close the port, and join the thread.
+        """Stop serving: shut down the loop, close the port and join the thread.
 
         `returncode` is set to 0 once the thread is joined — the observable "it is really
         stopped" the child-process design used an exit status for."""
@@ -414,9 +415,10 @@ def serve_console(
     cfg: dict[str, Any] | None = None,
     environ: Any = None,
 ) -> ConsoleServer:
-    """Serve the console. Refuses before binding: the deployment profile first
-    (`cloud-hosted` never starts, whatever the settings say), then any non-loopback bind —
-    both read from the EFFECTIVE config, the environment over `cfg` (`FR-CONSOLE-36`)."""
+    """Serve the console. Before binding it refuses, in this order: the `cloud-hosted` deployment
+    profile (never allowed, whatever the settings), then any non-loopback address. Both are read
+    from the effective configuration, with environment variables taking priority over `cfg`
+    (FR-CONSOLE-36)."""
     return ConsoleServer(store, run_id=run_id, cfg=cfg, environ=environ)
 
 
@@ -427,8 +429,8 @@ def start_console(
     run_id: str | None = None,
     environ: Any = None,
 ) -> ConsoleServer:
-    """Start the console under `cfg`. The same refusals apply, in the same order: the
-    profile first, then the bind — which is the order that makes the refusal a refusal
-    rather than a default somebody can turn off (`CT-CONSOLE-20`) — and both over the
-    effective config, the environment winning over `cfg` (`FR-CONSOLE-36`)."""
+    """Start the console with `cfg`. The same refusals apply in the same order: the profile first,
+    then the address, so the refusal cannot be turned off like a default (CT-CONSOLE-20). Both use
+    the effective configuration, with environment variables taking priority over `cfg`
+    (FR-CONSOLE-36)."""
     return ConsoleServer(store, run_id=run_id, cfg=cfg, environ=environ)

@@ -22,17 +22,15 @@ class KeyCorrectionMixin:
         self, cohort_id: str, criterion_id: str, new_version: str,
         *, run_id: str | None = None,
     ) -> RederiveReport:
-        """Re-derive one criterion's scores for one cohort under a corrected
-        answer key (`FR-DET-08`, `CT-DET-07`). A correction is a new package
-        version (`FR-PKG-18`); this reads the criterion, its options and its
-        points from THAT version, re-runs the same §7.8 kernel over every
-        submission's stored selection read — a lookup, not a re-judgement —
-        and upserts only the rows whose value actually moves. No panel work,
-        no review-queue row, no model call: `panel_units_enqueued` is a
-        declared zero, and the audit records appended for the changed rows
-        name `new_version` in their `answer_key_ref`, which is what makes a
-        correction answerable years later while the untouched rows' audit
-        trail still resolves each old grade to its old key.
+        """Re-derive one criterion's scores for one cohort under a corrected answer key (FR-DET-08,
+        CT-DET-07).
+
+        A correction is a new package version (FR-PKG-18). This reads the criterion, its options
+        and its points from that version, re-runs the same scoring rule on every submission's
+        stored selection (a lookup, not a re-judgement), and updates only the rows whose value
+        changes. It makes no model call and enqueues no panel work. Audit records for the changed
+        rows name `new_version` in `answer_key_ref`, so a correction can be traced years later,
+        while unchanged rows still trace to their old key.
 
         Idempotent (`CT-DET-07`, the M-ORCH redelivery constraint): against
         an unchanged key every re-derived value equals the stored one, so the

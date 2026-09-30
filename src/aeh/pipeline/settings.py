@@ -27,7 +27,8 @@ STALL_PASSES = 3
 
 
 def _int_knob(name: str, default: int | None, *, minimum: int) -> int | None:
-    """One `HARNESS_PIPE_*` integer, read at call time. Invalid raises before any write."""
+    """Read one `HARNESS_PIPE_*` integer knob at call time. An invalid value raises before anything
+    is written."""
     raw = os.environ.get(name)
     if raw is None or not raw.strip():
         return default

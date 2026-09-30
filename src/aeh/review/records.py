@@ -11,11 +11,9 @@ from typing import Any, Mapping
 
 @dataclass(frozen=True)
 class ReviewItem:
-    """One flagged criterion as the queue presents it — §3.15's wire shape plus
-    the identity fields a differential reads and the ranking surface (`FR-REVIEW-03`,
-    `FR-AGG-06`'s tie-break input). ``state`` rides through because `CT-AGG-07`
-    binds consumers to surface ``ungradeable_by_panel`` rather than merge it
-    into the provisional presentation."""
+    """One flagged criterion as the queue shows it (design §3.15), with the fields the ranking uses
+    (FR-REVIEW-03, FR-AGG-06). `state` is kept so `ungradeable_by_panel` can be shown distinctly
+    (CT-AGG-07)."""
 
     score_id: str
     criterion_id: str
@@ -38,7 +36,7 @@ class ReviewItem:
 
 @dataclass(frozen=True)
 class ReviewGroup:
-    """One signature-identical group presented as a single entry (`FR-REVIEW-05`).
+    """A group of items with identical signatures, shown as one entry (FR-REVIEW-05).
 
     ``members`` carries the full per-item rows, so "one label per member" is
     countable (`CT-REVIEW-13`) and the group's per-item view survives the
@@ -56,8 +54,8 @@ class ReviewGroup:
 
 @dataclass(frozen=True)
 class BuildEvent:
-    """One stage of a queue build (`NFR-REVIEW-01`'s trace seam). ``name`` is the
-    stable identifier the event-order contract reads (`CT-REVIEW-02`)."""
+    """One stage of a queue build (NFR-REVIEW-01). `name` is the stable identifier the event-order
+    check reads (CT-REVIEW-02)."""
 
     name: str
     detail: str = ""
@@ -65,8 +63,8 @@ class BuildEvent:
 
 @dataclass(frozen=True)
 class ReviewQueue:
-    """The built queue — §3.15's five declared fields plus the group list, the
-    build's own timing, and the per-stage trace."""
+    """The built queue: the five declared fields (design §3.15) plus the groups, the build's timing
+    and the per-stage trace."""
 
     run_id: str
     budget_minutes: int
@@ -81,12 +79,10 @@ class ReviewQueue:
 
 @dataclass(frozen=True)
 class LabelRecord:
-    """The label an action writes — `FR-REVIEW-09`'s eight fields, `NFR-REVIEW-03`'s
-    attribution, and the identity fields a differential reads, with ``new_points``
-    derived through `CT-PKG-05`'s pinned mapping from the band the label records
-    (`None` only where no band was recorded). Deliberately carries none of the
-    fields `CT-REVIEW-07` forbids — no confidence, no narrative, no system-side
-    points."""
+    """The label an action writes: the eight declared fields (FR-REVIEW-09), who made it
+    (NFR-REVIEW-03), and identity fields. `new_points` comes from the pinned band mapping
+    (CT-PKG-05), and is None only when no band was recorded. It has none of the fields CT-REVIEW-07
+    forbids: no confidence, no narrative, no system-side points."""
 
     label_id: str
     label_type: str
@@ -116,10 +112,9 @@ class LabelRecord:
 
 @dataclass(frozen=True)
 class CriterionOverrideRank:
-    """One criterion's row in the criteria-form ranking — the mirror of
-    ``aeh.agg.CriterionEscalationRank`` (`CT-STATS-09`'s consumer differential):
-    ``override_rate`` is None exactly when there was no figure to give; a
-    genuine zero keeps its zero and its ``no_data=False``."""
+    """One criterion's row in the criteria ranking, matching `aeh.agg.CriterionEscalationRank`
+    (CT-STATS-09). `override_rate` is None exactly when there was no figure; a real zero stays zero
+    with `no_data=False`."""
 
     criterion_id: str
     override_rate: float | None
@@ -128,8 +123,8 @@ class CriterionOverrideRank:
 
 @dataclass(frozen=True)
 class SupersededScore:
-    """What ``escalate`` returns (`CT-REVIEW-15`'s induced race): the score id and
-    the version every queue built before the escalation now carries stale."""
+    """What `escalate` returns: the score id, and the version that every earlier-built queue now
+    holds out of date (CT-REVIEW-15)."""
 
     score_id: str
     version: int
@@ -137,10 +132,8 @@ class SupersededScore:
 
 @dataclass(frozen=True)
 class CounterEmission:
-    """One observability emission (`CT-REVIEW-18`'s seam 4 surface): when it
-    fired, which counters it carried, and their values. The shown/flagged pair
-    travels in ONE emission by construction — the build emits them together, or
-    not at all — which is what the pairing assertion reads."""
+    """One counter emission (CT-REVIEW-18): when it fired, which counters it carried, and their
+    values. The shown and flagged counts always travel together in one emission."""
 
     at: str
     names: tuple[str, ...]
@@ -149,9 +142,8 @@ class CounterEmission:
 
 @dataclass(frozen=True)
 class ReviewAlert:
-    """One fired alert (`CT-REVIEW-18`'s Alert). ``name`` is the stable
-    identifier the contract reads; the criterion and its administration
-    sequence say what the pattern is in."""
+    """One fired alert (CT-REVIEW-18). `name` is the stable identifier; the criterion and its
+    administration history say what the alert is about."""
 
     name: str
     criterion_id: str
@@ -161,12 +153,9 @@ class ReviewAlert:
 
 @dataclass(frozen=True)
 class QueryPlan:
-    """The admission query, as a plan (`CT-REVIEW-05`'s reachability surface):
-    the routing values the queue's queries read over, the evaluation mode they
-    gate on, and the origins they can never reach. This is the plan the queue
-    runs — ``_admitted`` is the one predicate the in-memory filter executes
-    and the store form runs on every fetched row — not a description of one
-    fixture's outcome."""
+    """The admission query as a plan (CT-REVIEW-05): the routing values it reads, the evaluation
+    mode it requires, and the origins it can never reach. `_admitted` is the one filter both the
+    in-memory and the store versions actually run."""
 
     routing_values: tuple[str, ...]
     evaluation_modes: tuple[str, ...]
@@ -175,14 +164,9 @@ class QueryPlan:
 
 @dataclass(frozen=True)
 class WriteRecord:
-    """One write a review action made, as ``write_audit`` reports it
-    (`CT-REVIEW-06` reads the indirection from the write side rather than from
-    the resulting counts). ``table`` names the store table the write lands on —
-    ``criterion_score`` for the reduction through the score row, ``label`` for
-    the label itself; nothing this module writes is ever named on a grade
-    table. In the in-memory service the writes land on the service's own state
-    and each record names the table that state stands in for; #110's store
-    writes keep the same tables."""
+    """One write a review action made, as `write_audit` reports it (CT-REVIEW-06). `table` is
+    `criterion_score` for settling the score row and `label` for the label; nothing M-REVIEW writes
+    lands on a grade table."""
 
     table: str
     score_id: str
@@ -191,13 +175,10 @@ class WriteRecord:
 
 @dataclass(frozen=True)
 class BlindItem:
-    """One blind-flow draw unit (#111): the identity a judgement is about, and
-    nothing else. `CT-REVIEW-09` words its clause as *reachability* — the
-    system's output must be structurally absent from what the teacher answers
-    on, not merely unrendered — so the item carries the three fields the flow
-    needs to pose the question and no field a score row could occupy, the same
-    boundary-as-the-type reading `aeh.synth`'s ``L2Request`` takes. Frozen and
-    hashable: the refs are the keys of a submission's ``bands`` mapping."""
+    """One reference in a blind draw: the identity a judgment is about, and nothing else
+    (CT-REVIEW-09). It has only the three fields the flow needs to ask the question and no field a
+    score could occupy. Frozen and hashable, because the references key a submission's `bands`
+    mapping."""
 
     submission_id: str
     criterion_id: str
@@ -206,29 +187,23 @@ class BlindItem:
 
 @dataclass(frozen=True)
 class BlindSession:
-    """One blind sample sitting (#111): the drawn refs, and the two reads
-    `CT-REVIEW-09` asserts against. ``readable_tables()`` is the query-level
-    guarantee — ``submission`` and ``criterion`` only, per §3.15's Data flow
-    paragraph, and never ``criterion_score``; ``available_data()`` is what the
-    session holds, over which the value-level sweep runs. The session carries
-    no attribute a prefetched score row could hide behind (`FR-REVIEW-11`):
-    unreachability is a property of the type, not of the template."""
+    """One blind sitting: the drawn references, and the two checks CT-REVIEW-09 makes.
+    `readable_tables()` is the query-level guarantee (only `submission` and `criterion`, never
+    `criterion_score`); `available_data()` is everything the session holds. The session has no
+    attribute where a score row could hide (FR-REVIEW-11)."""
 
     session_id: str
     run_id: str
     items: tuple[BlindItem, ...]
 
     def readable_tables(self) -> frozenset[str]:
-        """The tables this session's queries read: the two §3.15's Data flow
-        paragraph permits, and nothing else — asserted by set equality and by
-        the named absence of ``criterion_score``."""
+        """The tables this session's queries read: exactly `submission` and `criterion`, and never
+        `criterion_score` (design §3.15)."""
         return frozenset({"submission", "criterion"})
 
     def available_data(self) -> dict[str, Any]:
-        """Everything the session can reach before submission, as plain data:
-        the identity fields of the drawn refs. No band, no points, no
-        narrative — the value-level probe walks this structure recursively, so
-        it is complete by construction."""
+        """Everything the session can reach before submission, as plain data: the identity fields
+        of the drawn references. No band, no points, no narrative."""
         return {
             "session_id": self.session_id,
             "run_id": self.run_id,
@@ -241,11 +216,8 @@ class BlindSession:
 
 @dataclass(frozen=True)
 class SubmissionGrade:
-    """One complete final grade as the student would receive it
-    (`FR-REVIEW-14`'s whole-grade sample): the submission's auto-accepted bands
-    per criterion and the points those bands map to. ``rendered_as_student_sees_it``
-    is the clause's own marker — the sample shows the grade, not the system's
-    internal view of it."""
+    """One complete final grade as the student would receive it (FR-REVIEW-14): the auto-accepted
+    band for each criterion and the points they map to."""
 
     submission_id: str
     criterion_bands: Mapping[str, str]
@@ -255,11 +227,9 @@ class SubmissionGrade:
 
 @dataclass(frozen=True)
 class BlindSampleSkipReport:
-    """What a skipped blind sample reports (`FR-REVIEW-13`): the absence, and
-    nothing in its place. ``reported`` is the honesty half — a blank where a
-    figure belongs is the finding, not a gap to fill — and ``current_figure``
-    is ``None`` by construction: a previous administration's figure presented
-    as current is RISK-08 arriving through the back door."""
+    """What a skipped blind sample reports (FR-REVIEW-13): that there is no figure, and nothing in
+    its place. `current_figure` is always None, because showing an earlier administration's figure
+    as current would be misleading (RISK-08)."""
 
     reported: bool
     message: str
@@ -268,17 +238,11 @@ class BlindSampleSkipReport:
 
 @dataclass(frozen=True)
 class ResidualReport:
-    """What ``end_session``/``close_run`` return (`FR-REVIEW-08`'s two
-    vanishing moments): the residual as the moment leaves it. ``state`` is the
-    mark the residual persists in; ``finalized`` and ``backfilled`` name rows
-    the moment wrote into a resolved state or invented a label for — empty by
-    construction, because the moment writes nothing, and the fields exist so a
-    later change that does write one has to name it there rather than in the
-    silence the clause forbids. ``grades_delivered``/``grades_finalized`` are
-    #111's (`FR-REVIEW-13`): skipping the blind sample has exactly one
-    consequence — no new validation evidence — and these two are the assertion
-    that the student's marks did not hear about it; ``True`` by construction,
-    because nothing here delivers, blocks or finalizes a grade."""
+    """What `end_session` and `close_run` return (FR-REVIEW-08): the unreviewed residual as it
+    stands. `finalized` and `backfilled` are always empty because these moments write nothing; the
+    fields exist so any future change that does write must say so. `grades_delivered` and
+    `grades_finalized` are always True: skipping the blind sample does not hold back grades
+    (FR-REVIEW-13)."""
 
     run_id: str
     moment: str
@@ -294,11 +258,8 @@ class ResidualReport:
 
 
 def write_fields() -> tuple[str, ...]:
-    """Every field this module writes (`CT-REVIEW-14`'s write set): the label's
-    own fields — `FR-REVIEW-09`'s eight plus `NFR-REVIEW-03`'s attribution and
-    the identity fields a differential reads — the action that produced it, and
-    the field the reduction writes on the score row, the review state
-    `FR-REVIEW-08` disciplines.
+    """Every field M-REVIEW writes (CT-REVIEW-14): the label's fields, the action that produced it,
+    and the review-state field it sets on the score row.
 
     The declaration is the module's write surface, not a survey of today's
     writes: a field added to a label or to the reduction must appear here, and

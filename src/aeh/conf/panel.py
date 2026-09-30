@@ -28,17 +28,14 @@ _PANEL_BUILD_REF_LENGTH = 32
 
 
 def _build_identity(ref: ModelRef) -> str:
-    """The canonical identity of one served build: the exact encoding
-    `compute_panel_build_ref` hashes. Two refs with the same identity are the
-    same model however they are labelled — which is why the off-panel share
-    check (`RunConfig.__post_init__`, CT-CALIB-08) keys on this and not on the
-    provider or the friendly name. Declared here, next to the panel hash it is
-    factored out of, so the encoding lives in exactly one place."""
+    """The canonical identity of one served build, exactly as `compute_panel_build_ref` hashes it.
+    Two references with the same identity are the same model whatever they are called, which is why
+    the off-panel check (CT-CALIB-08) compares these rather than provider or display names."""
     return f"{ref.provider}{_FIELD_SEP}{ref.build_id}{_FIELD_SEP}{ref.quantization or ''}"
 
 
 def compute_panel_build_ref(panel: Sequence[ModelRef], decision_engine: "DecisionEngine | None" = None) -> str:
-    """A stable hash over the **ordered** panel (`FR-CONF-05`, `CT-CONF-07`).
+    """A stable hash over the ordered judge panel (FR-CONF-05, CT-CONF-07).
 
     Canonical encoding, fixed here because it is a primary-key component of every
     `package_validation` row and `TC-CONF-05`'s oracle is an exact value against a committed

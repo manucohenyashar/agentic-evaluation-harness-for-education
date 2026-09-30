@@ -39,41 +39,15 @@ from .executors import (
 
 
 class DispatchMixin:
-    """Runs dispatch passes: claims batches and calls the model within the run's limits."""
+    """Runs dispatch passes: claims batches of units and calls the model within the run's limits.
+    """
 
     # -- the dispatch loop, residency, concurrency and the report (#62) --------------------------
 
     def progress(self, run_id: str) -> ProgressReport:
-        """One dispatch pass over `run_id`, then the run-state report (`FR-ORCH-23`).
+        """Run one dispatch pass for `run_id`, then return the run's progress report (FR-ORCH-23).
 
-        **The two modes.** With a transport bound (`Orchestrator(store, transport=...)`)
-        the pass dispatches: the extraction walk sends its assembled `ExtractionRequest`
-        through the model-call seam, the deterministic walk completes its ledger
-        transition directly (no model call exists for it), one judged batch at the
-        governor's effective concurrency runs
-        through the model-call seam as assembled `ScoringRequest`s, and the run's
-        metrics flush to `run_metrics`
-        (`CT-ORCH-20`). With no transport the call is the **report-only surface** — the
-        (`CT-ORCH-20`). With no transport the call is the **report-only surface** — the
-        console's poll (`CT-CONSOLE-01`'s headless driver needs progress to work with no
-        console and no provider): the ledger is read and the report built, and nothing
-        is claimed, called or flushed.
-
-        **The pass drives the shared worker surface.** The walks and the judged batch
-        claim through `lease()` under `DISPATCH_OWNER` — the dispatch loop is a lease
-        holder like any worker, at-least-once and sweepable, so an interrupted pass's
-        in-flight units are the sweeper's ordinary reclaim, never a special case. The
-        claim pass walks the store's open runs (`#59`'s shape), so a poll nominally for
-        `run_id` serves whichever open run the walk reaches first; the single-run store
-        every dispatch case runs against makes the distinction invisible, and a
-        multi-run operator gets run-id-order service from the walk itself — recorded
-        interpretation, reconciled if a case ever pins multi-run dispatch.
-
-        progress() never raises for an expected provider condition: a rate limit or an
-        OOM is absorbed into the governor and the report (`RES-11`, `RES-13` —
-        "expected, not an error"). A failure that is not one of the taxonomy's two
-        transport conditions propagates: an unexpected exception mid-dispatch is a
-        defect, and absorbing it would be the silent-failure shape.
+        More detail: `docs/code-notes/orch.md`, section `dispatch.py: DispatchMixin.progress`.
         """
         cohort, run_row = self._find_run(run_id)
         state: dict[str, Any] | None = None
@@ -86,7 +60,7 @@ class DispatchMixin:
         return report
 
     def _concurrency_ceiling(self, run_row: Any) -> int:
-        """The concurrency ceiling the run **froze** at creation (`FR-ORCH-21`).
+        """The concurrency limit the run froze when it was created (FR-ORCH-21).
 
         Read from the run row's frozen `provider_config` — never from the current
         environment (`FR-CONF-07`'s freeze, the same discipline `_run_ceiling` states
@@ -114,7 +88,7 @@ class DispatchMixin:
         return value
 
     def _dispatch_state(self, run_row: Any) -> dict[str, Any]:
-        """The per-run dispatch state, created lazily and rebuilt-free thereafter.
+        """The run's in-memory dispatch state, created on first use and reused afterwards.
 
         Holds the governor's cap (starting at the frozen ceiling, `FR-CONF-07`), the
         residency state (`FR-ORCH-19`), the per-judge OOM counts (`RES-13`), the
@@ -160,7 +134,8 @@ class DispatchMixin:
     def _dispatch_pass(
         self, cohort: Any, run_row: Any, state: dict[str, Any]
     ) -> None:
-        """One dispatch pass: the walks, then one judged batch, at the effective cap.
+        """One dispatch pass: the deterministic walks, then one batch of judged units, at the
+        current concurrency limit.
 
         **The governor** (`FR-ORCH-21`). The pass runs at the state's cap — starting
         at the run's frozen ceiling, never the environment's — reduced once per pass
@@ -224,7 +199,7 @@ class DispatchMixin:
         self._run_model_batch(cohort, run_row, state, judged, effective)
 
     def _assemble_dispatch_payload(self, unit: Any) -> Any:
-        """Assemble the closed per-stage request the dispatch sends (`FR-ORCH-20`).
+        """Build the fixed request for one unit's stage (FR-ORCH-20).
 
         What crosses the model-call boundary is the ASSEMBLED request, never the
         ledger row: "the module shall dispatch exactly one submission per scoring or
@@ -266,8 +241,8 @@ class DispatchMixin:
         return self._executor is not None or self._transport is not None
 
     def _stage_executor(self, state: dict[str, Any]) -> Any:
-        """The executor this pass dispatches through — the bound one, or the transport
-        adapted to the same protocol so the loop has a single path."""
+        """The executor this pass uses: the bound one, or the test transport wrapped to look like
+        one, so the loop has a single code path."""
         if self._executor is not None:
             return _PreparedExecutor(self._executor)
         payloads: dict[str, Any] = {}
@@ -278,7 +253,7 @@ class DispatchMixin:
         )
 
     def governed_provider(self, run_id: str, provider: Any = None) -> GovernedProvider:
-        """The run's provider with the run's dispatch counters wrapped around it (#596).
+        """The run's provider wrapped with the run's dispatch counters (#596).
 
         For model calls a composition layer makes outside a dispatch pass, synthesis being
         the one today: ADR-14 and CT-PIPE-06 put EVERY model call through the governed
@@ -311,41 +286,9 @@ class DispatchMixin:
         batch: Sequence[Any],
         effective: int,
     ) -> int:
-        """Run one claimed batch through the model-call seam at the effective width.
+        """Send one claimed batch to the model, at the current concurrency limit.
 
-        Each unit's ASSEMBLED request is built on the calling thread BEFORE the pool
-        takes anything — the assembler is the owning stage's shipped door, it reads
-        the store (the words resolve here: "the lease resolves the identity, the
-        assembler the words"), and the store is not a thread-shared surface — so the
-        only thing that runs concurrently is the model call itself. Assembly
-        completes for the WHOLE batch before the first submit, and the submits are
-        then back-to-back: pipelining assembly into the submission loop would pace
-        the ramp at the assembly interval, and Little's law would cap the observed
-        in-flight peak at `call_duration / assembly_interval` — a figure set by the
-        assembler's speed, not by the governor. With the payloads pre-built, calls
-        run on a thread pool bounded by `min(len(batch), effective)` and the pool
-        width IS the observable in-flight concurrency the governor's ceiling governs
-        (`FR-ORCH-21`; the seam's spy counts the peak — the caller bounds a batch to
-        `effective` so the pre-assembly latency is bounded by the same figure). Every
-        outcome is classified, never absorbed silently:
-
-        - **Completion** — the real `Completion`: the unit closes (`complete`), and
-          the answer's tokens, cost, cache prefix and resolved build accrue to the
-          run's counters (`CT-PROV-11`'s shape — M-ORCH reads the provider's
-          counters and persists them).
-        - **`RateLimitedError`** (`RES-11`) — expected, not an error: the counters
-          increment (the parsed `Retry-After` accrues to the honoured wait), the
-          unit requeues **without consuming an attempt and without a unit-level
-          error** (a rate limit is the provider's condition, not the unit's — §9.11),
-          and the governor reduces next pass.
-        - **`MemoryError`** (`RES-13`) — the box's condition: the unit requeues the
-          same way (the box's condition is not the unit taxonomy's, §9.11), the cap
-          reduces, and the OOM ladder's cumulative count may drop the judge from the
-          panel.
-
-        Any other exception propagates — an unexpected transport failure is a defect,
-        and the units stay leased on the ledger where the sweeper reclaims them.
-        Returns the number of units the batch closed — the walk's headway check.
+        More detail: `docs/code-notes/orch.md`, section `dispatch.py: DispatchMixin._run_model_batch`.
         """
         if not batch:
             return 0
@@ -431,7 +374,7 @@ class DispatchMixin:
         return completed
 
     def _absorb_completion(self, state: dict[str, Any], answer: Any) -> None:
-        """Accrue one successful model answer to the run's counters (`CT-PROV-11`).
+        """Add one successful model answer to the run's counters (CT-PROV-11).
 
         The method stays as the dispatch loop's name for it; the accrual itself is
         `_accrue_completion`, which `GovernedProvider` calls too — one definition, so the two
@@ -441,7 +384,7 @@ class DispatchMixin:
     def _absorb_rate_limit(
         self, state: dict[str, Any], error: RateLimitedError
     ) -> None:
-        """Count one rate-limited call and honour its `Retry-After` (`FR-PROV-07`).
+        """Count one rate-limited call and wait as its `Retry-After` asks (FR-PROV-07).
 
         The honouring here is the dispatch's own half of §9.13: the wait the provider
         asked for accrues to the run's counter and the unit defers to a later pass at
@@ -466,7 +409,8 @@ class DispatchMixin:
         *,
         ooms: int = 1,
     ) -> None:
-        """The OOM ladder for one judge (`RES-13`, §9.11): reduce, retry, drop.
+        """What to do when a judge runs out of memory (RES-13, §9.11): reduce concurrency, retry,
+        then drop the judge.
 
         The cumulative per-judge count is of OOM **calls** — every failed load counts,
         including the several one batch can produce — and the drop lands when the

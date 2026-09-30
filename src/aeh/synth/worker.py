@@ -38,8 +38,8 @@ from .prompts import parse_narrative, _payload_span_texts, prompt_for
 
 
 class SynthesisWorker:
-    """The synthesis driver: one submission's complete criteria in, the two-level
-    narrative rows out.
+    """Runs synthesis for one submission: takes its fully scored criteria and writes the L1 and L2
+    narrative rows.
 
     `SynthesisWorker(store, provider, model_ref)` — the store the narratives are read
     and written through, the provider boundary (injected; the recorded fixture
@@ -75,8 +75,8 @@ class SynthesisWorker:
     # -- resolution -------------------------------------------------------------------------
 
     def _resolve_run(self, run_id: str) -> tuple[Any, Any]:
-        """(cohort handle, run row) — found by walking the cohort files, the
-        orchestrator's no-side-index discovery consumed rather than re-spelled."""
+        """Find `(cohort handle, run row)` for the run by walking the cohort files, the same way
+        the orchestrator finds runs."""
         for key in _cohort_keys_on_filesystem(self._store):
             cohort = self._store.cohort(key)
             rows = cohort.query(ORCH_STATEMENTS["select_run"], run_id=run_id)
@@ -88,18 +88,17 @@ class SynthesisWorker:
         )
 
     def _catalog(self, run_row: Any) -> Any:
-        """The run's package catalog — criterion text and the question mapping are
-        `M-PKG`'s, version-pinned by the run row (`M-PKG` dependency, §3.13)."""
+        """The run's package catalog, pinned to the run's package version. Criterion text and the
+        question mapping come from M-PKG."""
         return PackageCatalog(
             self._store.package(run_row["package_id"]),
             package_id=run_row["package_id"],
         )
 
     def _questions(self, catalog: Any, version: Any) -> "dict[str, tuple[str, ...]]":
-        """The version's criteria grouped into questions, sorted by question id — the
-        package's `question_id` mapping when the row carries one, the naming
-        convention when it does not. A criterion that resolves to no question gets no
-        L1 narrative (there is no question to name)."""
+        """The version's criteria grouped by question and sorted by question id, using the
+        package's `question_id` when a criterion has one and the naming convention otherwise. A
+        criterion with no question gets no L1 narrative."""
         grouped: dict[str, list[str]] = {}
         for row in catalog.criteria(version):
             question_id = _question_of_criterion(
@@ -113,9 +112,8 @@ class SynthesisWorker:
 
     def _verdicts(self, cohort: Any, units: list[dict],
                   criterion_id: str) -> tuple[CriterionVerdict, ...]:
-        """One criterion's verdicts, off its done score units — the panel the L1
-        narrative reads. ONLY this question's criteria's verdicts are read here; the
-        L2 request has no field that could carry them at all."""
+        """One criterion's verdicts, read from its completed score units. Only this question's
+        verdicts are read; an L2 request has no field that could carry them."""
         verdicts: list[CriterionVerdict] = []
         for unit in units:
             if unit["criterion_id"] != criterion_id:
@@ -135,12 +133,9 @@ class SynthesisWorker:
     def _evidence(self, cohort: Any, units: list[dict],
                   criterion_ids: tuple[str, ...],
                   submission_id: str) -> tuple[str, ...]:
-        """The question's evidence: each criterion's evidence rows decoded from their
-        persisted spans, falling back to the addressed document's markdown when the
-        row carries no payload (the fixture-shaped ledger). The fallback reads only a
-        document that belongs to THIS submission — the column is fetched to be
-        checked, and a document addressing another student's work is skipped, never
-        composed into the narrative (FR-SYNTH-05, submission isolation)."""
+        """The question's evidence: each criterion's evidence rows decoded from their stored spans,
+        or the document's Markdown when a row has no span payload. That fallback only reads a
+        document that belongs to this submission."""
         texts: list[str] = []
         seen_documents: set[str] = set()
         for unit in units:
@@ -172,10 +167,9 @@ class SynthesisWorker:
 
     def _question_complete(self, cohort: Any, units: list[dict],
                            criterion_ids: tuple[str, ...]) -> bool:
-        """The completeness gate (`FR-SYNTH-06`): every criterion of the question has
-        a `done` score unit AND at least one verdict on it — both surfaces
-        incompleteness shows at, so the gate is honest whichever one a deployment's
-        failure leaves behind."""
+        """Whether the question is ready to narrate: every criterion has a completed score unit and
+        at least one verdict (FR-SYNTH-06). Checking both catches either way a failure can leave
+        the question incomplete."""
         for criterion_id in criterion_ids:
             done = [
                 unit for unit in units
@@ -196,10 +190,9 @@ class SynthesisWorker:
     # -- the model call and the write -------------------------------------------------------
 
     def _call(self, payload: PromptPayload) -> "tuple[str, tuple[str, ...], bool]":
-        """One narrative's call: the strike budget (`HARNESS_SYNTH_MAX_ATTEMPTS`,
-        defaulting to the ledger's own ceiling — one knob, one owner) against
-        transport and parse failures alike, and the score-claim ladder
-        (`CT-SYNTH-03`) over every output that parses.
+        """Make one narrative's model call. Transport and parse failures share one attempt budget
+        (`HARNESS_SYNTH_MAX_ATTEMPTS`, defaulting to the ledger's own limit), and every reply that
+        parses goes through the score-claim check (CT-SYNTH-03).
 
         The ladder is the design's own two-step, not a knob: an output matching
         `SYNTH_SCORE_CLAIM_PATTERNS` is rejected and re-requested **once**; a second
@@ -259,13 +252,10 @@ class SynthesisWorker:
                          level: str, question_id: str, text: str,
                          citations: tuple[str, ...],
                          score_claim_flag: int = 0) -> bool:
-        """One narrative row, keyed `(run_id, submission_id, level, question_id)`
-        (ADR-8). `score_claim_flag` is the suppression flag CT-SYNTH-03 stores: 0 for
-        a narrative that passed the check, 1 for the twice-claiming text kept for the
-        record but withheld from display. Returns False when the key already holds a
-        narrative: the declared primary key conflicted the duplicate instead of
-        storing a second row, which is the retried unit's contract — the first
-        narrative stands."""
+        """Store one narrative row, keyed `(run_id, submission_id, level, question_id)` (ADR-8).
+        `score_claim_flag` is 0 when the narrative passed the score-claim check and 1 when it
+        failed twice; a flagged text is kept for the record but not shown (CT-SYNTH-03). Returns
+        False when the key already holds a row."""
         try:
             with cohort.transaction() as tx:
                 tx.execute(
@@ -291,8 +281,8 @@ class SynthesisWorker:
             return False
 
     def _stored(self, cohort: Any, run_id: str, submission_id: str) -> dict[tuple[str, str], dict]:
-        """The submission's stored narratives, keyed `(level, question_id)` — what a
-        retried synthesis absorbs into, and what L2 composes from."""
+        """The submission's stored narratives, keyed `(level, question_id)`. A retried synthesis
+        reuses these, and L2 is composed from them."""
         return {
             (row["level"], row["question_id"]): dict(row)
             for row in cohort.query(
@@ -306,8 +296,8 @@ class SynthesisWorker:
 
     def synthesize_question(self, run_id: str, submission_id: str,
                             question_id: str) -> SynthesisResult:
-        """One L1 composition (`FR-SYNTH-01`): that question's criterion verdicts and
-        evidence for that ONE submission, one narrative row out.
+        """Write one question's L1 narrative from its criterion verdicts and evidence, for this one
+        submission (FR-SYNTH-01).
 
         A question whose criteria are incomplete raises `ValueError` (`FR-SYNTH-06`:
         synthesis does not run for it — the driver skips the question instead of
@@ -377,9 +367,9 @@ class SynthesisWorker:
         )
 
     def synthesize_submission(self, run_id: str, submission_id: str) -> SynthesisReport:
-        """The two-level driver (`FR-SYNTH-01`): L1 for each complete question, then
-        one L2 composition reading only the L1 syntheses. The report is the
-        operator-readable surface the fourth seam requires."""
+        """Run both levels for one submission: an L1 narrative for each complete question, then one
+        L2 narrative composed from the L1 narratives only (FR-SYNTH-01). Returns the report
+        operators read."""
         cohort, run_row = self._resolve_run(run_id)
         catalog = self._catalog(run_row)
         questions = self._questions(catalog, run_row["package_version_id"])
@@ -452,12 +442,9 @@ class SynthesisWorker:
 
     def _report(self, cohort: Any, catalog: Any, run_row: Any, submission_id: str,
                 failures: int) -> SynthesisReport:
-        """The report, computed from the STORED narratives — the mean and the sample
-        describe what synthesis PRODUCED, not a counter that could drift from the
-        table. Disclosed (#98): a twice-claiming narrative is stored flagged and
-        suppressed from display, but it is still a stored row, so it sits in this
-        mean and can enter the M-STATS sample — the measurement is of the generated
-        text, claim-bearing rows included, not of the subset a student is shown."""
+        """Build the report from the stored narratives, so its figures describe what synthesis
+        actually wrote. A flagged narrative is stored but hidden from display, and it is still
+        counted here (#98)."""
         run_id = run_row["run_id"]
         rows = sorted(
             self._stored(cohort, run_id, submission_id).values(),
@@ -549,9 +536,8 @@ class SynthesisWorker:
 
 def synthesize(store: Any, provider: Any, model_ref: Any, run_id: str, *,
                submission_id: str) -> SynthesisReport:
-    """Run one submission's two-level synthesis from code alone — the entry point a
-    driver, a worker process or a test all reach for the same shape (`CT-CONSOLE-01`).
-    Returns the same report the worker returns."""
+    """Run one submission's two-level synthesis from code, with no console (CT-CONSOLE-01). Returns
+    the same report as `SynthesisWorker.synthesize_submission`."""
     return SynthesisWorker(store, provider, model_ref).synthesize_submission(
         run_id, submission_id
     )

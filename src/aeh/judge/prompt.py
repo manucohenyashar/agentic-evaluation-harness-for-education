@@ -18,7 +18,7 @@ from .request import BandView, CriterionView, ExemplarView, QuestionView, Scorin
 #: outside the final field (`FR-JUDGE-06`'s invariant prefix); the submission id, the
 #: work id and the judge's identity are rendered NOWHERE.
 #:
-#: The `bands` field is conditional (the module docstring's band-presentation
+#: The `bands` field is conditional (`docs/code-notes/judge.md`'s band-presentation
 #: disclosure): it renders when the criterion declares a set. The order here is the
 #: template's full pinned order — the lint reads one order, and a render that carries
 #: no declared set carries no bands field.
@@ -90,9 +90,8 @@ def _render_directive() -> str:
 
 
 def _render_criterion(criterion: CriterionView) -> str:
-    """The single criterion being judged — identity and wording. The declared band set
-    renders in its own field (`_render_bands`): the presentation surface `FR-JUDGE-04`
-    pins, kept separate so the scan can classify it as rubric surface by name."""
+    """Render the criterion being judged: its identity and wording. The bands have their own field
+    (`_render_bands`, FR-JUDGE-04), so the numeral scan can treat that field as rubric by name."""
     return (
         f"criterion_id: {criterion.criterion_id}\n"
         f"criterion_text: {criterion.text}"
@@ -100,11 +99,9 @@ def _render_criterion(criterion: CriterionView) -> str:
 
 
 def _render_bands(bands: tuple[BandView, ...]) -> str:
-    """The declared band set as ordered `{band}: {descriptor}` pairs (`FR-JUDGE-04`) —
-    drawn from `criterion_band`, in ordinal order, each descriptor riding beside its
-    own label. The ORDER is the list's position; no digit ordinals are rendered, so a
-    numeral never enters a rubric surface through the template (the scan refuses any —
-    `FR-JUDGE-03`). A band's points render nowhere."""
+    """Render the declared bands as ordered `{band}: {descriptor}` pairs, in ordinal order
+    (FR-JUDGE-04). Order is shown by position only, so no digit enters the rubric through the
+    template (FR-JUDGE-03). A band's score value appears nowhere."""
     lines = ["bands (the declared set, in ordinal order; no scores attached):"]
     for view in bands:
         if view.descriptor:
@@ -115,7 +112,7 @@ def _render_bands(bands: tuple[BandView, ...]) -> str:
 
 
 def _render_exemplars(exemplars: tuple[ExemplarView, ...]) -> str:
-    """The criterion's worked examples in their presentation order (`FR-JUDGE-08`).
+    """Render the criterion's worked examples in presentation order (FR-JUDGE-08).
 
     The material is rendered VERBATIM — it is content, and the scan reads this field
     at content strictness, so a student's legitimate "12 kg" survives while a planted
@@ -141,8 +138,8 @@ def _render_question(question: QuestionView) -> str:
 
 
 def _span_document(span: Any) -> dict:
-    """One span as a JSON-able mapping, verbatim for a mapping and re-typed only when
-    the extractor shipped an object (`dataclasses.asdict` is the lossless form)."""
+    """One span as a JSON-ready mapping: a mapping is kept as it is, and an object from the
+    extractor is converted with `dataclasses.asdict`."""
     if isinstance(span, dict):
         return span
     if dataclasses.is_dataclass(span) and not isinstance(span, type):
@@ -151,7 +148,7 @@ def _span_document(span: Any) -> dict:
 
 
 def _render_submission(request: ScoringRequest) -> str:
-    """The submission, LAST, inside exactly one delimited block — with the evidence.
+    """Render the submission, with its evidence, last and inside exactly one delimited block.
 
     `FR-JUDGE-17`: the submission AND its extracted evidence travel inside the SINGLE
     delimited untrusted block, the criterion's own spans first and the parents' spans
@@ -185,7 +182,7 @@ def _render_submission(request: ScoringRequest) -> str:
 
 
 def prompt_fields(request: "ScoringRequest | None" = None) -> Any:
-    """The scoring prompt, in the pinned field order — or the order itself.
+    """The scoring prompt as fields in the fixed order, or, with no request, just the field order.
 
     With a request, the `PromptPayload` the provider boundary hashes (`CT-PROV-05`
     makes the order contract; the fixture recordings key on exactly this render). With
@@ -195,7 +192,7 @@ def prompt_fields(request: "ScoringRequest | None" = None) -> Any:
     them. The submission field is LAST (`FR-JUDGE-07`) and is the single untrusted
     block carrying the submission AND its extracted evidence.
 
-    The bands field is conditional (the module docstring's band-presentation
+    The bands field is conditional (`docs/code-notes/judge.md`'s band-presentation
     disclosure): it renders when the criterion declares a set, so a render over an
     empty rubric carries no band-named field at all.
     """

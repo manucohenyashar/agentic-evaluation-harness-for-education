@@ -19,9 +19,9 @@ def build_console(
     blind_labels_collected: int | None = None,
     bind_address: str | None = None,
 ) -> ConsoleApp:
-    """The console's constructor: a `ConsoleApp` over the given store (or over nothing —
-    every read view renders its empties honestly). Holds no pipeline state; the provider
-    argument is accepted and never called, because the console performs no inference."""
+    """Create a `ConsoleApp` over the given store, or over none (every screen then shows its empty
+    state). The `provider` argument is accepted but never used, because the console never calls a
+    model."""
     return ConsoleApp(
         store=store,
         provider=provider,
@@ -36,8 +36,8 @@ def build_console(
 
 
 def _persisted_shape(config: Any) -> str:
-    """The config's persisted shape, as a canonical string to hash. A resolved config
-    carries `to_persisted_dict()`; a plain dict is persisted as itself."""
+    """The configuration as a canonical string for hashing: `to_persisted_dict()` for a resolved
+    config, or the dict itself."""
     if hasattr(config, "to_persisted_dict"):
         config = config.to_persisted_dict()
     if isinstance(config, dict):
@@ -55,16 +55,15 @@ def _profile_of(config: Any) -> str:
 
 
 def start_run(config: Any) -> RunPlan:
-    """Plan a run: the run id is derived from the persisted configuration, so the same
-    config plans the same run and a different config plans a different one (`FR-CONF-04`).
-    Planning writes nothing; the orchestrator owns the run row."""
+    """Plan a run. The run id comes from the saved configuration, so the same config gives the same
+    run and a different config gives a different one (FR-CONF-04). Planning writes nothing; the
+    orchestrator creates the run row."""
     digest = hashlib.sha256(_persisted_shape(config).encode("utf-8")).hexdigest()[:12]
     return RunPlan(run_id=f"run-{digest}", backend_profile=_profile_of(config))
 
 
 def retry_run(run_id: str, *, backend_profile: str) -> RunPlan:
-    """Plan a retry of `run_id` under a different backend profile. The retried plan's id
-    differs from the original's — a retried run is a new run with a new id, never the
-    same ledger rows re-picked (`FR-CONF-04`)."""
+    """Plan a retry of `run_id` with a different backend profile. The retry gets a new id: it is a
+    new run, never the same rows picked up again (FR-CONF-04)."""
     digest = hashlib.sha256(f"{run_id}\n{backend_profile}".encode("utf-8")).hexdigest()[:12]
     return RunPlan(run_id=f"run-{digest}", backend_profile=backend_profile, retry_of=run_id)

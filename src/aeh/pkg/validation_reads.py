@@ -20,9 +20,9 @@ class ValidationReadsMixin:
         backend_profile: str, panel_build_ref: str, scoring_model: str,
         agreement: float, n: int,
     ) -> None:
-        """Store one validation record, keyed by the six-part key `FR-PKG-08` fixes.
-        Refused on published versions only if the record would CHANGE an existing row
-        (validation records are append-only in practice: new keys, never rewrites)."""
+        """Store one validation record under the six-part key (FR-PKG-08). On a published version
+        it is refused only if it would change an existing row: records are append-only in practice.
+        """
         with self._handle.transaction() as tx:
             row = tx.execute(PKG_STATEMENTS["select_validation"],
                              v=v, criterion_id=criterion_id,
@@ -44,9 +44,9 @@ class ValidationReadsMixin:
         self, v: PackageVersionId, population_scope_id: str, backend_profile: str,
         panel_build_ref: str, scoring_model: str = "", criterion_id: str | None = None,
     ) -> Any:
-        """`FR-PKG-09`: the record for one key, or `NoValidationData` — **distinguishable
-        in type** from a zero or a low figure. No aggregate exists anywhere on this
-        surface (`CT-PKG-07`): the caller names the key, the catalog answers the key."""
+        """The validation record for one key, or `NoValidationData`, which cannot be confused with
+        a zero or a low figure (FR-PKG-09). There is no aggregate anywhere here (CT-PKG-07): the
+        caller names the key and gets that key's record."""
         rows = self._handle.query(PKG_STATEMENTS["select_validation_record"],
                                   v=v, criterion_id=criterion_id,
                                   population_scope_id=population_scope_id,
@@ -61,9 +61,9 @@ class ValidationReadsMixin:
         self, v: PackageVersionId, *, backend_profile: str, panel_build_ref: str,
         population_scope_id: str = "",
     ) -> dict[str, Any]:
-        """`baseline_for` for every criterion of `v`, each under its OWN declared scoring model
-        (FR-PIPE-15, #525): the caller names the run's part of the key, and the package
-        supplies the criterion's part, so no consumer branches on the model (CT-AGG-09)."""
+        """`baseline_for` for every criterion of version `v`, each under its own scoring model
+        (FR-PIPE-15). The caller supplies the run's part of the key and the package supplies each
+        criterion's, so no consumer has to branch on the model (CT-AGG-09)."""
         out: dict[str, Any] = {}
         for row in self.criteria(v):
             model = str((row["scoring_model"] if "scoring_model" in row.keys() else "") or "")
@@ -84,31 +84,9 @@ class ValidationReadsMixin:
         self, v: PackageVersionId, criterion_id: str, population_scope_id: str,
         backend_profile: str, panel_build_ref: str, scoring_model: str = "",
     ) -> Any:
-        """`#373`: one criterion's baseline distribution, or `NoValidationData`.
+        """One criterion's baseline band distribution, or `NoValidationData`.
 
-        Shaped for `aeh.agg.should_escalate`'s ``baseline=`` argument — the keys are ``mean``
-        and ``std``, the names it reads — so the figure this module stores reaches the rule
-        that needs it without a caller in between reshaping (and possibly rescaling) it.
-
-        **The signature mirrors `validation_for` deliberately**, down to the argument order
-        and the `scoring_model` default, because it reads the SAME row under the same
-        six-part key (`FR-PKG-08`). Naming the key is the caller's job here exactly as it is
-        there: defaults on `backend_profile` and `panel_build_ref` would let a caller who
-        names neither read back a `NoValidationData` for a baseline that IS stored, and
-        `record_validation_baseline` writes both (they are the two parts `M-STATS` carries).
-        `criterion_id` is required rather than optional — see the statement's own note.
-
-        `NoValidationData` is returned for BOTH "no row" and "a row with no baseline", and
-        the second case is the one that matters: a `validation_record` written by
-        ``store_validation`` carries agreement and n but no baseline until an administration
-        is promoted, and its three NULL columns are not a distribution. Returning the same
-        sentinel `validation_for` returns keeps absence one type on this surface rather than
-        two, and it is what makes the distributional-anomaly rule skip (`FR-AGG-08`) instead
-        of dividing by a zero that was never measured.
-
-        Named `baseline_for` rather than `validation_baseline` so the surface keeps
-        `CT-PKG-07`'s prohibition legible: every public name carrying "validation" on this
-        class is the keyed record read or its write, and nothing else.
+        More detail: `docs/code-notes/pkg.md`, section `validation_reads.py: ValidationReadsMixin.baseline_for`.
         """
         rows = self._handle.query(PKG_STATEMENTS["select_validation_baseline"],
                                   v=v, criterion_id=criterion_id,
@@ -129,9 +107,9 @@ class ValidationReadsMixin:
         }
 
     def manifest(self, v: PackageVersionId) -> Manifest:
-        """`FR-PKG-21`: per-population validation entries, the weakest criterion per
-        population, exemplar provenance and schema version — and no cross-population
-        aggregate field (the shape makes the §2.1 error unrepresentable)."""
+        """The package manifest (FR-PKG-21): validation entries per population, the weakest
+        criterion per population, worked-example provenance and the schema version, with no field
+        that combines populations."""
         rows = self._handle.query(PKG_STATEMENTS["select_all_validations"], v=v)
         entries = _weakest_entry([
             ManifestEntry(
@@ -160,10 +138,9 @@ class ValidationReadsMixin:
         self, v: PackageVersionId, *, criterion_id: str, population_scope_id: str = "",
         backend_profile: str = "", panel_build_ref: str = "", scoring_model: str = "",
     ) -> str | None:
-        """FR-PKG-23 (#454): the recorded engine non-inferiority verdict on the criterion's
-        validation record row — `'true'`, `'false'` or `'insufficient_data'` — or `None`
-        when it was never measured (no row, or NULL). Independent of whether the row also
-        carries an agreement figure: a promote records the verdict on its own."""
+        """The stored non-inferiority verdict on the criterion's validation record (FR-PKG-23):
+        `'true'`, `'false'` or `'insufficient_data'`, or None when never measured. Independent of
+        whether the row has an agreement figure."""
         rows = self._handle.query(
             PKG_STATEMENTS["select_validation_noninferiority"], v=v, criterion_id=criterion_id,
             population_scope_id=population_scope_id, backend_profile=backend_profile,

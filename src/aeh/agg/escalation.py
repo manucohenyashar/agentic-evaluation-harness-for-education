@@ -20,7 +20,8 @@ from .rows import _AGG_ABSENT, _AGG_FAVOURABLE, _row_field, _signal_adverse
 
 @dataclass(frozen=True)
 class EscalationDecision:
-    """The escalation decision M-AGG returns to M-ORCH (`FR-AGG-08/09`, §3.8).
+    """M-AGG's answer to M-ORCH on whether to widen a cell's panel (FR-AGG-08, FR-AGG-09, design
+    §3.8).
 
     `escalate` is the bool; `target_judge_count` carries FR-AGG-09's one-to-
     three-and-never-two (an even target is impossible by construction: the
@@ -42,8 +43,8 @@ class EscalationDecision:
 
 
 def _escalation_knob(config: Any, name: str, default: float) -> float:
-    """One escalation knob, injected at the call (`CT-AGG-01`: never the
-    environment). `config=None` or an absent attribute means the constant."""
+    """One escalation setting, passed in by the caller and never read from the environment
+    (CT-AGG-01). With no config, or no such attribute, the module constant is used."""
     value = getattr(config, name, None) if config is not None else None
     return default if value is None else float(value)
 
@@ -56,61 +57,10 @@ def should_escalate(
     *,
     config: Any = None,
 ) -> EscalationDecision:
-    """The escalation policy (`FR-AGG-08`, §3.8's `Aggregator.should_escalate`
-    Protocol member as the module-level pure function, the same reading
-    `aggregate` and `ordinal_alpha` take): decide whether a criterion score
-    warrants a bigger panel, from observable signals only.
+    """The escalation policy: decide from observable signals alone whether a criterion score needs
+    a bigger panel (FR-AGG-08, design §3.8). Like `aggregate`, it is a pure function.
 
-    Pure (`NFR-ORCH-04`, `CT-AGG-01`): the score row, the criterion, the
-    criterion's override history and the package baseline are values; no
-    store, no clock, no model call, no network, and no configuration beyond
-    the arguments — `config` may carry any of `escalation_threshold`,
-    `escalation_signal_weight`, `escalation_no_data_weight`,
-    `escalation_self_confidence_weight`, `escalation_anomaly_sigma` and
-    `escalation_override_rate` (each defaulting to its module constant).
-
-    The decision is a concern level against the threshold. Each observable
-    signal contributes `AGG_ESCALATION_SIGNAL_WEIGHT` when it fires (§7.1's
-    enumeration, in order):
-
-    1. **Interior band position** — the score sits in a declared band that is
-       neither the top nor the bottom of the criterion's scale: the panel did
-       not reach a scale edge, where bands are best discriminated. Read off
-       the row's `ordinal` against `band_count` (the row's, else the
-       criterion's); a row carrying neither is not making the claim, and the
-       limb is skipped.
-    2. **Adverse integrity signals** — each of the six M-INTEG fields read
-       off the row: adverse (the opposite polarity, or a recorded `None` =
-       not measured, fail-closed) fires; an absent field is no claim and
-       skips its limb.
-    3. **Uncited verdict** — the row's `uncited` mark.
-    4. **Criterion override history** — `history.override_rate` above
-       `AGG_ESCALATION_OVERRIDE_RATE` (more than half of the criterion's
-       reviewed scores were overridden, the breaker's strict "more than
-       half"), or the criterion already escalated before
-       (`history.escalations`). A recorded no-data rate contributes
-       `AGG_ESCALATION_NO_DATA_WEIGHT` — not a zero (CT-STATS-09), but not a
-       trigger either.
-    5. **Distributional anomaly** — the score's ordinal sits
-       `AGG_ESCALATION_ANOMALY_SIGMA` standard deviations or further from the
-       package baseline's expected band position. A baseline without a usable
-       `std` is unmeasurable, not anomalous.
-
-    Model self-confidence (`score.self_confidence`) enters once, weighted:
-    `AGG_ESCALATION_SELF_CONFIDENCE_WEIGHT × (1 − self_confidence)`. It is
-    never appended to `reasons` — a decision escalated on self-confidence
-    alone is structurally impossible (its full-sweep contribution stays below
-    the threshold, R22), so every reason is an observable a reviewer can go
-    and look at. Absent, it contributes nothing: absence is no claim.
-
-    Returns the `EscalationDecision`: `escalate`, the target panel depth (the
-    next odd at least two above the current panel — 1 → 3, never 2,
-    `FR-AGG-09`; `validate_escalation_plan` in `aeh.orch` is the consumer's
-    odd-plan check) and `reasons`. Under the production constants a decision
-    not to escalate carries the current panel depth unchanged and no reasons
-    (every weight is sub-threshold alone, so nothing fires without escalating);
-    an injected sub-threshold signal weight can fire a reason without reaching
-    the threshold — the fired observables are recorded either way.
+    More detail: `docs/code-notes/agg.md`, section `escalation.py: should_escalate`.
     """
     threshold = _escalation_knob(config, "escalation_threshold", AGG_ESCALATION_THRESHOLD)
     signal_weight = _escalation_knob(
@@ -237,11 +187,9 @@ def should_escalate(
 
 @dataclass(frozen=True)
 class CriterionEscalationRank:
-    """One criterion's row in the escalation ranking (`CT-STATS-09`'s consumer
-    differential, `FR-AGG-08`): its id, its override rate as measured, and
-    whether the row is **no data** — never reviewed, or a recorded no-data
-    rate. `override_rate` is `None` exactly when the history had no figure to
-    give; a genuine zero keeps its zero and its `no_data=False`."""
+    """One criterion's row in the escalation ranking: its id, its measured override rate, and
+    whether it has no data (FR-AGG-08, CT-STATS-09). `override_rate` is None exactly when there was
+    no figure; a real zero stays zero with `no_data=False`."""
 
     criterion_id: str
     override_rate: float | None
@@ -249,7 +197,8 @@ class CriterionEscalationRank:
 
 
 def rank_criteria_for_escalation(criteria: Any) -> tuple:
-    """Rank criteria for escalation, most urgent first (`FR-AGG-08`, CT-STATS-09).
+    """Rank criteria by how urgently they need escalation, most urgent first (FR-AGG-08,
+    CT-STATS-09).
 
     `criteria` maps criterion ids to their override-history payloads — mappings
     or objects carrying `override_rate` and `reviewed`. A criterion with **no

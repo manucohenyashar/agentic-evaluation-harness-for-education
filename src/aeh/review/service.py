@@ -45,7 +45,8 @@ from .observability import ObservabilityMixin
 
 
 class ReviewService(ActionsMixin, BlindSamplingMixin, ObservabilityMixin):
-    """The review service: builds the queue, ranks it, writes labels.
+    """The review service: builds the budgeted queue, ranks it, and records the teacher's decisions
+    as labels.
 
     Constructed by ``build_review`` (rung 0/1, over score rows in memory) or
     ``open_review`` (rung 2, over a stored run). The three §3.15 members #108
@@ -122,7 +123,7 @@ class ReviewService(ActionsMixin, BlindSamplingMixin, ObservabilityMixin):
     def build_queue(
         self, run_id: str, budget_minutes: int, *, record: bool = True
     ) -> ReviewQueue:
-        """Build the minute-budgeted queue (`FR-REVIEW-01`).
+        """Build the queue that fits the teacher's minute budget (FR-REVIEW-01).
 
         `record=False` builds the same queue and writes nothing. `FR-REVIEW-20` makes a build
         a writer — the shown items' `rank_score`, `est_seconds` and `shown_at` land on their
@@ -216,9 +217,8 @@ class ReviewService(ActionsMixin, BlindSamplingMixin, ObservabilityMixin):
     def queue(
         self, run_id: str = "run-1", budget_minutes: int | None = None
     ) -> tuple["ReviewItem | ReviewGroup", ...]:
-        """The built queue as its consumer reads it (`§3.15`): the shown
-        entries — signature groups collapsed, singletons per-item — in
-        presentation order.
+        """The built queue's shown entries, in presentation order: groups collapsed, single items
+        as they are (design §3.15).
 
         ``build_review(store).queue()`` is the store form's declared read
         (the c05/c07/c09 consumer limbs' shape): no run id and no budget
@@ -233,25 +233,21 @@ class ReviewService(ActionsMixin, BlindSamplingMixin, ObservabilityMixin):
         return self.build_queue(run_id, budget).shown
 
     def rank_queue_items(self, run_id: str) -> tuple[ReviewItem, ...]:
-        """The ranking, separable from the queue (`FR-REVIEW-03`): every admitted
-        item, best-first, each carrying its ``expected_value`` — the ranking's
-        full output, without the budget's truncation."""
+        """Every admitted item ranked best first, each with its `expected_value`, before the budget
+        cuts the list (FR-REVIEW-03)."""
         knobs = _calibration_knobs()
         admitted = self._admitted_rows()
         ranked = _ranked_rows(admitted, knobs)
         return tuple(_itemize(row, knobs) for row in ranked)
 
     def group_signature(self, row: Any) -> dict[str, Any]:
-        """The exact Phase 1 grouping signature (`CT-REVIEW-20`): the five
-        declared components and nothing else — a rule with fewer components
-        groups items the clause says are different; one with more never groups
-        anything."""
+        """The grouping signature: exactly the five declared components (CT-REVIEW-20). Fewer would
+        group items that differ; more would never group anything."""
         return _signature_of(row)
 
     def admission_query(self, run_id: str = "run-1") -> QueryPlan:
-        """The admission query as a plan, not an observation (`CT-REVIEW-05`'s
-        reachability clause): the routing values the queue's queries read over,
-        the evaluation mode they gate on, and the origins they can never reach.
+        """The admission query as a plan (CT-REVIEW-05): the routing values it reads, the
+        evaluation mode it requires, and the origins it can never reach.
 
         ``_admitted`` is the single predicate the plan restates — the in-memory
         filter executes it, and the store form runs it on every fetched row
@@ -276,7 +272,7 @@ class ReviewService(ActionsMixin, BlindSamplingMixin, ObservabilityMixin):
     # -- actions -------------------------------------------------------------------------------------
 
     def _record_shown_rows(self, run_id: str, shown: Sequence[Any], knobs: Any) -> None:
-        """Write `FR-REVIEW-20`'s build columns for the items this build showed.
+        """Write the build columns (FR-REVIEW-20) for the items this build showed.
 
         Best-effort against the store, and only there: the in-memory service has no
         `review_queue` to write to, and a queue build is a READ as far as the teacher is
@@ -314,7 +310,7 @@ class ReviewService(ActionsMixin, BlindSamplingMixin, ObservabilityMixin):
             return
 
     def _record_queue_action(self, item: Any, action: str, label: Any) -> None:
-        """Write `FR-REVIEW-20`'s action columns for one acted item."""
+        """Write the action columns (FR-REVIEW-20) for one item acted on."""
         if self._store is None:
             return
         cohort_id = self._writable_cohort()
@@ -345,19 +341,11 @@ class ReviewService(ActionsMixin, BlindSamplingMixin, ObservabilityMixin):
         criterion_id: str | None = None,
         band: str | None = None,
     ) -> float:
-        """Band → points, through the one pinned mapping (`FR-REVIEW-10`). With
-        a ``catalog=`` attached the criterion's own pinned table is read
-        (``PackageCatalog.points_for_band``); without one, the declared default
-        scale (`REVIEW_DEFAULT_BANDS`) is read through the same function —
-        never a second table (`NFR-AGG-02`). A band absent from whichever
-        table governs refuses (`PackageError`) rather than defaulting to a
-        number — but a band whose name exists in both tables is not
-        distinguishable without a catalog, so the no-catalog route derives the
-        default scale's points for it (the collision hazard is disclosed in
-        the module interpretations). ``package_version_id`` is accepted for
-        interface parity with the queue item and ignored: the mapping is
-        criterion-scoped.
-        """
+        """Map a band to points through the one pinned mapping (FR-REVIEW-10, NFR-AGG-02). With a
+        catalog attached, the criterion's own table is used (`PackageCatalog.points_for_band`);
+        without one, the default scale (`REVIEW_DEFAULT_BANDS`). A band missing from the table
+        raises `PackageError` rather than defaulting. `package_version_id` is accepted for a
+        matching interface and ignored."""
         if band is None:
             raise ReviewError(
                 "a score edit is a band selection; there is no band here to map"
@@ -375,7 +363,7 @@ class ReviewService(ActionsMixin, BlindSamplingMixin, ObservabilityMixin):
     points_for_band = _points_for_band
 
     def close(self) -> None:
-        """Release the rung-2 store handle, if this service was opened over one."""
+        """Release the store handle, if this service was opened over one."""
         if self._store is not None:
             self._store.close()
             self._store = None
@@ -386,10 +374,9 @@ class ReviewService(ActionsMixin, BlindSamplingMixin, ObservabilityMixin):
         cohort_ids: Sequence[str] = (),
         owning_cohorts: Sequence[str] = (),
     ) -> "ReviewService":
-        """Attach the rung-2 store handle (``open_review``'s plumbing). The
-        cohort ids ride along so a label written before any queue build can
-        still attribute itself — to the sole cohort, when there is exactly
-        one; never to an invented run (`NFR-REVIEW-04`)."""
+        """Attach the store handle (used by `open_review`), with the cohort ids, so a label written
+        before any queue build can still be attributed to the only cohort, and never to an invented
+        run (NFR-REVIEW-04)."""
         self._store = store
         self._cohort_ids = tuple(cohort_ids)
         #: The cohorts whose rows this service actually loaded — a subset of `cohort_ids`
@@ -403,7 +390,7 @@ class ReviewService(ActionsMixin, BlindSamplingMixin, ObservabilityMixin):
     _declared_models: "Mapping[str, str]" = {}
 
     def scoring_model_for(self, criterion_id: str) -> str:
-        """`FR-REVIEW-19`: the criterion's stored scoring model for this service's run.
+        """The criterion's stored scoring model for this service's run (FR-REVIEW-19).
 
         Raises for a criterion the run does not score, rather than answering `"atomic"`.
         The guess is the failure mode this replaces: a holistic criterion silently read
@@ -431,7 +418,7 @@ class ReviewService(ActionsMixin, BlindSamplingMixin, ObservabilityMixin):
         )
 
     def _writable_cohort(self) -> "str | None":
-        """The cohort `FR-REVIEW-20`'s columns are written to.
+        """The cohort the FR-REVIEW-20 columns are written to.
 
         The cohort whose rows this service actually loaded, when exactly one did — not
         `_attribution_run`, which answers "which run does a label belong to". Asking the store
@@ -446,9 +433,7 @@ class ReviewService(ActionsMixin, BlindSamplingMixin, ObservabilityMixin):
     # -- the write audit, and the residual's read path (#109) -----------------------------------------
 
     def write_audit(self) -> tuple[WriteRecord, ...]:
-        """Every write this service's actions have made, in write order
-        (`CT-REVIEW-06` reads the indirection from the write side, not from the
-        resulting counts, because the counts are identical either way).
+        """Every write this service's actions made, in order (CT-REVIEW-06).
 
         In the in-memory service the writes land on the service's own state —
         the label list and the acted set — and each ``WriteRecord`` names the
@@ -460,11 +445,8 @@ class ReviewService(ActionsMixin, BlindSamplingMixin, ObservabilityMixin):
         return tuple(self._audit)
 
     def scores(self, run_id: str = "run-1") -> tuple[Any, ...]:
-        """The run's still-flagged score rows, read back for the residual
-        (`FR-REVIEW-08`'s read path): the admitted population minus what this
-        service has acted on — the population ``build_queue`` counts into
-        ``flagged_total``, so ``len(scores())`` is the flagged figure at the
-        same moment.
+        """The run's still-flagged score rows: the admitted population minus what this service
+        acted on (FR-REVIEW-08). This is what `build_queue` counts as `flagged_total`.
 
         States ride through exactly as stored. Review writes no state it did
         not decide: the residual's ``provisional_unreviewed`` mark is the
@@ -477,39 +459,27 @@ class ReviewService(ActionsMixin, BlindSamplingMixin, ObservabilityMixin):
         return tuple(self._admitted_rows())
 
     def labels_for(self, run_id: str = "run-1") -> tuple[LabelRecord, ...]:
-        """The labels this service has written, in write order — the in-memory
-        read the residual's no-backfill assertion reads (`FR-REVIEW-08`: a
-        residual item gains no label nobody entered) and the refusal case of
-        `CT-REVIEW-15` checks. The label store's own persistence surface is
-        #110's; until then the labels live here, and ``run_id`` is
-        bookkeeping."""
+        """The labels this service has written, in order. The residual's checks read this
+        (FR-REVIEW-08, CT-REVIEW-15); `run_id` is only bookkeeping."""
         return tuple(self._labels)
 
     def end_session(self, run_id: str = "run-1") -> ResidualReport:
-        """Close the sitting (`FR-REVIEW-08`'s first vanishing moment): the
-        residual persists. The acted set, the labels and every residual row's
-        ``provisional_unreviewed`` state survive it untouched — clearing per
-        sitting would silently convert "not reviewed" into "reviewed and
-        accepted" — so the next sitting's queue still owes exactly what this
-        one did not finish. Nothing is mutated; the report is the moment."""
+        """Close the sitting (FR-REVIEW-08). Everything unreviewed stays unreviewed: the acted set,
+        the labels and each residual row's `provisional_unreviewed` state are untouched, so the
+        next sitting still owes what this one did not finish. Nothing is changed; the report
+        describes the moment."""
         return self._residual_report(run_id, moment="end_session")
 
     def close_run(self, run_id: str = "run-1") -> ResidualReport:
-        """Close the run (`FR-REVIEW-08`'s second vanishing moment): the run's
-        close is where finalization pressure lands, and neither prohibition is
-        met. No residual row is finalized, none gains a label nobody entered,
-        and ``scores()`` keeps returning every one of them — the residual does
-        not answer to the run's lifecycle. Nothing is mutated; the report is
-        the moment."""
+        """Close the run (FR-REVIEW-08). No residual row is finalized or given a label nobody
+        entered, and `scores()` still returns every one of them. Nothing is changed; the report
+        describes the moment."""
         return self._residual_report(run_id, moment="close_run")
 
     def _residual_report(self, run_id: str, *, moment: str) -> ResidualReport:
-        """The residual as the moment leaves it: every still-flagged row, in
-        the state `FR-REVIEW-08` marks it with. ``finalized``/``backfilled``
-        are what the moment wrote — nothing, by construction, since the service
-        writes no state and no label at a session or run boundary; the lists
-        exist so a later change that does write one has a field to carry it
-        in.
+        """The residual as it stands: every still-flagged row, in its FR-REVIEW-08 state.
+        `finalized` and `backfilled` are empty, because nothing is written at a session or run
+        boundary.
 
         ``state`` reports the ordinary residual mark. A residual can also hold
         an unacted ``ungradeable_by_panel`` row (it routes ``provisional``,
@@ -529,15 +499,14 @@ class ReviewService(ActionsMixin, BlindSamplingMixin, ObservabilityMixin):
     # -- internals -----------------------------------------------------------------------------------
 
     def _admitted_rows(self) -> list[Any]:
-        """The still-flagged rows this run admits (`_admitted`), minus the ones
-        this service has already acted on."""
+        """The run's admitted, still-flagged rows, minus those this service already acted on."""
         return [
             row for row in _admitted(self._rows) if _score_id_of(row) not in self._acted
         ]
 
     def _as_item(self, item: Any) -> ReviewItem:
-        """The queue entry an action arrives on. A ``ReviewGroup`` is not an
-        action target — ``act_on_group`` is the group's path."""
+        """The queue item an action targets. A group is not an action target; use `act_on_group`
+        for groups."""
         if getattr(item, "members", None) is not None:
             raise ReviewError(
                 "act() takes a single review item; a group is acted on through "

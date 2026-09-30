@@ -31,7 +31,7 @@ SAW_SYSTEM_OUTPUT_UNRECORDED = "saw_system_output_unrecorded"
 
 
 def _saw_system_output_recorded_zero(label: Any) -> bool:
-    """Whether the label's visibility flag is **present and 0** (`FR-STATS-22`).
+    """Whether the label's `saw_system_output` flag is present and equal to 0 (FR-STATS-22).
 
     Present and 0 is the only admitting reading. A 1 excludes for the obvious reason; a
     ``None`` and a missing attribute both mean *nobody recorded whether this teacher saw the
@@ -49,7 +49,7 @@ def _saw_system_output_recorded_zero(label: Any) -> bool:
 
 
 def _is_admissible(label: Any) -> bool:
-    """Whether one label is admissible to a validity claim.
+    """Whether one label may count toward a validity claim.
 
     Admissible means ``label_type = 'blind'`` **and** ``evaluation_mode = 'judged'``
     (R20/R53) **and** a visibility flag that is present and 0 (`FR-STATS-22`): a label may
@@ -80,7 +80,7 @@ def _label_backend(label: Any) -> str | None:
 
 def exclusion_reasons(labels: Any, backend_profile: str | None = None,
                       criterion_id: str | None = None) -> dict[str, int]:
-    """Why each excluded label was excluded, by name (`FR-STATS-22`, seam 4).
+    """Why each excluded label was excluded, by name (FR-STATS-22).
 
     A bare ``excluded_count`` says how many labels are not evidence; this says what is wrong
     with them, so "20 excluded" is actionable rather than mysterious. The unrecorded-flag
@@ -119,7 +119,7 @@ def exclusion_reasons(labels: Any, backend_profile: str | None = None,
 
 
 def _system_side(label: Any) -> Any:
-    """The label's system-side band, whichever attribute shape carries it.
+    """The label's system-side band, from whichever attribute carries it.
 
     The review service's labels name the pair ``system_band``/``teacher_band``
     (`CT-REVIEW-08`); the collection fixtures name the system side ``band``
@@ -138,18 +138,13 @@ def _system_side(label: Any) -> Any:
 
 
 class _StoredLabel:
-    """One stored ``label`` row as the filter reads it: the durable column
-    names mapped onto the label vocabulary. ``band`` is the effective band the
-    label stands for (`FR-REVIEW-09`) and ``teacher_band`` rides beside it —
-    ``M-REVIEW`` writes both from the teacher's band, so the row's teacher
-    side falls back to ``band`` when the explicit column is NULL. ``routing``
-    is `CT-REVIEW-07`'s column (`FR-STATS-08`'s arms read it); rows predating
-    the column read as ``None``, which `routing_policy_validity` keeps out of
-    both arms rather than guessing an arm for them. ``origin`` is the evidence
-    class `FR-STATS-14`'s signal reads and `CT-STATS-06`'s origin counter
-    reports by; ``cohort_id`` is the administration dimension the validation
-    record's claim stamps (`#118`) — ``None`` on rows no administration has
-    claimed yet."""
+    """One stored `label` row, with its columns mapped to the names the filter uses.
+
+    `band` is the band the label stands for (FR-REVIEW-09), and `teacher_band` falls back to it
+    when the column is NULL. `routing` feeds the routing-policy arms (FR-STATS-08); old rows
+    without it read as None and are kept out of both arms. `origin` is the evidence class
+    (FR-STATS-14, CT-STATS-06). `cohort_id` is the administration that claimed the label, or None
+    before any has."""
 
     def __init__(self, mapping: Mapping[str, Any]) -> None:
         # The stored row as read, kept beside the mapped vocabulary (`FR-STATS-23`).
@@ -186,9 +181,7 @@ class _StoredLabel:
 
 
 def _row_mapping(row: Any) -> dict[str, Any]:
-    """One store row as a plain mapping, whatever ``Row`` shape the tier
-    hands back (``sqlite3.Row`` carries ``keys()``; the accommodation costs
-    nothing)."""
+    """A store row as a plain mapping, whatever row type the tier returns."""
     try:
         return {key: row[key] for key in row.keys()}
     except AttributeError:

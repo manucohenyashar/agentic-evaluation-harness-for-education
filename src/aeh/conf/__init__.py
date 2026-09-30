@@ -22,6 +22,8 @@ Files:
     resolution.py      `resolve_run_config`: environment and file in, one frozen `RunConfig` out
     rehydrate.py       rebuilding a stored run's config and refusing a mismatched resume
     audit_log.py       the one structured log line a run start emits
+
+Detailed design notes (the full original module description): `docs/code-notes/conf.md`.
 """
 
 from __future__ import annotations

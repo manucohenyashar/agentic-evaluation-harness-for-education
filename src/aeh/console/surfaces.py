@@ -39,12 +39,10 @@ def render_package_catalog(
     population: str | None = None,
     queries: list[str] | None = None,
 ) -> str:
-    """S1's package card. A package carries validation data from wherever it has run; a
-    card that shows a statistic for a package never administered to this population has
-    shown a real figure about a different cohort, and an instrument's statistics do not
-    transfer (`FR-CONSOLE-26`, R23). So the card renders the exact absence sentence, and
-    never a figure beside it — the word that would name a borrowed statistic does not
-    appear on the card at all."""
+    """Screen S1's package card. A package carries validation figures from wherever it has been
+    used, and those figures do not transfer to a different population (FR-CONSOLE-26, R23). So for
+    a population the package was never used with, the card shows the exact absence sentence and no
+    figure, and never uses the word that would name another population's figure."""
     log = queries if queries is not None else []
     rows: list[dict[str, Any]] = []
     package_id = str(package_version or "pkg-unaddressed").rpartition("@")[0] or "pkg-unaddressed"
@@ -96,11 +94,10 @@ def render_preflight(
     gates: dict[str, str] | None = None,
     queries: list[str] | None = None,
 ) -> PreflightView:
-    """S6's view, built from the evidence given. The ladder is per gate (`v0` integrity,
-    `v1` pages, `v2` structure, `v3` identity, `v4` match), the `FR-INGEST-28` cohort
-    breaker is the one thing that withholds run start, and quarantine items outstanding
-    do not — deliberately: quarantine is the operator's parallel workstream (§7.7), so a
-    rescan backlog must never park a run the cohort is waiting on.
+    """Screen S6, built from the given evidence. It shows the checks per gate (`v0` integrity, `v1`
+    pages, `v2` structure, `v3` identity, `v4` match). Only the cohort breaker (FR-INGEST-28)
+    blocks the run; outstanding quarantine items deliberately do not, because quarantine is the
+    operator's separate work (§7.7) and must never hold up a run the class is waiting for.
 
     The gate rows and the breaker finding are read the way `M-INGEST` reads them —
     through the named cohort's Tier C handle, the same seam `Ingestor.cohort_breaker`
@@ -127,10 +124,9 @@ def render_preflight(
 def _cohort_gate_rows(
     store: Any, cohort_id: str, log: list[str] | None = None
 ) -> tuple[list[dict[str, Any]], dict | None]:
-    """The named cohort's gate rows and breaker finding, read through the cohort tier
-    handle — or empties when the ledger cannot be read (a read view renders empties). A
-    real store's handle *creates* the cohort file when it is missing, and a render must
-    never create one, so a real store is consulted only when its file exists."""
+    """The cohort's gate rows and breaker finding, read through the cohort tier handle, or empty
+    results if the database cannot be read. Opening a real cohort creates its file if missing, and
+    a screen must never create one, so a real store is only read when the file exists."""
     data_dir = getattr(store, "data_dir", None)
     if data_dir is not None and not Path(data_dir, "cohorts", f"{cohort_id}.sqlite").exists():
         return [], None
@@ -166,10 +162,9 @@ def _ladder_from_rows(rows: list[dict[str, Any]]) -> dict[str, str]:
 
 
 def render_calibration_surface(*, phase_available: int) -> CalibrationRender:
-    """A Phase 4 surface rendered present-and-unavailable, naming the version
-    (`FR-CONSOLE-25`). Silently absent is the failure that looks like success: a teacher
-    seeing no calibration in the console concludes the feature does not exist, rather
-    than that it arrives later."""
+    """A Phase 4 feature shown as present but unavailable, with its version (FR-CONSOLE-25). If it
+    were simply missing, a teacher would conclude the feature does not exist rather than that it is
+    coming."""
     del phase_available  # the phase is not this console's: the card names the version instead
     return CalibrationRender(
         present=True,
@@ -179,10 +174,9 @@ def render_calibration_surface(*, phase_available: int) -> CalibrationRender:
 
 
 def render_discovery(*, package_version: str = "pkg-v1") -> str:
-    """The ambiguity-elicitation discovery surface, rendered as what it is: a record of
-    what the models were unsure about, stored with the package version. It is not a
-    measurement of how often the models were right, and it renders no percentage and no
-    accuracy language in any affirmative sentence (`CT-CALIB-03`)."""
+    """The screen listing what the models were unsure about, stored with the package version. It is
+    not a measure of how often the models were right, so it shows no percentage and makes no claim
+    of accuracy (CT-CALIB-03)."""
     return (
         f"Package version {package_version}: the ambiguity-elicitation questions are recorded "
         "with the version, together with the answers the teacher gave. "
@@ -193,9 +187,9 @@ def render_discovery(*, package_version: str = "pkg-v1") -> str:
 
 
 def render_gate_result(*, outcome: str = "pass") -> str:
-    """A calibration gate's outcome, rendered as what a pass means: non-inferiority, and
-    nothing more (`CT-CALIB-16`). A passed gate is not evidence that a revision improved
-    the rubric, and the console does not render one as if it were."""
+    """A calibration gate's result, shown as what passing means: the new version is not worse, and
+    nothing more (CT-CALIB-16). Passing is not evidence that the rubric improved, and the screen
+    does not present it that way."""
     return (
         f"Gate outcome: {outcome}. "
         "The recorded decision is non-inferiority: the calibrated prompts did not shift the "
@@ -205,10 +199,9 @@ def render_gate_result(*, outcome: str = "pass") -> str:
 
 
 def render_conformance_surface(report: Any) -> str:
-    """The backend-conformance surface, as a release decision reads it. The surface shows
-    the hole when a gate is unavailable, and renders no backend-equivalence claim — the
-    console is where such a claim would do damage, so it is the surface that must not
-    make one (`TC-CONFORM-C14`'s console half)."""
+    """The backend-conformance screen used in release decisions. It shows missing results when a
+    gate could not run, and never claims two backends are equivalent; the console is where such a
+    claim would do harm (TC-CONFORM-C14)."""
     lines = ["Conformance record"]
     fixture_set_version = getattr(report, "fixture_set_version", None)
     if fixture_set_version:
@@ -260,8 +253,7 @@ def render_agreement_block(
     population: str = "",
     package_version: str = "",
 ) -> str:
-    """The agreement block, rendered honestly (`FR-CONSOLE-24`, invariant 20;
-    `FR-CONSOLE-10`, invariant 5).
+    """The agreement block, shown honestly (FR-CONSOLE-24 invariant 20; FR-CONSOLE-10 invariant 5).
 
     An administration that collected no blind labels renders the absence sentence —
     *never* a zero, which is a real point on the scale and reads as measured-and-bad,
@@ -398,11 +390,10 @@ MVP_ABSENT_TOUCHPOINT = "Answer ambiguity-elicitation questions"
 
 
 def touchpoint_surface(app: Any = None) -> dict[str, TouchpointRender]:
-    """The life cycle as the teacher meets it, enumerated against §7.9's twelve rows —
-    never sampled (`CT-CONSOLE-17`). Every row is either implemented or rendered
-    present-and-unavailable naming the version it arrives in; a touchpoint is silently
-    absent from this mapping only by being dropped from the inventory, which the
-    vocabulary test guards."""
+    """Every touchpoint in the teacher's workflow, listed against all twelve rows of §7.9
+    (CT-CONSOLE-17). Each is either implemented or shown as present but unavailable with the
+    version it arrives in. A touchpoint can only be missing here if it was dropped from the list,
+    which the vocabulary test checks."""
     rendered: dict[str, TouchpointRender] = {}
     for name, surface in TEACHER_TOUCHPOINT_ROUTES.items():
         if name == MVP_ABSENT_TOUCHPOINT:
@@ -425,11 +416,9 @@ def amend_finalized_grade(
     new_band: str = "",
     actor: str = "operator",
 ) -> GradeRecord:
-    """Amend a finalized grade (`FR-CONSOLE-21`, invariant 17): the delivered grade is
-    preserved — `finalized_at` stays the record of when the batch was delivered — and the
-    correction lands as a new revision on the append-only history, whose superseded
-    revisions remain readable through `ConsoleApp.grade_revision`. Finalization does not
-    end editing (`R69`)."""
+    """Amend a finalized grade (FR-CONSOLE-21, invariant 17). The delivered grade keeps its
+    `finalized_at`, and the correction is stored as a new revision; older revisions stay readable
+    through `ConsoleApp.grade_revision`. Finalizing does not end editing (R69)."""
     return app.amend_grade(
         submission_ref=submission_ref,
         criterion_id=criterion_id,
@@ -445,15 +434,13 @@ def export_package(
     contains_real_student_text: int | bool = 0,
     actor: str = "operator",
 ) -> ExportOutcome:
-    """Export a package through the provenance gate (`FR-CONSOLE-23`, invariant 19 /
-    R71). A package flagged `contains_real_student_text` is **refused** — raised as
-    `ProvenanceRefused`, not returned as a falsy outcome, because an export that fails
-    quietly is indistinguishable from one that succeeded. The gate is a reachable screen
-    (S14), and its outcome is written to the validation record whether it passes or
-    refuses — a gate whose result is not recorded is indistinguishable from one that was
-    skipped. The refusal is asserted at the console boundary because this is where a
-    teacher clicks export; a console that filtered the flag before calling `M-PKG`
-    would leave `M-PKG`'s refusal unexercised on the real path (`CT-PKG-13`)."""
+    """Export a package through the export gate (FR-CONSOLE-23, invariant 19, R71).
+
+    A package flagged `contains_real_student_text` is refused by raising `ProvenanceRefused`, not
+    by returning a false value, because a quietly failed export looks like a successful one. The
+    outcome is recorded whether the gate passes or refuses. The check happens here, where the
+    teacher clicks export, and the call still goes to M-PKG so its own refusal is exercised on the
+    real path (CT-PKG-13)."""
     flagged = bool(contains_real_student_text)
     if flagged:
         outcome = (
@@ -492,16 +479,15 @@ def export_package(
 
 
 def render_rollup(app: Any, *, run_id: str) -> RenderedPage:
-    """The rollup page as a module-level renderer (the surface the rollup story owns):
-    the settled grades, the agreement block, and the finalization and audit lines."""
+    """The rollup page: the final grades, the agreement block, and the finalization and audit
+    lines."""
     return app.render("/runs/{id}/rollup", id=run_id)
 
 
 def render_submission_text(app: Any, *, text: str) -> RenderedPage:
-    """One submission's text, as the correction flow shows it (`FR-CONSOLE-30`'s S12
-    face): the teacher correcting a key reads what the student's submission carries
-    before deciding the key was wrong. Module-level so the headless driver can render
-    it without a route.
+    """One submission's text, as shown when correcting an answer key (FR-CONSOLE-30, screen S12),
+    so the teacher reads what the student wrote before deciding the key was wrong. Module-level so
+    the headless driver can use it without a route.
 
     The console renders the text and states the limitation beside it — never refuses a
     read of student work for its language. Withholding an Arabic submission from the

@@ -10,7 +10,7 @@ from .connection import _run
 
 
 class Tx:
-    """The handle a `transaction()` body writes through (`CT-STORE-03`).
+    """The handle a `transaction()` body writes through (CT-STORE-03).
 
     Section 3.3's Interfaces block types `transaction()` as `ContextManager[Tx]` and never
     defines `Tx`, so its one method is this module's. `execute(statement, **params)` mirrors

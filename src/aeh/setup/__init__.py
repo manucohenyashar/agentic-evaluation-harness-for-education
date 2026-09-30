@@ -26,6 +26,8 @@ Files:
     dependencies.py    proposing criterion dependencies and the teacher's approval
     progress.py        the step list and what remains
     service.py         `SetupService`, which runs the steps and publishes the version
+
+Detailed design notes (the full original module description): `docs/code-notes/setup.md`.
 """
 
 from __future__ import annotations

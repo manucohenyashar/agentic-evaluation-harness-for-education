@@ -8,7 +8,7 @@ from .settings import DocumentId
 
 
 class ClusterResolution(tuple):
-    """What one cluster resolution touched (`FR-INGEST-36`).
+    """What one cluster resolution changed (FR-INGEST-36).
 
     A tuple of the affected document ids — the shape every caller of `resolve_cluster` has
     always read — carrying the report beside it: `selection_unresolved` lists the region ids
@@ -23,14 +23,14 @@ class ClusterResolution(tuple):
 
     @property
     def documents(self) -> tuple:
-        """The affected document ids, under a name that says what they are."""
+        """The ids of the documents that changed."""
         return tuple(self)
 
 
 @dataclass(frozen=True)
 class PageReplacement:
-    """One replacement page for `revise_document` (`FR-INGEST-05`): the source blob
-    holding the rescan, and the 1-based page it replaces."""
+    """One replacement page for `revise_document` (FR-INGEST-05): the blob holding the rescan and
+    the 1-based page it replaces."""
 
     blob_hash: str
     page_no: int
@@ -38,10 +38,9 @@ class PageReplacement:
 
 @dataclass
 class TokenCluster:
-    """One cohort-wide unresolved token (`FR-INGEST-20`): the token, the documents
-    whose regions carry it, and — once resolved — the operator's reading. The id is
-    derived from the token, so the same token always resolves through the same
-    cluster."""
+    """One unresolved token across the cohort (FR-INGEST-20): the token, the documents whose
+    regions contain it, and, once resolved, the operator's reading. The id comes from the token, so
+    the same token always maps to the same cluster."""
 
     cluster_id: str
     cohort_id: str
@@ -51,10 +50,8 @@ class TokenCluster:
 
 @dataclass
 class IngestReport:
-    """What one submission ingestion did (`CLAUDE.md` seam 4). The gate columns are
-    per-gate by design (`FR-INGEST-29`, R13) — a bare status on top of five unrecorded
-    gates is the silent-failure trap. #36 populates the identity and document fields;
-    the V0-V4 gates fill in with #40/#41."""
+    """What ingesting one submission did. Each gate has its own column (FR-INGEST-29, R13), so a
+    status can never hide gates that were not recorded."""
 
     submission_id: str
     document_id: DocumentId
@@ -91,10 +88,9 @@ GATE_COLUMNS_BY_GATE: dict[str, str] = {
 
 @dataclass
 class RunAggregates:
-    """The run-level signals CT-INGEST-19/OBS-01 name, emitted by the ONE
-    emitter (`Ingestor.run_aggregates`, #222's F3/G4 fix) over the cohort's
-    stored rows — the counts the report surface names are actually produced.
-    A consumer (TS-55/#148) reads these; nothing recomputes them.
+    """The run-level ingestion signals (CT-INGEST-19, OBS-01), produced by
+    `Ingestor.run_aggregates` from the cohort's stored rows. Consumers read these; nothing
+    recomputes them.
 
     Rates are fractions in [0, 1]; a signal with no denominator (no rows, no
     marks, no measurements, no second pass) is None — the honest absent, never

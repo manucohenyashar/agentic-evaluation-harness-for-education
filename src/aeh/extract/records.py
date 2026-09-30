@@ -10,7 +10,7 @@ from aeh.ingest import REGION_KINDS
 
 @dataclass(frozen=True)
 class ExtractionSpan:
-    """One byte-offset span into `document.markdown`.
+    """One span of the canonical document, as byte offsets into `document.markdown`.
 
     `start`/`end` are BYTE offsets into the canonical artifact's utf-8 bytes
     (`FR-EXTRACT-01`); `text` is the slice the bytes actually re-decode to — derived
@@ -27,7 +27,7 @@ class ExtractionSpan:
 
 @dataclass(frozen=True)
 class DependencyEvidence:
-    """A parent criterion's already-extracted spans, as §3.8's request carries them.
+    """A parent criterion's already-extracted spans, as the request carries them (design §3.8).
 
     Spans only: the schema carries no verdict on a dependency — an implementation
     cannot record a parent's band here because there is no field for one
@@ -43,8 +43,8 @@ class DependencyEvidence:
 
 @dataclass(frozen=True)
 class Criterion:
-    """§3.8's `criterion` object. `text`/`evidence_type` come from the run's pinned package
-    version when the assembler has a store (#516); see the module docstring."""
+    """The request's `criterion` object (design §3.8). With a store, `text` and `evidence_type`
+    come from the run's pinned package version (see docs/code-notes/extract.md)."""
 
     criterion_id: str
     text: str
@@ -53,8 +53,8 @@ class Criterion:
 
 @dataclass(frozen=True)
 class Question:
-    """§3.8's `question` object — the assignment's prompt text and reference
-    solution, when the run carries one."""
+    """The request's `question` object: the question's prompt text and reference solution, when the
+    run has them (design §3.8)."""
 
     prompt_text: str
     reference_solution: str
@@ -62,8 +62,8 @@ class Question:
 
 @dataclass(frozen=True)
 class SubmissionRef:
-    """§3.8's `submission` object: the unit's submission id and the canonical
-    transcript, verbatim."""
+    """The request's `submission` object: the submission id and the canonical transcript, unchanged
+    (design §3.8)."""
 
     submission_id: str
     transcript: str
@@ -71,7 +71,8 @@ class SubmissionRef:
 
 @dataclass(frozen=True)
 class ExtractionRequest:
-    """§3.8's request, exactly five keys — the schema the isolation case walks."""
+    """The extraction request: exactly five keys, the shape the isolation test walks (design §3.8).
+    """
 
     work_id: str
     criterion: Criterion
@@ -82,7 +83,7 @@ class ExtractionRequest:
 
 @dataclass(frozen=True)
 class ExtractionResult:
-    """One processed unit — §9.9's result, exactly the declared four fields.
+    """One processed unit: exactly the four declared result fields (design §9.9).
 
     `extractor` is the RESOLVED build identity of the model that actually answered
     (`FR-PROV-04`) — the evidence row's `resolved_build` column carries the same
@@ -111,19 +112,17 @@ _QUESTION_KEYS = frozenset({"prompt_text", "reference_solution"})
 
 
 def _offset_of(raw: Any, *, where: str) -> int:
-    """One span offset, strictly an integer — a bool, a float or a string is a
-    refusal, not a coercion (a coerced offset is a silently rewritten address)."""
+    """One span offset, which must be an integer. A bool, float or string is refused, not
+    converted, because a converted offset would silently point somewhere else."""
     if isinstance(raw, bool) or not isinstance(raw, int):
         raise ValueError(f"{where} must be an integer byte offset, got {raw!r}")
     return raw
 
 
 def _dependency_span(raw: Any, *, criterion_id: str, index: int) -> Any:
-    """One dependency span, checked against the §3.8 shape and returned VERBATIM:
-    exactly the span keys, no more — a verdict-shaped key (`band`, `confidence`,
-    ...) is a refusal, which is what makes a verdict impossible to smuggle through
-    the dependency channel (`TC-EXTRACT-03`, step 3). Nothing is re-typed: the
-    caller's span is the span the child's request carries."""
+    """Check one dependency span against the span shape and return it unchanged. It may carry only
+    the span keys; a verdict-like key such as `band` or `confidence` is refused, so no verdict can
+    travel through the dependency channel (TC-EXTRACT-03)."""
     if isinstance(raw, ExtractionSpan):
         return raw
     if not isinstance(raw, dict):
@@ -186,8 +185,8 @@ def _dependency_entry(raw: Any) -> DependencyEvidence:
 
 
 def _question_of(raw: Any) -> Question:
-    """The request's `question` object: absent means empty, not missing — the request
-    shape is stable across runs that carry a question and runs that do not."""
+    """The request's `question` object. A missing question becomes an empty one, so the request has
+    the same shape whether or not the run has a question."""
     if raw is None:
         return Question(prompt_text="", reference_solution="")
     if isinstance(raw, Question):

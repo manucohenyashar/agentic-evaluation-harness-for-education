@@ -37,10 +37,9 @@ from .item_stats import ItemStatisticsMixin
 
 
 class DeterministicEvaluator(SelectionReadingMixin, KeyCorrectionMixin, ItemStatisticsMixin):
-    """The design's `DeterministicEvaluator` (§3.11). A caller holding this
-    module holds arithmetic: a selection compared to a key. No model, no
-    panel, no interpretation, and no route into anything the teacher's minutes
-    pay for (`FR-DET-06`)."""
+    """Scores deterministic criteria by comparing the student's selection with the answer key
+    (design §3.11). No model, no panel, no interpretation, and nothing that costs the teacher
+    review time (FR-DET-06)."""
 
     def __init__(
         self,
@@ -56,12 +55,12 @@ class DeterministicEvaluator(SelectionReadingMixin, KeyCorrectionMixin, ItemStat
     def evaluate(
         self, run_id: str, submission_id: str, criterion_id: str
     ) -> CriterionScore:
-        """Score one deterministic criterion for one submission, by exact
-        answer-key lookup (`FR-DET-01`), and write its score row (`FR-DET-02`).
-        Idempotent under redelivery: the upsert makes a re-run of the same
-        (submission, criterion) a no-op, which is what at-least-once leasing
-        requires. No verdict row, no review-queue row, no panel work — this
-        write set is the whole of what this module touches."""
+        """Score one deterministic criterion for one submission by exact answer-key lookup
+        (FR-DET-01), and write its score row (FR-DET-02).
+
+        Safe to repeat: the write is an upsert, so re-running the same (submission, criterion)
+        changes nothing, which at-least-once leasing needs. It writes no verdict row, no
+        review-queue row and no panel work; the score row is all it touches."""
         run = self._run_row(run_id)
         cohort_handle = self._store.cohort(run["cohort_id"])
         package_handle = self._store.package(run["package_id"])
@@ -108,12 +107,13 @@ class DeterministicEvaluator(SelectionReadingMixin, KeyCorrectionMixin, ItemStat
     # -- the cohort pass -------------------------------------------------------------------------
 
     def evaluate_cohort(self, run_id: str) -> DeterministicReport:
-        """Every deterministic criterion for every submission of the run, in
-        one pass (`NFR-DET-01`): zero model calls, score rows in one Tier C
-        transaction, item statistics in one Tier D transaction, per-question
-        summaries and scanning alerts in the returned report. Unresolved
-        counts above `HARNESS_DET_UNRESOLVED_ALERT_RATE` alert as a scanning
-        problem — a rescan queue, never an item-difficulty reading."""
+        """Score every deterministic criterion for every submission of the run in one pass
+        (NFR-DET-01), with no model calls: score rows in one Tier C transaction, item statistics in
+        one Tier D transaction, and per-question summaries and scanning alerts in the returned
+        report.
+
+        An unresolved rate above `HARNESS_DET_UNRESOLVED_ALERT_RATE` raises a scanning alert (a
+        rescan is needed); it is never read as item difficulty."""
         run = self._run_row(run_id)
         cohort_handle = self._store.cohort(run["cohort_id"])
         package_handle = self._store.package(run["package_id"])
@@ -264,10 +264,9 @@ class DeterministicEvaluator(SelectionReadingMixin, KeyCorrectionMixin, ItemStat
     # -- private helpers -------------------------------------------------------------------------
 
     def _run_row(self, run_id: str) -> Any:
-        """The run's ledger row, found by walking the cohort files — the same
-        no-side-index walk the orchestrator makes (`FR-ORCH-02`'s reasoning
-        applies unchanged: a run lives in its cohort's Tier C file, and a side
-        index of run ids would be bookkeeping the ledger forbids)."""
+        """The run's ledger row, found by walking the cohort files the same way the orchestrator
+        does. A run lives in its cohort's Tier C file; there is no separate index of run ids
+        (FR-ORCH-02)."""
         for key in self._cohort_keys_for(self._store):
             rows = self._store.cohort(key).query(
                 DET_STATEMENTS["select_det_run"], run_id=run_id
@@ -280,11 +279,9 @@ class DeterministicEvaluator(SelectionReadingMixin, KeyCorrectionMixin, ItemStat
         )
 
     def _cohort_runs(self, cohort_id: str) -> list[Any]:
-        """The cohort's run rows, the cohort-grain lookup `rederive_for_key_change`
-        and `item_stats` resolve versions and package ids from. A cohort id that
-        matches no ledger file on disk raises before the tier handle is touched —
-        `store.cohort` would CREATE the missing file, and a typo must not
-        materialize a cohort."""
+        """The cohort's run rows, which `rederive_for_key_change` and `item_stats` use to find
+        package versions and ids. A cohort id with no ledger file on disk is refused before the
+        tier handle is opened, because `store.cohort` would create the missing file."""
         if cohort_id not in self._cohort_keys_for(self._store):
             raise UnknownCohort(
                 f"no cohort ledger named {cohort_id!r} exists on the store's "
@@ -304,18 +301,14 @@ class DeterministicEvaluator(SelectionReadingMixin, KeyCorrectionMixin, ItemStat
         version: str,
         entries: Iterable[tuple[str, dict[str, Any], DetOutcome, float | None]],
     ) -> int:
-        """Append the audit records for scored rows (`FR-DET-10`, `CT-DET-09`):
-        one Tier D transaction, one row per (submission, criterion) grade that
-        actually carries points, in the shape the design fixes —
-        `evaluation_mode='deterministic'`, NULL `panel_config` and
-        `prompt_template_v` (a populated one would make the row look
-        panel-scored to every statistic downstream), non-null
-        `answer_key_ref` and `selection_read`. Unresolved rows are skipped:
-        no grade, no points, nothing `final_points NOT NULL` could carry —
-        their audit is the score row's `state`/`routing` (module docstring).
-        Append-only: the trail records grading events, and the design's
-        idempotency constraint names the rederivation and the stats writes,
-        not the trail. Returns the count written."""
+        """Append one audit record per scored (submission, criterion) that carries points, in one
+        Tier D transaction (FR-DET-10, CT-DET-09). Returns how many were written.
+
+        Each record has `evaluation_mode='deterministic'`, NULL `panel_config` and
+        `prompt_template_v` (so no statistic mistakes it for panel scoring), and a non-null
+        `answer_key_ref` and `selection_read`. Unresolved rows are skipped: they have no grade and
+        no points, and their audit is the score row's state and routing. The trail is append-only;
+        it records grading events."""
         written = 0
         durable_handle = self._store.durable()
         with durable_handle.transaction() as tx:
@@ -355,9 +348,9 @@ class DeterministicEvaluator(SelectionReadingMixin, KeyCorrectionMixin, ItemStat
     def _criterion(
         self, package_handle: Any, version: str, criterion_id: str
     ) -> dict[str, Any]:
-        """The criterion row for exactly this package version — the version the
-        run names, never the file's latest, so an answer-key correction that
-        created a new version does not silently re-key an in-flight run."""
+        """The criterion row for exactly the package version the run names, never the file's latest
+        version, so a key correction (which creates a new version) cannot silently change a run
+        already in progress."""
         rows = package_handle.query(
             DET_STATEMENTS["select_criterion"], v=version, criterion_id=criterion_id
         )
@@ -384,12 +377,12 @@ class DeterministicEvaluator(SelectionReadingMixin, KeyCorrectionMixin, ItemStat
         catalog: PackageCatalog,
         read: SelectionRead | None = None,
     ) -> tuple[DetOutcome, float | None]:
-        """Read the answer, run the kernel, derive the points. Returns the
-        outcome and the points to store (None for an unresolved row).
-        `option_set`, `catalog` and `read` are injectable so the cohort pass
-        reads each criterion's option rows once, holds one pinned catalog, and
-        reads each submission's regions once, instead of per pair
-        (`NFR-DET-01`)."""
+        """Read the answer, run the scoring rule and work out the points. Returns the outcome and
+        the points to store (None for an unresolved row).
+
+        `option_set`, `catalog` and `read` can be passed in, so the cohort pass reads each
+        criterion's options once, holds one pinned catalog, and reads each submission's regions
+        once (NFR-DET-01)."""
         if _declared_mode(criterion) != "deterministic":
             # FR-ORCH-08: a criterion the package does not declare deterministic
             # reaching the deterministic evaluator is an admission failure upstream,
@@ -431,12 +424,9 @@ class DeterministicEvaluator(SelectionReadingMixin, KeyCorrectionMixin, ItemStat
         return outcome, self._points(catalog, criterion["criterion_id"], outcome)
 
     def _catalog(self, run: Any) -> PackageCatalog:
-        """pkg's catalog over the run's package file, its per-run cache pinned
-        to the version the run names (never the file's latest — the same
-        version discipline as `_criterion`). Points come from here because
-        `points_for_band` is the band-to-points mapping's single canonical
-        reader (`TC-PKG-C05`, RISK-05): det must not hold a second mapping
-        that can drift from the declared instrument."""
+        """M-PKG's catalog for the run's package file, pinned to the version the run names. Points
+        come from its `points_for_band`, the one place bands map to points (TC-PKG-C05), so M-DET
+        keeps no second mapping that could drift."""
         catalog = PackageCatalog(
             self._store.package(run["package_id"]),
             package_id=run["package_id"],
@@ -450,14 +440,11 @@ class DeterministicEvaluator(SelectionReadingMixin, KeyCorrectionMixin, ItemStat
         criterion_id: str,
         outcome: DetOutcome,
     ) -> float | None:
-        """The row's points. An unresolved row was never scored: None, not
-        zero (`CT-DET-03` — no zero value exists for an unresolved state). A
-        scored row takes the criterion's declared band mapping, read through
-        pkg's single-canonical `points_for_band` (`TC-PKG-C05`); a per_option
-        fraction scales the correct band's points (see module docstring). A
-        criterion missing a declared band raises pkg's own `PackageError` —
-        the two-band declaration is pkg's invariant (`FR-SETUP-13`), not a
-        key problem, so det does not re-label it."""
+        """The points for a score row. An unresolved row was never scored, so its points are None,
+        not zero (CT-DET-03). A scored row uses the criterion's declared band points through
+        M-PKG's `points_for_band` (TC-PKG-C05); a `per_option` fraction scales the correct band's
+        points (see docs/code-notes/det.md). A criterion missing a declared band raises M-PKG's own
+        `PackageError`, because the two-band declaration is M-PKG's rule (FR-SETUP-13)."""
         if outcome.band == BAND_UNRESOLVED:
             return None
         if outcome.credit in (0.0, 1.0):

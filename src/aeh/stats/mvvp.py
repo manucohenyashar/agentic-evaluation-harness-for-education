@@ -102,7 +102,7 @@ _CO_COMPRESSION_LIMITATION = "cannot detect panel and teacher compressing togeth
 def _validated_rate_map(
     values: Mapping[str, Any] | None, name: str
 ) -> dict[str, float]:
-    """The measured channel's per-judge rates, validated as what they claim.
+    """The per-judge rates from a measured input, checked to be what they claim.
 
     A programming error propagates (`CT-STATS-16`'s other half): a non-mapping,
     a non-string judge id, a non-numeric rate or a boolean — a bool is an
@@ -191,7 +191,7 @@ def _normalized_mvvp_configuration(
 def _mvvp_result_id(
     assignment_type: str | None, measured_configuration: Mapping[str, Any]
 ) -> str:
-    """The result id, content-addressed on what the result is a claim about.
+    """The result id: a content hash of what the result is a claim about.
 
     `FR-STATS-19`/`CT-STATS-08`: a validation record must not outlive the thing
     it validated (R30), so the id is a digest of the assignment type and the
@@ -221,9 +221,8 @@ def _mvvp_result_id(
 
 @dataclass(frozen=True)
 class PositionBiasResult:
-    """`FR-STATS-15`'s step-2 result for one judge: the band-change rate over
-    the held-out fixture subset re-scored with the exemplar order and the
-    reference-material presentation order permuted.
+    """Step 2's result for one judge (FR-STATS-15): the rate of band changes on the held-out
+    fixtures when the worked-example order and the reference-material order are shuffled.
 
     ``measured=False`` is an explicit not-measured value, not a null — the
     rate's oracle is the live tier's (`TC-STATS-16`, where model calls run
@@ -241,9 +240,8 @@ class PositionBiasResult:
 
 @dataclass(frozen=True)
 class ReplicationResult:
-    """`FR-STATS-16`'s step-3 result for one judge — and the two claims it
-    reports **together** because they are different claims about different
-    things.
+    """Step 3's result for one judge (FR-STATS-16), reporting two separate claims about two
+    different things together.
 
     ``self_agreement`` is M-STATS's measurement: the per-judge rate over
     ``runs_required`` or more independent runs, reported verbatim — a value
@@ -266,9 +264,8 @@ class ReplicationResult:
 
 @dataclass(frozen=True)
 class CrossValidationOutcome:
-    """`FR-STATS-17`'s step-4 outcome: the agreement figures for **one**
-    assignment type, one criterion at a time — and the structural refusal the
-    clause demands for the wider claim.
+    """Step 4's result (FR-STATS-17): agreement figures for one assignment type, one criterion at a
+    time, and a refusal of any wider claim.
 
     A figure spanning assignment types is not representable in this value:
     one ``assignment_type`` is a field of the outcome, not a dimension that
@@ -290,8 +287,8 @@ class CrossValidationOutcome:
 
 @dataclass(frozen=True)
 class SelfAgreementPairing:
-    """`FR-STATS-18`'s paired row for one judge: the step-3 rate and step 2's
-    position-bias result, one value, never one without the other.
+    """One judge's step-3 rate paired with its step-2 position-bias result; never one without the
+    other (FR-STATS-18).
 
     The clause's requirement is where the threshold bites — a judge whose
     measured self-agreement exceeds 0.95 — and ``pairing_required`` marks
@@ -312,9 +309,8 @@ class SelfAgreementPairing:
 
 @dataclass(frozen=True)
 class CompressionOutcome:
-    """`FR-STATS-06`'s step-6 outcome: the panel's band shape against the
-    gold's, computed over the paired population — the two sides of the same
-    agreement pairs step 1's figure is computed over.
+    """Step 6's result (FR-STATS-06): the shape of the panel's bands against the gold labels', over
+    the same label pairs step 1 uses.
 
     ``band_entropy`` is the distribution's Shannon entropy in bits and
     ``interior_rate`` the rate of non-extreme bands; ``panel_narrower`` is
@@ -337,7 +333,7 @@ class CompressionOutcome:
 
 @dataclass(frozen=True)
 class MVVPStep:
-    """One protocol step's individually-reported record (`CT-STATS-07`).
+    """One protocol step's own record (CT-STATS-07).
 
     Six of these travel on one report — never a seventh that summarises
     them. ``requirement`` is the FR the step reports against (`FR-STATS-05`'s
@@ -358,8 +354,8 @@ class MVVPStep:
 
 @dataclass(frozen=True)
 class MVVPReport:
-    """The MVVP report: six separately-reported steps, one configuration,
-    one result id (`FR-STATS-05`, `FR-STATS-19`, #116).
+    """The MVVP report: six separately reported steps, one configuration, one result id
+    (FR-STATS-05, FR-STATS-19).
 
     ``result_id`` is content-addressed on the assignment type and the four
     re-run trigger dimensions — a changed dimension is a different result by
@@ -384,7 +380,7 @@ class MVVPReport:
 def _cross_validation_outcome(
     stats: "ValidationStats", assignment_type: str | None, admissible: list[Any]
 ) -> CrossValidationOutcome:
-    """`FR-STATS-17`'s step-4 outcome: agreement per assignment type.
+    """Step 4: agreement for each assignment type (FR-STATS-17).
 
     The store's label table predates the assignment-type column the HLD's
     label schema names, so the dimension is read off the labels when they
@@ -450,7 +446,7 @@ def _cross_validation_outcome(
 
 
 def _band_entropy(values: Sequence[int]) -> float | None:
-    """Shannon entropy of one side's band distribution, in bits.
+    """The Shannon entropy of one side's band distribution, in bits.
 
     The compression check's first statistic (`FR-STATS-06`): the shape of
     what the panel produced, against the same measure of the gold's side.
@@ -467,7 +463,7 @@ def _band_entropy(values: Sequence[int]) -> float | None:
 
 
 def _interior_rate(values: Sequence[int], band_count: int) -> float | None:
-    """The rate of interior bands — non-extreme on the ordinal scale.
+    """The share of bands that are not at either end of the scale.
 
     The compression check's second statistic (`FR-STATS-06`): a panel that
     compresses toward the middle leaves fewer extreme bands than the gold's
@@ -486,8 +482,8 @@ def _interior_rate(values: Sequence[int], band_count: int) -> float | None:
 def _compression_outcome(
     stats: "ValidationStats", admissible: list[Any]
 ) -> CompressionOutcome:
-    """`FR-STATS-06`'s step-6 outcome: the panel's band shape against the
-    gold's, over the paired population both sides carry.
+    """Step 6: the shape of the panel's bands against the gold labels', over the pairs both sides
+    have (FR-STATS-06).
 
     The comparison routes through the single filter's application
     (`NFR-STATS-04`): the caller hands in the admissible population, and the
@@ -549,60 +545,11 @@ def run_mvvp(
     measured_position_bias: Mapping[str, Any] | None = None,
     backend_claims_deterministic_at_temperature_zero: bool | None = None,
 ) -> MVVPReport:
-    """The Minimum Viable Validation Protocol, as six separately-reported
-    protocol steps (`FR-STATS-05`, #116; HLD §2.5).
+    """Run the Minimum Viable Validation Protocol as six separately reported steps (FR-STATS-05,
+    HLD §2.5).
 
-    One call, six answers — each step's own outcome record beside its own
-    requirement (`MVVP_STEP_REQUIREMENTS` is `FR-STATS-05`'s mapping), never
-    collapsed into one pass/fail (`CT-STATS-07`). The steps:
-
-    1. the chance-corrected agreement surface (`FR-STATS-02`) — the figures
-       `agreement` emits, one per criterion in scope, or the surface's own
-       absence value for a population with no criteria to figure;
-    2. the order/position swap (`FR-STATS-15`) — the held-out fixture subset
-       re-scored with the exemplar order and the reference-material
-       presentation order permuted, per judge (`TC-STATS-16`'s live tier
-       measures the rate through the injected provider seam, the one egress
-       point; headlessly each judge's result is the explicit not-measured
-       value with its declared reason);
-    3. the replication floor (`FR-STATS-16`) — per-judge self-agreement
-       reported **together with** the backend's declared
-       ``deterministic_at_temperature_zero`` (`CT-PROV-04`'s claim), the two
-       different claims they are, never merged;
-    4. cross-validation by assignment type (`FR-STATS-17`) — one assignment
-       type's figures, per criterion, with the spanning refusal structural:
-       no figure spanning assignment types is representable in the value, and
-       where the labels carry types and none is named, the step is the
-       disclosed refusal (`no_assignment_type_named`), never a pooled figure;
-    5. the consistency-bias pairing (`FR-STATS-18`) — every judge in scope's
-       step-3 rate beside its step-2 position-bias result, one pair, never
-       one figure alone;
-    6. the compression check (`FR-STATS-06`) — the panel's band shape
-       against the gold's, with its stated limitation in the value.
-
-    **The measured channel** (the four seams' third): what a caller has
-    measured arrives declared — ``measured_self_agreement`` for step 3, the
-    ≥3-run replication's per-judge rates; ``measured_position_bias`` for
-    step 2's swap; ``backend_claims_deterministic_at_temperature_zero`` for
-    the backend's declaration. A rate is reported verbatim — never clamped,
-    floored or omitted (`TC-JUDGE-C17` limb 3: a measured value below 1.0 is
-    the finding the protocol exists to surface, not a failure). What was not
-    measured is the declared not-measured value with its reason — never a
-    plausible number, never a raise (`CT-STATS-03`, `CT-STATS-16`).
-
-    **Re-run semantics (`FR-STATS-19`, `CT-STATS-08`).** ``configuration``
-    carries the four trigger dimensions; each is echoed in the result's
-    ``measured_configuration`` and in steps 2–5's own records, so a consumer
-    can verify the match itself. ``result_id`` digests the assignment type
-    and the four — a changed dimension is a different id, and ``latest_mvvp``
-    answers consult-time calls by measuring fresh, because no durable result
-    is kept to reuse, show or merge.
-
-    Defined at module level and bound into ``ValidationStats`` below, so the
-    surface ``require(STATS_MODULE, "run_mvvp")`` names and the method the
-    instance carries are the same function. Raises on programming errors
-    only (`CT-STATS-16`): a malformed argument propagates. Insufficient data
-    is the per-step outcome."""
+    More detail: `docs/code-notes/stats.md`, section `mvvp.py: run_mvvp`.
+    """
     from .service import ValidationStats  # here, not at the top: .service imports this file
     if assignment_type is not None and not isinstance(assignment_type, str):
         raise TypeError(
@@ -756,8 +703,7 @@ def latest_mvvp(
     measured_position_bias: Mapping[str, Any] | None = None,
     backend_claims_deterministic_at_temperature_zero: bool | None = None,
 ) -> MVVPReport:
-    """`CT-STATS-08`'s consult-time entry: the **current** result for a
-    configuration.
+    """The current MVVP result for a configuration (CT-STATS-08).
 
     Measures fresh on every call. There is no durable MVVP result to serve —
     this module writes nothing (`CT-STATS-15`) — so no prior result can be

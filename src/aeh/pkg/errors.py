@@ -6,14 +6,13 @@ from .records import ProvenanceReport
 
 
 class PackageError(Exception):
-    """Base for every `M-PKG` failure. Siblings, never a chain — the exact-type oracle
-    convention every module's error taxonomy follows."""
+    """Base class for every M-PKG failure. The error types are siblings, never a chain, so each can
+    be caught exactly."""
 
 
 class BandSetError(PackageError):
-    """A band set violates the structural rules the scoring pipeline assumes
-    (`FR-PKG-06`): a `band_count` that is odd or outside 2..6, ordinals that are not
-    contiguous from 0, or `points` that are not non-decreasing in ordinal.
+    """A band set breaks the structural rules scoring relies on (FR-PKG-06): a `band_count` that is
+    odd or outside 2..6, ordinals not running from 0 without gaps, or points that decrease.
 
     The monotone mapping is what `M-AGG` and `M-GRADE` assume; the even count is the
     design rule that removes the safe middle band a hesitant judge retreats to
@@ -24,8 +23,7 @@ class BandSetError(PackageError):
 
 
 class CyclicDependencyError(PackageError):
-    """A `criterion_dependency` write would make the dependency graph cyclic
-    (`FR-PKG-05`).
+    """A dependency write would make the dependency graph cyclic (FR-PKG-05).
 
     The extraction sweep's two-pass order rests on the graph being a DAG; a cycle would
     strand the cycle's criteria in the second pass forever. Not retryable — the edge is
@@ -35,7 +33,7 @@ class CyclicDependencyError(PackageError):
 
 
 class SchemaLockViolation(PackageError):
-    """An edit the HLD §6.2 lock forbids was attempted (`FR-PKG-03`).
+    """An edit to a field frozen by the schema lock was attempted (FR-PKG-03).
 
     The message names the offending field, because `M-CALIB` routes every rubric edit
     through this module (`FR-CALIB-07`) and an operator fixing a refused edit needs the
@@ -59,8 +57,7 @@ class SchemaLockViolation(PackageError):
 
 
 class PublishedVersionImmutableError(PackageError):
-    """An update was attempted on a published (`locked = 1`) `package_version`, or on any
-    row referencing one (`FR-PKG-01`).
+    """An update was attempted on a published version, or on a row belonging to one (FR-PKG-01).
 
     A published version is the anchor a grade issued years ago resolves to; mutating it —
     or any criterion, band or exemplar beneath it — silently rewrites history. Not
@@ -71,9 +68,8 @@ class PublishedVersionImmutableError(PackageError):
 
 
 class GradePolicyError(PackageError):
-    """A grade policy outside the closed rule vocabulary, or a malformed boundary
-    table (`FR-PKG-14`). Answer-key refusals raise the module base `PackageError` —
-    the key is FR-PKG-17's surface, not the policy vocabulary's.
+    """A grade policy uses a rule outside the allowed list, or its boundary table is malformed
+    (FR-PKG-14). Answer-key refusals raise `PackageError` instead.
 
     The vocabulary — weighted sum, gate, best-k-of-n, drop-lowest-n, scale, rounding,
     boundary table — is closed on purpose (the ADR): an executable formula in a package
@@ -83,7 +79,7 @@ class GradePolicyError(PackageError):
 
 
 class PackageIntegrityError(PackageError):
-    """A package version whose declarations do not hang together (`FR-ORCH-31`).
+    """A package version's declarations contradict each other (FR-ORCH-31).
 
     The first member is the grade policy naming a criterion the version does not declare: the
     package is internally inconsistent, so a run started against it would grade by a rule
@@ -95,8 +91,7 @@ class PackageIntegrityError(PackageError):
 
 
 class ExportBlockedError(PackageError):
-    """Export was attempted while `package.contains_real_student_text = 1`
-    (`FR-PKG-11`).
+    """Export was attempted while the package still contains real student text (FR-PKG-11).
 
     The exported artifact must be free of verbatim student text (`CT-PKG-13`): a caller
     may treat it as such, so the gate cannot pass while any `real_verbatim` exemplar
@@ -114,7 +109,7 @@ class ExportBlockedError(PackageError):
 
 
 class SchemaTooNewError(PackageError):
-    """An import whose schema version exceeds this binary's (`FR-PKG-13`).
+    """An imported package's schema is newer than this code supports (FR-PKG-13).
 
     The message names the required upgrade, and nothing is partially imported — a
     partial import of a newer package is worse than a refused one. Mirrors
@@ -124,7 +119,7 @@ class SchemaTooNewError(PackageError):
 
 
 class InventoryError(PackageError):
-    """A confirmed question-inventory write is structurally invalid (`FR-SETUP-01`).
+    """A confirmed question inventory is structurally invalid (FR-SETUP-01).
 
     The question vocabulary, the option-set/type pairing, unique ids and ordinals —
     these are the structural constraints `M-PKG` owns (`CT-PKG-12`: every Tier P write

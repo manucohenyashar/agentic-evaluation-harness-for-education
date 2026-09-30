@@ -9,15 +9,14 @@ from .records import SelectionRead
 
 
 class SelectionReadingMixin:
-    """Reads each question's recorded selection from the head document of a submission."""
+    """Reads each question's recorded selection from a submission's head document."""
 
     def _selection_read(
         self, cohort_handle: Any, submission_id: str, question_id: str
     ) -> SelectionRead:
-        """One question's answer regions in the head document, resolved to the
-        kernel's inputs under R47's retraction discipline. The cohort pass uses
-        `_selection_reads` (one query per submission) and looks the question up;
-        this method is the single-criterion path."""
+        """One question's answer regions in the head document, turned into the scoring rule's input
+        under the retraction rule (R47). This is the single-criterion path; the cohort pass uses
+        `_selection_reads`."""
         return self._selection_reads(cohort_handle, submission_id).get(
             question_id,
             SelectionRead("absent", None, None),
@@ -26,9 +25,8 @@ class SelectionReadingMixin:
     def _selection_reads(
         self, cohort_handle: Any, submission_id: str
     ) -> dict[str, SelectionRead]:
-        """Every question's answer in the head document, from one head query
-        and one regions query — the shape the cohort pass needs to stay a
-        single pass (`NFR-DET-01`)."""
+        """Every question's answer in the head document, from one query for the head and one for
+        its regions, so the cohort pass stays a single pass (NFR-DET-01)."""
         documents = cohort_handle.query(
             DET_STATEMENTS["select_det_document_head"], submission_id=submission_id
         )
@@ -64,15 +62,13 @@ class SelectionReadingMixin:
         return reads
 
     def _read_from_regions(self, mine: list[Any]) -> SelectionRead:
-        """R47's retraction discipline applied to one question's regions (see
-        module docstring). Live selection-mark regions take precedence: if any
-        exist they are the candidates, and several of them are multiple marks
-        — unresolved, never "darkest". A question with no live selection mark
-        but other live regions still gets read — a letter written in the
-        margin is a valid selection captured as a description (§7.8) — one
-        such region is read, several are multiple marks. (So a single live
-        selection_mark wins over coexisting non-mark regions; today's ingest
-        writes one region per question, making the mixed case defensive.)"""
+        """Apply the retraction rule (R47) to one question's regions (see docs/code-notes/det.md).
+
+        Live selection-mark regions come first: if there are any they are the candidates, and more
+        than one is multiple marks, so the answer is unresolved (never "take the darkest"). A
+        question with no live selection mark but other live regions is still read, because a letter
+        written in the margin is a valid answer recorded as a description (§7.8): one such region
+        is read, more than one is multiple marks."""
         live = [row for row in mine if row["retraction"] is None]
         if not live:
             # Every region for the question was struck through: the student

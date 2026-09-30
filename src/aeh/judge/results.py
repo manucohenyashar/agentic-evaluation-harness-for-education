@@ -11,18 +11,14 @@ from .schema import JUDGE_STATEMENTS
 
 @dataclass(frozen=True)
 class ScoringResult:
-    """One judged unit — §9.9's result. `resolved_build` is the RESOLVED identity of
-    the model that actually answered (`FR-PROV-04`; the verdict row's `judge_id`
-    stays the arm's, while `resolved_build` is who actually answered). `uncited` is
-    `FR-JUDGE-12`'s marking: a reply with no cited spans is a legitimate verdict that
-    must be MARKED as uncited, never silently treated as cited. `notes` is the
-    stage-level observability channel: `None` on a clean first attempt, otherwise the
-    line saying what happened — the strike budget ran out, or which attempt landed.
-    `prefix_bytes`/`total_bytes` are the payload's invariant-prefix and total sizes —
-    `CT-JUDGE-13`'s shared-prefix observable (the throughput assumption a prompt
-    change could silently break), in bytes: the tokenizer is the provider's, the byte
-    split is the transport-neutral form of the same invariant.
-    """
+    """One judged unit (design §9.9).
+
+    `resolved_build` is the identity of the model that actually answered (FR-PROV-04); the verdict
+    row's `judge_id` stays the arm's. `uncited` marks a reply with no cited spans: a legitimate
+    verdict that must be marked, never treated as cited (FR-JUDGE-12). `notes` is None after a
+    clean first attempt and otherwise says what happened (attempts ran out, or which attempt
+    succeeded). `prefix_bytes` and `total_bytes` are the sizes of the prompt's shared prefix and of
+    the whole prompt (CT-JUDGE-13)."""
 
     work_id: str
     judge_id: str
@@ -60,11 +56,9 @@ class ScoringResult:
 
 @dataclass(frozen=True)
 class StoredVerdict:
-    """One persisted verdict as `aggregate` consumes it (`FR-JUDGE-18`): the band and its
-    ordinal, the cited-span inventory (a tuple of span documents, empty when uncited), the
-    sufficiency answer, the uncited mark and the judge. `agg._verdict_ordinal` reads
-    `band_ordinal` and `agg._verdict_cited` reads `uncited`, so the tuple feeds `aggregate`
-    with no adaptation."""
+    """One stored verdict in the form `aggregate` reads (FR-JUDGE-18): the band and its ordinal,
+    the cited spans (empty when uncited), the sufficiency answer, the uncited mark, and the judge.
+    """
 
     work_id: str
     judge_id: str
@@ -78,14 +72,14 @@ class StoredVerdict:
 
     @property
     def ordinal(self) -> int:
-        """The band ordinal under the name `aggregate` reads (`agg._verdict_ordinal`)."""
+        """The band ordinal, under the name `aggregate` reads."""
         return self.band_ordinal
 
 
 def verdicts_for(
     handle: Any, run_id: str, submission_id: str, criterion_id: str
 ) -> tuple[StoredVerdict, ...]:
-    """The cell's verdicts for ONE run, in `work_id` order (`FR-JUDGE-18`, `CT-JUDGE-20`).
+    """One cell's verdicts for one run, in `work_id` order (FR-JUDGE-18, CT-JUDGE-20).
 
     Reads through `handle` (the cohort tier handle) with the run filter, so a second run's
     verdicts for the same (submission, criterion) never appear. A cell with no verdicts is

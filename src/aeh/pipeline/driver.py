@@ -26,7 +26,8 @@ from .finishing import _grade, _grades_all_final, _synthesize
 
 
 def _over_escalation_budget(orch: Any, run_id: str) -> bool:
-    """Whether the run's escalation rate is over budget, so dispatch is deferring its pairs.
+    """Whether the run's escalation rate is over budget, which makes dispatch hold back its
+    escalation pairs.
 
     That is the one no-progress condition retrying cannot clear: the deferred units stay
     pending until growth returns headroom, and on a cohort too small to grow it never does.
@@ -39,7 +40,7 @@ def _over_escalation_budget(orch: Any, run_id: str) -> bool:
 
 
 def _stall_reason(orch: Any, run_id: str) -> str:
-    """Why a pass stopped moving, in M-ORCH's own words.
+    """Why a pass stopped making progress, in M-ORCH's own words.
 
     The escalation budget is the expected cause and it already explains itself: the budget
     state carries a `gates` mapping whose `rate` entry says whether dispatch is deferring
@@ -81,12 +82,12 @@ def run_to_completion(
     high_risk_criteria: Sequence[str] = (),
     decision_provider: Any = None,
 ) -> RunResult:
-    """Drive `run_id` until `M-ORCH`'s completion predicate holds or the run pauses.
+    """Drive the run pass by pass until M-ORCH says it is complete, or it pauses.
 
     `FR-PIPE-01`. The returned `status` is the STORED `run.status`, read back through `M-ORCH`
     after the last pass, never this module's own idea of where the run got to.
 
-    The four keyword refs are the design gaps the module docstring names: `RunConfig` has no
+    The four keyword refs are the design gaps `docs/code-notes/pipeline.md` names: `RunConfig` has no
     field for an extractor or a synthesizer, and extension arms are not panel members. A caller
     needing exact identities (a replay against a recorded corpus) supplies them; everything
     else takes the declared default.
@@ -293,7 +294,8 @@ def run_to_completion(
 
 
 def recover(store: Any, *, clock: Any = None) -> RecoveryReport:
-    """Reclaim expired leases, resume open runs, and settle grades a window lapse left behind.
+    """Reclaim expired leases, resume open runs, and settle grades whose review window lapsed while
+    the process was down.
 
     `FR-PIPE-07`, in its stated order: `sweep_expired_leases()` then `resume()`, then
     `compute_all` for every run that is `complete` but whose grades are not all final.

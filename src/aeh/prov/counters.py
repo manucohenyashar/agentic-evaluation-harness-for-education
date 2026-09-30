@@ -30,7 +30,7 @@ COUNTER_NAMES: tuple[str, ...] = (
 
 @dataclass(frozen=True)
 class RunCounters:
-    """The six counters as `counters()` returns them (`CT-PROV-11`'s surface).
+    """The six run counters, as `counters()` returns them (CT-PROV-11).
 
     `cache_hit_rate` is the token-weighted `cached_prefix_tokens / tokens_in` over the run —
     a rate in `[0, 1]`, never a count. HLD §9.7 treats a drop below the historical band as
@@ -46,9 +46,9 @@ class RunCounters:
 
 
 class RunCountersTracker:
-    """The in-memory accumulator behind `counters()`. This module writes nothing directly:
-    `M-ORCH` reads `counters()` and persists to `run_metrics` on the ordinary commit cadence
-    (`CT-PROV-11`)."""
+    """Accumulates the run counters in memory behind `counters()`. M-PROV writes nothing itself:
+    M-ORCH reads `counters()` and saves the figures to `run_metrics` when it commits (CT-PROV-11).
+    """
 
     def __init__(self) -> None:
         self._transport_retries = 0
@@ -66,14 +66,14 @@ class RunCountersTracker:
         self._lock = threading.Lock()
 
     def on_retry(self) -> int:
-        """One more attempt beyond the first, whatever provoked it (429 included)."""
+        """Count one more attempt beyond the first, whatever caused it (a 429 included)."""
         with self._lock:
             self._transport_retries += 1
             return self._transport_retries
 
     def on_rate_limited(self, waited_s: float, *, first_for_call: bool = True) -> None:
-        """The call was throttled at least once — counted once per call (`first_for_call`),
-        with every wait it incurred accumulated under `rate_limit_wait_s` (FR-PROV-12)."""
+        """Count a call that was throttled at least once (once per call), and add each wait it
+        caused to `rate_limit_wait_s` (FR-PROV-12)."""
         with self._lock:
             if first_for_call:
                 self._rate_limited_calls += 1
@@ -87,8 +87,8 @@ class RunCountersTracker:
 
     def on_decision(self, *, tokens_in: int, transport_retries: int, rate_limited: bool,
                     cost: Decimal | None) -> None:
-        """One completed `decide` call (FR-PROV-29). Kept apart from the six LLM counters so
-        a decision retry never moves `transport_retries`, whose values TC-PROV-18 pins."""
+        """Count one completed `decide` call (FR-PROV-29). Decision calls are counted separately
+        from the six LLM counters, so a decision retry never changes `transport_retries`."""
         with self._lock:
             self._decision_calls += 1
             self._decision_tokens_in += tokens_in
@@ -98,14 +98,15 @@ class RunCountersTracker:
                 self._decision_actual_cost += cost
 
     def on_decision_provider_unreported(self) -> None:
-        """An OpenRouter decision response that carried no `provider` field (FR-PROV-43): the
-        per-call routing check could not run on it. Counted, not refused (the field is optional)."""
+        """Count a decision response from the hosted router that had no `provider` field, so the
+        per-call routing check could not run (FR-PROV-43). It is counted, not refused, because the
+        field is optional."""
         with self._lock:
             self._decision_provider_unreported += 1
 
     def decision_snapshot(self) -> "DecisionCounters":
-        """CT-PROV-24's names. `decision_actual_cost` is what `M-ORCH` adds to the run's
-        `actual_cost`, so the ceiling check reads one figure."""
+        """The decision counters by their contract names (CT-PROV-24). M-ORCH adds
+        `decision_actual_cost` to the run's actual cost, so the cost ceiling checks one figure."""
         with self._lock:
             return DecisionCounters(
                 decision_calls=self._decision_calls,
@@ -132,7 +133,8 @@ class RunCountersTracker:
 
 
 class BuildWatch:
-    """The run-start build record, and the guard that refuses a changed panel (`FR-PROV-05`).
+    """Records each panel member's served build at run start, and refuses a response from a
+    different build (FR-PROV-05).
 
     `record` is called at run start with the builds the panel expects; `check` is called per
     response with the build that actually served it. A mismatch raises `BuildChangedError`
@@ -161,7 +163,7 @@ class BuildWatch:
 
 @dataclass(frozen=True)
 class DecisionCounters:
-    """FR-PROV-29 / CT-PROV-24: the decision counters, by their contract names."""
+    """The decision counters, by their contract names (FR-PROV-29, CT-PROV-24)."""
 
     decision_calls: int
     decision_tokens_in: int

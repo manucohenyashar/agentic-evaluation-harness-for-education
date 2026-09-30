@@ -31,6 +31,8 @@ Files:
     fixtures.py      test seams: stores, catalogs and elicitation history over real files
     scenarios.py     test seams: band-shift cohorts, off-panel models, counting providers
     observability.py the metrics and alerts M-CALIB emits, and the failure-mode simulator
+
+Detailed design notes (the full original module description): `docs/code-notes/calib.md`.
 """
 
 from __future__ import annotations

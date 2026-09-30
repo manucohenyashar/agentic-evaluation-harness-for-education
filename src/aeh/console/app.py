@@ -30,10 +30,11 @@ from .grade_actions import GradeActionsMixin
 
 
 class ConsoleApp(StoreReadsMixin, ScreenRenderingMixin, SetupScreensMixin, RunScreensMixin, ResultsScreensMixin, QueuesMixin, ControlActionsMixin, DomainEffectsMixin, KeyCorrectionMixin, ReadViewsMixin, GradeActionsMixin):
-    """The console as a headless object: a read view over the §9 stores plus the fifteen
-    control actions. Holds no pipeline state — every render queries, every change is a row
-    (§11.1, §11.8), so two tabs over one store see the same truth and a closed browser
-    changes nothing."""
+    """The console as a plain object: read views over the stores plus the fifteen control actions
+    (§11.1, §11.8).
+
+    It holds no pipeline state. Every screen is a query and every change is a stored row, so two
+    browser tabs on one store see the same thing, and closing the browser changes nothing."""
 
     def __init__(
         self,
@@ -75,20 +76,19 @@ class ConsoleApp(StoreReadsMixin, ScreenRenderingMixin, SetupScreensMixin, RunSc
     # -- lifecycle -----------------------------------------------------------------------------------
 
     def close(self) -> None:
-        """Release what this tab holds. The console owns no pipeline state, so closing a
-        tab changes nothing any other tab or a restarted console reads (`NFR-CONSOLE-03`)."""
+        """Release what this tab holds. The console owns no pipeline state, so closing it changes
+        nothing another tab or a restarted console would read (NFR-CONSOLE-03)."""
         self._audit = list(self._audit)
 
     # -- the coupling seam (NFR-CONSOLE-05) ------------------------------------------------------------
 
     def read_surface(self) -> tuple[str, ...]:
-        """The stores this console reads — the coupling seam's read half."""
+        """The store tiers this console reads."""
         return ("package tier", "cohort tier", "durable tier")
 
     def actual_couplings(self) -> tuple[str, ...]:
-        """Everything the running console actually touches: the store tiers it holds
-        handles to. It calls into no pipeline module and holds no shared in-process
-        object, so the set is exactly the read surface."""
+        """Everything the running console touches: the store tiers it holds handles to. It calls no
+        pipeline module and shares no in-process object, so this equals the read surface."""
         return self.read_surface()
 
     @property
@@ -106,11 +106,10 @@ class ConsoleApp(StoreReadsMixin, ScreenRenderingMixin, SetupScreensMixin, RunSc
         return dict(SCREENS)
 
     def blocking_screens(self) -> tuple[str, ...]:
-        """The screens that block run start (§11.5's ⛔ headings), derived from M-SETUP's
-        own enumeration of blocking steps (CT-CONSOLE-07, #532): on a real store holding a
-        package, one entry per blocking step `SetupService.steps()` reports, in its order.
-        With no store or no package there is no setup to ask, and the declared pair
-        answers."""
+        """The screens that must be completed before a run can start (§11.5), taken from M-SETUP's
+        own list of blocking steps (CT-CONSOLE-07, #532). With a real store holding a package, this
+        is one entry per blocking step `SetupService.steps()` reports, in its order. With no store
+        or no package, the declared default pair is returned."""
         steps = self._setup_blocking_steps()
         if steps is None:
             return tuple(screen for screen in SCREENS if screen in BLOCKING_SCREENS)
@@ -133,11 +132,12 @@ class ConsoleApp(StoreReadsMixin, ScreenRenderingMixin, SetupScreensMixin, RunSc
         return tuple(step.step_id for step in progress.steps if step.blocking)
 
     def routes(self) -> dict[str, tuple[str, ...]]:
-        """The role-scoped route tables. AuthN is absent deliberately; no auth route exists."""
+        """The route tables for each role. There is deliberately no login route, because the
+        console has no accounts."""
         return {"teacher": TEACHER_ROUTES, "operator": OPERATOR_ROUTES}
 
     def audit_routes(self) -> tuple[str, ...]:
-        """The routes that render the audit surface (`CT-CONSOLE-23`)."""
+        """The routes that show the audit screens (CT-CONSOLE-23)."""
         return AUDIT_ROUTES
 
     def _writes(self) -> tuple[Any, ...]:

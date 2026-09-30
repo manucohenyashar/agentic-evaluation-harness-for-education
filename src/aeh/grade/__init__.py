@@ -24,6 +24,8 @@ Files:
     rollups.py       class rollups, the separated rollup and rollup findings
     exports.py       the school-facing export: one PDF per student and a marks CSV
     signals.py       the grading stage's signals and alerts
+
+Detailed design notes (the full original module description): `docs/code-notes/grade.md`.
 """
 
 from __future__ import annotations

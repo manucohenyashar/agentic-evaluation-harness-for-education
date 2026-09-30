@@ -20,6 +20,8 @@ Files:
     adversarial.py the adversarial tier
     decision.py    decision-engine conformance on the F-JEV fixtures
     injection.py   decision-engine robustness to prompt-injection twin pairs
+
+Detailed design notes (the full original module description): `docs/code-notes/conform.md`.
 """
 
 from __future__ import annotations

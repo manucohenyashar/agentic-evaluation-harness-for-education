@@ -11,7 +11,8 @@ from .errors import IngestError
 
 
 class ResidencySlot:
-    """The VLM's model-residency slot.
+    """The vision model's residency slot: controls whether the transcriber and the judge may be
+    loaded at the same time.
 
     `HardwarePolicy.residency_policy` (`M-CONF`) names the roles permitted resident
     concurrently. For the `unified-small` and `discrete-gpu` profiles the transcriber
@@ -44,21 +45,20 @@ class ResidencySlot:
     def for_policy(cls, policy_roles: Sequence[str], *,
                    judge_role: str = "judge",
                    transcriber_role: str = "transcriber") -> "ResidencySlot":
-        """The slot the given `HardwarePolicy.residency_policy` implies: exclusive when
-        the policy does not admit the judge and the transcriber concurrently."""
+        """The slot a hardware policy's `residency_policy` implies: exclusive when the judge and
+        the transcriber cannot be resident together."""
         roles = tuple(policy_roles)
         exclusive = not (judge_role in roles and transcriber_role in roles)
         return cls(exclusive=exclusive)
 
     @property
     def exclusive(self) -> bool:
-        """Whether the slot admits one resident at a time."""
+        """Whether only one model may be resident at a time."""
         return self._exclusive
 
     @property
     def holder(self) -> str | None:
-        """The role currently holding the slot, or None — a shared slot never
-        holds (its acquire is a guard, not a hold)."""
+        """The role currently holding the slot, or None. A shared slot never holds."""
         if not self._exclusive:
             return None
         with self._lock:
@@ -66,17 +66,14 @@ class ResidencySlot:
 
     @property
     def waiters(self) -> int:
-        """How many threads are currently blocked in `acquire` (#222, F11) —
-        the waiter state the mid-run probes were scheduling-race-blind to. A
-        shared slot never blocks, so it reads 0."""
+        """How many threads are waiting in `acquire`. Always 0 for a shared slot."""
         if not self._exclusive:
             return 0
         with self._lock:
             return self._waiters
 
     def snapshot(self) -> dict:
-        """The slot's state as a stage-detail dict (`CLAUDE.md` seam 4): no
-        result carries a bare slot reference."""
+        """The slot's state as a plain dict for stage details."""
         if not self._exclusive:
             return {"exclusive": False, "holder": None, "waiters": 0}
         with self._lock:

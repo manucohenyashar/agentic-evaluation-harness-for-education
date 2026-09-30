@@ -13,14 +13,12 @@ class ItemStatisticsMixin:
     """Writes and reads back per-question item statistics."""
 
     def item_stats(self, cohort_id: str) -> ItemStatsReport:
-        """Read back one cohort's item statistics (`FR-DET-07`, `CT-DET-08`):
-        per question, the summary figures and the per-option counts behind
-        them, exactly as the cohort pass wrote them. blank_count and
-        unresolved_count travel as the separate figures they are stored as —
-        the unresolved count is a scanning problem, never item difficulty.
-        A cohort with no runs reports an empty population under a None
-        version; a cohort whose runs name several package versions is
-        refused (see the module docstring)."""
+        """Read back one cohort's item statistics exactly as the cohort pass wrote them: per
+        question, the summary figures and the per-option counts (FR-DET-07, CT-DET-08).
+
+        Blank and unresolved counts stay separate; an unresolved count is a scanning problem, never
+        item difficulty. A cohort with no runs gives an empty report with a None version; a cohort
+        whose runs name several package versions is refused (see docs/code-notes/det.md)."""
         runs = self._cohort_runs(cohort_id)
         if not runs:
             return ItemStatsReport(
@@ -67,8 +65,8 @@ class ItemStatisticsMixin:
     def _most_chosen_distractor(
         self, chosen: dict[str, int], key: tuple[str, ...]
     ) -> str | None:
-        """The highest-count option the key does not contain, ties broken
-        lexicographically so the report is deterministic (`CT-DET-13`)."""
+        """The most-chosen option that is not in the key, with ties broken alphabetically so the
+        report is deterministic (CT-DET-13)."""
         key_set = set(key)
         distractors = {
             option_id: count
@@ -82,11 +80,10 @@ class ItemStatisticsMixin:
     def _write_item_statistics(
         self, tallies: dict[str, dict[str, Any]], version: str
     ) -> None:
-        """`mcq_item_stats` (per-option chosen counts, key flag) and
-        `mcq_item_summary` (n, correct rate, blank count, unresolved count),
-        rewritten per criterion so a redelivery is idempotent (`CT-DET-08`).
-        Tier D is its own transaction: the store refuses cross-tier
-        transactions, and the score rows already committed in Tier C."""
+        """Rewrite `mcq_item_stats` (per-option counts and key flag) and `mcq_item_summary` (n,
+        correct rate, blank and unresolved counts) for each criterion, so a redelivery is
+        idempotent (CT-DET-08). Tier D gets its own transaction: the store refuses cross-tier
+        transactions, and the score rows are already committed in Tier C."""
         durable_handle = self._store.durable()
         with durable_handle.transaction() as tx:
             for criterion_id, tally in sorted(tallies.items()):

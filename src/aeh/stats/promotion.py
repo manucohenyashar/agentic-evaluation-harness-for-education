@@ -38,10 +38,9 @@ if TYPE_CHECKING:
 
 
 def _label_evidence_key(label: Any) -> str:
-    """The evidence class `FR-STATS-14`'s weights key a label into: its
-    ``origin`` where the mapping carries it, else the label's type — a blind
-    label reads as blind evidence, anything else as acceptance. Total by
-    construction, so the weighted signal never silently drops a label."""
+    """Which evidence class a label counts as for the weighted signal (FR-STATS-14): its `origin`
+    when the weights name it, else its type (a blind label is blind evidence, anything else
+    acceptance). Every label gets a class, so none is silently dropped."""
     origin = getattr(label, "origin", None)
     if origin in _ORIGIN_TO_EVIDENCE:
         return _ORIGIN_TO_EVIDENCE[origin]
@@ -49,9 +48,8 @@ def _label_evidence_key(label: Any) -> str:
 
 
 def _label_pair_agrees(label: Any) -> bool | None:
-    """Whether one label's two sides agree — ``None`` where the pair is
-    one-sided, so the signal drops the label exactly where the agreement
-    figure drops it (borrowing a side would manufacture agreement)."""
+    """Whether a label's two bands agree, or None when it has only one side; the signal drops
+    exactly the labels the agreement figure drops."""
     system = _system_side(label)
     teacher = getattr(label, "teacher_band", None)
     if system is None or teacher is None:
@@ -62,11 +60,9 @@ def _label_pair_agrees(label: Any) -> bool | None:
 def _per_criterion_kappas(
     population: Sequence[Any], band_counts: Mapping[str, int]
 ) -> dict[str, float | None]:
-    """Each criterion's chance-corrected coefficient over one population, the
-    same statistic ``agreement`` computes — routed through the same helpers,
-    so a record's per-criterion figure is *the* figure, not a re-spelling. A
-    criterion with fewer than two paired valuations reads ``None``: no
-    coefficient is computable, and the absence is the value (`CT-STATS-16`)."""
+    """Each criterion's chance-corrected coefficient over one population, using the same helpers as
+    `agreement`, so the record's figure is the same figure. A criterion with fewer than two pairs
+    gives None (CT-STATS-16)."""
     criteria = sorted({
         (getattr(label, "criterion_id", "") or "") for label in population
     })
@@ -93,11 +89,9 @@ def _per_criterion_kappas(
 def _weakest_entry(
     kappas: Mapping[str, float | None],
 ) -> Mapping[str, Any]:
-    """The weakest criterion in a per-criterion κ map: the lowest computable
-    coefficient, ties broken by criterion id in sorted order. Where no
-    criterion has a computable κ the entry discloses that honestly — the
-    criterion id it would have measured, and ``kappa=None`` — rather than
-    dressing an uncomputable comparison up as a number."""
+    """The weakest criterion in a per-criterion kappa map: the lowest computable value, ties broken
+    by criterion id. When none is computable, it says so (`kappa=None`) instead of showing a
+    number."""
     computable = {
         criterion: kappa for criterion, kappa in kappas.items() if kappa is not None
     }
@@ -110,11 +104,9 @@ def _weakest_entry(
 
 
 def _label_scope(label: Any) -> str | None:
-    """The population scope a label carries, whichever attribute spells it.
-    The durable label rows carry no scope column in Phase 1 — the declared
-    scopes are the population dimension — so an unattributed label reads
-    ``None`` and the aggregate discloses the population-wide reading for the
-    scopes it cannot split."""
+    """The population scope a label carries, from whichever attribute holds it. Stored labels have
+    no scope column yet, so they read as None and the aggregate reports the population-wide figure
+    for scopes it cannot split."""
     scope = getattr(label, "population_scope_id", None)
     if scope is None:
         scope = getattr(label, "scope", None)
@@ -127,46 +119,14 @@ def promote(
     *,
     package_version: str | None = None,
 ) -> ValidationUpdate:
-    """Record one administration (`FR-STATS-10`, `CT-STATS-05`, `CT-STATS-06`):
-    claim the administration's unclaimed labels into the named cohort, count
-    what was claimed, and write the record's durable
-    row — the counters, the weakest criterion per population, and #117's
-    surface-proxy flags — through `aeh.pkg.record_promotion`, which is
-    `CT-STATS-15`'s indirection made real: the write reaches the package
-    tier with `M-PKG`'s frames and `M-STATS`'s initiation.
+    """Record one administration (FR-STATS-10, CT-STATS-05, CT-STATS-06): claim the
+    administration's unclaimed labels for the named cohort, count what was claimed, and write the
+    record's durable row (the counters, the weakest criterion per population, and the surface-proxy
+    flags) through `aeh.pkg.record_promotion`, so the write happens in M-PKG on M-STATS's behalf
+    (CT-STATS-15).
 
-    The claim is the record's write in Tier D and this module's own: the
-    labels an administration collected carry no cohort until an administration
-    takes them (`aeh.review`'s collection writes ``cohort_id`` NULL), and the
-    claim is the act that makes them one administration's evidence. Audit rows
-    are read, never stamped — `audit_record` is append-only (#103's trigger,
-    `FR-DET-10`/`TC-GRADE-23`), so their cohort dimension rides their insert
-    and the record sources its package version from the unclaimed read. The
-    counts are taken over the administration's labels after the claim, so a
-    second `promote` of the same cohort counts that cohort's rows rather
-    than re-claiming anything.
-
-    * `CT-STATS-05`: an administration that collected no blind labels reports
-      `NO_NEW_VALIDATION_EVIDENCE` as a first-class value — and advances no
-      agreement figure. The claimed rows still land (they are the
-      administration's record), the counters still move, and the figure does
-      not: nothing that cannot support a validity claim ever reaches one.
-    * `CT-STATS-06`: the three counters count separately — ``blind_count``
-      the admissible population, ``operational_count`` the claimed labels
-      that are not admissible, ``cohorts_used`` the administrations the
-      record now speaks for. ``agreement_kappa`` is computed only when the
-      administration's blind population is single-criterion; a
-      multi-criterion one has per-criterion figures in
-      ``weakest_per_population`` and no blended headline, because
-      `CT-STATS-04` keeps that claim unrepresentable.
-
-    Rung 0 (no data directory — `build_stats`' shape) computes the same
-    counters over the in-memory population and writes nothing. Rung 2 claims
-    through the durable file `open_stats` created; an instance must have been
-    built by `open_stats` for the claim to have anything to claim.
-
-    Defined at module level and bound into ``ValidationStats`` below, the way
-    ``agreement`` is."""
+    More detail: `docs/code-notes/stats.md`, section `promotion.py: promote`.
+    """
     _require_str_or_none("promote", cohort_id=cohort_id, package_version=package_version)
     _refuse_foreign_cohort(self, cohort_id, "promote")
 
@@ -391,10 +351,10 @@ def promote(
 def _record_noninferiority_verdicts(data_dir: Any, cohort_id: str, package_version_id: str,
                                     criteria: Iterable[str], admissible: Sequence[Any],
                                     backend_profile: str, panel_build_ref: str) -> dict[str, str]:
-    """FR-STATS-29 (#454): NFR-STATS-06's verdict per criterion, from FR-STATS-26's per-engine
-    agreement over the administration's admissible labels, each label's partition read from
-    the cohort's own verdicts (`engine_partition`). Written onto the criterion's validation
-    record row (FR-PKG-23). M-STATS never switches engines (CT-CONF-14)."""
+    """Write each criterion's non-inferiority verdict (NFR-STATS-06) onto its validation record
+    (FR-STATS-29, FR-PKG-23), from the per-engine agreement over the administration's admissible
+    labels, with each label's partition read from the cohort's own verdicts. M-STATS never switches
+    engines (CT-CONF-14)."""
     from aeh import pkg as _pkg
     from aeh.store import open_store
 
@@ -430,7 +390,7 @@ def _record_noninferiority_verdicts(data_dir: Any, cohort_id: str, package_versi
 
 
 def _run_key_parts(profile_summary: str, panel_config: str) -> tuple[str, str]:
-    """(backend_profile, panel_build_ref) out of a persisted profile summary (#454 reopened).
+    """`(backend_profile, panel_build_ref)` from a stored profile summary.
 
     The summary is the JSON `M-CONF`'s `ProfileSummary` persists; it carries both key parts
     by name. A summary that is not that JSON (the literal ``unrecorded``, a bare profile
@@ -448,12 +408,9 @@ def _run_key_parts(profile_summary: str, panel_config: str) -> tuple[str, str]:
 def _record_sourcing(
     package_version: str | None, audits: Sequence[Mapping[str, Any]]
 ) -> tuple[str, str, str]:
-    """Where the record's per-criterion rows get their provenance: the
-    caller's explicit ``package_version=`` first, then the audit rows' single
-    version when they agree, then the literal ``unrecorded`` — a record whose
-    administration carries no audit rows says so rather than borrowing a
-    version from anywhere else. ``profile_summary`` and ``panel_config`` ride
-    the same rows.
+    """Where the record's per-criterion rows get their provenance: the caller's `package_version=`
+    first, then the audit rows' version when they all agree, otherwise the literal `unrecorded`.
+    `profile_summary` and `panel_config` come from the same rows.
 
     Audits spanning **more than one** version are a refusal, not a vote: the
     unclaimed-audit read cannot tell which administration collected under
@@ -495,8 +452,8 @@ def _record_sourcing(
 def aggregate(
     self: "ValidationStats", across: str | None = None
 ) -> ValidationAggregate:
-    """The per-population aggregate `CT-STATS-04` permits — one weakest
-    criterion per declared population scope, and **nothing** spanning them.
+    """The per-population aggregate (CT-STATS-04): the weakest criterion for each declared
+    population scope, and nothing that spans scopes.
 
     The refusal is the other half of the clause: ``across=`` accepts a value
     precisely so a spanning request can be refused by name, and any value is
@@ -569,13 +526,8 @@ def _record_in_memory(
     cohort_id: str | None,
     package_version: str | None,
 ) -> ValidationUpdate:
-    """Rung 0's promote (`CT-STATS-16`'s sweep reaches it through
-    `build_stats`, which has no data directory): the same counters and the
-    same weakest-entry figure over the in-memory population, the same
-    absence message where no blind label was collected — and **no write**,
-    because rung 0 has nothing durable to write to (`CT-STATS-15`'s
-    discipline holds at every rung: a rung-0 instance writes nothing, which
-    is also why the write audit sees nothing from it)."""
+    """`promote` for an in-memory instance (from `build_stats`, which has no data directory): the
+    same counters, weakest entry and no-evidence message, with nothing written (CT-STATS-15)."""
     population = self._scoped_population(cohort_id)
     recomputation_started = time.perf_counter()
     administration_key = (

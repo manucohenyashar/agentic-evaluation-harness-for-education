@@ -73,8 +73,9 @@ DEFAULT_JEV_COST_PER_MTOK_IN = Decimal("0.042")
 
 
 def _jev_wire_model(build_id: str) -> str:
-    """The OpenRouter model slug for a pinned build: `openrouter/` and `@<pin>` removed
-    (FR-PROV-21). A floating alias is refused: the grader must not change under a run."""
+    """The hosted router's model name for a pinned build, with the `openrouter/` prefix and the
+    `@<pin>` suffix removed (FR-PROV-21). A floating alias is refused: the grader must not change
+    during a run."""
     slug = build_id[len("openrouter/"):] if build_id.startswith("openrouter/") else build_id
     slug = slug.split("@", 1)[0]
     if not slug or slug.startswith("~") or slug.endswith("-latest") or ":latest" in slug:
@@ -85,17 +86,17 @@ def _jev_wire_model(build_id: str) -> str:
 
 
 class _BelowWarningFilter(logging.Filter):
-    """Drops every `typesafe_sdk` record below WARNING (NFR-PROV-11). A filter rather than a
-    level, so a later logging reconfiguration (an operator's `TYPESAFE_LOG_LEVEL=debug`, a
-    `dictConfig`) cannot bring the SDK's DEBUG body logging back and put student text in a log."""
+    """Drops every `typesafe_sdk` log record below WARNING (NFR-PROV-11). It is a filter rather
+    than a log level, so a later logging change cannot turn the SDK's debug logging of request
+    bodies back on and put student text in a log."""
 
     def filter(self, record: logging.LogRecord) -> bool:
         return record.levelno >= logging.WARNING
 
 
 def _load_typesafe_sdk() -> Any:
-    """Import the TypeSafe SDK, lazily and only from here (FR-PROV-39, CT-PROV-29): `import
-    aeh.prov` never loads it, and nothing outside this module ever imports it."""
+    """Import the TypeSafe SDK, only here and only when first needed (FR-PROV-39, CT-PROV-29).
+    `import aeh.prov` never loads it, and nothing outside this file imports it."""
     try:
         import typesafe_sdk
     except ImportError:
@@ -109,8 +110,9 @@ def _load_typesafe_sdk() -> Any:
 
 
 def _sdk_response(status: int, headers: Any, body: Any) -> HttpResponse:
-    """An SDK error's status, headers and body as the `HttpResponse` the shared loop reads.
-    httpx2 lowercases header names, so `Retry-After` is restored under the name the loop reads."""
+    """An SDK error's status, headers and body as the `HttpResponse` the shared retry loop reads.
+    The SDK's HTTP layer lowercases header names, so `Retry-After` is restored under the name the
+    loop reads."""
     plain = {str(k): str(v) for k, v in dict(headers or {}).items()}
     for name, value in list(plain.items()):
         if name.lower() == "retry-after":
@@ -125,9 +127,9 @@ def _sdk_response(status: int, headers: Any, body: Any) -> HttpResponse:
 
 
 def _transport_adapter(transport: Transport) -> Any:
-    """An `httpx2.BaseTransport` whose `handle_request` calls the harness `Transport`, so every
-    byte the SDK sends passes the recordable seam (CT-PROV-10, FR-PROV-40). An error the harness
-    transport raises passes through the SDK unchanged, into the shared loop."""
+    """An SDK transport whose `handle_request` calls the harness `Transport`, so every byte the SDK
+    sends passes through the recordable seam (CT-PROV-10, FR-PROV-40). Errors from the harness
+    transport pass through the SDK unchanged to the retry loop."""
     import httpx2
 
     class _Adapter(httpx2.BaseTransport):
@@ -144,10 +146,10 @@ def _transport_adapter(transport: Transport) -> Any:
 
 
 class _SdkCall:
-    """One SDK `system_one` call, shaped as a `Transport` for the shared retry loop, which calls
-    `send` once per attempt. It returns the RAW response (§3.12.1: the SDK decodes, the raw bytes
-    decide), and maps every SDK error (FR-PROV-41), with the mapped error raised outside the
-    handler so no SDK error, or the body bytes it carries, is reachable from it."""
+    """One SDK call, shaped as a `Transport` so the shared retry loop can call `send` once per
+    attempt. It returns the raw response (the SDK decodes, but the raw bytes decide) and maps every
+    SDK error (FR-PROV-41), raising the mapped error outside the handler so neither the SDK error
+    nor the body bytes it carries can be reached from it."""
 
     def __init__(self, client: Any, sdk: Any, state: str, questions: Any, model: str, extra_body: Any) -> None:
         self._client, self._sdk = client, sdk
@@ -188,7 +190,8 @@ class _SdkCall:
 
 
 class JevOpenRouterProvider(_BaseDecisionProvider):
-    """Jev on OpenRouter — the connected configuration's decision engine (FR-PROV-21).
+    """Jev served through the hosted router: the decision engine of the connected configuration
+    (FR-PROV-21).
 
     Design 1.8 (FR-PROV-38…43, ADR-28): the request is sent through the TypeSafe SDK to
     OpenRouter's `/api/v1/systemone`, for a pinned Jev build, with the upstream pinned,
@@ -265,10 +268,10 @@ class JevOpenRouterProvider(_BaseDecisionProvider):
         return decision
 
     def _sdk_client(self, wire_model: str) -> Any:
-        """One `TypeSafeClient` per provider, every argument explicit so the SDK's
-        `TYPESAFE_API_KEY` / `TYPESAFE_BASE_URL` / `TYPESAFE_DEFAULT_MODEL` can never redirect
-        the request, change the key or select `jev-latest` (FR-PROV-38). Its HTTP goes through
-        the injected `Transport` and its own retries are off (FR-PROV-40)."""
+        """One SDK client per provider, with every argument explicit, so the SDK's own environment
+        variables can never redirect the request, change the key, or select a floating model
+        (FR-PROV-38). Its HTTP goes through the injected `Transport`, and its own retries are off
+        (FR-PROV-40)."""
         with self._client_lock:
             if self._client is None:
                 base_url = self._url.rstrip("/")[: -len(JEV_SDK_PATH)]
@@ -291,9 +294,9 @@ class JevOpenRouterProvider(_BaseDecisionProvider):
             return self._client
 
     def _prepare_document(self, document: Any) -> Any:
-        """FR-PROV-43, the per-call routing check, on the raw body: a response served by an
-        upstream outside the pinned `order` raises `RetentionPolicyError` (terminal, never
-        retried); an absent `provider` is counted as unreported, not refused."""
+        """The per-call routing check on the raw response (FR-PROV-43): a response served by an
+        upstream outside the pinned list raises `RetentionPolicyError`, which is final and never
+        retried. A missing `provider` field is counted as unreported, not refused."""
         if isinstance(document, dict):
             served = document.get("provider")
             # Per attempt: only the attempt whose body is accepted decides the count.
@@ -307,9 +310,9 @@ class JevOpenRouterProvider(_BaseDecisionProvider):
         return document
 
     def verify_retention(self, model_refs: Sequence[ModelRef]) -> RetentionReport:
-        """Zero-retention confirmation for the decision model, fail-closed exactly as
-        `OpenRouterProvider.verify_retention` (FR-PROV-28). An unconfirmed model raises and
-        arms `decide`'s refusal."""
+        """Confirm zero retention for the decision model, refusing when it cannot be confirmed, as
+        `OpenRouterProvider.verify_retention` does (FR-PROV-28). An unconfirmed model raises and
+        makes `decide` refuse."""
         confirmed: list[ModelRef] = []
         unconfirmed: list[ModelRef] = []
         for ref in model_refs:

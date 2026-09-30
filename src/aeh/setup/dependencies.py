@@ -18,11 +18,10 @@ from .decomposability import _json_object
 def _parse_dependencies_reply(
     text: str, known_ids: frozenset[str] | set[str],
 ) -> tuple[tuple[str, str, str], ...]:
-    """Parse the dependency proposal's reply into (criterion_id, depends_on, reason)
-    triples, raising `_ReplyError` on anything that is not a valid proposal set —
-    the failure the attempt loop re-requests. An edge naming a criterion the version
-    does not carry, or an edge whose ends are the same criterion, is a schema
-    failure: the write path would refuse it, so the proposal path does too."""
+    """Parse the dependency proposal reply into `(criterion_id, depends_on, reason)` triples,
+    raising `_ReplyError` for anything invalid, so the attempt loop asks again. An edge naming a
+    criterion the version does not have, or linking a criterion to itself, is invalid: the write
+    would refuse it, so the proposal does too."""
     parsed = _json_object(text)
     items = parsed.get("dependencies")
     if items is None:
@@ -69,9 +68,9 @@ class DependencyStepMixin:
     """Proposes criterion dependencies and writes the edges the teacher approves."""
 
     def propose_dependencies(self) -> tuple[DependencyProposal, ...]:
-        """Propose the dependencies the subject makes likely (`FR-SETUP-10`, `#52`) —
-        and write NOTHING: every criterion defaults to zero dependencies, and a
-        proposal is words for the teacher to act on (`CT-SETUP-08`).
+        """Propose the dependencies between criteria that the subject makes likely, and write
+        nothing: every criterion starts with no dependencies, and a proposal is only a suggestion
+        for the teacher (FR-SETUP-10, CT-SETUP-08).
 
         One version-pinned model call proposes the edges; each comes back rendered in
         plain language naming both criteria and the reason — the sentence
@@ -142,12 +141,9 @@ class DependencyStepMixin:
         self, v: PackageVersionId, proposals: Sequence[DependencyProposal],
         *, status: str | None = None, reason: str = "",
     ) -> None:
-        """Write the dependency proposals into the step's provenance row — the
-        proposals as recorded state (`CT-SETUP-03`), which `confirm_dependencies`
-        approves against. The row is MERGED, not replaced (see
-        `_record_decomposability_step`): a confirm_classifications call before or
-        after this one must not erase the proposals. Skipped when the catalog
-        offers no recording surface (the rung-0 doubles)."""
+        """Save the dependency proposals in the step's provenance row, where `confirm_dependencies`
+        checks approvals against them (CT-SETUP-03). The row is merged, not replaced (see
+        `_record_decomposability_step`). Skipped when the catalog cannot record it."""
         if status is None:
             status = ("dependencies_proposed" if proposals
                       else "dependencies_none_proposed")
@@ -167,8 +163,8 @@ class DependencyStepMixin:
         self,
         approved: Sequence[DependencyProposal | tuple[str, str] | Mapping],
     ) -> None:
-        """The teacher's approval — the ONLY write path for a dependency edge
-        (`FR-SETUP-10`, `CT-SETUP-08`).
+        """Record the teacher's approval of proposed dependencies. This is the only way a
+        dependency edge gets written (FR-SETUP-10, CT-SETUP-08).
 
         Each approval names a criterion pair; every pair must be among the proposals
         recorded on the step's row (approval confirms a proposal, not an idea), and

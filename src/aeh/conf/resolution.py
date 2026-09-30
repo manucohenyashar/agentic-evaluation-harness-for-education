@@ -42,7 +42,8 @@ from .consent import _check_consent, REMOTE_PROFILES
 
 
 def _resolve_cost(cfg: Mapping[str, Any], backend_profile: str) -> tuple[Decimal | None, str | None]:
-    """`FR-CONF-07`, and `CT-CONF-02`'s iff in both directions."""
+    """Resolve the cost settings: required exactly for the cost-bearing profiles (FR-CONF-07,
+    CT-CONF-02)."""
     raw_ceiling = cfg.get("HARNESS_COST_CEILING")
     raw_currency = cfg.get("HARNESS_COST_CURRENCY")
 
@@ -109,7 +110,8 @@ def _resolve_cost(cfg: Mapping[str, Any], backend_profile: str) -> tuple[Decimal
 
 
 def _resolve_retention_setting(cfg: Mapping[str, Any], backend_profile: str) -> str | None:
-    """`FR-CONF-12`, and `CT-CONF-02`'s "non-null for `cloud-hosted`".
+    """Resolve the retention setting, which must be set for `cloud-hosted` (FR-CONF-12,
+    CT-CONF-02).
 
     Required only on `cloud-hosted`. `dev-ci` also dispatches remotely and is still exempt,
     because the design scopes the requirement to `cloud-hosted` in both `FR-CONF-12` and
@@ -138,7 +140,7 @@ def _resolve_retention_setting(cfg: Mapping[str, Any], backend_profile: str) -> 
 
 
 def _resolve_concurrency(cfg: Mapping[str, Any], policy: HardwarePolicy | None) -> int:
-    """`HARNESS_CONCURRENCY` **clamps down**, never up.
+    """Resolve concurrency. `HARNESS_CONCURRENCY` can only lower the limit, never raise it.
 
     The design names the key and names the derivation without ordering them, so the precedence
     is a decision. It is clamping rather than overriding for two reasons that agree: `FR-CONF-06`
@@ -175,39 +177,9 @@ def _resolve_concurrency(cfg: Mapping[str, Any], policy: HardwarePolicy | None) 
 
 
 def resolve_run_config(cfg: Mapping[str, Any], cohort: CohortRef) -> RunConfig:
-    """Resolve `(cfg, cohort)` into one frozen `RunConfig`, or raise (design §3.1).
+    """Turn `(cfg, cohort)` into one frozen `RunConfig`, or raise (design §3.1).
 
-    Pure (`NFR-CONF-01`, `CT-CONF-05`): reads no `os.environ`, opens no file, makes no network
-    call and no database read. The environment reaches it only through the snapshot the caller
-    merged into `cfg` — see `environment_snapshot`. Same inputs, same result, including
-    `panel_build_ref`.
-
-    Writes nothing (`CT-CONF-09`). Every failure is raised **before** a `RunConfig` exists, so a
-    failed resolution leaves no partial value to clean up (`CT-CONF-08`), and every failure is
-    one of the four declared types — `TC-CONF-15`'s invariant is that no other exception escapes.
-
-    `cohort` is read by the consent gate (`FR-CONF-08`), which runs last — see `_check_consent`.
-    When that gate passes **because of an override**, `M-ORCH` must also call
-    `consent_override_for(cfg, cohort)` and persist the record it returns: this module writes
-    nothing (`CT-CONF-09`), so resolution alone leaves no audit trail of who authorised the
-    remote dispatch of real student work.
-
-    Config keys, all read from `cfg`:
-
-    | key | required | meaning |
-    |---|---|---|
-    | `HARNESS_PROFILE` | always | `edge-local` \\| `cloud-hosted` \\| `dev-ci`. No default |
-    | `HARNESS_HARDWARE_PROFILE` | iff `edge-local` | key into `HARDWARE_PROFILES` |
-    | `HARNESS_COST_CEILING` / `_CURRENCY` | iff hosted | zero accepted, negative refused |
-    | `HARNESS_CONCURRENCY` | no | clamps the derived ceiling **down**; never raises it |
-    | `HARNESS_ALLOW_REMOTE_REAL_WORK` | no | defaults `False`; overrides the consent gate, and **requires** `allow_remote_real_work_supplied_by` |
-    | `panel` | always | 1, 3 or 5 `ModelRef`s, each `role="judge"` |
-    | `transcriber` | always | `ModelRef`, `role="transcriber"` |
-    | `off_panel_checker` | no | `ModelRef`, `role="off_panel"` |
-    | `prompt_template_v` | always | non-empty string |
-    | `retention_setting` | **iff `cloud-hosted`** | one of `RETENTION_SETTINGS`; unset or unrecognized is refused (`FR-CONF-12`) |
-    | `allow_remote_real_work_supplied_by` | iff the override is used | who authorised sending real work remotely; the override is refused without it |
-    | `hardware_profiles` | no | overrides `HARDWARE_PROFILES` for this call |
+    More detail: `docs/code-notes/conf.md`, section `resolution.py: resolve_run_config`.
     """
     if not isinstance(cfg, Mapping):
         raise ConfigurationError(
@@ -358,7 +330,8 @@ def resolve_run_config(cfg: Mapping[str, Any], cohort: CohortRef) -> RunConfig:
 
 def _resolve_decision_engine(cfg: Mapping[str, Any], backend_profile: str,
                              policy: HardwarePolicy | None, hardware_profile: str | None) -> DecisionEngine | None:
-    """FR-CONF-17…23. `HARNESS_DECISION_ENGINE` is required (`jev`/`off`), with no default.
+    """Resolve the decision engine (FR-CONF-17..23). `HARNESS_DECISION_ENGINE` must be set to `jev`
+    or `off`; there is no default.
 
     The model comes from `cfg["decision_model"]` (a `ModelRef`, or a table in a config file) or
     from `HARNESS_JEV_BUILD` + `HARNESS_DECISION_PROVIDER` (default: the backend's provider) +

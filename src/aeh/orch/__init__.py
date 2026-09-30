@@ -34,6 +34,8 @@ Files:
     composition.py      the cell phases and ready cells the composition layer (M-PIPE) reads
     reporting.py        progress reports, alerts and the run metrics
     orchestrator.py     `Orchestrator`
+
+Detailed design notes (the full original module description): `docs/code-notes/orch.md`.
 """
 
 from __future__ import annotations

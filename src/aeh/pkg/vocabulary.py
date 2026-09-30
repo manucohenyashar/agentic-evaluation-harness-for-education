@@ -31,7 +31,7 @@ EVALUATION_MODES: tuple[str, ...] = ("judged", "deterministic")
 
 
 def default_evaluation_mode(kind: str | None) -> str:
-    """The mode a criterion takes when its author does not say (`FR-PKG-22`).
+    """The evaluation mode a criterion gets when its author does not choose one (FR-PKG-22).
 
     This is the ONE place the old `kind='mcq'` equivalence still lives, and it lives here
     deliberately: choosing a default from the shape is a WRITER's convenience, and every
@@ -48,7 +48,7 @@ def default_evaluation_mode(kind: str | None) -> str:
 
 
 def _criterion_field(criterion: Any, name: str) -> Any:
-    """One field of a criterion payload, whichever mapping-ish shape it arrives in."""
+    """One field of a criterion payload, whatever mapping-like shape it arrives in."""
     try:
         return criterion[name]
     except (KeyError, IndexError, TypeError):
@@ -56,9 +56,9 @@ def _criterion_field(criterion: Any, name: str) -> Any:
 
 
 def _declared_evaluation_mode(criterion: Any) -> str:
-    """The mode a criterion payload declares, or its shape default. Refuses a value
-    outside the vocabulary rather than storing it for the DDL's CHECK to reject with a
-    bare `IntegrityError` that names no requirement."""
+    """The evaluation mode a criterion payload declares, or its default. A value outside the
+    allowed list is refused here, rather than left for the database to reject with an error that
+    names no requirement."""
     declared = _criterion_field(criterion, "evaluation_mode")
     if declared is None:
         return default_evaluation_mode(_criterion_field(criterion, "kind"))

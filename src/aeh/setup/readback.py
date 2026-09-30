@@ -50,9 +50,9 @@ from .decomposability import _classify_answers
 
 
 def _descriptor_offense(text: str) -> str | None:
-    """What the magnitude bar finds in one descriptor, or None: a configured phrase
-    (case-insensitive substring) or any digit. The message names the match — it is the
-    re-request's reason and the log line the operator reads."""
+    """What the magnitude check finds in one band descriptor, or None: a configured phrase
+    (case-insensitive) or any digit. The message names the match; it becomes the re-request's
+    reason and the operator's log line."""
 
     lowered = text.lower()
     for phrase in SETUP_MAGNITUDE_PHRASES:
@@ -65,12 +65,10 @@ def _descriptor_offense(text: str) -> str | None:
 
 
 def _derived_default_bands(construct: str, max_points: float) -> tuple[ProposedBand, ...]:
-    """The two-band default (`FR-SETUP-04`): met / not met, anchored on the criterion's
-    own text — the met band's descriptor IS the construct (the rubric's behavioural
-    sentence, not a magnitude word), the not-met band states what falls outside it.
-    Derived descriptors pass the same magnitude bar as proposed ones: if the construct
-    itself carries a phrase or a numeral, the reply is rejected and re-requested — the
-    model is asked for a cleaner statement of the construct."""
+    """The default two bands, met and not met (FR-SETUP-04). The met band's descriptor is the
+    criterion's own statement of what it measures; the not-met band says what falls outside it.
+    These pass the same magnitude check as proposed descriptors: if the criterion's statement has a
+    magnitude phrase or a number, the reply is rejected and asked for again."""
 
     met = construct.strip()
     not_met = f"the response does not do what the criterion describes ({met})"
@@ -82,10 +80,9 @@ def _derived_default_bands(construct: str, max_points: float) -> tuple[ProposedB
 
 def _normalize_bands(raw_bands: Sequence[Mapping], construct: str,
                      max_points: float) -> tuple[ProposedBand, ...]:
-    """Fix the band ordering on read-back (`FR-PKG-06`'s order half): sort by points
-    ascending — the reply's own order breaking ties, so the model's ranking survives
-    a flat band set — and re-base the ordinals to contiguous-from-0. The reply's
-    descriptor content has already cleared the magnitude bar before this runs.
+    """Put read-back bands in the stored order (FR-PKG-06): sorted by points ascending, keeping the
+    reply's order for ties, with ordinals renumbered from 0. Descriptors have already passed the
+    magnitude check.
 
     The reply's bands are typed into `ProposedBand` FIRST and ordered through the
     attribute: this module orders and writes band points, it never reads a stored band
@@ -109,12 +106,10 @@ def _normalize_bands(raw_bands: Sequence[Mapping], construct: str,
 def _parse_readback_reply(
     text: str, confirmed_ids: Mapping[str, Mapping],
 ) -> tuple[CriterionDraft, ...]:
-    """Parse the model's read-back reply into criterion drafts, raising `_ReplyError`
-    on anything that is not a valid read-back — the failure the attempt loop
-    re-requests. Validity here is the whole bar: schema fields, the band rules
-    (`FR-PKG-06`'s count half), the justification rule (`FR-SETUP-04`), and the
-    magnitude scan (`FR-SETUP-05`) over every proposed AND derived descriptor — the
-    stored set must be clean whatever produced it."""
+    """Parse the model's read-back reply into criterion drafts, raising `_ReplyError` for anything
+    invalid so the attempt loop asks again. Valid means all of: the schema fields, the band-count
+    rules (FR-PKG-06), the justification rule (FR-SETUP-04), and the magnitude check over every
+    descriptor, proposed or derived (FR-SETUP-05)."""
 
     stripped = text.strip()
     start, end = stripped.find("{"), stripped.rfind("}")
@@ -350,9 +345,9 @@ def _parse_readback_reply(
 
 
 def _criterion_to_dict(draft: CriterionDraft) -> dict:
-    """The payload shape for one read-back criterion — plain mappings, because the
-    data layer does not import this module's types. `bands_source` is
-    `proposed` or `derived_default` (`FR-SETUP-14`: a default taken is recorded)."""
+    """A read-back criterion as a plain mapping; M-PKG does not import M-SETUP's types.
+    `bands_source` is `proposed` or `derived_default`, so a default taken is recorded
+    (FR-SETUP-14)."""
     return {
         "criterion_id": draft.criterion_id,
         "question_id": draft.question_id,
@@ -375,8 +370,8 @@ def _criterion_to_dict(draft: CriterionDraft) -> dict:
 
 
 def _criterion_record(draft: CriterionDraft) -> dict:
-    """The write shape `PackageCatalog.write_readback` validates and stores — the
-    payload dict's sibling under M-PKG's names (`construct_tag`, `band_justification`)."""
+    """A criterion in the shape `PackageCatalog.write_readback` checks and stores, using M-PKG's
+    field names (`construct_tag`, `band_justification`)."""
     return {
         "criterion_id": draft.criterion_id,
         "question_id": draft.question_id,
@@ -397,7 +392,7 @@ def _criterion_record(draft: CriterionDraft) -> dict:
 
 
 def _stored_readback_status(row: Mapping[str, Any] | None) -> str:
-    """The stored read-back row's status — a field of the PAYLOAD, not a column.
+    """The stored read-back's status, which lives inside the payload rather than in a column.
 
     `steps()` reads this to report done / degraded honestly (`NFR-SETUP-04`): the
     row's own columns are provenance (documents, prompt, build, attempts), and the
@@ -413,9 +408,8 @@ def _stored_readback_status(row: Mapping[str, Any] | None) -> str:
 
 
 def _readback_from_row(v: PackageVersionId, row: Mapping[str, Any]) -> RubricReadback:
-    """Rebuild the stored read back — the resume path's read (`CT-SETUP-03`: state is
-    the database). A malformed stored payload raises `SetupError` naming the corruption
-    rather than silently re-reading the rubric over it."""
+    """Rebuild the stored read-back, for resuming setup (CT-SETUP-03). A malformed stored payload
+    raises `SetupError` naming the problem, instead of silently reading the rubric again."""
 
     try:
         payload = json.loads(row["payload"])
@@ -473,8 +467,8 @@ class ReadbackStepMixin:
 
     def read_back_rubric(self, rubric_doc: DocumentId,
                          assessment_doc: DocumentId) -> RubricReadback:
-        """Read the stored rubric back into criteria and band sets (`§3.6`'s Interface,
-        `FR-SETUP-04`/`-05`/`-09`).
+        """Read the stored rubric back into criteria and band sets (design §3.6, FR-SETUP-04,
+        FR-SETUP-05, FR-SETUP-09).
 
         Gate 1 (the confirmed inventory) must be met first — criteria anchor to
         confirmed questions (`SetupOrderError` otherwise). The rubric and assessment are

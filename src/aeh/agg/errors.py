@@ -7,12 +7,12 @@ from __future__ import annotations
 
 
 class AggregateError(Exception):
-    """Base class for the aggregation refusals, so callers can catch the module's
-    own failures without catching the package's too."""
+    """Base class for M-AGG's refusals, so a caller can catch these without also catching M-PKG's
+    errors."""
 
 
 class EmptyVerdictsError(AggregateError, ValueError):
-    """An aggregation over an empty verdict set (`CT-AGG-12`).
+    """Aggregation was asked to combine no verdicts at all (CT-AGG-12).
 
     A programming error, raised: it is never a zero, a lowest band, or a null
     score. Distinct from `EvenPanelError` because the design refuses the two on
@@ -22,18 +22,16 @@ class EmptyVerdictsError(AggregateError, ValueError):
 
 
 class PanelCorrelationError(AggregateError, ValueError):
-    """A panel carrying two or more decision-engine verdicts (Jev design delta FR-AGG-18,
-    CT-AGG-22). The decision engine answers identical input near-identically, so two of its
-    verdicts in one panel would manufacture unanimity (alpha near 1) rather than measure it.
-    The seat rule (CT-JUDGE-21) makes this unreachable; the refusal is what makes a future
-    break of that rule fail loudly instead of auto-accepting. Not retryable; nothing is written.
-    """
+    """A panel held two or more decision-engine verdicts (FR-AGG-18, CT-AGG-22). The engine gives
+    near-identical answers to identical input, so two of its verdicts would fake agreement instead
+    of measuring it. The seat rule (CT-JUDGE-21) should make this impossible; this error makes a
+    future break of that rule fail loudly. Not retryable, and nothing is written."""
 
     retryable = False
 
 
 class EvenPanelError(AggregateError, ValueError):
-    """An aggregation whose `judge_count` is even (`FR-AGG-03`).
+    """Aggregation was given an even number of judges (FR-AGG-03).
 
     An even panel is a failed write, not a rounded verdict: the median ordinal of
     an even panel is a choice between two bands, and any tie-break would be a

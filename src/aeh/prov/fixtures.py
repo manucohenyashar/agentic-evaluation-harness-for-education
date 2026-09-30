@@ -53,7 +53,8 @@ FIXTURE_SCHEMA = "aeh.prov/fixture/1"
 
 
 class RecordedFixtureProvider:
-    """`FR-PROV-10` — the hermetic model boundary, and the fast tier's whole model story.
+    """Answers every call from recordings on disk, with no network at all (FR-PROV-10). The fast
+    test tier uses only this provider.
 
     A recording is looked up by `request_key` under `fixture_dir`, content-addressed one file
     per request. An unknown request raises `FixtureMissingError`; there is no code path from
@@ -71,7 +72,7 @@ class RecordedFixtureProvider:
     """
 
     def __init__(self, fixture_dir: str | os.PathLike[str] | None = None) -> None:
-        """Bind a fixture directory and freeze the declared capabilities.
+        """Bind a fixture directory and fix the declared capabilities.
 
         `fixture_dir` defaults to `HARNESS_FIXTURE_DIR` (design §3.2 Configuration). The
         environment is read **here and never again**: `CT-PROV-04` requires the declared
@@ -111,7 +112,7 @@ class RecordedFixtureProvider:
     def complete(
         self, prompt: PromptPayload, model_ref: ModelRef, params: SamplingParams
     ) -> Completion:
-        """Return the recording for this exact request, or raise. Never reaches the network."""
+        """Return the recording for exactly this request, or raise. Never touches the network."""
         key = request_key(prompt, model_ref, params)
         path = self._path_for(key)
         try:
@@ -156,7 +157,7 @@ class RecordedFixtureProvider:
         return completion
 
     def capabilities(self, model_ref: ModelRef) -> Capabilities:
-        """Declared, not discovered — answers with the transport blocked (`CT-PROV-04`).
+        """The declared capabilities, available even with the network blocked (CT-PROV-04).
 
         `model_ref` is accepted and unused: the declaration is a property of the
         implementation, and every ref this provider serves is served by replay.
@@ -164,7 +165,8 @@ class RecordedFixtureProvider:
         return self._capabilities
 
     def estimate_cost(self, plan: CallPlan) -> CostEstimate:
-        """A pure function of the plan and the declared per-token cost. Dispatches nothing.
+        """The estimated cost, computed from the plan and the declared per-token cost. Sends
+        nothing.
 
         `cost` is `None` here because `cost_per_token` is: replay is not billed, and a figure
         of zero would read as a measured price rather than an absent one (`CT-PROV-03`).
@@ -183,7 +185,7 @@ class RecordedFixtureProvider:
         )
 
     def verify_retention(self, model_refs: Sequence[ModelRef]) -> RetentionReport:
-        """Every ref confirmed: replay sends nothing anywhere, so nothing can be retained.
+        """Confirms every reference: replay sends nothing anywhere, so nothing can be retained.
 
         Stated rather than skipped. `CT-PROV-13` asserts the *call order* — retention
         confirmed for every panel member before the first dispatch — and a fixture provider
@@ -195,10 +197,10 @@ class RecordedFixtureProvider:
     # -- the decision surface (FR-PROV-25) --------------------------------------------------
 
     def decide(self, request: DecisionRequest, model_ref: ModelRef) -> Decision:
-        """The recorded answer to this exact `DecisionRequest`, or raise. Never reaches the
-        network (CT-PROV-23). A stored answer passes through `parse_decision`, so a malformed
-        recording is refused exactly as a malformed live response would be (CT-PROV-18), and
-        a recording that declares an error raises that error by type."""
+        """The recorded answer to exactly this `DecisionRequest`, or raise. Never touches the
+        network (CT-PROV-23). A stored answer goes through `parse_decision`, so a malformed
+        recording is refused just like a malformed live response (CT-PROV-18), and a recording of
+        an error raises that error type."""
         if not isinstance(request, DecisionRequest):
             raise TypeError(f"decide takes a DecisionRequest, got {type(request).__name__}")
         request.validate_for(_FIXTURE_DECISION_CAPABILITIES)
@@ -239,14 +241,16 @@ class RecordedFixtureProvider:
                               rule=confidence_rule(model_ref))
 
     def decision_capabilities(self, model_ref: ModelRef) -> DecisionCapabilities:
-        """Declared, not discovered (FR-PROV-27): the widest published limits, unbilled."""
+        """The declared decision capabilities (FR-PROV-27): the widest published limits, with no
+        billing."""
         return _FIXTURE_DECISION_CAPABILITIES
 
     def record_decision(self, request: DecisionRequest, model_ref: ModelRef,
                         response: Mapping[str, Any] | None = None, *,
                         error: tuple[str, str] | None = None, latency_ms: int = 0) -> str:
-        """Store a §1.2 response document (or a declared error, `(type_name, message)`) as the
-        answer to this exact request. Returns the key. Exactly one of `response`/`error`."""
+        """Store an engine response document (design §1.2), or an error as `(type_name, message)`,
+        as the answer to exactly this request. Returns the key. Pass exactly one of `response` and
+        `error`."""
         if (response is None) == (error is None):
             raise ValueError("record_decision takes exactly one of response= or error=")
         if error is not None and error[0] not in _DECISION_ERRORS:
@@ -280,7 +284,7 @@ class RecordedFixtureProvider:
         params: SamplingParams,
         completion: Completion,
     ) -> str:
-        """Store `completion` as the answer to this exact request. Returns the key.
+        """Store `completion` as the answer to exactly this request. Returns the key.
 
         The one operation here that the design does not name. `FR-PROV-10` fixes the *lookup*
         and test plan §4.4 says `F-RECORDED` is "regenerated nightly", so a recording path
@@ -342,7 +346,7 @@ class RecordedFixtureProvider:
 
 
 def _fixture_max_concurrency() -> int:
-    """`HARNESS_FIXTURE_MAX_CONCURRENCY`, or the reference figure. Seam 3."""
+    """`HARNESS_FIXTURE_MAX_CONCURRENCY`, or the reference value when unset."""
     raw = os.environ.get(FIXTURE_MAX_CONCURRENCY_ENV)
     if raw is None or not raw.strip():
         return DEFAULT_FIXTURE_MAX_CONCURRENCY
@@ -381,7 +385,7 @@ def _jsonable(value: Any) -> Any:
 def _request_record(
     prompt: PromptPayload, model_ref: ModelRef, params: SamplingParams
 ) -> dict[str, Any]:
-    """The assembled request, as the fixture file stores it.
+    """The assembled request as a fixture file stores it.
 
     Stored alongside the response so a recording can be read by a human and so a key that
     somehow matched the wrong request fails loudly. Not the key itself — `request_key` hashes
@@ -408,7 +412,7 @@ _COMPLETION_FIELDS = (
 
 
 def _fixture_document(raw: str, path: Path, key: str) -> dict[str, Any]:
-    """Parse a fixture file and check its identity, or raise `FixtureMissingError`.
+    """Parse a fixture file and check it is the right recording, or raise `FixtureMissingError`.
 
     Every way a file on disk can fail to be a usable recording lands inside the taxonomy
     (`CT-PROV-07`): a caller catching `ProviderError` is catching what this module promised to

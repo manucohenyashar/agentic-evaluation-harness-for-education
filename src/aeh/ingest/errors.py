@@ -4,7 +4,7 @@ from __future__ import annotations
 
 
 class IngestError(Exception):
-    """An ingestion failure that is a caller or data error, not a gate outcome.
+    """An ingestion failure caused by the caller or the data, not a gate outcome.
 
     Gate failures (V0-V4) are routing decisions recorded on the submission — never
     exceptions. This error is for the module's own refused operations: an unknown
@@ -13,8 +13,8 @@ class IngestError(Exception):
 
 
 class IngestOrderError(IngestError):
-    """Assembly order could not be determined (`FR-INGEST-31`): no operator-stated
-    order, no printed page numbers, no fiducial markers, no unambiguous filenames.
+    """The page order could not be determined (FR-INGEST-31): no order given by the operator, no
+    printed page numbers, no fiducial markers, and no unambiguous file names.
 
     The module NEVER guesses — a wrongly-ordered submission is graded confidently
     against the wrong questions. The caller routes this to the operator, who re-ingests
@@ -22,51 +22,36 @@ class IngestOrderError(IngestError):
 
 
 class IngestGapError(IngestError):
-    """A gap in the printed page sequence (`FR-INGEST-09`): the missing positions are
-    NAMED, so the operator knows exactly which pages to rescan rather than that
-    "something is missing"."""
+    """The printed page sequence has gaps (FR-INGEST-09). The missing page numbers are named, so
+    the operator knows exactly what to rescan."""
 
 
 class IngestDuplicateError(IngestError):
-    """Two pages whose TRANSCRIPTS are similar above the configured threshold
-    (`FR-INGEST-08`): surfaced for confirmation, NEVER concatenated — a duplicated page
-    silently assembled twice would double-count a student's answer. The pairs are
-    named; the operator resolves and re-ingests. (The FR's disjunction — page-image OR
-    transcript similarity — is satisfied by the transcript channel; the image-
-    similarity channel is a deliberate deferral to the acceptance run.)"""
+    """Two pages' transcripts are more similar than the configured threshold (FR-INGEST-08). They
+    are shown for confirmation and never joined, because assembling a page twice would count a
+    student's answer twice. The operator resolves the named pairs and re-ingests."""
 
 
 class IngestCohortBreakerTripped(IngestError):
-    """The V4 cohort circuit breaker is tripped (`FR-INGEST-28`): the cohort's
-    combined `mismatch`-plus-`uncertain` rate reached the configured threshold over at
-    least the configured minimum, ingestion HALTS, and run start stays withheld until
-    a human clears the breaker. Raised before any blob read or model call — a cohort
-    ingesting the wrong assessment's package must not keep paying for transcription
-    while the finding waits. This is the one gate outcome that IS an exception: it
-    halts the cohort, not the submission (NFR-INGEST-02's unit-level quarantine is
-    recorded on the row; this is cohort-level and refuses the work)."""
+    """The V4 cohort breaker has tripped (FR-INGEST-28): too many of the cohort's papers look like
+    a different assessment, so ingestion stops and run start stays withheld until a person clears
+    it. Raised before any file is read or model called. This is the one gate outcome that is an
+    exception, because it stops the whole cohort, not one submission."""
 
 
 class IngestSanitizeError(IngestError):
-    """A sanitization refusal (`FR-INGEST-33`/`FR-INGEST-34`/`NFR-INGEST-08`): the
-    source carries active content that cannot be removed, crossed a resource
-    ceiling, or could not be parsed for sanitization at all — and the artifact is
-    therefore refused, never processed. In the submission path the ladder catches
-    this and records the V0 quarantine; in the setup-artifact path it propagates to
-    the uploading teacher (`FR-INGEST-32`). Any exception raised inside the
-    sanitizer — declared or not — is wrapped into this type, so every failure mode
-    resolves to refusal rather than to processing."""
+    """A source PDF was refused during sanitization (FR-INGEST-33, FR-INGEST-34, NFR-INGEST-08): it
+    has active content that cannot be removed, crossed a resource limit, or could not be parsed.
+    For a submission, the ladder records a V0 quarantine; for a setup document, the teacher sees
+    the error (FR-INGEST-32). Any exception inside the sanitizer is wrapped in this type, so every
+    failure ends in refusal."""
 
 
 class IngestTranscriptionError(IngestError):
-    """A page's transcription failed on every attempt of the strike limit
-    (`NFR-INGEST-02`, #220): the model channel never produced a reading, so the
-    page has NO transcript — the unit fails, never the run. Carries the
-    per-attempt log (the strike count is observable, CLAUDE.md seam 4); the
-    submission path catches it and records an honest quarantine with the gate
-    columns marked, and the cohort's remaining submissions continue. A
-    sanitizer refusal never reaches this path — that refusal is raised before
-    any model call and keeps its own no-retry semantics (`FR-INGEST-33`, #42)."""
+    """A page's transcription failed on every allowed attempt (NFR-INGEST-02), so the page has no
+    transcript. The submission is quarantined, never the run, and the rest of the cohort continues.
+    It carries the log of attempts. A sanitizer refusal never reaches this path; it is raised
+    before any model call and is not retried (FR-INGEST-33)."""
 
     def __init__(self, message: str, attempts: list[dict] | None = None):
         super().__init__(message)

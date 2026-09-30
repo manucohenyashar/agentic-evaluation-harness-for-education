@@ -270,3 +270,83 @@ this implementation chose; all reported on the PR):
   criteria lower-confidence, no revision shipped, nothing shipped with a
   warning (`FR-CALIB-10`). The seam exists because the terminal state is a
   property of how callers resolve these failures, and the contract pins it.
+
+## Details moved out of the code
+
+These notes were the longer parts of docstrings in `aeh.calib`. Each section is named after the file and the function or class it describes.
+
+### discovery.py: discover
+
+The samples arrive as ``calibration_papers`` — the refs stored-not-used at
+setup (`FR-SETUP-15`) — and the teacher's grades for them as
+``teacher_bands`` (paper → criterion → band): the teacher's grades are the
+*second opinion* the disagreement is measured against, never a gold
+standard, and nothing here turns the comparison into one.
+
+The panel's side is R₀-scoring, through one of two injected transports:
+
+* ``model_bands`` — the panel's bands under R₀, already scored (paper →
+  criterion → band). The recorded-transport form: a run that already
+  scored the samples under the same rubric version hands its results over,
+  and discovery compares without another model call.
+* ``scorer`` — the scoring seam as a callable, ``(paper, criterion_id)``
+  → band. A test binds a deterministic stub or `RecordedFixtureProvider`-
+  backed code (the provider stays the only egress point, `CT-PROV-15`);
+  production binds the panel. The calibration papers the teacher graded
+  are the criteria the teacher graded — discovery scores those, so an
+  unscored criterion is one the teacher never graded.
+
+Both bound at once? The recorded bands win and the scorer stays
+unexercised — one transport per run, and the run's notes name the ignored
+one rather than dropping it silently.
+
+The rubric version the caller names **is R₀** — the package's current
+delivered version before any edit — and the report carries it as
+``package_version``, so every disagreement names the instrument both sides
+read. Reading a published version is what discovery does; revising one is
+what only elicitation (#138) through `M-PKG`'s lock may do.
+
+Deterministic criteria are not calibration subjects (#89's separation, the
+same exclusion `FR-REVIEW-12` draws for the blind sample): a criterion
+declared ``deterministic`` in ``evaluation_modes`` is kept out by name and
+reported in ``deterministic_excluded`` — scoring an answer-key lookup
+with a panel would be theatre, and disagreeing with an answer key is a
+key error, not a rubric ambiguity.
+
+The report is ambiguity discovery, never a measurement of accuracy
+(`CT-CALIB-03`): it carries the disagreements, what each stage did, and
+nothing an accuracy figure falls out of. Where nothing could be scored the
+report says why in ``notes`` — a bare success over an empty result is the
+silent-failure shape the four seams exist to prevent.
+
+Raises on programming errors only: a non-string or empty
+``package_version``, or an empty ``calibration_papers``, is a caller
+defect and raises; a paper with no teacher bands is a finding's absence,
+disclosed in the notes, never an exception.
+
+### discovery.py: triage
+
+The category is the disagreement's *required* field: one that arrives
+without one is refused with `TriageCategoryRequired`, because an
+uncategorized disagreement would default into some path and the editable
+path is the dangerous default. A category outside the closed set of three
+is a caller defect and raises.
+
+What each category produces is the eligibility rule, structurally:
+
+* ``rubric_ambiguity`` — the only edit-eligible verdict
+  (`verdict.edit_eligible`). The edit itself does not exist yet: it is
+  generated from the teacher's answer during elicitation (#138,
+  `CT-CALIB-05`), so ``proposed_edit`` is None at triage even here.
+* ``teacher_inconsistency`` — surfaced with both examples side by side
+  (`FR-CALIB-03`): the teacher's repeat labels, normalized to the
+  two-slot pair. Never fitted to — ``fitted`` reads False structurally,
+  because the verdict constructor refuses an edit on this category.
+* ``model_failure`` — produces a `PipelineFinding` naming the pipeline
+  stage the failure lives in (`FR-CALIB-04`), and no rubric edit: the
+  category is not edit-eligible, structurally.
+
+The disagreement's ``pipeline_stage`` declares where a known model failure
+lives when the caller has that evidence; without it the finding names
+``panel_composition``, the surface a scored-band disagreement is observed
+on — where it was *seen*, never a guess at where it was *caused*.

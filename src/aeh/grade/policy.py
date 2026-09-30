@@ -17,7 +17,7 @@ from .constants import _PROVISIONAL_ROUTINGS, ROUTING_AUTO, ROUTING_REVIEWED
 
 @dataclass(frozen=True)
 class GradeComputation:
-    """The pure result of applying a policy to a population of criterion scores.
+    """The result of applying a grade policy to one submission's criterion scores.
 
     `total` is the declared pin (FUZZ-05's and TC-GRADE-02's oracle): a float when the
     grade stands, `None` when the policy's gate refuses — never an exception, never a
@@ -36,10 +36,9 @@ class GradeComputation:
 
 @dataclass(frozen=True)
 class Coverage:
-    """The five-counter coverage record (`FR-GRADE-04`, `CT-GRADE-04`) — the field
-    names are design-declared verbatim. The four classes sum to `criteria_total`
-    because a criterion with no row is counted `criteria_missing` from the criterion
-    list, never dropped (`FR-GRADE-07`)."""
+    """The five coverage counters (FR-GRADE-04, CT-GRADE-04), with the design's field names. The
+    four classes add up to `criteria_total`, because a criterion with no score row counts as
+    `criteria_missing` instead of being dropped (FR-GRADE-07)."""
 
     criteria_total: int
     criteria_auto: int
@@ -59,9 +58,8 @@ class Coverage:
 
 @dataclass(frozen=True)
 class BoundaryRisk:
-    """The boundary-risk triple (`FR-GRADE-05`, `CT-GRADE-05`): whether a plausible
-    movement of the provisional criteria could move the student across a band edge,
-    and the achievable range when — and only when — it could."""
+    """Whether the provisional criteria could plausibly move the student across a grade boundary,
+    and, only when they could, the achievable range (FR-GRADE-05, CT-GRADE-05)."""
 
     at_risk: bool
     score_low: float | None
@@ -70,9 +68,8 @@ class BoundaryRisk:
 
 @dataclass(frozen=True)
 class CriterionInput:
-    """One criterion score as the computation consumes it. The same duck type the
-    test vocabulary's `score()` stand-in returns (`criterion_id` / `points` /
-    `routing`), so the pure seams take either."""
+    """One criterion score in the form the computation reads: `criterion_id`, `points` and
+    `routing`."""
 
     criterion_id: str
     band: str
@@ -89,36 +86,10 @@ class CriterionInput:
 
 
 def apply_policy(scores: Iterable[Any], policy: GradePolicy) -> GradeComputation:
-    """Apply the closed-vocabulary policy to a population of criterion scores — pure,
-    deterministic, unit-testable (`CT-GRADE-02`), no store and no model in the path.
+    """Apply the grade policy to a submission's criterion scores. Pure and deterministic, with no
+    store and no model (CT-GRADE-02).
 
-    The rule vocabulary, exactly as shipped on `aeh.pkg.GradePolicy`:
-
-    - `weighted_sum` — each criterion's points multiplied by its declared weight
-      (a criterion with no declared weight weighs 1.0), summed. With no weights at all
-      this is the plain sum (`FR-SETUP-12`'s default).
-    - `best_k_of_n` — the k highest points, summed. Ties at the cut are broken by
-      criterion id for determinism; because tied values are equal, the total is
-      invariant under every arrival order either way (`TC-GRADE-03`).
-    - `drop_lowest_n` — the n lowest points dropped before summing (scored out, never
-      scored as zero).
-    - `gate` — the named criterion must reach `minimum`, inclusively (`TC-GRADE-03`'s
-      pinned reading). A criterion with no row refuses the gate: absence is not a zero.
-      A refusal is a `None` total, never an exception (`CT-GRADE-02`).
-    - `scale` — the combined total multiplied by the factor, after combination.
-    - `rounding` — applied last: `nearest` is HALF-UP at exactly .5 (`TC-GRADE-03`'s
-      pinned reading — Python's `round()` is half-even and would fail the case),
-      `up` rounds away from zero's floor, `down` truncates.
-
-    Sums run through `math.fsum` (exactly rounded, therefore order-independent over
-    criteria — `TC-GRADE-21`'s permutation limb reads the same total in every order).
-
-    The result also surfaces the population's breaker-refused criteria in
-    `panel_refused` (`CT-AGG-07`): a criterion the escalation breaker marked
-    `ungradeable_by_panel` contributes its stored figure — CT-ORCH-16 leaves it scored
-    single-judge provisional — and is named in the result, so the grade's presentation
-    of the breaker-refused row differs from its presentation of the identical
-    ordinary-provisional row.
+    More detail: `docs/code-notes/grade.md`, section `policy.py: apply_policy`.
     """
     score_list = list(scores)
     points = {score.criterion_id: float(score.points) for score in score_list}
@@ -176,9 +147,8 @@ def apply_policy(scores: Iterable[Any], policy: GradePolicy) -> GradeComputation
 def resolve_grade(
     scaled_score: float, boundaries: Iterable[tuple[str, float]] | None
 ) -> str | None:
-    """Resolve a scaled score to its band — or `None` where no table declares one
-    (`FR-GRADE-03`, the NoValidationData honesty rule: an absent input stays visibly
-    absent, never an invented band).
+    """The grade band for a scaled score, or None when there is no boundary table (FR-GRADE-03). A
+    missing input stays visibly missing; no band is invented.
 
     The rule is the shipped `grade_boundary` DDL's own words (aeh/pkg.py migration 5):
     floors are INCLUSIVE — the grade with the greatest floor <= the scaled score
@@ -196,14 +166,13 @@ def resolve_grade(
 
 
 def coverage_for(scores: Iterable[Any], criterion_ids: Iterable[str]) -> Coverage:
-    """The five-counter coverage record over the package's full criterion list
-    (`FR-GRADE-04`).
+    """The five coverage counters over the package's full list of criteria (FR-GRADE-04).
 
     The criterion-id list is what makes a criterion with **no** row count as missing
     rather than silently vanish — `criteria_missing` is counted from the list, so the
     four classes always sum to `criteria_total`. A row whose routing is `triage`
     (or unrecognized) also counts missing: the extraction never delivered a figure
-    (`CT-AGG-06`'s routing column, read through the module docstring's class map)."""
+    (`CT-AGG-06`'s routing column, read through `docs/code-notes/grade.md`'s class map)."""
     by_id: dict[str, Any] = {}
     for score in scores:
         by_id[score.criterion_id] = score
@@ -237,9 +206,9 @@ def boundary_risk(
     provisional_intervals: Iterable[tuple[float, float]],
     boundaries: Iterable[tuple[str, float]] | None,
 ) -> BoundaryRisk:
-    """Whether the provisional criteria's plausible movement could cross a boundary
-    (`FR-GRADE-05`) — with the interval source **injected** (test plan `TC-GRADE-06`;
-    the full-band-range assumption is design TBD §7.4, `CT-GRADE-19`).
+    """Whether plausible movement of the provisional criteria could cross a grade boundary
+    (FR-GRADE-05). The source of each criterion's possible range is passed in (TC-GRADE-06,
+    CT-GRADE-19).
 
     `provisional_intervals` is one `(low, high)` offset pair per provisional
     criterion — where that criterion's eventual points may yet move relative to its

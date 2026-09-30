@@ -82,8 +82,8 @@ UNCLAIMED_ADMINISTRATION = "unclaimed"
 
 
 def _long_horizon_record(label: Any) -> dict[str, Any]:
-    """One label as its export record — the stored row read through the declared field
-    order, with absence preserved as `null`."""
+    """One label as an export record, in the declared field order, with missing values kept as
+    `null`."""
     row = getattr(label, "_row", None)
     # The stored row is the source. `_StoredLabel`'s named attributes are the FILTER's
     # reading of it and are deliberately lossy — `criterion_id`, `label_type` and
@@ -127,7 +127,8 @@ def _long_horizon_record(label: Any) -> dict[str, Any]:
 
 
 def _administration_filename(administration_id: str | None) -> str:
-    """The export file's name: readable, and INJECTIVE.
+    """The export file name for an administration: readable, and never the same for two
+    administrations.
 
     An administration id is data, and data does not choose paths — so anything that could
     escape the directory or confuse a shell is replaced. But sanitising alone is not
@@ -157,31 +158,10 @@ def _administration_filename(administration_id: str | None) -> str:
 def long_horizon_export(
     stats: "ValidationStats", data_dir: Path | str | None = None
 ) -> tuple[Path, ...]:
-    """`FR-STATS-23` (ADR-19, amending `NFR-STATS-03`): one read-only JSON Lines document
-    per administration, under the data directory's ``exports/``.
+    """Write one read-only JSON Lines file per administration under the data directory's `exports/`
+    (FR-STATS-23, ADR-19).
 
-    ADR-19 replaced the base clause's Parquet/DuckDB with JSON Lines, and the reason is
-    the one that matters for a LONG-horizon artifact: a text format with one
-    self-describing record per line can be read in five years by anything that can read a
-    line, with no engine, no version-matched reader and no binary schema to recover. The
-    columnar export stays available as a later optional extra; nothing here imports one.
-
-    **Reproducible by construction.** Re-exporting the same labels produces byte-identical
-    files: records are ordered by label id, keys are written in the declared order, and
-    NOTHING carries a wall clock. The generation time is exactly the field that would make
-    every export differ from every other, which is why this document has no header and no
-    `generated_at` — `analytical_export` carries one because it is a snapshot report, and
-    this is an archive.
-
-    **Never touches the scoring pipeline.** The labels are the ones the instance already
-    holds — its constructor read them — so this opens no connection, takes no lock and
-    writes nothing to any tier. The only writes are the files under ``exports/``, which is
-    what lets the export run beside a live scoring run. The cost of that honesty is the
-    same one `analytical_export` pays: the export reports the labels the instance was
-    built with, and an export of fresher data asks ``open_stats`` first.
-
-    Returns the written paths, sorted — so a caller can report what it produced without
-    listing the directory and picking up someone else's files.
+    More detail: `docs/code-notes/stats.md`, section `exports.py: long_horizon_export`.
     """
     target = Path(data_dir) if data_dir is not None else stats._data_dir
     if target is None:
@@ -231,10 +211,9 @@ def long_horizon_export(
 def analytical_export(
     stats: "ValidationStats", data_dir: Path | str | None = None
 ) -> dict[str, Any]:
-    """The optional analytical export (`NFR-STATS-03`): one JSON document of
-    figure-shaped values — the per-criterion figures, the weakest criterion
-    per population, the counters, the narrative-quality report — written under
-    the data directory's ``exports/``.
+    """The optional analytical export (NFR-STATS-03): one JSON file of figures (per-criterion
+    figures, the weakest criterion per population, the counters, the narrative-quality report)
+    under the data directory's `exports/`.
 
     The clause's *"optional"* and *"never touches the scoring pipeline"* are
     both held in the shape: the export reads the labels the instance already

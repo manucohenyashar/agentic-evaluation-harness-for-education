@@ -33,9 +33,8 @@ from .counters import BuildWatch, RunCountersTracker
 
 @dataclass(frozen=True)
 class RetryPolicy:
-    """The retry budget, resolved once. The figures are env-gated (`CLAUDE.md` seam 3) and
-    frozen at construction — `TC-PROV-C07`'s per-error assertions and `TC-STORE-C05`'s
-    lesson both say a policy that re-read the environment would be unassertable."""
+    """The retry budget, read from its knobs once and then fixed. A policy that re-read the
+    environment on each call could not be tested reliably."""
 
     max_attempts: int = DEFAULT_RETRY_MAX
     backoff_base_ms: int = DEFAULT_BACKOFF_BASE_MS
@@ -52,7 +51,7 @@ class RetryPolicy:
 
 
 def parse_retry_after(value: str | None, *, ceiling_s: float) -> float | None:
-    """`Retry-After` as seconds-to-wait, or `None` when it must not be honoured.
+    """A `Retry-After` header as seconds to wait, or None when it must not be followed.
 
     `TC-PROV-11`'s boundary table: `0` is honoured (wait 0), `3600` is honoured **subject
     to the declared ceiling** — a provider saying "an hour" is unavailable for a school-day
@@ -78,19 +77,16 @@ def parse_retry_after(value: str | None, *, ceiling_s: float) -> float | None:
 
 
 def jittered_backoff(base_ms: int, attempt: int, rng: random.Random) -> float:
-    """Full jitter (`AWS architecture blog`'s formulation, which the design's "exponential
-    with jitter" cites in spirit): uniform between 0 and the exponential cap. Full jitter
-    beats equal-jitter for thundering herds, which is the failure mode `FR-PROV-07`'s
-    concurrency floor exists to contain. `rng` is injected — a test asserting a wait
-    pins the sequence, not the wall clock."""
+    """Full-jitter back-off: a wait chosen uniformly between 0 and the exponential cap. Full jitter
+    spreads out retries best when many callers are throttled at once. `rng` is passed in, so a test
+    can fix the sequence."""
     cap_ms = base_ms * (2 ** min(attempt, 30))
     return rng.uniform(0, cap_ms) / 1000.0
 
 
 class ConcurrencyGovernor:
-    """In-flight dispatch accounting, ratcheted down toward the configured floor on 429s
-    (`FR-PROV-07`: "toward the configured floor rather than the full batch being
-    dispatched").
+    """Tracks calls in flight, and lowers the number allowed toward the configured floor on each
+    429 (FR-PROV-07).
 
     `M-ORCH` owns the batch and the worker pool; this module owns the *signal*. The
     governor does not block anything — `reduce()` lowers the permitted in-flight count and
@@ -115,19 +111,18 @@ class ConcurrencyGovernor:
         return self._floor
 
     def admits(self, in_flight: int) -> bool:
-        """Whether one more dispatch may start given the current permission level."""
+        """Whether one more call may start at the current limit."""
         with self._lock:
             return in_flight < self._permitted
 
     def on_rate_limited(self) -> int:
-        """Halve the permission, never below the floor. Returns the new level — the number
-        an observability consumer reads (`CT-PROV-09`)."""
+        """Halve the limit, never below the floor, and return the new limit (CT-PROV-09)."""
         with self._lock:
             self._permitted = max(self._floor, self._permitted // 2)
             return self._permitted
 
     def on_success(self) -> int:
-        """One recovered dispatch lifts the permission back by one, never above the start."""
+        """Raise the limit by one after a successful call, never above the starting limit."""
         with self._lock:
             self._permitted = min(self._floor * 8, self._permitted + 1)
             return self._permitted
@@ -150,7 +145,7 @@ def dispatch_with_retries(
     build_watch: BuildWatch | None = None,
     model_key: str = "",
 ) -> Any:
-    """Attempt one request through `transport`, retrying only what `FR-PROV-06` permits.
+    """Send one request through `transport`, retrying only the failures FR-PROV-06 allows.
 
     The loop, in the order the classification demands:
 

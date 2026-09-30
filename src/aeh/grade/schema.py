@@ -393,11 +393,9 @@ _APPEND_ONLY_ENFORCEMENT: tuple[Statement, ...] = (
 
 
 def enforce_ledger_append_only() -> tuple[Statement, ...]:
-    """The append-only discipline as data (`TC-GRADE-23`'s seam): the trigger
-    statements that refuse an in-place mutation of a delivered `submission_grade`
-    revision and any UPDATE or DELETE of an `audit_record` row. The migrations below
-    install exactly these statements — the enforcement is the schema's, this function
-    is its single home and its inspectable form."""
+    """The append-only rules as data (TC-GRADE-23): the trigger statements that refuse changing a
+    delivered grade revision in place, and any UPDATE or DELETE of an `audit_record` row. The
+    migrations install exactly these statements."""
     return _APPEND_ONLY_ENFORCEMENT
 
 

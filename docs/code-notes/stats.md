@@ -235,3 +235,258 @@ not an environment-sensitive one.) And every figure is stage-level
 observability by construction — n, the excluded count, the stated limitation,
 the verdict's stated interpretation and the advisory statement travel with the
 number, next to it, not in a footnote.
+
+## Details moved out of the code
+
+These notes were the longer parts of docstrings in `aeh.stats`. Each section is named after the file and the function or class it describes.
+
+### comparisons.py: drift_check
+
+The sample is 20–30 submissions (`DRIFT_SAMPLE_RANGE`, inclusive at both
+ends). Above the high end the check takes an even spread of the declared
+size and reports how many it used; below the low end there is no valid
+sample and the answer is the absence value with ``n`` as context — a drift
+verdict computed on nineteen submissions is exactly the substitute figure
+`CT-STATS-16` forbids. The spread is deterministic on purpose: the sample
+must span the caller's list end to end, first and last submission
+included, and no randomness may enter a claim's evidence.
+
+The comparison runs over **judged** criteria only: a criterion the
+constructor declares deterministic is excluded from
+``criteria_covered``, because a deterministic result carries no verdicts
+and there is no distribution to compare (`CT-DET-02`). The sample's
+distributions come from the declared ``current=`` channel when the caller
+supplies one, otherwise from the constructor's admissible population —
+the current administration's judged distribution — and
+``sample_source`` names which. With the constructor population as the
+source, ``sample_size`` still describes the caller's submission sample
+while the per-criterion distributions cover the instance's whole
+admissible population — the disclosure is in ``sample_source`` precisely
+so the two are never confused. The baseline comes from the caller's
+declared ``baseline=`` channel (`M-PKG`'s records; this module writes
+nothing and owns no baseline of its own), and ``distances`` compares the
+two where both sides exist — the total-variation distance, with the
+drifted criteria named at the tolerance.
+
+``advisory`` is always true and ``binding_threshold`` is always ``None``
+(`CT-STATS-12`): the statement in the value says what would make it
+binding and why none exists. Raises on programming errors only; a sample
+below the floor is the absence value, not a raise.
+
+### exports.py: long_horizon_export
+
+ADR-19 replaced the base clause's Parquet/DuckDB with JSON Lines, and the reason is
+the one that matters for a LONG-horizon artifact: a text format with one
+self-describing record per line can be read in five years by anything that can read a
+line, with no engine, no version-matched reader and no binary schema to recover. The
+columnar export stays available as a later optional extra; nothing here imports one.
+
+**Reproducible by construction.** Re-exporting the same labels produces byte-identical
+files: records are ordered by label id, keys are written in the declared order, and
+NOTHING carries a wall clock. The generation time is exactly the field that would make
+every export differ from every other, which is why this document has no header and no
+`generated_at` — `analytical_export` carries one because it is a snapshot report, and
+this is an archive.
+
+**Never touches the scoring pipeline.** The labels are the ones the instance already
+holds — its constructor read them — so this opens no connection, takes no lock and
+writes nothing to any tier. The only writes are the files under ``exports/``, which is
+what lets the export run beside a live scoring run. The cost of that honesty is the
+same one `analytical_export` pays: the export reports the labels the instance was
+built with, and an export of fresher data asks ``open_stats`` first.
+
+Returns the written paths, sorted — so a caller can report what it produced without
+listing the directory and picking up someone else's files.
+
+### measurements.py: measure_position_bias
+
+Re-scores every fixture judgment twice through the real `ScoringWorker.assemble` /
+`dispatch` path — once in the shipped default order, once with
+`HARNESS_JUDGE_EXEMPLAR_SEED` set to `seed` — and reports, per judge, the fraction of
+its judgments whose band MOVED. A judge whose verdict is a property of the work
+answers the same band either way and rates 0; one whose verdict is a property of
+where the exemplars sat rates above it. That is `FR-STATS-15`'s order/position swap,
+measured.
+
+**The denominator is each judge's own measured judgments — not the fixture-submission
+count, and not the dispatch count.** All three coincide in the simple world (one run,
+one criterion, every submission judged) and diverge everywhere else, silently:
+
+* one (submission, judge) yields one judgment PER CRITERION, and one more per run the
+  fixture set was judged in. Dividing by `len(fixture_submissions)` counted those
+  extra judgments in the numerator while leaving the denominator at six — a fixture
+  set judged twice reported double the true rate, and `run_mvvp` then REFUSED the
+  result for leaving `[0, 1]`, turning a wrong figure into a crash one call later;
+* a submission the store holds no judgment for inflated the denominator, understating
+  every rate (`2/7` where the truth is `2/6`);
+* two dispatches make ONE comparison, so dividing by dispatches would halve
+  everything.
+
+**A judge with no measured judgment is absent from the result, never `0.0`.** Zero is
+a measurement — "this judge did not move" — and a judge the fixture set never reached
+has not been measured at all. `run_mvvp` reports an absent judge as
+`measured=False` with its declared reason, which is the true statement; a fabricated
+`0.0` would have been stamped `measured=True`. This is the same rule the empty-fixture
+guard below applies, held at per-judge granularity.
+
+**A permutation that moved nothing is excluded from both sides of the fraction.**
+`judge._ordered_exemplars` returns early for a criterion with fewer than two
+exemplars, so the salt cannot reorder what is not there: the permuted request is
+byte-identical to the default, the same recorded reply answers both, and the
+comparison can only ever say "no change". Counting that as evidence of
+order-insensitivity would manufacture a confident `0.0` out of a criterion that was
+never permutable. Units whose order did not move are skipped; a judge left with no
+movable judgment is absent, and a call where nothing at all was permutable raises
+rather than returning a mapping of silent zeroes.
+
+The return is a plain `Mapping[judge build_id, float]`, which is what
+`run_mvvp(measured_position_bias=...)` validates and reports verbatim. No wrapper
+type: a rate that cannot be compared with `==` to the figure a reader hand-computes
+is a rate nobody can check.
+
+Judges outside `panel` are ignored rather than measured — `run_mvvp` refuses rates for
+judges its declared panel does not name, so emitting one here would produce a mapping
+the consumer is required to reject.
+
+### measurements.py: measure_self_agreement
+
+Every fixture judgment is dispatched `runs` times in the default exemplar order, and a
+judgment counts as agreeing only when ALL its replications answered the same band. The
+rate is the fraction of the judge's judgments that agreed — 1.0 for a judge that
+repeated itself exactly, lower for one that did not.
+
+**Replication is per judgment, not per judge.** `runs` dispatches of one submission
+says nothing about the other five; the floor `FR-STATS-21` states is on each judgment,
+so this issues ``runs`` dispatches for every judgment the judge actually made.
+
+**The denominator is each judge's own measured judgments**, and a judge with none is
+absent from the result rather than carrying `0.0` — for the reasons set out on
+`measure_position_bias`, which apply here with the sign flipped: a fabricated `0.0`
+self-agreement reads as "measured, and never stable", the harshest possible claim
+about a judge that was never asked anything. The two drivers fabricating opposite
+lies from the same empty input is what makes this a rule rather than a preference.
+
+`runs` below `SELF_AGREEMENT_MINIMUM_RUNS` raises `ValueError` — a real refusal, not an
+assertion, so it survives ``python -O`` and reads as a rejected argument rather than a
+broken invariant.
+
+Reported beside, never merged with, the backend's own
+``deterministic_at_temperature_zero`` claim: `run_mvvp`'s step 3 carries both, because
+a measured rate and a vendor's assertion are different kinds of evidence
+(`CT-PROV-04`).
+
+### mvvp.py: run_mvvp
+
+One call, six answers — each step's own outcome record beside its own
+requirement (`MVVP_STEP_REQUIREMENTS` is `FR-STATS-05`'s mapping), never
+collapsed into one pass/fail (`CT-STATS-07`). The steps:
+
+1. the chance-corrected agreement surface (`FR-STATS-02`) — the figures
+   `agreement` emits, one per criterion in scope, or the surface's own
+   absence value for a population with no criteria to figure;
+2. the order/position swap (`FR-STATS-15`) — the held-out fixture subset
+   re-scored with the exemplar order and the reference-material
+   presentation order permuted, per judge (`TC-STATS-16`'s live tier
+   measures the rate through the injected provider seam, the one egress
+   point; headlessly each judge's result is the explicit not-measured
+   value with its declared reason);
+3. the replication floor (`FR-STATS-16`) — per-judge self-agreement
+   reported **together with** the backend's declared
+   ``deterministic_at_temperature_zero`` (`CT-PROV-04`'s claim), the two
+   different claims they are, never merged;
+4. cross-validation by assignment type (`FR-STATS-17`) — one assignment
+   type's figures, per criterion, with the spanning refusal structural:
+   no figure spanning assignment types is representable in the value, and
+   where the labels carry types and none is named, the step is the
+   disclosed refusal (`no_assignment_type_named`), never a pooled figure;
+5. the consistency-bias pairing (`FR-STATS-18`) — every judge in scope's
+   step-3 rate beside its step-2 position-bias result, one pair, never
+   one figure alone;
+6. the compression check (`FR-STATS-06`) — the panel's band shape
+   against the gold's, with its stated limitation in the value.
+
+**The measured channel** (the four seams' third): what a caller has
+measured arrives declared — ``measured_self_agreement`` for step 3, the
+≥3-run replication's per-judge rates; ``measured_position_bias`` for
+step 2's swap; ``backend_claims_deterministic_at_temperature_zero`` for
+the backend's declaration. A rate is reported verbatim — never clamped,
+floored or omitted (`TC-JUDGE-C17` limb 3: a measured value below 1.0 is
+the finding the protocol exists to surface, not a failure). What was not
+measured is the declared not-measured value with its reason — never a
+plausible number, never a raise (`CT-STATS-03`, `CT-STATS-16`).
+
+**Re-run semantics (`FR-STATS-19`, `CT-STATS-08`).** ``configuration``
+carries the four trigger dimensions; each is echoed in the result's
+``measured_configuration`` and in steps 2–5's own records, so a consumer
+can verify the match itself. ``result_id`` digests the assignment type
+and the four — a changed dimension is a different id, and ``latest_mvvp``
+answers consult-time calls by measuring fresh, because no durable result
+is kept to reuse, show or merge.
+
+Defined at module level and bound into ``ValidationStats`` below, so the
+surface ``require(STATS_MODULE, "run_mvvp")`` names and the method the
+instance carries are the same function. Raises on programming errors
+only (`CT-STATS-16`): a malformed argument propagates. Insufficient data
+is the per-step outcome.
+
+### promotion.py: promote
+
+The claim is the record's write in Tier D and this module's own: the
+labels an administration collected carry no cohort until an administration
+takes them (`aeh.review`'s collection writes ``cohort_id`` NULL), and the
+claim is the act that makes them one administration's evidence. Audit rows
+are read, never stamped — `audit_record` is append-only (#103's trigger,
+`FR-DET-10`/`TC-GRADE-23`), so their cohort dimension rides their insert
+and the record sources its package version from the unclaimed read. The
+counts are taken over the administration's labels after the claim, so a
+second `promote` of the same cohort counts that cohort's rows rather
+than re-claiming anything.
+
+* `CT-STATS-05`: an administration that collected no blind labels reports
+  `NO_NEW_VALIDATION_EVIDENCE` as a first-class value — and advances no
+  agreement figure. The claimed rows still land (they are the
+  administration's record), the counters still move, and the figure does
+  not: nothing that cannot support a validity claim ever reaches one.
+* `CT-STATS-06`: the three counters count separately — ``blind_count``
+  the admissible population, ``operational_count`` the claimed labels
+  that are not admissible, ``cohorts_used`` the administrations the
+  record now speaks for. ``agreement_kappa`` is computed only when the
+  administration's blind population is single-criterion; a
+  multi-criterion one has per-criterion figures in
+  ``weakest_per_population`` and no blended headline, because
+  `CT-STATS-04` keeps that claim unrepresentable.
+
+Rung 0 (no data directory — `build_stats`' shape) computes the same
+counters over the in-memory population and writes nothing. Rung 2 claims
+through the durable file `open_stats` created; an instance must have been
+built by `open_stats` for the claim to have anything to claim.
+
+Defined at module level and bound into ``ValidationStats`` below, the way
+``agreement`` is.
+
+### service.py: build_stats
+
+The declared kwargs arrive as keywords — the scoring-models declaration
+keys criteria to their declared scoring models, ``population_scopes=`` and
+``backend_profiles=`` declare the populations and backends this
+installation knows (which is what makes ``no_data_for_population`` and
+``no_data_for_backend`` reachable rather than declarable,
+`TC-STATS-C03`'s step 3), ``band_counts=`` declares the band count a
+criterion's table carries (`TC-STATS-C21`'s disclosure), and
+``administration_id=`` names the administration the figures speak for
+(`CT-REVIEW-10`'s keying).
+
+#117's members read three more: ``cohort_id=`` declares the cohort the
+labels belong to (so a report naming a different cohort is refused),
+``evaluation_modes=`` declares each criterion's mode — the declaration
+`CT-DET-02` makes binding for a verdict distribution — and
+``surface_correlations=``/``subgroup_correlations=`` are the measured
+channels the proxy interpretation reads, declared by the caller exactly
+as the MVVP's channels are (#116's pattern). #118's members read three
+more: ``operational_weights=`` declares the operational-evidence weights
+the signal reads (``None`` keeps the module's declared defaults),
+``administrations=`` declares the administration history the blind-skip
+alert reads, and ``narrative_metrics=`` declares the narrative-quality
+channel's collected metrics — the channel is separate from criterion
+agreement (`CT-STATS-14`), and it speaks only where the caller declares
+it.

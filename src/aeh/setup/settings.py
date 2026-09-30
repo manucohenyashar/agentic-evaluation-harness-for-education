@@ -34,8 +34,7 @@ PROPOSAL_ATTEMPTS_DEFAULT = 3
 
 
 def _configured_proposal_attempts() -> int:
-    """The attempt budget, read at call time — never at import (`M-PKG`'s knob
-    doctrine: a test or deployment sets it per operation, not per process load)."""
+    """The proposal attempt budget, read from its knob on each call, never at import."""
     raw = os.environ.get(PROPOSAL_ATTEMPTS_ENV)
     if not raw:
         return PROPOSAL_ATTEMPTS_DEFAULT
@@ -101,9 +100,8 @@ SETUP_PREFIX_TOKEN_CEILING_DEFAULT = 1500
 
 
 def _prefix_ceiling(run_config: Any) -> int:
-    """The ceiling THIS check compares against (`FR-SETUP-11`): the resolved run
-    config's per-profile value (`FR-CONF-06`/`-10` derive it from the profile)
-    when the service carries one, the fallback default otherwise.
+    """The token ceiling the prefix check uses (FR-SETUP-11): the run configuration's per-profile
+    value when the service has one, otherwise the default.
 
     The config arrives duck-typed — whatever the caller resolved carries
     `prefix_token_ceiling` (aeh.conf's `RunConfig` is the intended shape) — read
@@ -116,7 +114,7 @@ def _prefix_ceiling(run_config: Any) -> int:
 
 
 def _estimate_tokens(text: str) -> int:
-    """The token estimate behind `check_prefix_budget` (`FR-SETUP-11`, #53).
+    """The token estimate `check_prefix_budget` uses (FR-SETUP-11).
 
     Characters divided by four, rounded up — the coarse constant the industry uses
     for English prose, and deliberately NOT a tokenizer call: the exact counting
@@ -196,7 +194,7 @@ CONFIRMATIONS_DEFAULT = 6
 
 
 def _configured_max_confirmations() -> int:
-    """The confirmation cap: the design's 6 unless the env widens or narrows it."""
+    """The confirmation cap: 6 as designed, unless the environment changes it."""
     raw = os.environ.get(CONFIRMATIONS_ENV)
     if not raw:
         return CONFIRMATIONS_DEFAULT
@@ -228,7 +226,7 @@ CLASSIFY_ATTEMPTS_DEFAULT = 3
 
 
 def _configured_classify_attempts() -> int:
-    """The classify attempt budget, read at call time — never at import."""
+    """The classification attempt budget, read from its knob on each call, never at import."""
     raw = os.environ.get(CLASSIFY_ATTEMPTS_ENV)
     if not raw:
         return CLASSIFY_ATTEMPTS_DEFAULT
@@ -258,7 +256,7 @@ READBACK_ATTEMPTS_DEFAULT = 3
 
 
 def _configured_readback_attempts() -> int:
-    """The read-back attempt budget, read at call time — never at import."""
+    """The read-back attempt budget, read from its knob on each call, never at import."""
     raw = os.environ.get(READBACK_ATTEMPTS_ENV)
     if not raw:
         return READBACK_ATTEMPTS_DEFAULT
@@ -277,6 +275,6 @@ def _configured_readback_attempts() -> int:
 
 
 def _now() -> str:
-    """The confirmation stamp. UTC ISO — the same shape the store's
-    `datetime('now')` stamps carry (which are UTC), so one column sorts cleanly."""
+    """The confirmation timestamp in UTC ISO format, matching the store's own UTC timestamps so one
+    column sorts cleanly."""
     return datetime.now(timezone.utc).isoformat(timespec="seconds")

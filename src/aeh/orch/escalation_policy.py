@@ -15,7 +15,7 @@ from .settings import (
 
 
 def _known_key(value: Any) -> tuple[int, Any]:
-    """A sort key that sends an absent value last, without ever comparing it.
+    """A sort key that puts missing values last without ever comparing them.
 
     Present values key ``(0, value)``; absent ones ``(1, None)`` — the first element
     decides before the second is ever compared, so `None` is never ordered against a real
@@ -92,7 +92,7 @@ ESCALATION_ARM_PREFIX = "escalation-arm"
 def _extension_arms(
     panel_arms: Sequence[str], prior_judges: Sequence[str], count: int = 2
 ) -> tuple[str, ...]:
-    """The judges a widening adds when the caller names none, in ladder order.
+    """The judges an escalation adds when the caller names none, in order.
 
     The run panel's arms the pair does not already carry come first — panel order is the
     escalation ladder's first arms (`panel_config_json`) — and past them the ladder
@@ -112,12 +112,10 @@ def _extension_arms(
 
 
 def _judge_id_of(judge: Any) -> str:
-    """The judge's ledger identity, from whatever the caller named it with: a string
-    is the build id itself; anything else must be a model ref carrying one
-    (`FR-CONF-03` — a judge is a build identity, never a friendly name) — the same
-    string `panel_config_json` records and a unit's `judge_id` hash input carries, so
-    an escalated panel's additions are the same ids the seated panel's arms read as.
-    """
+    """A judge's ledger id. A string is used as-is; anything else must be a model reference
+    carrying a build id (FR-CONF-03: a judge is identified by its build, never by a friendly name).
+    This is the same string `panel_config_json` records and `judge_id` hashes, so added judges have
+    the same ids as the original panel's."""
     if isinstance(judge, str):
         return judge
     build_id = getattr(judge, "build_id", None)
@@ -135,38 +133,9 @@ def escalation_plan(
     add_judges: Sequence[str] | None = None,
     panel_arms: Sequence[str] = (),
 ) -> tuple[str, ...]:
-    """Build one escalation rung: the widened panel, or the named refusal (`FR-ORCH-10`).
+    """Build one escalation step: the widened panel, or a refusal with a named error (FR-ORCH-10).
 
-    Pure — `TC-ORCH-20` and `TC-ORCH-32` evaluate it with no store and no model. The
-    result is the FULL widened panel in order: the criterion's prior judges followed by
-    the additions, so the plan's ``judge_count`` is ``len(result)`` and the odd-panel rule
-    reads directly off the return value.
-
-    **The rules, each from the design's own sentence:**
-
-    - The criterion escalates **from one judge to three, never to two** — the canonical
-      rung widens by two. With no caller-named judges the plan widens by exactly two,
-      taken from the run panel's unused arms first, then derived extension arms
-      (`_extension_arms`). An odd panel widened by an even addition stays odd, so the
-      default ladder never leaves the odd numbers: 1 → 3 → 5 → …
-    - **A plan producing an even ``judge_count`` is rejected** — `EvenEscalationPlanError`,
-      the exact exception `TC-ORCH-20` asserts for counts 2 and 4. A two-way tie broken by
-      rule is a coin flip presented as a judgement; the ledger's CHECK (`CT-AGG-03`) is
-      the backstop, this refusal is the front.
-    - A plan that does not widen (equal or smaller than the panel it starts from) is
-      refused with `EscalationPlanError`: an escalation that adds nothing looks like work
-      while being the silent no-op shape.
-    - A criterion with **no judges yet** (prior count 0) has no band to widen — refusing
-      rather than treating first enumeration as escalation keeps "escalate" meaning
-      *widen a panel that exists*.
-    - A caller-named judge already on the panel is refused (`EscalationPlanError`), and so
-      is a plan naming the **same judge twice among the additions** (`EscalationPlanError`):
-      one judge, one seat — a doubled seat would let one verdict outweigh another, and a
-      doubled seat can also hide an even distinct-judge panel behind an odd `len`.
-
-    An even PRIOR panel is refused with `EvenEscalationPlanError` as well: the ledger
-    should never hold one (the CHECK refuses the write), and a plan built on top of a
-    corrupted panel would launder it rather than surface it.
+    More detail: `docs/code-notes/orch.md`, section `escalation_policy.py: escalation_plan`.
     """
     prior = tuple(prior_judges)
     if len(prior) == 0:
@@ -225,10 +194,9 @@ def escalation_plan(
 
 
 def _random_arm_key_bytes(key: Any) -> bytes:
-    """The draw's canonical bytes for one candidate key: a string is itself; anything
-    else (the (submission_id, criterion_id) tuple the enumeration path passes) is its
-    parts, ``\\x1f``-joined. Deterministic and collision-free for the key shapes the
-    module uses, and total over the opaque strings the statistical cases draw with."""
+    """The bytes hashed for one candidate in the random-arm draw: a string as-is, or a tuple such
+    as `(submission_id, criterion_id)` joined with `\x1f`. Deterministic and collision-free for the
+    keys this module uses."""
     if isinstance(key, str):
         return key.encode("utf-8")
     if isinstance(key, (tuple, list)):
@@ -237,7 +205,7 @@ def _random_arm_key_bytes(key: Any) -> bytes:
 
 
 def random_arm_selection(key: Any, seed: int, rate: float | None = None) -> bool:
-    """Whether one candidate draws into the random arm (`FR-ORCH-11`, `TC-ORCH-12`).
+    """Whether one candidate is drawn into the random arm (FR-ORCH-11, TC-ORCH-12).
 
     Pure and **seeded**: the draw is sha256 over the candidate's key and the caller's
     seed read as a uniform integer against the rate, so the same (key, seed) draws the
@@ -265,7 +233,7 @@ def random_arm_selection(key: Any, seed: int, rate: float | None = None) -> bool
 
 
 def run_random_arm_seed(run_id: str) -> int:
-    """The run's seeded draw for the random arm, derived from the run id.
+    """The run's random-arm seed, derived from the run id.
 
     A run's arm membership must be a property of the RUN (the same cohort re-enumerated
     into a new run re-draws — new run, new sample), and it must be deterministic within
@@ -284,7 +252,7 @@ def criterion_breaker_tripped(
     rate: float | None = None,
     min_n: int | None = None,
 ) -> bool:
-    """Whether the criterion escalation breaker trips (`FR-ORCH-13`, `TC-ORCH-13`).
+    """Whether a criterion's escalation breaker trips (FR-ORCH-13, TC-ORCH-13).
 
     Pure, the design's own sentence twice over: the breaker evaluates only **at or
     after the window minimum** (`processed >= min_n` — a criterion that escalates 11 of
@@ -308,7 +276,7 @@ def criterion_breaker_tripped(
 
 
 def validate_escalation_plan(judge_count: int) -> int:
-    """Normalize one escalation's target panel depth (`FR-ORCH-10`, `TC-ORCH-20`).
+    """Check and normalize one escalation's target panel size (FR-ORCH-10, TC-ORCH-20).
 
     The declared pure surface of the odd-panel rule: an odd depth is legal and stands
     (3 judges stay 3, 5 stay 5), a **one-judge criterion escalates to three — never to
@@ -327,7 +295,7 @@ def validate_escalation_plan(judge_count: int) -> int:
 
 
 class AdmissionPlan(NamedTuple):
-    """One batch's escalation admission decision (`FR-ORCH-14`, `TC-ORCH-14`).
+    """Which escalations in one batch are admitted (FR-ORCH-14, TC-ORCH-14).
 
     `admitted` and `provisional` are tuples of the candidates' keys; the provisional
     half is ordered by expected value, highest first — the order admission resumes in
@@ -346,7 +314,8 @@ def admit_escalations(
     processed: int,
     budget: float | None = None,
 ) -> AdmissionPlan:
-    """One batch's admission against the run-wide escalation budget (`FR-ORCH-14`).
+    """Decide which escalations in one batch fit within the run-wide escalation budget
+    (FR-ORCH-14).
 
     Pure: the caller reads the ledger's observed counts (the escalations and the
     processed results it names) and hands the batch's ``(key, expected_value)``

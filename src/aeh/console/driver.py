@@ -56,36 +56,10 @@ def run_pipeline_for_test(
     cohort_id: str | None = None,
     alongside: Callable[[], Any] | None = None,
 ) -> PipelineOutcome:
-    """The headless driver (`CT-CONSOLE-01`): run the pipeline end-to-end from code and
-    return a structured result with a per-stage trace. Nothing here requires the console
-    to be served, and nothing here imports `M-CALIB` — the module is off the critical path
-    of grade delivery (`CT-CALIB-01`, RISK-11), which is exactly what this driver exists to
-    demonstrate.
+    """Run the whole pipeline from code, without serving the console, and return a structured
+    result with a trace of each stage (CT-CONSOLE-01).
 
-    Two fixture disclosures, both deliberate (see the module docstring): the rubric
-    version is pinned by inserting the version row directly, in the column shape `M-PKG`'s
-    own first-version insert uses, because `PackageCatalog.create_version` mints ids no
-    caller can pin; and the orchestrator's package-id derivation is overridden for the
-    same reason, because the default derives the package id from the version id and the
-    pinned id carries no `@`.
-
-    `cohort_id` (`#118`'s export seam) names the cohort the driver seeds, runs and reads
-    back — the fixed `_DRIVER_COHORT` when omitted, as every pre-existing caller sees. A
-    driver that could only ever run one cohort could not demonstrate the property the
-    seam exists for: a statistics promotion of a *named* administration. The seeding is
-    idempotent for that seam's differential (`CT-STATS-C17` times a run against a
-    baseline run **on the same data directory**): a package version already seeded is
-    seed-present, not a collision, and a run id the caller did not pin is derived from
-    the cohort — two administrations are two runs, and the run table's primary key is
-    the run id.
-
-    `alongside` runs a callable **concurrently with the scoring run**, on a daemon thread
-    started just before the deterministic pass and joined before the store closes; its
-    first exception is re-raised on the caller's thread after the join, so a failed
-    concurrent export cannot pass as a successful run. This is what makes the seam's
-    claim checkable — that an analytical export running *during* scoring neither waits
-    the pipeline on a lock (`PipelineOutcome.lock_waits` stays 0) nor moves its wall
-    clock — instead of asserting it about an export that ran afterwards.
+    More detail: `docs/code-notes/console.md`, section `driver.py: run_pipeline_for_test`.
     """
     del calibration  # a disabled or absent M-CALIB is the same pipeline: the driver never imports it
     modules: tuple[str, ...] = (
@@ -295,12 +269,10 @@ def run_pipeline_for_test(
 
 
 def _driver_cfg() -> dict[str, Any]:
-    """The driver's edge-local configuration, the same legal shape `edge_cfg` builds:
-    one on-panel judge, an edge transcriber, a pinned prompt template version. The refs
-    name the **fixture** provider — the deterministic transport (seam 2), the same idiom
-    `aeh.extract`'s default second-family model ships — because the driver never
-    dispatches an inference: its pass is deterministic end to end, and naming a real
-    backend would claim an egress the driver does not have."""
+    """The driver's local configuration, in the same shape `edge_cfg` builds: one judge on the
+    panel, a local transcriber and a fixed prompt-template version. The model references name the
+    fixture provider, because the driver never calls a model: its run is fully deterministic, and
+    naming a real service would suggest network traffic that does not happen."""
     return {
         "HARNESS_PROFILE": "edge-local",
         "HARNESS_HARDWARE_PROFILE": "unified-large",

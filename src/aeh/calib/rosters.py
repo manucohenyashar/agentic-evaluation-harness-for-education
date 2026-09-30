@@ -32,10 +32,9 @@ CALIB_CLASS_SIZE_CAP_ENV: str = "HARNESS_CALIB_CLASS_SIZE_CAP"
 
 
 def _class_size_cap(environ: Mapping[str, str] | None = None) -> int | None:
-    """The class-size cap, read at call time (seam 3). None is the production default:
-    the gate scores the full class. A mis-set value falls back rather than raising — a
-    mis-set knob must not stop the gate, and the over-cap refusal path carries its own
-    name."""
+    """The class-size cap, read from its knob at call time. None, the production default, means the
+    gate scores the whole class. A bad value falls back instead of raising, so a mis-set knob
+    cannot stop the gate."""
     source = os.environ if environ is None else environ
     raw = source.get(CALIB_CLASS_SIZE_CAP_ENV)
     if raw is None or not raw.strip():
@@ -60,7 +59,7 @@ _LAST_TICK: float = 0.0
 
 
 def _next_timestamp() -> datetime:
-    """The next strictly-monotonic module event timestamp (timezone-aware wall time)."""
+    """The next event timestamp, strictly increasing, in timezone-aware wall time."""
     global _LAST_TICK
     tick = time.time()
     if tick <= _LAST_TICK:
@@ -71,13 +70,13 @@ def _next_timestamp() -> datetime:
 
 @dataclass(frozen=True)
 class _ClassRoster:
-    """One class's dual-scored bands, pre-scored under R₀ and R₁ — the recorded-transport
-    form the non-inferiority gate consumes (`CT-PROV-10`).
+    """One class's bands under R0 and under R1, as the non-inferiority gate reads them
+    (CT-PROV-10).
 
     ``scores`` is per paper, then per criterion: the ``(r0_band, r1_band)`` pair the panel
     assigned under each rubric. A paper *shifts* when any criterion's band differs — a
     full-band move in either direction, direction-neutral by interpretation (see the
-    module docstring): a student whose band moved a level has been regraded in a
+    code notes (`docs/code-notes/calib.md`)): a student whose band moved a level has been regraded in a
     teacher-recognizable sense whether the move was up or down."""
 
     cohort_id: str
@@ -96,12 +95,12 @@ class _ClassRoster:
     r1: str | None = None
 
     def answers(self, r0: str, r1: str) -> bool:
-        """Is this roster the one for this comparison?"""
+        """Whether this roster belongs to the given comparison."""
         return (self.r0 is None and self.r1 is None) or (self.r0, self.r1) == (r0, r1)
 
     @property
     def shifted_papers(self) -> int:
-        """Papers whose band moved a full level on any criterion."""
+        """The papers whose band moved a full level on any criterion."""
         return sum(
             1 for paper in self.scores if any(r0_band != r1_band for r0_band, r1_band in paper)
         )
@@ -178,7 +177,7 @@ _ROSTER_SOURCES: dict[tuple[str, str, str], Path] = {}
 
 
 def _resolve_r0_run(store: Any, cohort_id: str, r0_version: str) -> str:
-    """The run whose stored scores are R₀'s, resolved from the cohort's ledger by version.
+    """The run whose stored scores are R0's, found in the cohort's ledger by version.
 
     Refuses zero and refuses more than one. Two runs of one package version leave the
     registration no key to tell them apart, and picking either would put bands in the roster
@@ -205,7 +204,7 @@ def _resolve_r0_run(store: Any, cohort_id: str, r0_version: str) -> str:
 
 
 def _r0_bands(store: Any, cohort_id: str, run_id: str) -> dict[tuple[str, str], str]:
-    """R₀'s band per `(paper, criterion)` cell, from the run's own stored score rows."""
+    """R0's band for each `(paper, criterion)` cell, from the run's stored score rows."""
     return {
         (str(row["submission_id"]), str(row["criterion_id"])): str(row["band"])
         for row in store.cohort(cohort_id).query(
@@ -217,8 +216,8 @@ def _r0_bands(store: Any, cohort_id: str, run_id: str) -> dict[tuple[str, str], 
 def register_dual_scored_roster(
     cohort_id: str, *, r0_version: str, r1_version: str, store: Any
 ) -> datetime:
-    """Build the class's dual-scored roster from stored R₀ scores and the executed R₁ pass,
-    persist it, and register it for the gate (`FR-CALIB-15`, `CT-CALIB-17`).
+    """Build the class roster from the stored R0 scores and the R1 pass, save it, and register it
+    for the gate (FR-CALIB-15, CT-CALIB-17).
 
     ``r0_version`` is the **package version** R₀'s run scored: it names the run whose stored
     ``criterion_score`` rows are R₀'s half, and it is an input to that resolution rather than
@@ -313,7 +312,8 @@ def register_dual_scored_roster(
 
 
 def _roster_from_store(cohort_id: str, *, r0: str, r1: str) -> _ClassRoster | None:
-    """`_CLASS_ROSTERS` missed: rebuild this comparison's roster from `calib_roster`.
+    """Rebuild this comparison's roster from the `calib_roster` table when it is not in
+    `_CLASS_ROSTERS`.
 
     Returns None — never a partial roster and never an invented one — when there is nowhere
     to look or nothing recorded there, so the gate's "unknown cohort" refusal still reads the

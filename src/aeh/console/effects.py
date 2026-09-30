@@ -21,13 +21,12 @@ from .html import _row_get
 
 
 class DomainEffectsMixin:
-    """Carries out the control actions whose effect is domain work."""
+    """Carries out the control actions whose effect belongs to another module."""
 
     def _apply_domain_effects(self, action: str, params: dict[str, Any]) -> tuple[str, bool]:
-        """The control actions whose effect is domain work, not a queued row, reach the
-        module that owns the effect — the console never reimplements it. Returns the
-        detail of what fired, so an action with no landed owner is reported honestly
-        rather than claimed."""
+        """Hand an action whose effect is real work (not just a queued row) to the module that owns
+        it; the console never reimplements that work. Returns a description of what ran, so an
+        action whose owner is not available is reported as such rather than claimed as done."""
         if action == "purge cohort":
             cohort_id = params.get("cohort_id")
             data_dir = getattr(self._store, "data_dir", None)
@@ -183,7 +182,7 @@ class DomainEffectsMixin:
         )
 
     def _review_window_hours(self, run_id: str) -> int | None:
-        """The stored window for the run's package version (FR-PKG-19), read from M-PKG."""
+        """The stored review window for the run's package version, read from M-PKG (FR-PKG-19)."""
         row = self._run_row(run_id)
         if row is None:
             return None
@@ -468,7 +467,7 @@ class DomainEffectsMixin:
         )
 
     def _setup_effect(self, action: str, params: dict[str, Any]) -> tuple[str, bool]:
-        """The three pre-lock setup actions, through `M-SETUP` (`setup.py`)."""
+        """The three setup actions allowed before the lock, carried out through M-SETUP."""
         from aeh.setup import setup_service_for_store
 
         package_version = str(params.get("package_version") or "")

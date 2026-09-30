@@ -64,12 +64,12 @@ _MODEL_REF_FIELDS = ("role", "provider", "build_id", "quantization")
 
 
 def _frame(chunk: bytes) -> bytes:
-    """`chunk`, length-prefixed, so a concatenation of frames decodes unambiguously."""
+    """A chunk with its length in front, so a run of frames can be split apart unambiguously."""
     return len(chunk).to_bytes(_FRAME_WIDTH, "big") + chunk
 
 
 def _emit_framed(emit: Any, chunk: bytes) -> None:
-    """`_frame`, without the concatenation. Two emits, byte-identical to one framed chunk.
+    """`_frame` without joining: the two pieces together are byte-identical to one framed chunk.
 
     `emit` is `hashlib`'s `update` or a `bytearray`'s `extend`. Split in two because
     `_frame(value)` allocates a second copy of every field value, and field values are the
@@ -80,7 +80,7 @@ def _emit_framed(emit: Any, chunk: bytes) -> None:
 
 
 def _emit_payload(emit: Any, prompt: PromptPayload) -> None:
-    """The payload's canonical encoding, emitted in the caller's field order.
+    """The payload's canonical encoding, in the caller's field order.
 
     **The only place a `PromptPayload` is encoded.** `payload_bytes` and `request_key` both go
     through here, so the wire body and the fixture key can never disagree about what the
@@ -98,7 +98,7 @@ def _emit_payload(emit: Any, prompt: PromptPayload) -> None:
 
 
 def _encode_scalar(value: Any) -> bytes:
-    """One `ModelRef` or `SamplingParams` value, type-tagged and framed.
+    """One `ModelRef` or `SamplingParams` value, tagged with its type and framed.
 
     The tag is what keeps `0`, `0.0`, `"0"` and `Decimal("0")` four distinct requests. Floats
     go in as `float.hex`, which is exact and canonical — `str(0.1)` is neither across
@@ -127,7 +127,7 @@ def _encode_scalar(value: Any) -> bytes:
 
 
 def payload_bytes(prompt: PromptPayload) -> bytes:
-    """The caller's assembled payload, serialized without adding, reordering or normalizing.
+    """The caller's payload serialized as it is: nothing added, reordered or normalized.
 
     The single point at which a `PromptPayload` becomes bytes, so `CT-PROV-05`'s byte-level
     differential has one thing to compare against. Field order is the caller's, names and
@@ -146,7 +146,7 @@ def payload_bytes(prompt: PromptPayload) -> bytes:
 def request_key(
     prompt: PromptPayload, model_ref: ModelRef, params: SamplingParams
 ) -> str:
-    """`sha256` over the fully-assembled request: payload, model ref and sampling params.
+    """SHA-256 over the whole request: payload, model reference and sampling settings.
 
     Everything that would change what a backend returns is in here, which is what makes
     `TC-PROV-14` pass for the right reason: a punctuation byte, a whitespace change, a case

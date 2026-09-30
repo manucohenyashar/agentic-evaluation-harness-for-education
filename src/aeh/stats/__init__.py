@@ -27,6 +27,8 @@ Files:
     exports.py       the long-horizon and analytical exports
     revisions.py     per-criterion figures across rubric revisions
     service.py       `ValidationStats`, `build_stats` and `open_stats`
+
+Detailed design notes (the full original module description): `docs/code-notes/stats.md`.
 """
 
 from __future__ import annotations

@@ -28,13 +28,9 @@ from .history import (
 
 
 class ValidationStats:
-    """The protocol surface §3.16's Interfaces block declares, over one label
-    population. ``agreement`` (#115), ``run_mvvp`` (#116), and the four
-    comparisons (#117) are the members this file delivers; ``promote``
-    (#118) — the validation record's writer — is the one that arrives with
-    its story. The constructor holds what the delivered members read and
-    nothing else (`TC-STATS-C16` holds every entry point to the
-    no-raise-on-little-data discipline).
+    """The statistics over one population of labels (design §3.16): agreement, the MVVP, the
+    comparisons, and `promote`, which writes the validation record. None of them raises just
+    because there is little data (TC-STATS-C16).
 
     Beyond #115/#116's constructor state, #117's members read three more
     declared channels: ``cohort_id``, the cohort ``open_stats`` read the
@@ -99,7 +95,7 @@ class ValidationStats:
 
     def exclusion_reasons(self, backend_profile: str | None = None,
                           criterion_id: str | None = None) -> dict[str, int]:
-        """Why this population's excluded labels were excluded, by name (`FR-STATS-22`).
+        """Why this population's excluded labels were excluded, by name (FR-STATS-22).
 
         The figures carry `excluded_count`, a number; this is the same exclusion read as
         causes, so "20 excluded" is actionable. Bound here because `_labels` is private:
@@ -108,11 +104,9 @@ class ValidationStats:
         return exclusion_reasons(self._labels, backend_profile, criterion_id)
 
     def admissible_labels(self) -> list[Any]:
-        """The admissible population — the single filter's application
-        (`NFR-STATS-04`). Every figure this module emits routes through this
-        call, so R20 and R53 cannot be violated by a new caller: a caller who
-        wants a figure asks here, and a caller who adds a second filter adds
-        a cardinality defect `TC-STATS-C01` catches on the day it appears."""
+        """The admissible labels: the one place the admissibility filter is applied (NFR-STATS-04).
+        Every figure M-STATS reports goes through this, so a new caller cannot bypass it, and a
+        second filter would be caught by TC-STATS-C01."""
         return [label for label in self._labels if _is_admissible(label)]
 
     #: §3.16's declared member, defined at module level and bound here — see
@@ -169,34 +163,10 @@ def build_stats(
     administrations: Sequence[Mapping[str, Any]] | None = None,
     narrative_metrics: Mapping[str, Any] | None = None,
 ) -> ValidationStats:
-    """The rung-0/1 constructor: the protocol over an in-memory label
-    population (§3.16's Interfaces block names the members; the constructor is
-    this suite's, keyed on #115).
+    """Build the statistics over an in-memory population of labels.
 
-    The declared kwargs arrive as keywords — the scoring-models declaration
-    keys criteria to their declared scoring models, ``population_scopes=`` and
-    ``backend_profiles=`` declare the populations and backends this
-    installation knows (which is what makes ``no_data_for_population`` and
-    ``no_data_for_backend`` reachable rather than declarable,
-    `TC-STATS-C03`'s step 3), ``band_counts=`` declares the band count a
-    criterion's table carries (`TC-STATS-C21`'s disclosure), and
-    ``administration_id=`` names the administration the figures speak for
-    (`CT-REVIEW-10`'s keying).
-
-    #117's members read three more: ``cohort_id=`` declares the cohort the
-    labels belong to (so a report naming a different cohort is refused),
-    ``evaluation_modes=`` declares each criterion's mode — the declaration
-    `CT-DET-02` makes binding for a verdict distribution — and
-    ``surface_correlations=``/``subgroup_correlations=`` are the measured
-    channels the proxy interpretation reads, declared by the caller exactly
-    as the MVVP's channels are (#116's pattern). #118's members read three
-    more: ``operational_weights=`` declares the operational-evidence weights
-    the signal reads (``None`` keeps the module's declared defaults),
-    ``administrations=`` declares the administration history the blind-skip
-    alert reads, and ``narrative_metrics=`` declares the narrative-quality
-    channel's collected metrics — the channel is separate from criterion
-    agreement (`CT-STATS-14`), and it speaks only where the caller declares
-    it."""
+    More detail: `docs/code-notes/stats.md`, section `service.py: build_stats`.
+    """
     return ValidationStats(
         labels,
         scoring_models=scoring_models,
@@ -219,7 +189,7 @@ def open_stats(
     *,
     cohort_id: str | None = None,
 ) -> ValidationStats:
-    """The rung-2 constructor: statistics over a real store's labels.
+    """Build the statistics over a real store's labels.
 
     Holds the store the way ``open_review`` does (`CT-STORE-01`'s rung-2
     shape), reads the **current cohort's** label rows through the declared

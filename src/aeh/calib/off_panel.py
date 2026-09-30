@@ -28,7 +28,7 @@ CALIB_OFF_PANEL_MODEL_ENV: str = "HARNESS_CALIB_OFF_PANEL_MODEL"
 def _off_panel_model_declared(
     environ: Mapping[str, str] | None = None,
 ) -> str | None:
-    """The deployment's declared off-panel checker, read at call time (seam 3).
+    """The deployment's declared off-panel checker, read from its knob at call time.
 
     The env channel outranks the constant, the way the threshold's channel does; a
     blank value is unset. None means the deployment declared no checker, and the gate
@@ -41,10 +41,9 @@ def _off_panel_model_declared(
 
 
 def _off_panel_model_ref_from_declared(declared: str) -> OffPanelModelRef:
-    """The `OffPanelModelRef` a declared checker string names: ``provider/build_id``
-    with an optional ``/quantization``. A string the module cannot read is a
-    mis-declared knob, refused with its name — a misconfiguration is a rejected
-    config rather than a silent weakening (`NFR-CALIB-04`)."""
+    """The `OffPanelModelRef` a declared checker string names: `provider/build_id`, optionally
+    followed by `/quantization`. An unreadable string is refused, naming the knob, so a
+    misconfiguration is rejected rather than silently weakening the check (NFR-CALIB-04)."""
     parts = declared.split("/")
     if len(parts) == 2 and all(parts):
         return OffPanelModelRef(provider=parts[0], build_id=parts[1])
@@ -61,19 +60,17 @@ def _off_panel_model_ref_from_declared(declared: str) -> OffPanelModelRef:
 
 
 def _build_key(provider: str, build_id: str, quantization: str | None) -> str:
-    """The served-build identity a gate registry keys on: the exact encoding `M-CONF`'s
-    `compute_panel_build_ref` hashes (provider, build id, quantization-or-empty, unit-
-    separator). This module does not import `aeh.conf` for it — the gates accept
-    duck-typed refs and never touch model endpoints (`TC-PROV-05`) — so the encoding is
-    mirrored here and `aeh.conf` stays the canonical owner of the formula."""
+    """A build's identity, encoded exactly as M-CONF's `compute_panel_build_ref` hashes it
+    (provider, build id, quantization or empty). M-CALIB does not import M-CONF for this, so the
+    encoding is repeated here; M-CONF remains the owner of the formula."""
     return f"{provider}\x1f{build_id}\x1f{quantization or ''}"
 
 
 @dataclass(frozen=True)
 class OffPanelModelRef:
-    """A pinned identity for the off-panel checker (§3.1's ModelRef shape, carried
-    locally so the gates accept any provider/build/quantization triple without
-    importing `M-CONF`).
+    """A pinned identity for the off-panel checker, shaped like M-CONF's `ModelRef` (design §3.1)
+    but kept local so the gates accept any provider, build and quantization without importing
+    M-CONF.
 
     Identity is the **served build** — provider, build id, quantization — not the
     label, which is what makes the shared-build refusal (`CT-CALIB-08`,
@@ -90,7 +87,7 @@ class OffPanelModelRef:
 
 @dataclass(frozen=True)
 class _ConstructionAttempt:
-    """One off-panel construction attempt: the angle probed and what it produced.
+    """One attempt by the off-panel model: the angle tried and what it produced.
 
     ``response`` is the constructed student response, or None when the angle failed to
     construct one — a failed attempt is a result, not an error (§6.6: the model tries
@@ -104,9 +101,8 @@ class _ConstructionAttempt:
 
 @dataclass(frozen=True)
 class _BackTranslationSession:
-    """The construction session bound to one off-panel build — the recorded-transport
-    form (`CT-PROV-10`): the attempts the off-panel model made when asked to construct a
-    student response on which R₀ and R₁ would assign different scores.
+    """The recorded attempts of one off-panel build to construct a response that R0 and R1 would
+    score differently (CT-PROV-10).
 
     Wiring binds the session for the off-panel build the same way discovery's bands are
     injected, so the gate needs no network and no real upstream, and the provider stays
@@ -116,7 +112,7 @@ class _BackTranslationSession:
 
     @property
     def constructed(self) -> _ConstructionAttempt | None:
-        """The first attempt that constructed a response, or None."""
+        """The first attempt that produced such a response, or None."""
         for attempt in self.attempts:
             if attempt.response is not None:
                 return attempt
@@ -147,9 +143,9 @@ _BACK_TRANSLATION_ANGLES: tuple[str, ...] = (
 
 
 class _RecordedSessionProvider:
-    """A recorded construction session served as an `InferenceProvider` (`CT-PROV-10`): each
-    `complete()` answers one angle's recorded attempt as JSON, so the gate's one dispatch
-    path is `complete()` whether the transport is recorded or live."""
+    """Serves a recorded session as an `InferenceProvider` (CT-PROV-10): each `complete()` returns
+    one angle's recorded attempt as JSON, so the gate always calls `complete()`, recorded or live.
+    """
 
     def __init__(self, session: "_BackTranslationSession") -> None:
         self._by_angle = {attempt.angle: attempt for attempt in session.attempts}
@@ -164,12 +160,12 @@ class _RecordedSessionProvider:
 
 
 def unbind_off_panel_provider(ref: "OffPanelModelRef") -> None:
-    """Remove a provider bound for `ref`'s build (#536 review): a module-level binding must be
-    undoable, or it outlives the caller that made it."""
+    """Remove the provider bound for this build, so a binding does not outlive the caller that made
+    it."""
     _OFF_PANEL_PROVIDERS.pop(ref.build_key, None)
 
 
 def bind_off_panel_provider(ref: "OffPanelModelRef", provider: Any) -> None:
-    """Bind the `InferenceProvider` the back-translation gate asks for `ref`'s build (#536,
-    CT-PROV-08). The provider stays the only egress point (CT-PROV-15)."""
+    """Bind the provider the back-translation gate uses for this build (CT-PROV-08). The provider
+    remains the only egress point (CT-PROV-15)."""
     _OFF_PANEL_PROVIDERS[ref.build_key] = provider

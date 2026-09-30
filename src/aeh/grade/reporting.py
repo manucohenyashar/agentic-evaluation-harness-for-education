@@ -15,10 +15,8 @@ from .pdf import _safe_filename_part, _write_student_pdf
 
 
 def _build_rollup(rows: Iterable[Mapping[str, Any]]) -> ClassRollup:
-    """Segment current grade rows by the rubric version that produced them, and
-    annotate the versions covered (`CT-CALIB-09`): figures from R0 and R1 never share
-    one unannotated figure — they are separated AND annotated, the strictest reading
-    of the clause the case admits either way."""
+    """Split current grades by the rubric version that produced them, and name the versions covered
+    (CT-CALIB-09). Figures from R0 and R1 are never combined into one unlabelled figure."""
     by_version: dict[str, list[float]] = {}
     for row in rows:
         version = row["package_version_id"] or ""
@@ -49,11 +47,9 @@ class ReportingMixin:
     """The run's rollup and grade export."""
 
     def rollup(self, run_id: str) -> ClassRollup:
-        """The run's rollup, segmented by rubric version (§3.14's Protocol member).
-        A run normally reads one segment; the segmentation exists so a rollup that
-        somehow spans versions can never present one undifferentiated figure
-        (`CT-CALIB-09`, RISK-06) — the cohort-wide form is the module-level
-        `class_rollup`."""
+        """The run's rollup, split by rubric version (design §3.14). A run normally has one
+        version; the split means a rollup spanning versions can never show one undifferentiated
+        figure (CT-CALIB-09). For a whole cohort, use `class_rollup`."""
         run = self._run_row(run_id)
         cohort = self._store.cohort(run["cohort_id"])
         rows = [
@@ -65,7 +61,7 @@ class ReportingMixin:
         return _build_rollup(rows)
 
     def export(self, run_id: str, revision: int, fmt: str = "csv") -> Path:
-        """Export a run's grades at a revision (§3.14's Protocol member, `CT-GRADE-16`).
+        """Export a run's grades at a given revision (design §3.14, CT-GRADE-16).
 
         `fmt="csv"` is this module's declared record mapping: one row per graded
         submission, the full record (state, grade, total, provenance, coverage,

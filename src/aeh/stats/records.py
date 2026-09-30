@@ -8,7 +8,7 @@ from typing import Any, Mapping
 
 @dataclass(frozen=True)
 class BandShape:
-    """One side's band-distribution shape, as the compression check reads it.
+    """The shape of one side's band distribution, as the compression check reads it.
 
     The two statistics `FR-STATS-06` names, plus the ``n`` they were computed
     over — the same discipline as the agreement figure's sample size
@@ -22,7 +22,7 @@ class BandShape:
 
 @dataclass(frozen=True)
 class CompressionReport:
-    """`compression_check`'s return value (`FR-STATS-06`, `CT-STATS-10`).
+    """What `compression_check` returns (FR-STATS-06, CT-STATS-10).
 
     ``panel_narrower`` is the check's finding — **relative** compression, the
     only direction the comparison can see — and ``stated_limitation`` is part
@@ -43,7 +43,7 @@ class CompressionReport:
 
 @dataclass(frozen=True)
 class ProxyReport:
-    """`surface_proxies`' return value (`FR-STATS-07`).
+    """What `surface_proxies` returns (FR-STATS-07).
 
     ``correlations`` is the declared measured channel — what the caller
     measured, per criterion and per surface feature — and
@@ -70,7 +70,7 @@ class ProxyReport:
 
 @dataclass(frozen=True)
 class RoutingArm:
-    """One arm of the routing-policy comparison (`FR-STATS-08`).
+    """One arm of the routing-policy comparison (FR-STATS-08).
 
     ``n`` is the arm's admissible population — the population the claim is
     about (`TC-STATS-C11`'s oracle reads it); ``error_rate`` is computed over
@@ -84,7 +84,7 @@ class RoutingArm:
 
 @dataclass(frozen=True)
 class RoutingPolicyReport:
-    """`routing_policy_validity`'s return value (`FR-STATS-08`, `CT-STATS-11`).
+    """What `routing_policy_validity` returns (FR-STATS-08, CT-STATS-11).
 
     ``verdict`` uses the vocabulary the clause fixes: ``failing`` when the two
     arms' error rates are similar (or inverted), ``discriminating`` when the
@@ -103,15 +103,15 @@ class RoutingPolicyReport:
 
 @dataclass(frozen=True)
 class StatsAlert:
-    """One contract alert (`CT-STATS-19`): the declared name, beside the
-    criterion and the correlation that provoked it."""
+    """One contract alert (CT-STATS-19): its declared name, with the criterion and the correlation
+    that caused it."""
     name: str
     detail: str
 
 
 @dataclass(frozen=True)
 class DriftReport:
-    """`drift_check`'s return value (`FR-STATS-09`, `CT-STATS-12`).
+    """What `drift_check` returns (FR-STATS-09, CT-STATS-12).
 
     ``sample_size`` is what the check actually used — inside
     ``DRIFT_SAMPLE_RANGE``, an even spread of what was available — and
@@ -156,10 +156,9 @@ class DriftReport:
 
 @dataclass(frozen=True)
 class ValidationUpdate:
-    """What one administration's record-keeping moved (`FR-STATS-10`,
-    `CT-STATS-05`, `CT-STATS-06`): the three counters, each answering its own
-    question, beside the figure the administration's blind population
-    supports.
+    """What recording one administration changed (FR-STATS-10, CT-STATS-05, CT-STATS-06): the three
+    counters, each answering its own question, and the figure the administration's blind labels
+    support.
 
     ``cohorts_used`` counts the administrations the record now speaks for;
     ``blind_count`` and ``operational_count`` count the claimed labels
@@ -208,8 +207,8 @@ class ValidationUpdate:
 
 @dataclass(frozen=True)
 class ValidationAggregate:
-    """The per-population aggregate `CT-STATS-04` permits: one value per
-    declared population scope, never a figure spanning them.
+    """The per-population aggregate (CT-STATS-04): one value per declared population scope, never a
+    figure spanning them.
 
     ``weakest_per_population`` is the clause's *"the weakest criterion per
     population is exposed alongside every aggregate figure"* (`FR-STATS-13`):
@@ -229,11 +228,9 @@ class ValidationAggregate:
 
 @dataclass(frozen=True)
 class CriterionOverrideHistory:
-    """One criterion's override history (`CT-STATS-09`): how many reviews it
-    has, how many of them overrode the panel, and the rate between them. A
-    criterion nobody has reviewed returns `NoValidationData` — a zero rate on
-    an unreviewed criterion would rank it safest in exactly the queue that
-    decides what gets looked at next."""
+    """One criterion's override history (CT-STATS-09): the number of reviews, how many overrode the
+    panel, and the rate. A criterion nobody reviewed returns `NoValidationData`, because a zero
+    rate would rank it safest in the very queue that decides what gets looked at next."""
     criterion_id: str
     n: int
     override_count: int
@@ -242,9 +239,9 @@ class CriterionOverrideHistory:
 
 @dataclass(frozen=True)
 class CriterionDisagreement:
-    """One criterion's disagreement rate (FR-STATS-28, #433): over every blind or
-    operational label that carries both bands, how many put the teacher's band somewhere
-    other than the system's. The review ranking's eighth input (FR-REVIEW-18)."""
+    """One criterion's disagreement rate (FR-STATS-28): over every blind or operational label with
+    both bands, how many gave a different band from the system's. It is the review ranking's eighth
+    input (FR-REVIEW-18)."""
     criterion_id: str
     n: int
     disagreements: int
@@ -253,10 +250,9 @@ class CriterionDisagreement:
 
 @dataclass(frozen=True)
 class NarrativeQualityReport:
-    """The narrative-quality figures, reported **separately** from
-    criterion-score agreement (`FR-STATS-12`, `CT-STATS-14`): the citation
-    validity rate, the hallucinated-claim rate, and the teacher rating where
-    one was collected.
+    """The narrative-quality figures, reported separately from score agreement (FR-STATS-12,
+    CT-STATS-14): citation validity rate, hallucinated-claim rate, and the teacher's rating when
+    collected.
 
     The three ride this report and never an `AgreementFigure` — combining
     them would let a narrative channel's numbers dress an agreement statistic
@@ -272,9 +268,8 @@ class NarrativeQualityReport:
 
 @dataclass(frozen=True)
 class OperationalSignal:
-    """The weighted operational signal `FR-STATS-14` declares, with the
-    weights it used beside the number — a signal is not a figure, and the
-    value says so.
+    """The weighted operational signal (FR-STATS-14), with the weights that produced it. It is a
+    signal, not a validated figure.
 
     ``signal`` is the weighted mean agreement over the paired population;
     ``weights`` are the evidence weights it was computed with (the declared
@@ -291,13 +286,9 @@ class OperationalSignal:
 
 @dataclass(frozen=True)
 class CriterionFigure:
-    """One criterion's figure as the record carries it (`FR-STATS-13`): the
-    criterion, the rubric revision it was measured under, and the scope that
-    figure is a claim about — the per-criterion companion to
-    ``package_validation``'s per-administration row. ``rubric_version`` is the
-    package version the row's statistics were sourced from; a figure without
-    it is a claim about an unnamed revision, which is why the field is
-    non-optional."""
+    """One criterion's figure as the validation record keeps it (FR-STATS-13): the criterion, the
+    rubric revision it was measured under, and the scope it is a claim about. `rubric_version` is
+    required, because a figure without it is a claim about an unnamed revision."""
     criterion_id: str
     rubric_version: str | None
     backend_profile: str | None

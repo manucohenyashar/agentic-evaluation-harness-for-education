@@ -13,14 +13,13 @@ from .policy import BoundaryRisk, Coverage
 
 
 class GradeError(Exception):
-    """M-GRADE's base error: a run the service cannot grade, or an export format this
-    module does not own. Not retryable — the caller asked for something the ledger
-    does not hold."""
+    """M-GRADE's base error: a run it cannot grade, or an export format it does not support. Not
+    retryable."""
 
 
 @dataclass(frozen=True)
 class SubmissionGrade:
-    """One persisted grade, read back (§3.14's `compute_one` return)."""
+    """One stored grade, read back (what `compute_one` returns)."""
 
     run_id: str
     submission_id: str
@@ -39,9 +38,8 @@ class SubmissionGrade:
 
 @dataclass(frozen=True)
 class GradeReport:
-    """A `compute_all` pass's stage-level summary (CLAUDE.md seam 4): how many
-    submissions were graded, under which policy version, and how the class's states
-    read after the pass — never a bare success flag over an empty result."""
+    """What one `compute_all` pass did: how many submissions were graded, under which policy
+    version, and the class's grade states afterwards."""
 
     run_id: str
     policy_version: str
@@ -52,9 +50,8 @@ class GradeReport:
 
 @dataclass(frozen=True)
 class CoverageSummary:
-    """The `coverage(run_id)` return: the class's state counts, named BEFORE any batch
-    action is taken (`FR-GRADE-09`: the action names its coverage first). All three
-    state keys are always present, zero included — a missing key is not a zero."""
+    """What `coverage(run_id)` returns: the class's grade counts by state, reported before any
+    batch action (FR-GRADE-09). All three states are always present, including zeros."""
 
     run_id: str
     grades_by_state: Mapping[str, int] = field(default_factory=dict)
@@ -62,9 +59,8 @@ class CoverageSummary:
 
 @dataclass(frozen=True)
 class FinalizationRecord:
-    """The `finalize_batch` return: how many grades it settled, and the coverage it
-    was named with — the record echoes the coverage the action was given, so the
-    caller can check the action did what it named (`FR-GRADE-09`)."""
+    """What `finalize_batch` returns: how many grades it settled and the coverage it reported
+    before acting, so the caller can check it did what it said (FR-GRADE-09)."""
 
     finalized: int
     coverage: Mapping[str, int]
@@ -74,8 +70,7 @@ class FinalizationRecord:
 
 @dataclass(frozen=True)
 class GradeRevision:
-    """The `amend` return: the new revision the edit produced (§3.14: amend finalizes
-    at revision n+1)."""
+    """What `amend` returns: the new revision the amendment produced (revision n+1)."""
 
     submission_id: str
     revision: int
@@ -88,8 +83,8 @@ class GradeRevision:
 
 @dataclass(frozen=True)
 class RollupSegment:
-    """One rubric version's slice of a rollup (`CT-CALIB-09`): the figures of one
-    instrument, never averaged blind across versions."""
+    """One rubric version's part of a rollup (CT-CALIB-09). Figures from different versions are
+    never averaged together."""
 
     rubric_version: str
     submission_count: int
@@ -98,9 +93,8 @@ class RollupSegment:
 
 @dataclass(frozen=True)
 class ClassRollup:
-    """A cohort's (or run's) rollup, segmented by rubric version, with the annotation
-    that names every version the figures cover — the explicit annotation
-    `CT-CALIB-09` requires whenever more than one instrument contributed."""
+    """A cohort's or run's rollup, split by rubric version, with a note naming every version the
+    figures cover (CT-CALIB-09)."""
 
     segments: tuple[RollupSegment, ...]
     revision_annotation: str
@@ -108,12 +102,9 @@ class ClassRollup:
 
 @dataclass(frozen=True)
 class CriterionBandFigure:
-    """One criterion's band figures (`FR-GRADE-14`, `TC-GRADE-14`): the histogram is
-    always a real count; `entropy` and `interior_rate` are **null for deterministic
-    criteria** — never zero, because "no figure" is a different claim from "no
-    variation" (`CT-GRADE-13` makes the nulls a consumer obligation, so the producer
-    emits a real None). Entropy is in nats (natural log) — the base is a convention
-    the design leaves open and the committed reference in `TC-GRADE-14` pins."""
+    """One criterion's band figures (FR-GRADE-14, TC-GRADE-14). The histogram is always a real
+    count. `entropy` and `interior_rate` are None for deterministic criteria, never zero, because
+    "no figure" is a different claim from "no variation" (CT-GRADE-13). Entropy is in nats."""
 
     criterion_id: str
     histogram: Mapping[str, int]
@@ -123,9 +114,8 @@ class CriterionBandFigure:
 
 @dataclass(frozen=True)
 class RollupBlock:
-    """One block of the separated rollup (`FR-GRADE-15`): a population and the
-    per-criterion figures over it. Judged and deterministic results each get their
-    own block; nothing on the separated rollup composes across the two."""
+    """One block of the separated rollup: a population and the per-criterion figures over it
+    (FR-GRADE-15). Judged and deterministic results each get their own block."""
 
     submission_count: int
     criteria: tuple[CriterionBandFigure, ...]
@@ -133,11 +123,8 @@ class RollupBlock:
 
 @dataclass(frozen=True)
 class SeparatedRollup:
-    """The run's rollup with deterministic results in a block separate from judged
-    ones (`FR-GRADE-15`, `CT-GRADE-12`), and no combined figure anywhere: the record
-    carries exactly these two blocks, each over its own population — a figure across
-    judged and deterministic results is the clause's exact refusal (the two are not
-    comparable)."""
+    """The run's rollup with deterministic results in a separate block from judged ones, and no
+    figure that combines the two (FR-GRADE-15, CT-GRADE-12): they are not comparable."""
 
     judged: RollupBlock
     deterministic: RollupBlock
@@ -145,9 +132,8 @@ class SeparatedRollup:
 
 @dataclass(frozen=True)
 class RollupFinding:
-    """One rollup finding (`FR-GRADE-16`, `TC-GRADE-16`): a criterion the system
-    could not apply, the count of students it touched, and what happened — a finding
-    that names a criterion but not its reach leaves the teacher guessing."""
+    """One rollup finding (FR-GRADE-16, TC-GRADE-16): a criterion the system could not apply, how
+    many students it affected, and what happened."""
 
     criterion_id: str
     student_count: int
@@ -156,9 +142,8 @@ class RollupFinding:
 
 @dataclass(frozen=True)
 class GradeArtifacts:
-    """The school-facing export's result (`FR-GRADE-17`, `TC-REG-03`): one CSV of
-    marks and one PDF per student, as written paths — the caller hands them to the
-    school; nothing here leaves the machine (`CT-GRADE-16`)."""
+    """The school-facing export's result: the paths of one marks CSV and one PDF per student
+    (FR-GRADE-17, TC-REG-03). Nothing here leaves the machine (CT-GRADE-16)."""
 
     csv_path: Path
     pdf_paths: tuple[Path, ...]

@@ -11,18 +11,14 @@ class DependencyGraphMixin:
     """Reads the dependency graph and refuses edges that would make it cyclic."""
 
     def topological_order(self, v: PackageVersionId) -> tuple[str, ...]:
-        """A valid topological order over the version's dependency graph — dependencies
-        before dependents, which is `M-ORCH`'s extraction sweep order (`FR-PKG-05`)."""
+        """The criteria in dependency order, dependencies first: the order M-ORCH extracts in
+        (FR-PKG-05)."""
         return self._toposort(self._version_graph(v))
 
     def dependency_graph(self, v: PackageVersionId) -> dict[str, tuple[str, ...]]:
-        """The version's dependency topology, criterion -> its direct dependencies
-        (`FR-PKG-05`) — the read side of `set_dependencies`, over the same graph
-        `topological_order` sorts. `M-ORCH` consumes the topology rather than
-        re-deriving it: the extraction sweep's order is `topological_order`'s, and the
-        scoring gate (`FR-ORCH-06`) needs the edges themselves. Every criterion of the
-        version appears as a key, dependencies sorted — deterministic where nothing
-        depends on the order."""
+        """The version's dependency graph: each criterion mapped to its direct dependencies, sorted
+        (FR-PKG-05). Every criterion appears as a key. M-ORCH uses the edges for its scoring gate
+        (FR-ORCH-06) and `topological_order` for extraction order."""
         graph = self._version_graph(v)
         return {
             criterion_id: tuple(sorted(deps))
@@ -40,8 +36,8 @@ class DependencyGraphMixin:
         return graph
 
     def _assert_acyclic(self, graph: dict[str, set[str]]) -> None:
-        """Kahn's algorithm: a DAG consumes every node; whatever remains is the cycle
-        (`FR-PKG-05`)."""
+        """Check the graph has no cycle, using Kahn's algorithm: an acyclic graph uses up every
+        node, and whatever is left over is the cycle (FR-PKG-05)."""
         remaining = {node: set(edges) for node, edges in graph.items()}
         consumed: set[str] = set()
         while remaining:
@@ -57,8 +53,8 @@ class DependencyGraphMixin:
                 del remaining[node]
 
     def _toposort(self, graph: dict[str, set[str]]) -> tuple[str, ...]:
-        """Kahn's algorithm, deterministic: ready nodes emit in sorted order so the
-        extraction sweep's order is reproducible."""
+        """Kahn's algorithm with ready nodes taken in sorted order, so the extraction order is
+        reproducible."""
         remaining = {node: set(edges) for node, edges in graph.items()}
         consumed: set[str] = set()
         order: list[str] = []

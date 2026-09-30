@@ -15,7 +15,7 @@ from .run_config import RunConfig
 @_typeerror_on_mutation
 @dataclass(frozen=True)
 class HardwarePolicy:
-    """What an `edge-local` `hardware_profile` derives (`FR-CONF-06`).
+    """The settings an `edge-local` hardware profile implies (FR-CONF-06).
 
     Data, never a code path: `NFR-CONF-03` and `TC-CONF-14` both forbid a `sys.platform` branch
     or a platform-conditional import, so residency and quantization exist only as values in
@@ -39,11 +39,9 @@ class HardwarePolicy:
     decision_coresident: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}), compare=False)
 
     def __post_init__(self) -> None:
-        """Type hygiene, for the same reason `ModelRef` has it: this type is caller-supplied
-        through `cfg["hardware_profiles"]`, and `_resolve_concurrency` clamps against
-        `concurrency_ceiling`. A string there would surface a bare `TypeError` out of
-        `resolve_run_config`, which `TC-CONF-15`'s invariant forbids.
-        """
+        """Check field types. The caller supplies this through `cfg["hardware_profiles"]`, and a
+        string where a number belongs would otherwise escape `resolve_run_config` as a bare
+        `TypeError`, which TC-CONF-15 forbids."""
         if not isinstance(self.residency_policy, tuple) or not all(
             isinstance(role, str) and role for role in self.residency_policy
         ):
@@ -128,7 +126,7 @@ def hardware_policy_for(
     config: RunConfig,
     table: Mapping[str, HardwarePolicy] = HARDWARE_PROFILES,
 ) -> HardwarePolicy | None:
-    """The **declared** policy behind a resolved config, or `None` for a hosted backend.
+    """The declared hardware policy behind a resolved configuration, or None for a hosted backend.
 
     Declared, not effective, and the distinction is load-bearing: `TC-CONF-06`'s oracle is
     "exact value per cell", so this must return the table's row unchanged. The *effective*

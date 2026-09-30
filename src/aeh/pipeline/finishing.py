@@ -12,7 +12,8 @@ from .executor import _default_synthesizer
 
 
 def _submissions_of(orch: Any, run_id: str) -> tuple[str, ...]:
-    """Every submission the run enumerated, in enumeration order, without reading the ledger.
+    """Every submission the run enumerated, in enumeration order, without reading the ledger
+    directly.
 
     FR-PIPE-17 / CT-PIPE-13 (#523): `M-ORCH`'s own per-run list (`Orchestrator.submissions`,
     FR-ORCH-42), so a submission whose criteria are all deterministic, which has neither
@@ -24,7 +25,7 @@ def _submissions_of(orch: Any, run_id: str) -> tuple[str, ...]:
 
 def _synthesize(store: Any, provider: Any, run_config: Any, orch: Any, handle: Any,
                 synthesizer: Any = None) -> StageTrace:
-    """`FR-PIPE-06`: narrate every submission whose criteria are all scored.
+    """Write narratives for every submission whose criteria are all scored (FR-PIPE-06).
 
     Completeness is `M-SYNTH`'s to judge, not this module's: `CT-SYNTH-05` says a submission
     with incomplete criteria is not synthesized, so every submission is offered and the worker
@@ -70,7 +71,8 @@ def _synthesize(store: Any, provider: Any, run_config: Any, orch: Any, handle: A
 
 
 def _grade(store: Any, handle: Any) -> tuple[StageTrace, int, int]:
-    """`FR-PIPE-06`'s second half: `GradingService.compute_all`, and the two grade counts."""
+    """Compute the run's grades with `GradingService.compute_all`, and return the two grade counts
+    (FR-PIPE-06)."""
     report = open_grade(store).compute_all(handle.run_id)
     by_state = dict(getattr(report, "grades_by_state", {}) or {})
     computed = int(getattr(report, "computed", 0) or 0)
@@ -84,7 +86,7 @@ def _grade(store: Any, handle: Any) -> tuple[StageTrace, int, int]:
 
 
 def _grades_all_final(grading: Any, run_id: str) -> bool:
-    """Whether every grade of one run is settled.
+    """Whether every grade of the run is settled.
 
     Read through `coverage`, which counts the STORED `state` column (plus a derived
     `incomplete` for a submission with no current row). It does **not** re-evaluate review

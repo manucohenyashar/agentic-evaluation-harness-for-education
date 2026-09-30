@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 @dataclasses.dataclass(frozen=True)
 class UnitOutcome:
-    """One fixture's judgment, as the recorded replay derived it.
+    """One fixture's judgment, from the recorded replay.
 
     `band` is the fixture's unit band (the mode of its declared per-criterion bands),
     `citation_verification_outcome` the replayed citation verdict, and `confidence` the
@@ -30,7 +30,7 @@ class UnitOutcome:
 
 @dataclasses.dataclass(frozen=True)
 class BackendResult:
-    """One backend's run over the fixture set, with the observability the clause requires.
+    """One backend's run over the fixture set, with the observability fields the contract requires.
 
     `stages_executed` is per fixture (`CT-CONFORM-03`'s sweep reads it that way); the fixtures
     the real ingest ladder quarantined are absent from it — they were never scored — and are
@@ -51,7 +51,7 @@ class BackendResult:
 
 @dataclasses.dataclass(frozen=True)
 class ValidationRecord:
-    """One backend's validation figure set, keyed on the catalog's seven (`FR-PKG-08`).
+    """One backend's validation figures, keyed on the catalog's seven-part key (FR-PKG-08).
 
     The durable form is `aeh.pkg.record_promotion`'s row under the same administration key;
     `write_merged_validation_record` exists so that refusing the merge is an offered refusal.
@@ -69,7 +69,7 @@ class ValidationRecord:
 
 @dataclasses.dataclass(frozen=True)
 class DivergenceReport:
-    """The per-dimension divergence between two backends — no headline, by construction.
+    """The divergence between two backends on each dimension, with no single headline number.
 
     One field: the five declared dimensions, each with its measured value. A single combined
     figure is exactly what `CT-CONFORM-04` forbids, and the sweep over this surface runs in the
@@ -81,7 +81,8 @@ class DivergenceReport:
 
 @dataclasses.dataclass(frozen=True)
 class ConformanceReport:
-    """What a run reports: per-backend results, the divergence, the partition, the records.
+    """What a conformance run reports: per-backend results, the divergence, the
+    blocking/informational split, and the validation records.
 
     The partition is exhaustive by construction (`blocking_dimensions`, `findings`,
     `unavailable_dimensions`, `passing_dimensions` — every dimension in exactly one bucket);
@@ -108,7 +109,7 @@ class ConformanceReport:
     consent_class: str
 
     def write_merged_validation_record(self, first: Any, second: Any) -> None:
-        """Refuse the merged write (`CT-CONFORM-06`): two backends' records never become one."""
+        """Always refuses: two backends' records never become one (CT-CONFORM-06)."""
         raise MergeRefused(
             "a merged validation record answers for no population: it would span "
             f"{getattr(first, 'backend_profile', '?')!r} and "
@@ -120,7 +121,7 @@ class ConformanceReport:
 
 @dataclasses.dataclass(frozen=True)
 class DistributionReport:
-    """One corpus's per-criterion score distribution, as `TC-REG-05`'s run reports it.
+    """One corpus's per-criterion score distribution, as the regression run reports it (TC-REG-05).
 
     The frozen corpus re-run is the regression's subject: a *shift* on an unchanged package is
     build substitution (`FR-CONFORM-08`), not a baseline to update. `package_version` is what
@@ -134,7 +135,7 @@ class DistributionReport:
 
 @dataclasses.dataclass(frozen=True)
 class BuildSubstitutionFinding:
-    """What `detect_build_substitution` returns when the frozen set scored differently.
+    """What `detect_build_substitution` returns when the same frozen set scored differently.
 
     The attribution is the assertion (`CT-CONFORM-07`): a score shift on frozen fixtures with
     an unchanged package is a provider-side build substitution, not a package finding —
@@ -153,14 +154,14 @@ class BuildSubstitutionFinding:
 
 @dataclasses.dataclass(frozen=True)
 class ConformanceAlert:
-    """One fired alert, with the `kind` that names its own condition (`CT-CONFORM-13`)."""
+    """One fired alert, with a `kind` naming its condition (CT-CONFORM-13)."""
 
     kind: str
 
 
 @dataclasses.dataclass(frozen=True)
 class AdversarialTierReport:
-    """What running one adversarial corpus through the tier reports (`TC-CONFORM-09`).
+    """What running one adversarial corpus through the tier reports (TC-CONFORM-09).
 
     `F-ADV-INJ` yields differential `outcomes` for every member; `F-ADV-PDF` yields
     `ingest_outcomes` — the real ladder's verdict per construct, with no model calls reached.

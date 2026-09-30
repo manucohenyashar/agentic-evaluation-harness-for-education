@@ -66,8 +66,8 @@ def environment_snapshot(
     environ: Mapping[str, str] | None = None, *, include_console: bool = False,
     include_decision: bool = False,
 ) -> dict[str, str]:
-    """Take the six `HARNESS_*` keys out of the process environment, once, for a caller to merge
-    into `cfg`.
+    """Read the six `HARNESS_*` keys from the process environment, once, for a caller to merge into
+    `cfg`.
 
     Deliberately **not** called by `resolve_run_config`. `NFR-CONF-01` and `CT-CONF-05` require
     resolution to be a pure function whose environment enters "only through the snapshot in
@@ -84,7 +84,7 @@ def environment_snapshot(
 
 
 def parse_config_document(text: str, fmt: Literal["json", "toml"]) -> dict[str, Any]:
-    """Parse a config file's **text** into a mapping (`FR-CONF-13`).
+    """Parse the text of a config file into a mapping (FR-CONF-13).
 
     The caller reads the file — this module opens none (`NFR-CONF-01`) — and names the format,
     normally from the extension (`.json` → `"json"`, `.toml` → `"toml"`). A document whose top
@@ -128,8 +128,8 @@ _FILE_MODEL_KEYS: tuple[str, ...] = ("transcriber", "off_panel_checker")
 
 
 def _file_ref(raw: Any, what: str) -> ModelRef:
-    """One `ModelRef` from a config file's table. TOML has no null, so an absent `quantization`
-    reads as `None` (a provider-pinned build); the other three fields are required."""
+    """Build one `ModelRef` from a config-file table. TOML has no null, so a missing `quantization`
+    means None (a provider-pinned build); the other three fields are required."""
     if not isinstance(raw, Mapping):
         raise ConfigurationError(
             f"{what} must be a table of {_REF_FIELDS}, got {type(raw).__name__}."
@@ -144,9 +144,8 @@ def _file_ref(raw: Any, what: str) -> ModelRef:
 
 
 def _model_tables_to_refs(table: dict[str, Any], where: str) -> dict[str, Any]:
-    """`table` with its `panel`, `transcriber` and `off_panel_checker` tables built into
-    `ModelRef`s. Other keys, and values that are not tables, pass through for
-    `resolve_run_config` to judge."""
+    """The table with its `panel`, `transcriber` and `off_panel_checker` entries turned into
+    `ModelRef`s. Everything else passes through for `resolve_run_config` to check."""
     converted = dict(table)
     panel = converted.get("panel")
     if isinstance(panel, list) and all(isinstance(entry, Mapping) for entry in panel):
@@ -160,7 +159,8 @@ def _model_tables_to_refs(table: dict[str, Any], where: str) -> dict[str, Any]:
 
 
 def select_profile_config(file_cfg: Mapping[str, Any], profile: str | None) -> dict[str, Any]:
-    """The configuration for one backend profile out of a multi-profile file (`FR-CONF-13`).
+    """The configuration for one backend profile, taken from a file that holds several
+    (FR-CONF-13).
 
     A file may declare a `profiles` table with one section per backend profile, next to shared
     top-level keys. The result is the shared keys overlaid by `profiles[profile]`, with
@@ -227,7 +227,8 @@ def select_profile_config(file_cfg: Mapping[str, Any], profile: str | None) -> d
 def effective_config(
     cfg: Mapping[str, Any] | None = None, environ: Mapping[str, str] | None = None
 ) -> dict[str, Any]:
-    """The one composition rule every process entry point uses (`FR-CONF-14`, `CT-CONF-15`).
+    """Combine the config file and the environment into the configuration every entry point uses;
+    the environment wins (FR-CONF-14, CT-CONF-15).
 
     1. `snapshot` = the `HARNESS_*` and `CONSOLE_*` keys from the environment;
     2. the profile is the environment's `HARNESS_PROFILE`, else `cfg`'s;
@@ -255,8 +256,8 @@ def effective_config(
 def profile_source(
     cfg: Mapping[str, Any] | None = None, environ: Mapping[str, str] | None = None
 ) -> str | None:
-    """Where the effective `HARNESS_PROFILE` comes from: `"environment"`, `"config file"`, or
-    `None` when neither sets it (`FR-CONF-16`)."""
+    """Where the effective `HARNESS_PROFILE` came from: `"environment"`, `"config file"`, or None
+    when neither sets it (FR-CONF-16)."""
     if "HARNESS_PROFILE" in environment_snapshot(environ):
         return PROFILE_SOURCE_ENVIRONMENT
     if isinstance(cfg, Mapping) and cfg.get("HARNESS_PROFILE") is not None:
@@ -265,10 +266,9 @@ def profile_source(
 
 
 def format_profile_banner(config: RunConfig, source: str | None) -> str:
-    """The start-up lines an entry point prints (`FR-CONF-16`): the resolved `profile_summary()`
-    and the source of `HARNESS_PROFILE`, so an operator sees which profile an environment change
-    selected. Carries only the summary's build identities and names — nothing read from the
-    environment besides the profile itself (`CT-CONF-10`)."""
+    """The lines an entry point prints at start-up (FR-CONF-16): the resolved profile summary and
+    where `HARNESS_PROFILE` came from, so an operator can see which profile is in effect. It shows
+    only build identities and names, nothing else from the environment (CT-CONF-10)."""
     summary = config.profile_summary()
     return (
         f"HARNESS_PROFILE: {summary.backend_profile}\n"
@@ -279,7 +279,7 @@ def format_profile_banner(config: RunConfig, source: str | None) -> str:
 
 
 def _decision_banner_line(config: RunConfig) -> str:
-    """FR-CONF-25: which engine grades, visible at start-up."""
+    """The start-up line saying which engine grades (FR-CONF-25)."""
     engine = config.decision_engine
     if engine is None:
         return "DECISION_ENGINE: off"
@@ -290,8 +290,8 @@ def _decision_banner_line(config: RunConfig) -> str:
 def resume_profile_conflict(
     run_row: Mapping[str, Any], effective: Mapping[str, Any]
 ) -> str | None:
-    """The pause reason for resuming a run under a different profile, or `None` (`FR-CONF-15`,
-    `CT-CONF-16`).
+    """The pause reason when a run would resume under a different profile, or None (FR-CONF-15,
+    CT-CONF-16).
 
     A switch never rebinds an existing run (`FR-CONF-04`): a run keeps the `backend_profile`
     persisted on its row. When the effective configuration now selects another profile, the
@@ -315,7 +315,7 @@ def resume_profile_conflict(
 
 
 def parse_allow_remote_real_work(value: Any) -> bool:
-    """`HARNESS_ALLOW_REMOTE_REAL_WORK`, defaulting to `False` (`CT-CONF-11`).
+    """Read `HARNESS_ALLOW_REMOTE_REAL_WORK`, which defaults to False (CT-CONF-11).
 
     The string `"false"` must not be truthy-coerced — a non-empty string is truthy in Python, so
     a bare `bool(value)` here would open the consent gate for every operator who set the key to

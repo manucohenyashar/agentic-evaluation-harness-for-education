@@ -18,12 +18,10 @@ _MIXED_REVISION_COHORTS: dict[str, Any] = {}
 
 
 def cohort_with_mixed_revisions(store: Any = None) -> str:
-    """A cohort whose per-criterion record spans two rubric revisions — the
-    fixture `CT-CALIB-09`'s consumer half reads. Two package versions
-    (``pkg-v1``, ``pkg-v2``) over two criteria, one administration; the store
-    is registered under the returned cohort id so ``criterion_figures``
-    resolves it. Built through this module's own declared statement, so the
-    fixture rows are exactly the rows the record writes."""
+    """Test seam: a cohort whose per-criterion record spans two rubric revisions (`pkg-v1` and
+    `pkg-v2`, two criteria, one administration), for CT-CALIB-09. The store is registered under the
+    returned cohort id so `criterion_figures` finds it, and the rows are written with M-STATS's own
+    statement."""
     import tempfile
     import uuid
 
@@ -58,9 +56,8 @@ def criterion_figures(
     *,
     data_dir: Path | str | None = None,
 ) -> tuple[CriterionFigure, ...]:
-    """One population's per-criterion figures as the record carries them
-    (`FR-STATS-13`): the criterion, the rubric revision each row's statistics
-    were sourced from, and the scope that row is a claim about.
+    """One population's per-criterion figures as the validation record keeps them (FR-STATS-13):
+    each criterion, the rubric revision its statistics came from, and the scope.
 
     The store is resolved from the fixture registry (``cohort_with_mixed_
     revisions`` registers the cohorts it builds), or opened at ``data_dir=``
@@ -137,12 +134,9 @@ _REVISION_GATE_DESCRIPTIONS: Mapping[str, str] = {
 
 
 def describe_revision_gate(outcome: str) -> str:
-    """What the revision gate's outcome means, in words a consumer can read
-    (`CT-STATS-C16`'s calibration case drives the ``pass`` outcome). A plain
-    string, because the gate's description is the kind of value a console
-    renders directly — and the description carries the non-promises inside
-    it: a pass is a comparison reached, never evidence the revision got
-    better, and the sentences that say so are negated ones."""
+    """What the revision gate's outcome means, in plain words a console can show. A pass means a
+    comparison was completed, never proof that the revision is better, and the description says so.
+    """
     if outcome not in _REVISION_GATE_DESCRIPTIONS:
         raise ValueError(
             f"describe_revision_gate() got outcome={outcome!r}; the gate "

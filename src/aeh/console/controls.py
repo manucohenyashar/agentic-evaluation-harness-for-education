@@ -18,12 +18,12 @@ from .write_rows import _rows_for
 
 
 class ControlActionsMixin:
-    """The enumerated control actions and the rows each one writes."""
+    """The fifteen control actions and the rows each one writes."""
 
     def finalize_batch(self, run_id: str = "r-unaddressed", *, actor: str = "operator") -> dict[str, GradeRecord]:
-        """Finalize the batch, and record the audit line the way §11.8 requires: the actor
-        is the string the form supplied, and the console says so rather than presenting it
-        as an authenticated identity (there are no accounts to authenticate against).
+        """Finalize the batch and write the audit line §11.8 requires. The actor is whatever name
+        the form supplied, and the console labels it as such, not as a logged-in identity (there
+        are no accounts).
 
         A configured review window delays finalization (`FR-CONSOLE-22`): the batch
         settles with `finalized_at` still unset and every grade marked provisional — the
@@ -89,19 +89,18 @@ class ControlActionsMixin:
     # -- the control surface -----------------------------------------------------------------------------
 
     def write_surface(self) -> tuple[str, ...]:
-        """The enumerated write surface: exactly the fifteen actions, at runtime
-        (`FR-CONSOLE-32`). Set equality against this is what makes an undeclared write
-        path visible."""
+        """The names of the fifteen control actions, checked at runtime (FR-CONSOLE-32). Tests
+        compare this set exactly, so any undeclared write path shows up."""
         return CONTROL_SURFACE_ACTIONS
 
     def write_fields(self, action: str) -> tuple[str, ...]:
-        """The store fields `action` may write (§11.8's Effect column)."""
+        """The store fields `action` may write (the Effect column of §11.8)."""
         if action not in CONSOLE_WRITE_FIELDS:
             raise KeyError(f"{action!r} is not one of the fifteen declared control actions")
         return CONSOLE_WRITE_FIELDS[action]
 
     def control_actions(self) -> dict[str, Callable[..., ControlOutcome]]:
-        """The runtime enumeration as callables: the same fifteen, bound to `perform`."""
+        """The same fifteen actions as callables, each bound to `perform`."""
         return {action: self._bind(action) for action in CONTROL_SURFACE_ACTIONS}
 
     def _bind(self, action: str) -> Callable[..., ControlOutcome]:
@@ -112,10 +111,9 @@ class ControlActionsMixin:
 
     @contextlib.contextmanager
     def hold_after(self, stage: str, *, action: str) -> Iterator[_HeldAction]:
-        """Hold the named action after `stage` (§3.19's stale-state oracle, induced rather
-        than raced). While held, `perform` of the action suspends and writes nothing;
-        `release()` returns the refused-with-refresh outcome. Leaving the block disarms
-        the hold."""
+        """Pause the named action after `stage`, so tests can simulate a stale screen without
+        racing (§3.19). While paused, `perform` writes nothing; `release()` returns the "refused,
+        please refresh" outcome. Leaving the `with` block removes the pause."""
         held = _HeldAction(self, action)
         self._held.add(action)
         try:
@@ -124,7 +122,7 @@ class ControlActionsMixin:
             self._held.discard(action)
 
     def perform(self, action: str, *, replay: str | None = None, **params: Any) -> ControlOutcome:
-        """One control action, as rows. §11.8's discipline, end to end:
+        """Carry out one control action as stored rows, following §11.8 end to end:
 
         - a replay through any route writes nothing and reports the already-settled rows
           (`FR-CONSOLE-02`: no additional row, not merely no exception);
@@ -172,12 +170,11 @@ class ControlActionsMixin:
     def _write_rows(
         self, action: str, rows: list[tuple[str, dict[str, Any]]], params: dict[str, Any]
     ) -> tuple[tuple[Any, ...], str, bool]:
-        """The store-facing half of one action. Returns the rows written, the detail the
-        outcome owes the operator, and whether anything was actually dispatched. On the
-        write-audit double the payload arrives with the row; on a real store each write
-        goes to the tier that owns its table, in that tier's own transaction — never
-        nested inside another tier's transaction (`CT-STORE-03`'s cross-tier rule, which
-        a durable-wrapped cohort insert violated on every call)."""
+        """Write one action's rows to the store. Returns the rows written, the message owed to the
+        operator, and whether anything was actually dispatched. On the audit double the payload is
+        stored with the row. On a real store each write goes to the tier that owns its table, in
+        that tier's own transaction, never nested inside another tier's transaction (CT-STORE-03).
+        """
         if getattr(self._store, "data_dir", None) is not None:
             return self._write_rows_real(action, rows, params)
         handle = self._tier("durable")
@@ -198,8 +195,8 @@ class ControlActionsMixin:
     def _write_rows_real(
         self, action: str, rows: list[tuple[str, dict[str, Any]]], params: dict[str, Any]
     ) -> tuple[tuple[Any, ...], str, bool]:
-        """The real-store path. Each action writes the row its schema admits — one tier,
-        one transaction, and a claim only for what actually happened."""
+        """The real-store path: each action writes the row its schema allows, in one tier and one
+        transaction, and reports only what actually happened."""
         if action == "pause/resume":
             run_id = str(params.get("run_id") or "")
             if not run_id:

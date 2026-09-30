@@ -15,8 +15,7 @@ class ProgressMixin:
     """The step list for the console, and the defaults recorded for skipped steps."""
 
     def steps(self) -> SetupProgress:
-        """The enumerated setup steps and what remains (`TC-SETUP-03`'s shape,
-        `NFR-SETUP-04`'s honest count).
+        """The setup steps and how many remain, counted honestly (TC-SETUP-03, NFR-SETUP-04).
 
         With no draft version the package is in one of two states, told apart by
         `has_version`: NOT STARTED (no version at all — the inventory step is
@@ -240,22 +239,18 @@ class ProgressMixin:
         )
 
     def _grade_policy_record(self, v: PackageVersionId | None) -> dict | None:
-        """The grade_policy step's provenance row, or None — read through the same
-        getattr guard the other step reads use: a catalog without the recording
-        surface reads as "no record", never as a console crash."""
+        """The grade-policy step's provenance row, or None. A catalog that cannot record steps
+        reads as "no record" rather than crashing the console."""
         if v is None:
             return None
         reader = getattr(self._catalog, "step_record", None)
         return reader(v, "grade_policy") if reader is not None else None
 
     def _record_uncompleted_step_default(self, v: PackageVersionId) -> None:
-        """Record each skipped step's default where the step never recorded itself
-        (`FR-SETUP-14`, `#52`/`#53`): completing setup by skipping a step leaves
-        stored provenance naming it, so the default is never indistinguishable from
-        an explicit choice (`R62`, `CT-SETUP-01`). A step that DID record — the read
-        back ran, the teacher confirmed classifications, the policy was set — is
-        never overwritten. The gate checks have already passed, so these writes are
-        on the publish path's happy tail, immediately before the lock flip."""
+        """For each skipped step that never recorded itself, record that its default was taken
+        (FR-SETUP-14), so a default can always be told apart from an explicit choice (R62,
+        CT-SETUP-01). A step that did record something is never overwritten. This runs on the
+        publish path after the gates have passed, just before the lock takes effect."""
         record = getattr(self._catalog, "record_default_step", None)
         if record is None:
             return

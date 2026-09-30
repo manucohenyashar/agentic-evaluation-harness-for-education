@@ -17,8 +17,7 @@ class KeysAndPolicyMixin:
     """Answer keys (gate 2), the grade policy, the prefix budget check and calibration papers."""
 
     def set_answer_keys(self, keys: Mapping[str, Sequence[str]]) -> None:
-        """The teacher's answer keys — BLOCKING gate 2 (`§4.2.1`), with `FR-SETUP-03`'s
-        full semantics since #53.
+        """Record the teacher's answer keys: blocking gate 2 (FR-SETUP-03).
 
         The confirmed inventory's deterministic criteria are staged first (idempotent
         — `confirm_inventory` already ran the same staging, so this is a top-up for a
@@ -88,9 +87,8 @@ class KeysAndPolicyMixin:
     # -- Stage A: grade policy, prefix budget, calibration papers (#53, skippable) ----------
 
     def set_grade_policy(self, policy: GradePolicy | None) -> GradePolicy:
-        """Capture the teacher's grade policy — or take the default explicitly
-        (`FR-SETUP-12`, #53). Returns the policy that APPLIES: the declared one, or
-        `default_grade_policy()` when `policy` is None.
+        """Record the teacher's grade policy, or explicitly take the default (FR-SETUP-12). Returns
+        the policy that applies: the one given, or `default_grade_policy()` when `policy` is None.
 
         Either way the step records WHICH it was (`policy_declared` vs
         `default_taken`), so M-CALIB and M-STATS can tell a teacher's judgment from
@@ -133,9 +131,9 @@ class KeysAndPolicyMixin:
         return applied
 
     def check_prefix_budget(self) -> PrefixBudgetReport:
-        """Count each (question, criterion) prefix against the configured ceiling
-        and remediate the overage by dropping the lowest-value exemplars
-        (`FR-SETUP-11`, `CT-SETUP-09`, #53).
+        """Measure each (question, criterion) prompt prefix against the configured token ceiling,
+        and fix any overage by dropping the lowest-value worked examples (FR-SETUP-11,
+        CT-SETUP-09).
 
         A pair's prefix is what a judge prompt would assemble: the question's prompt
         and reference solution, the criterion's construct, its band descriptors, and
@@ -314,8 +312,8 @@ class KeysAndPolicyMixin:
         return report
 
     def store_calibration_papers(self, document_ids: Sequence[DocumentId]) -> None:
-        """Accept the teacher-marked calibration papers and record that they were
-        stored — and that nothing was derived from them (`FR-SETUP-15`, #53).
+        """Store the teacher-marked calibration papers and record that they were stored, and that
+        nothing was derived from them (FR-SETUP-15).
 
         The papers travel with the package version as a step record naming every
         uploaded document; no ambiguity discovery runs over them here, and the

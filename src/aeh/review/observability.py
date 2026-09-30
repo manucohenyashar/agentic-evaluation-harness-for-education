@@ -16,18 +16,10 @@ class ObservabilityMixin:
     """The run's counters, their emissions, and the budget-exhaustion alerts."""
 
     def observability_counters(self, run_id: str) -> dict[str, Any]:
-        """The run's counter surface (`CT-REVIEW-18`): every name in
-        ``OBSERVABILITY_COUNTERS`` as a key, with the value the service's own
-        bookkeeping supports. ``blind_completion_rate`` is measured from #111's
-        blind flow — answered refs over drawn refs for this run — and is
-        ``None`` for a run that never drew, which stays an unmeasured rate,
-        never a silent zero.
-        ``override_rate_by_criterion`` is a per-criterion *count* of
-        edit/override labels for now — the denominator a rate divides by (the
-        judgments the criterion received) is #115's read over the stored
-        labels, and a count is the honest numerator the service itself
-        observed; the name is the contract's (`CT-REVIEW-18`'s plan), the
-        shape is decided there."""
+        """The run's counters (CT-REVIEW-18): every name in `OBSERVABILITY_COUNTERS`, with the
+        value the service's own records support. `blind_completion_rate` is answered over drawn
+        references, or None for a run that never drew. `override_rate_by_criterion` is, for now, a
+        count of edit and override labels per criterion, not yet a rate."""
         builds = self._builds.get(run_id)
         labels = self._run_labels.get(run_id, [])
         drawn = self._blind_drawn.get(run_id)
@@ -61,22 +53,20 @@ class ObservabilityMixin:
         }
 
     def counter_emissions(self, run_id: str) -> tuple[CounterEmission, ...]:
-        """The ordered emissions the run produced (`CT-REVIEW-18`'s read back)."""
+        """The run's counter emissions, in order (CT-REVIEW-18)."""
         return tuple(self._emissions.get(run_id, ()))
 
     def exhaust_budget_on(self, criterion_id: str, administration_id: str) -> None:
-        """Record that a criterion exhausted its budget on one administration
-        (`CT-REVIEW-18`'s exhaustion signal). A repeat for an administration
-        already recorded does not extend the streak: the signal is that the
-        criterion exhausted, once per administration."""
+        """Record that a criterion used up its review budget in one administration (CT-REVIEW-18).
+        Recording the same administration again does not lengthen the streak."""
         streak = self._exhaustions.setdefault(criterion_id, [])
         if administration_id not in streak:
             streak.append(administration_id)
 
     def alerts(self) -> tuple[ReviewAlert, ...]:
-        """The standing alerts: one per criterion whose exhaustion streak has
-        reached `ALERT_MIN_CONSECUTIVE_ADMINISTRATIONS`, recomputed from the
-        retained sequence — never reset between terms (`CT-REVIEW-18`)."""
+        """The standing alerts: one per criterion whose run of budget exhaustion has reached
+        `ALERT_MIN_CONSECUTIVE_ADMINISTRATIONS`, recomputed from the kept history and never reset
+        between terms (CT-REVIEW-18)."""
         return tuple(
             ReviewAlert(
                 name=REVIEW_BUDGET_EXHAUSTION_ALERT,
@@ -94,16 +84,15 @@ class ObservabilityMixin:
         names: tuple[str, ...],
         values: Mapping[str, Any],
     ) -> None:
-        """One observability emission, stamped at the service's clock and
-        attributed to the run (`CT-REVIEW-18`'s seam 4)."""
+        """Record one counter emission, stamped with the service's clock and attributed to the run
+        (CT-REVIEW-18)."""
         self._emissions.setdefault(run_id, []).append(
             CounterEmission(at=self._clock(), names=names, values=dict(values))
         )
 
     def _record_action_emission(self, labels: Sequence[LabelRecord]) -> None:
-        """The per-action emission (`CT-REVIEW-18`): minutes used and the
-        running mean, emitted together at the instant the labels were written —
-        one emission per action, not per label (a group action is one decision)."""
+        """The per-action emission (CT-REVIEW-18): minutes used and the running mean, emitted once
+        per action when its labels are written (a group action is one decision)."""
         if not labels:
             return
         run_id = self._attribution_run()

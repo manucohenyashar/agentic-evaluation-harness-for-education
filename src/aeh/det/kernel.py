@@ -42,7 +42,7 @@ from .errors import (
 
 @dataclass(frozen=True)
 class DetOutcome:
-    """One cell of the §7.8 situation table, resolved.
+    """The resolved outcome for one cell of the design's situation table (§7.8).
 
     `band` is `'correct'` / `'incorrect'`, or the `'unresolved'` marker for a
     row that was never scored. `credit` is the earned fraction (1.0 on an
@@ -80,7 +80,7 @@ def evaluate(
     partial_credit: str | None = None,
     option_set: Sequence[str] | None = None,
 ) -> DetOutcome:
-    """Score one selection read against one key under one policy.
+    """Score one selection read against one answer key under one partial-credit policy.
 
     A pure function of (selection, key, policy) plus the two states
     M-INGEST recorded about the read — no I/O, no clock, no configuration
@@ -198,7 +198,7 @@ def evaluate(
             selection_read=chosen,
         )
     # POLICY_PER_OPTION — cells 9/10, with the over-selection rule stated in
-    # the module docstring: each non-key selection cancels one earned credit,
+    # `docs/code-notes/det.md`: each non-key selection cancels one earned credit,
     # floored at zero.
     earned = len(chosen_set & key_set) - len(chosen_set - key_set)
     credit = max(0, earned) / len(resolved_key)
@@ -213,9 +213,9 @@ def evaluate(
 
 
 def _decode_answer_key(raw: Any, criterion_id: str) -> tuple[str, ...]:
-    """`criterion.answer_key` is a JSON list of option ids (one for
-    single-select, several for multi-select). A malformed key is a
-    package-integrity failure named here, not a JSON leak."""
+    """Decode `criterion.answer_key`, a JSON list of option ids (one for single-select, several for
+    multi-select). A malformed key is reported here as a package-integrity failure rather than as a
+    JSON error."""
     if raw is None or raw == "":
         return ()
     try:

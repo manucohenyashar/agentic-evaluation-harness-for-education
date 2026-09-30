@@ -78,9 +78,8 @@ EVALUATIVE_MATCH_ENV = "HARNESS_INGEST_EVALUATIVE_TERMS"
 
 
 def _configured_evaluative_terms() -> tuple[str, ...]:
-    """The configured list: the module's own terms plus the environment's synonyms,
-    read at call time (the knob exists so a school can add its own vocabulary
-    without a code change)."""
+    """The evaluative words to refuse: the built-in list plus any synonyms from the environment,
+    read at call time, so a school can add its own words without a code change."""
     raw = os.environ.get(EVALUATIVE_MATCH_ENV)
     if not raw:
         return EVALUATIVE_TERMS
@@ -344,11 +343,8 @@ def _configured_dpi() -> int:
 
 
 def _configured_resolution_floor() -> int:
-    """The V0 resolution floor, read at call time (`CLAUDE.md` seam 3): the
-    production default is the profile's 150, the knob exists so a differently
-    calibrated profile can move it. A floor under 1 px would silently disable
-    the gate (every raster clears it), and a fail-silent knob is the one seam
-    defect this rule exists to prevent."""
+    """The V0 resolution floor, read from its knob at call time; the default is the profile's 150.
+    A floor below 1 would disable the gate, so it is refused."""
     raw = os.environ.get(RESOLUTION_FLOOR_ENV)
     if not raw:
         return DEFAULT_RESOLUTION_FLOOR
@@ -365,13 +361,9 @@ def _configured_resolution_floor() -> int:
 
 
 def _ocr_conf_floor() -> float:
-    """The OCR confidence floor, read at call time (`CLAUDE.md` seam 3): the
-    production default is the design's 0.70 assumption, the knob exists so a
-    slower test box or a differently calibrated transcriber can move it.
-    Range-checked like its `_configured_float` siblings — a floor outside
-    0..1 would silently disable the outcome (nothing below it) or flag every
-    submission, and a fail-silent knob is the one seam defect this rule
-    exists to prevent."""
+    """The OCR confidence floor, read from its knob at call time; the default is the design's 0.70
+    assumption. A value outside 0..1 would disable the check or flag every submission, so it is
+    refused."""
     raw = os.environ.get(OCR_CONF_FLOOR_ENV)
     if not raw:
         return DEFAULT_OCR_CONF_FLOOR

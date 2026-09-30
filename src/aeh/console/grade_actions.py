@@ -6,7 +6,7 @@ from .records import ControlOutcome, GradeRecord
 
 
 class GradeActionsMixin:
-    """Amends a grade, records the provenance-gate outcome and sets the review window."""
+    """Amends a grade, records the export-gate outcome and sets the review window."""
 
     def amend_grade(
         self,
@@ -16,11 +16,9 @@ class GradeActionsMixin:
         new_band: str = "",
         actor: str = "operator",
     ) -> GradeRecord:
-        """One amendment, as §11.8 writes it: the delivered grade is preserved — its
-        `finalized_at` is the record of when the batch was delivered, and an amendment is
-        a later correction, not a re-delivery — and the correction lands as a **new
-        revision** on the append-only history. The superseded revision stays readable
-        (`FR-CONSOLE-21`; the differential `CT-CONSOLE-15` asserts).
+        """Amend a grade as §11.8 describes: the delivered grade keeps its `finalized_at` (the
+        record of when it was delivered), and the correction is stored as a new revision in the
+        append-only history. The old revision stays readable (FR-CONSOLE-21, CT-CONSOLE-15).
 
         On a store the amendment is M-GRADE's (`GradingService.amend`, #398): the new
         revision is in the ledger, readable by any console, and a refusal raises
@@ -71,10 +69,9 @@ class GradeActionsMixin:
 
     def record_gate_outcome(self, package_version: str, outcome: str,
                             actor: str | None = None) -> None:
-        """Record the provenance gate's outcome for the validation record
-        (`FR-CONSOLE-23`): a gate whose result is not recorded is indistinguishable
-        from one that was skipped (`R71`), so the outcome is written whether the gate
-        passed or refused."""
+        """Record the export gate's outcome for the package (FR-CONSOLE-23). It is written whether
+        the gate passed or refused, because an unrecorded gate cannot be told apart from a skipped
+        one (R71)."""
         # Written to the package's own store (#528, design 1.9 §5.1 R16): Tier D's
         # `audit_record` is the wrong home, because M-STATS' `promote` sources unclaimed audit
         # rows. The in-memory copy stays for the storeless console.
@@ -92,10 +89,10 @@ class GradeActionsMixin:
         self._audit.append(f"provenance gate for {package_version}: {outcome}")
 
     def set_review_window(self, run_id: str = "r-unaddressed", *, hours: float) -> ControlOutcome:
-        """Set the review window: one `grade_policy.review_window_hours` row, and the
-        console's own record that finalization for this run is delayed, never withheld
-        (`FR-CONSOLE-22`). On a store the window is M-PKG's column only (#398); the
-        in-memory record is the storeless audit double's."""
+        """Set the review window: one `grade_policy.review_window_hours` row, plus the console's
+        note that finalization for this run is delayed, never withheld (FR-CONSOLE-22). On a real
+        store only M-PKG's column is written (#398); the in-memory note is for the storeless test
+        double."""
         if getattr(self._store, "data_dir", None) is None:
             self._review_windows[run_id] = hours
         return self.perform(

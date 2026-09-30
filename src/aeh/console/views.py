@@ -24,14 +24,15 @@ from .records import GradeRecord, ProgressReport, ScorePresentation, ValidationR
 
 
 class ReadViewsMixin:
-    """Progress, telemetry, the validation record, scores, assembled requests and grade revisions."""
+    """Progress, telemetry, the validation record, scores, assembled requests and grade revisions.
+    """
 
     # -- observability (design §3.19) --------------------------------------------------------------------
 
     def telemetry(self) -> dict[str, tuple[str, ...]]:
-        """The four declared metrics with their dimensions. The skip rate is per setup
-        step, never aggregate — an aggregate skip rate answers none of §11.9's six pilot
-        questions (`CT-CONSOLE-22`)."""
+        """The four declared metrics and their dimensions. The skip rate is per setup step, never a
+        single total, because a total answers none of §11.9's six pilot questions (CT-CONSOLE-22).
+        """
         return {
             RENDER_TIME_METRIC: ("screen",),
             CONTROL_ACTION_METRIC: ("type",),
@@ -40,8 +41,8 @@ class ReadViewsMixin:
         }
 
     def telemetry_values(self, metric: str, *, dimension: str | None = None) -> tuple[str, ...]:
-        """The values a metric carries along a dimension — per step by name, per action
-        type by name, never an aggregate."""
+        """The values a metric has along one dimension (per step or per action type), never a
+        total."""
         if metric == SKIP_RATE_METRIC and dimension == "setup_step":
             return OPTIONAL_SETUP_STEPS
         if metric == CONTROL_ACTION_METRIC and dimension == "type":
@@ -57,12 +58,10 @@ class ReadViewsMixin:
     def progress(
         self, run_id: str = "r-unaddressed", *, queries: list[str] | None = None
     ) -> ProgressReport:
-        """The run's progress at `CT-ORCH-10`'s granularity, and at nothing finer: the
-        console derives nothing beyond what `M-ORCH` exposes (`CT-CONSOLE-09`). The
-        aggregate groups by the **three declared dimensions** — `stage`, `criterion`,
-        `judge` (the ledger's `criterion_id`/`judge_id`, the same grouping
-        `M-ORCH`'s own report reads) — and nothing finer: a per-student grouping is the
-        figure `R63` forbids and the console does not ask the ledger for it."""
+        """The run's progress, grouped by stage, criterion and judge (the ledger's `criterion_id`
+        and `judge_id`, as M-ORCH's own report groups them), and nothing finer (CT-ORCH-10,
+        CT-CONSOLE-09). A per-student breakdown is forbidden (R63), and the console never asks for
+        one."""
         log = queries if queries is not None else []
         rows = self._read_cohort_files(
             "SELECT stage, criterion_id, judge_id, status, COUNT(*) AS n FROM work_unit "
@@ -103,14 +102,11 @@ class ReadViewsMixin:
     def validation_record(
         self, package_version: str = "pkg-unaddressed", *, queries: list[str] | None = None
     ) -> ValidationRecord:
-        """The package's validation record, as the provenance gate reads it: what exists
-        for this package, scoped to the population it was measured on — and the absence
-        sentence when nothing does (`FR-CONSOLE-26`). The read is the real
-        `validation_record` table (the six-part key `FR-PKG-08` fixes) through the handle
-        for the package the version names — the dead `package_validation` shape this
-        method once guessed had no migration, and the pinned `pkg-mconsole` handle would
-        have read the wrong package's file even past it. Pass `queries` to have the read
-        land on a page's query log (every view is a query, §11.7)."""
+        """The package's validation record as the export gate reads it: what exists for the
+        package, limited to the population it was measured on, or the absence sentence when there
+        is nothing (FR-CONSOLE-26). It reads the real `validation_record` table (keyed as FR-PKG-08
+        defines) through the handle for the package the version names. Pass `queries` to add the
+        read to a page's query log (§11.7)."""
         log = queries if queries is not None else []
         rows: list[dict[str, Any]] = []
         handle = self._package_handle_for(package_version)
@@ -153,9 +149,9 @@ class ReadViewsMixin:
     # -- grades, as the consumer surfaces read them ---------------------------------------------------------
 
     def render_scores(self, submission_id: str) -> ScorePresentation:
-        """One submission's score rows, presented per state. The presentation of the
-        breaker-refused row differs from the ordinary provisional row — a panel that
-        refused to grade never renders as a panel awaiting review (`CT-AGG-07`)."""
+        """One submission's score rows, presented by state. A row the panel refused to grade is
+        shown differently from a normal provisional row, so it never looks like it is waiting for
+        review (CT-AGG-07)."""
         queries: list[str] = []
         rows = self._read_cohort_files(_SELECT_SCORES, queries, submission_id=submission_id)
         return ScorePresentation(submission_id=submission_id, rows=tuple(rows))
@@ -163,10 +159,9 @@ class ReadViewsMixin:
     def assembled_request_for(
         self, *, submission_ref: str, criterion_id: str, resumed: bool = False
     ) -> dict[str, Any]:
-        """The scoring request a (possibly resumed) unit assembles, as `M-JUDGE`'s
-        `assemble` would receive it. Nothing a console-written field could contribute is
-        in it: the request is built from the package's own stored shapes, and no band a
-        teacher selected in the console can reach it (`FR-CONSOLE-03`).
+        """The scoring request a unit (possibly resumed) builds, as M-JUDGE's `assemble` would
+        receive it. It is built only from the package's stored data, so no band a teacher picked in
+        the console can reach it (FR-CONSOLE-03).
 
         `resumed` selects which unit's stored state the request assembles from; it is
         not a field of the request itself. A resume flag riding in the payload would be
@@ -190,11 +185,9 @@ class ReadViewsMixin:
         }
 
     def export_grades(self, run_id: str, *, fmt: str = "csv") -> tuple[GradeRecord, ...]:
-        """The export preview: the settled grades. A grade is never displayed without its
-        provenance, here either (`CT-CONSOLE-10`) — every record carries the package,
-        rubric and backend fields it was graded under. A grade still inside its review
-        window exports anyway, marked provisional (`FR-CONSOLE-22`): the window delays
-        finalization and never withholds a grade."""
+        """The export preview: the final grades, each with the package, rubric and backend it was
+        graded under (CT-CONSOLE-10). A grade still inside its review window is exported anyway,
+        marked provisional (FR-CONSOLE-22)."""
         queries: list[str] = []
         if getattr(self._store, "data_dir", None) is None and self._grade_ledger:
             return tuple(
@@ -216,13 +209,10 @@ class ReadViewsMixin:
     def grade_revision(
         self, *, submission_ref: str, revision: int | None = None, actor: str = "operator"
     ) -> GradeRecord | None:
-        """Read one revision of a grade off the append-only history (`FR-GRADE-09`):
-        the superseded revision stays readable after an amendment writes the next one —
-        which is the differential that separates superseding a delivered grade from
-        mutating it. `revision=None` reads the CURRENT revision (see below). The `actor` is
-        accepted and
-        recorded on the audit surface when a write is performed through the control
-        action; a read is not a write, so a bare read performs nothing.
+        """Read one revision of a grade from the append-only history (FR-GRADE-09). Old revisions
+        stay readable after an amendment, which is what shows a grade was superseded rather than
+        changed in place. `revision=None` reads the current revision (see below). `actor` is
+        recorded when a write happens through a control action; a read writes nothing.
 
         `revision=None` reads the **current** revision — the row flagged `is_current = 1`
         (`FR-CONSOLE-39`, GAP-20), which is the grade the teacher is looking at. It is not

@@ -68,7 +68,7 @@ CALIB_NONINFERIORITY_THRESHOLD_ENV: str = "HARNESS_CALIB_NONINFERIORITY_THRESHOL
 def _noninferiority_threshold_from_env(
     environ: Mapping[str, str] | None = None,
 ) -> float | None:
-    """The env fallback for the threshold (seam 3), or None when unset or mis-set.
+    """The threshold from the environment, or None when unset or invalid.
 
     A value outside [0, 1] is treated as unset rather than raising: the mis-set value
     then falls through to the refusal that names the real problem — no threshold
@@ -85,7 +85,7 @@ def _noninferiority_threshold_from_env(
 
 
 #: The standing institutional threshold declaration, and the moment it was fixed. One-shot:
-#: the gate run that uses it consumes it (see the module docstring's interpretation).
+#: the gate run that uses it consumes it (see `docs/code-notes/calib.md`'s interpretation).
 _INSTITUTIONAL_THRESHOLD: float | None = None
 
 
@@ -93,14 +93,14 @@ _INSTITUTIONAL_THRESHOLD_DECLARED_AT: datetime | None = None
 
 
 def declare_institutional_threshold(value: float) -> datetime:
-    """Declare the institution's non-inferiority threshold and return when it was fixed
-    (`FR-CALIB-08`, `CT-CALIB-13`).
+    """Declare the institution's non-inferiority threshold, and return when it was set
+    (FR-CALIB-08, CT-CALIB-13).
 
     The declaration is the owned decision the gate consumes: it must exist **before**
     the comparison, which the returned timestamp is the record of. The declaration is
     one-shot — the next gate run that uses it consumes it, so a fresh comparison needs a
     fresh declaration (the strictest honest reading of "declared before the comparison";
-    see the module docstring). The value is a fraction of a class, so anything outside
+    see `docs/code-notes/calib.md`). The value is a fraction of a class, so anything outside
     [0, 1] is refused here, at the declaration."""
     global _INSTITUTIONAL_THRESHOLD, _INSTITUTIONAL_THRESHOLD_DECLARED_AT
     value = float(value)
@@ -117,9 +117,8 @@ def declare_institutional_threshold(value: float) -> datetime:
 
 
 def _clear_institutional_threshold() -> None:
-    """Clear any standing threshold declaration. The declaration is one-shot, so this is
-    hygiene for the knob sweep: an observation must read the value it injected, not a
-    leftover declaration that outranks the env."""
+    """Clear any standing threshold declaration. A declaration outranks the environment, so the
+    knob sweep clears it first to read the value it set."""
     global _INSTITUTIONAL_THRESHOLD, _INSTITUTIONAL_THRESHOLD_DECLARED_AT
     _INSTITUTIONAL_THRESHOLD = None
     _INSTITUTIONAL_THRESHOLD_DECLARED_AT = None
@@ -127,8 +126,7 @@ def _clear_institutional_threshold() -> None:
 
 @dataclass(frozen=True)
 class GateResult:
-    """One gate's outcome, with what the gate did next to it (seam 4) — never a bare
-    pass/fail.
+    """One gate's outcome, together with what the gate did.
 
     ``threshold_used`` is the value the comparison applied and ``threshold_source`` is
     where it came from — "argument" when the caller passed one, "configuration" when it
@@ -176,7 +174,8 @@ def non_inferiority(
     *,
     environ: Mapping[str, str] | None = None,
 ) -> GateResult:
-    """The dual-scoring non-inferiority gate (`FR-CALIB-08`, `CT-CALIB-07`/`-13`).
+    """The non-inferiority gate: dual-score the class under R0 and R1, and refuse R1 if too many
+    papers shift by a full band (FR-CALIB-08, CT-CALIB-07, CT-CALIB-13).
 
     Compares the full class's dual scores — the R₀ and R₁ bands the registered roster
     carries, the recorded-transport form — and rejects the revision when **more than**
@@ -299,7 +298,8 @@ def non_inferiority(
 
 
 def back_translate(r0: str, r1: str, off_panel: OffPanelModelRef | None = None) -> GateResult:
-    """The adversarial back-translation gate (`FR-CALIB-09`, `CT-CALIB-08`, §6.6).
+    """The back-translation gate: an off-panel model tries to construct a response that R0 and R1
+    would score differently (FR-CALIB-09, CT-CALIB-08, design §6.6).
 
     A model **not in the scoring panel** is asked to construct a student response on
     which R₀ and R₁ would assign different scores. A successful construction is evidence
@@ -400,10 +400,10 @@ def back_translate(r0: str, r1: str, off_panel: OffPanelModelRef | None = None) 
 
 def _construct_through_provider(provider: Any, off_panel: "OffPanelModelRef", r0: str, r1: str,
                                 angles: Sequence[str]) -> tuple["_ConstructionAttempt", ...]:
-    """Ask the off-panel checker, through `InferenceProvider.complete()`, once per angle, for a
-    student response on which R0 and R1 would assign different scores (#536, CT-PROV-08).
-    An unavailable provider surfaces as `OffPanelUnavailable`, and nothing falls back to
-    another model: the gate ends at R0 like every other enumerated failure."""
+    """Ask the off-panel checker, once per angle through `InferenceProvider.complete()`, for a
+    student response that R0 and R1 would score differently (CT-PROV-08). An unavailable provider
+    raises `OffPanelUnavailable` and nothing falls back to another model: the gate stops at R0 like
+    any other failure."""
     from aeh.conf import ModelRef
     from aeh.prov import PromptPayload, ProviderError, SamplingParams
 
@@ -454,8 +454,8 @@ def _construct_through_provider(provider: Any, off_panel: "OffPanelModelRef", r0
 
 @dataclass(frozen=True)
 class PinnedRevision:
-    """The version pin a revision carries once approved (`FR-CALIB-11`, `CT-CALIB-09`):
-    the package version, the approver, and the moment of the approval.
+    """The pin an approved revision carries: the package version, the approver and the approval
+    time (FR-CALIB-11, CT-CALIB-09).
 
     The approver is the field that matters — a revision pinned with a version and a time
     but no approver is a rubric change nobody owns. The durable record rides the
@@ -469,7 +469,7 @@ class PinnedRevision:
 
 
 def pin_revision(r1: str, *, approved_by: str) -> PinnedRevision:
-    """Pin the approved revision as R₁: version, approver, timestamp (`CT-CALIB-09`).
+    """Pin the approved revision as R1, with version, approver and timestamp (CT-CALIB-09).
 
     The approver is required at the boundary — a pin with a version and a time but no
     approver is a rubric change nobody owns. The pin value is returned for the caller to

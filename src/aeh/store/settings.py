@@ -163,7 +163,7 @@ def _int_env(name: str, default: int, environ: Mapping[str, str] | None = None) 
 
 
 def data_dir_from_environment(environ: Mapping[str, str] | None = None) -> Path:
-    """`HARNESS_DATA_DIR`, or a refusal that names it.
+    """The data directory from `HARNESS_DATA_DIR`, or a refusal naming that variable.
 
     No default path. A store that silently picked one would put student work somewhere the
     operator did not choose, and Tier C is the largest PII surface in the system (§3.3 security).

@@ -18,7 +18,7 @@ from typing import Any, Sequence
 
 @dataclass(frozen=True)
 class ProvenanceEntry:
-    """One `real_verbatim` exemplar the export gate is holding (`FR-PKG-11`)."""
+    """One worked example marked `real_verbatim` that is holding the export gate (FR-PKG-11)."""
 
     exemplar_id: str
     package_version_id: str
@@ -28,8 +28,8 @@ class ProvenanceEntry:
 
 @dataclass(frozen=True)
 class ProvenanceReport:
-    """What `export_provenance_report()` answers: the gate state and every row holding
-    it, so the console's approval screen is actionable (`FR-PKG-12`)."""
+    """What `export_provenance_report()` returns: the gate's state and every example holding it, so
+    the console's approval screen can act on it (FR-PKG-12)."""
 
     package_id: str
     package_version_id: str
@@ -39,7 +39,7 @@ class ProvenanceReport:
 
 @dataclass(frozen=True)
 class ExportReport:
-    """What one export did (`CLAUDE.md` seam 4 — per-field, not a boolean)."""
+    """What one export did, field by field."""
 
     package_id: str
     package_version_id: str
@@ -57,9 +57,9 @@ class ExportReport:
 
 @dataclass(frozen=True)
 class ImportReport:
-    """What one import did. `package_version_id` is the Protocol's answer;
-    `signature_status` is NFR-PKG-04's mandatory report — an unsigned or mismatched
-    package is REPORTED and imported, never silently accepted, never refused outright.
+    """What one import did. `package_version_id` is the imported version; `signature_status` says
+    whether the signature checked out (NFR-PKG-04). An unsigned or mismatched package is imported
+    and reported, never silently accepted or refused.
 
     `signature_status` ∈ verified | unsigned | mismatched | unverifiable (a signature
     is present but this installation holds no key — distinct from both unsigned and
@@ -94,8 +94,8 @@ NO_DATA_REASONS: tuple[str, ...] = (
 
 
 class NoValidationData:
-    """The absence of validation evidence, as a value: ONE type for the whole system
-    (`FR-PKG-09`, `FR-STATS-04`, CT-STATS-26 — design 1.9 §3.13, #512).
+    """The absence of validation evidence, as a value. The whole system uses this one type
+    (FR-PKG-09, FR-STATS-04, CT-STATS-26).
 
     Defined here, in the lower module, and re-exported by `aeh.stats`, so
     `aeh.stats.NoValidationData is aeh.pkg.NoValidationData` and one `isinstance` check
@@ -174,14 +174,14 @@ class NoValidationData:
 
 
 def _rebuild_no_validation_data(fields: dict[str, Any]) -> NoValidationData:
-    """Pickle/copy reconstructor: the keyword constructor, so no field is ever set on the
-    shared singleton (no fields → the singleton itself)."""
+    """Rebuilds a `NoValidationData` for pickle and copy through the normal constructor, so the
+    shared no-fields instance is never modified."""
     return NoValidationData(**fields)
 
 
 @dataclass(frozen=True)
 class ManifestEntry:
-    """One population's validation entry in the manifest (`FR-PKG-21`)."""
+    """One population's validation entry in the package manifest (FR-PKG-21)."""
 
     population_scope_id: str
     criterion_id: str
@@ -195,11 +195,10 @@ class ManifestEntry:
 
 @dataclass(frozen=True)
 class Manifest:
-    """The package manifest (`FR-PKG-21`): per-population validation entries, the
-    weakest criterion per population, exemplar provenance and schema version — and
-    deliberately **no** field aggregating validation across populations. A package that
-    advertises one headline number repeats HLD §2.1's error in portable form; the shape
-    makes it unrepresentable."""
+    """The package manifest (FR-PKG-21): validation entries per population, the weakest criterion
+    per population, worked-example provenance and the schema version. There is deliberately no
+    field combining populations: a package that advertises one headline number repeats the error
+    described in HLD §2.1."""
 
     package_version_id: str
     schema_version: int
@@ -208,9 +207,8 @@ class Manifest:
 
 
 def _weakest_entry(entries: list[ManifestEntry]) -> list[ManifestEntry]:
-    """Flag the weakest entry per population (`FR-STATS-13`'s travel-along): the lowest
-    agreement with n >= 1. The manifest carries it deliberately — a package advertising
-    only its overall number is the portable form of the §2.1 error."""
+    """Mark the weakest entry in each population: the lowest agreement with n of at least 1
+    (FR-STATS-13)."""
     by_population: dict[str, list[ManifestEntry]] = {}
     for entry in entries:
         by_population.setdefault(entry.population_scope_id, []).append(entry)
@@ -269,7 +267,7 @@ _REVISION_COPY_KEYS: tuple[str, ...] = (
 
 @dataclass(frozen=True)
 class PackageDraft:
-    """A new package version's content, as `M-SETUP`/`M-CALIB` hand it over.
+    """The content of a new package version, as M-SETUP or M-CALIB hands it over.
 
     `criteria` names the judged criteria as bare ids (kind `open`, no bands yet) — the
     shape `create_version` writes. Bands, dependencies, options and keys are declared

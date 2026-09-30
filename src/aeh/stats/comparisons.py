@@ -44,8 +44,8 @@ if TYPE_CHECKING:
 
 
 def _require_str_or_none(member: str, **named: Any) -> None:
-    """A population key is a string or ``None``; anything else is a programming
-    error, and `CT-STATS-16` raises on programming errors."""
+    """Check that a population key is a string or None; anything else is a programming error and
+    raises (CT-STATS-16)."""
     for name, value in named.items():
         if value is not None and not isinstance(value, str):
             raise TypeError(
@@ -58,7 +58,7 @@ def _require_str_or_none(member: str, **named: Any) -> None:
 def _refuse_foreign_cohort(
     self: "ValidationStats", cohort_id: str | None, member: str
 ) -> None:
-    """Refuse a report that would name a cohort the instance does not hold.
+    """Refuse a report that names a cohort this instance does not hold.
 
     The constructor pair binds the instance to one population — ``open_stats``
     reads one cohort's rows when it is given a cohort — and a report naming a
@@ -78,7 +78,7 @@ def _refuse_foreign_cohort(
 
 
 def _paired_sides(population: Sequence[Any]) -> list[tuple[Any, Any]]:
-    """Both sides of each label's band pair, dropping the genuinely one-sided.
+    """Both bands of each label pair, leaving out labels that have only one side.
 
     The same extraction ``agreement`` makes: the label's system side
     (``_system_side``) and its teacher side, kept only where both exist. A
@@ -98,7 +98,7 @@ def _paired_sides(population: Sequence[Any]) -> list[tuple[Any, Any]]:
 def _flagged_features(
     correlations: Mapping[str, float], threshold: float
 ) -> tuple[str, ...]:
-    """The features whose ``|r|`` reaches the flag threshold, in a stable order.
+    """The surface features whose correlation `|r|` reaches the flag threshold, in a stable order.
 
     Sorted so the alert's detail line and the report's flags are deterministic
     — the same measured correlations produce the same output on two runs,
@@ -122,7 +122,7 @@ def _distribution_counts(values: Sequence[Any]) -> dict[Any, int]:
 def _total_variation(
     first: Mapping[Any, int], second: Mapping[Any, int]
 ) -> float:
-    """The total-variation distance between two band distributions.
+    """The total variation distance between two band distributions.
 
     The drift check's per-criterion measure: half the L1 distance between the
     two normalized distributions, in ``[0, 1]`` — 0.0 for identical shapes and
@@ -144,10 +144,9 @@ def compression_check(
     cohort_id: str | None = None,
     criterion_id: str | None = None,
 ) -> CompressionReport:
-    """The compression check for one criterion (`FR-STATS-06`, `CT-STATS-10`):
-    the panel's band shape against the blind gold labels' shape, measured by
-    ``band_entropy`` and ``interior_rate``, with the finding
-    (``panel_narrower``) and the co-compression limitation in the same value.
+    """Check one criterion for compression (FR-STATS-06, CT-STATS-10): compare the shape of the
+    panel's bands with the blind labels' bands, by band entropy and interior rate. Returns the
+    finding (`panel_narrower`) with the co-compression caveat.
 
     The population is the admissible one, always — the filter exists once and
     this call routes through it — narrowed to ``criterion_id`` where one is
@@ -229,10 +228,9 @@ def surface_proxies(
     *,
     subgroup: str | None = None,
 ) -> ProxyReport:
-    """The surface-proxy report for one criterion (`FR-STATS-07`): the
-    per-criterion correlations the caller measured between assigned scores and
-    the surface features that ought to be irrelevant, and the flags where a
-    feature's ``|r|`` reaches the threshold.
+    """The surface-proxy report for one criterion (FR-STATS-07): the caller's measured correlations
+    between scores and surface features that should be irrelevant (such as length), flagging any
+    feature whose `|r|` reaches the threshold.
 
     The regression's inputs are the pipeline's score rows, which this module
     does not hold — the correlations arrive through the declared
@@ -323,15 +321,10 @@ def routing_policy_validity(
     self: "ValidationStats",
     cohort_id: str | None = None,
 ) -> RoutingPolicyReport:
-    """The routing-policy validity report for one cohort (`FR-STATS-08`,
-    `CT-STATS-11`): the error rate among escalated-and-reviewed judgments
-    against the error rate among auto-accepted ones, both populations drawn
-    from the admissible labels by their ``routing`` column read through
-    ``ROUTING_POLICY_ARM_SOURCES`` — the column carries the queue's admission
-    routing (`CT-AGG-06`'s closed set, recorded for traceability), and a label
-    joins an arm when its routing names that arm or is the queue value the arm
-    corresponds to: ``reviewed`` for escalated-and-reviewed, ``auto`` for
-    auto-accepted.
+    """Whether the routing policy works for one cohort (FR-STATS-08, CT-STATS-11): compare the
+    error rate among escalated-and-reviewed judgments with the error rate among auto-accepted ones.
+    Both groups are admissible labels, split by their `routing` column through
+    `ROUTING_POLICY_ARM_SOURCES`: `reviewed` for escalated-and-reviewed, `auto` for auto-accepted.
 
     Both arms read the same filter's population — an operational label on
     either side would compare the review with itself, and the escalated arm's
@@ -402,38 +395,10 @@ def drift_check(
     baseline: Mapping[str, Sequence[Any]] | None = None,
     current: Mapping[str, Sequence[Any]] | None = None,
 ) -> "DriftReport | NoValidationData":
-    """The advisory drift check for one package (`FR-STATS-09`, `CT-STATS-12`).
+    """The advisory drift check for one package (FR-STATS-09, CT-STATS-12).
 
-    The sample is 20–30 submissions (`DRIFT_SAMPLE_RANGE`, inclusive at both
-    ends). Above the high end the check takes an even spread of the declared
-    size and reports how many it used; below the low end there is no valid
-    sample and the answer is the absence value with ``n`` as context — a drift
-    verdict computed on nineteen submissions is exactly the substitute figure
-    `CT-STATS-16` forbids. The spread is deterministic on purpose: the sample
-    must span the caller's list end to end, first and last submission
-    included, and no randomness may enter a claim's evidence.
-
-    The comparison runs over **judged** criteria only: a criterion the
-    constructor declares deterministic is excluded from
-    ``criteria_covered``, because a deterministic result carries no verdicts
-    and there is no distribution to compare (`CT-DET-02`). The sample's
-    distributions come from the declared ``current=`` channel when the caller
-    supplies one, otherwise from the constructor's admissible population —
-    the current administration's judged distribution — and
-    ``sample_source`` names which. With the constructor population as the
-    source, ``sample_size`` still describes the caller's submission sample
-    while the per-criterion distributions cover the instance's whole
-    admissible population — the disclosure is in ``sample_source`` precisely
-    so the two are never confused. The baseline comes from the caller's
-    declared ``baseline=`` channel (`M-PKG`'s records; this module writes
-    nothing and owns no baseline of its own), and ``distances`` compares the
-    two where both sides exist — the total-variation distance, with the
-    drifted criteria named at the tolerance.
-
-    ``advisory`` is always true and ``binding_threshold`` is always ``None``
-    (`CT-STATS-12`): the statement in the value says what would make it
-    binding and why none exists. Raises on programming errors only; a sample
-    below the floor is the absence value, not a raise."""
+    More detail: `docs/code-notes/stats.md`, section `comparisons.py: drift_check`.
+    """
     if package_version is not None and not isinstance(package_version, str):
         raise TypeError(
             f"drift_check() got package_version={package_version!r}; a package "
@@ -551,18 +516,13 @@ def drift_check(
 
 
 def alerts(self: "ValidationStats") -> tuple["StatsAlert", ...]:
-    """The contract alerts the instance's declared channels provoke
-    (`CT-STATS-19`). The surface-proxy alert is the only detector for a
-    criterion with an excellent κ and no validity: a length or OCR
-    correlation means that criterion is measuring something other than what
-    it claims, **whatever its agreement statistic says** — no other view in
-    the system can see it, because every other view is downstream of the
-    score. The blind-sample alert is the validation record's (#118): it reads
-    the ``administrations=`` channel the constructor declares, and fires when
-    ``STATS_BLIND_SKIP_ALERT_AFTER`` consecutive administrations ran without
-    their blind sample — the record's own "you are grading without evidence"
-    detector, and the one alert that is about the evidence rather than the
-    score.
+    """The contract alerts this instance's inputs trigger (CT-STATS-19).
+
+    The surface-proxy alert is the only thing that catches a criterion with excellent agreement but
+    no validity: a correlation with length or OCR quality means the criterion measures something
+    else, whatever its agreement says. The blind-sample alert fires when
+    `STATS_BLIND_SKIP_ALERT_AFTER` administrations in a row skipped their blind sample: grading is
+    going on without evidence.
 
     Deterministic: criteria and features in sorted order, administrations in
     declared order, one alert per maximal consecutive skip run that reaches
@@ -588,10 +548,8 @@ def alerts(self: "ValidationStats") -> tuple["StatsAlert", ...]:
 
 
 def _administration_fields(administration: Any) -> tuple[str | None, bool]:
-    """One administration's ``(cohort_id, blind_sample)`` from either spelling
-    the channel carries — a mapping (the constructor's documented shape) or a
-    duck-typed object. An administration that declares no blind-sample fact
-    did not skip: the alert detects skips, not silences."""
+    """One administration's `(cohort_id, blind_sample)`, from a mapping or an object. An
+    administration that states nothing about its blind sample did not skip it."""
     if isinstance(administration, Mapping):
         cohort_id = administration.get("cohort_id")
         blind_sample = administration.get("blind_sample", True)
@@ -604,11 +562,9 @@ def _administration_fields(administration: Any) -> tuple[str | None, bool]:
 def _blind_skip_alerts(
     administrations: Sequence[Any],
 ) -> list["StatsAlert"]:
-    """The ``blind_sample_skipped_consecutive_administrations`` alerts over the
-    declared administrations, in declared order. One alert per maximal
-    consecutive run of blind-skipped administrations that reaches the knob's
-    threshold — a run of three reports once, not twice, because the alert's
-    job is to say the evidence stopped, and saying it once per run says that."""
+    """The `blind_sample_skipped_consecutive_administrations` alerts, in the declared order: one
+    per unbroken run of skipped administrations that reaches the threshold. A run of three alerts
+    once, not twice."""
     threshold = _blind_skip_alert_after()
     alerts: list["StatsAlert"] = []
     run: list[str | None] = []

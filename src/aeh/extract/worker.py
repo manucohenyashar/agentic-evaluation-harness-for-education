@@ -31,8 +31,8 @@ from .spans import parse_spans
 
 
 class ExtractionWorker:
-    """The extraction driver: one leased unit in, a completed unit and one evidence
-    row out.
+    """Runs extraction for one leased unit: the unit in, the unit marked done and one evidence row
+    out.
 
     `ExtractionWorker(store, provider, model_ref)` — the store the row and the ledger
     transition are written through, the provider boundary (injected; the recorded
@@ -93,7 +93,7 @@ class ExtractionWorker:
         self._orchestrator = Orchestrator(store)
 
     def process(self, unit: Any) -> ExtractionResult:
-        """One extraction pass over `unit`.
+        """Run one extraction pass over `unit`.
 
         Resolves the submission's current document, assembles, calls the provider
         once per strike, parses, and writes evidence + the done transition in one
@@ -215,7 +215,7 @@ class ExtractionWorker:
     def _second_family_pass(
         self, payload: Any, params: Any, md_bytes: bytes
     ) -> dict[str, Any]:
-        """The flagged criterion's second extraction, on the different family.
+        """Extract a flagged criterion a second time, with a model from a different family.
 
         The SAME rendered prompt (the second opinion reads the same fenced
         submission, `FR-EXTRACT-10`) and the same strike budget
@@ -252,9 +252,8 @@ class ExtractionWorker:
         }
 
     def _find_unit(self, unit: Any) -> tuple[Any, Any]:
-        """The unit's cohort handle and ledger row, found by walking the cohort
-        files — the orchestrator's no-side-index discovery, consumed not re-spelled
-        (`FR-ORCH-02`)."""
+        """The unit's cohort handle and ledger row, found by walking the cohort files the way the
+        orchestrator does (FR-ORCH-02)."""
         for key in _cohort_keys_on_filesystem(self._store):
             cohort = self._store.cohort(key)
             rows = cohort.query(
@@ -269,8 +268,7 @@ class ExtractionWorker:
         )
 
     def _status_after_budget(self, cohort: Any, work_id: str) -> str:
-        """The unit's status once the strike budget ran out — the ledger's word, not
-        this module's assumption."""
+        """The unit's status after its attempts ran out, as the ledger records it."""
         rows = cohort.query(
             EXTRACT_STATEMENTS["select_work_unit"], work_id=work_id
         )
@@ -278,11 +276,10 @@ class ExtractionWorker:
         return status if status in ("quarantined", "failed") else "failed"
 
     def _result_from_ledger(self, cohort: Any, unit: Any) -> ExtractionResult:
-        """The result an already-done unit's evidence row holds — the idempotent
-        re-entry path (no provider call). With no evidence row, the ledger's own
-        word decides the report: a row is only absent when the unit went to
-        quarantine (or the budget failed it), and a clean result would lie
-        about a criterion no row was ever written for."""
+        """The result stored for a unit that is already done, so a repeat call makes no provider
+        call. With no evidence row, the ledger's status decides the result: the row is only missing
+        when the unit was quarantined or ran out of attempts, and reporting a clean result would be
+        false."""
         rows = cohort.query(EXTRACT_STATEMENTS["select_evidence"], work_id=unit.work_id)
         spans: tuple[ExtractionSpan, ...] = ()
         extractor: str | None = None

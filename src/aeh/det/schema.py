@@ -105,7 +105,7 @@ _DET_AUDIT_SEPARATION = Migration(
         # vocabulary columns default to 'judged' because every pre-existing row
         # is a judged artifact, and det writes 'deterministic' explicitly. The
         # NOT NULL + DEFAULT form is what an additive SQLite column on a
-        # populated table can carry — see the module docstring's interpretations.
+        # populated table can carry — see `docs/code-notes/det.md`'s interpretations.
         Statement("ALTER TABLE audit_record ADD COLUMN submission_id TEXT"),
         Statement("ALTER TABLE audit_record ADD COLUMN criterion_id TEXT"),
         Statement("ALTER TABLE audit_record ADD COLUMN final_points REAL"),

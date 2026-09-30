@@ -23,17 +23,15 @@ from .prompts import _INVENTORY_INSTRUCTION
 
 
 def _deterministic_criterion_id(question_id: str) -> str:
-    """The criterion id the staging convention gives a confirmed question's
-    deterministic part (`FR-SETUP-03`, #53): `CRIT-<question id>` — the convention
-    the answer keys name (`CRIT-Q4`, the rung-2 precedent)."""
+    """The criterion id for a confirmed question's multiple-choice part: `CRIT-<question id>`, the
+    id answer keys use (FR-SETUP-03)."""
     return f"CRIT-{question_id}"
 
 
 def _parse_reply(text: str) -> tuple[ProposedQuestion, ...]:
-    """Parse the model's reply into proposed questions, raising `_ReplyError` on
-    anything that is not a valid inventory — the failure the attempt loop re-requests.
-    The reply is expected to be one JSON object; prose around it is tolerated (models
-    add it), JSON-shaped text that is not an inventory is not."""
+    """Parse the model's reply into proposed questions, raising `_ReplyError` for anything that is
+    not a valid inventory, so the attempt loop asks again. The reply should be one JSON object;
+    prose around it is tolerated, JSON that is not an inventory is not."""
     stripped = text.strip()
     start, end = stripped.find("{"), stripped.rfind("}")
     if start < 0 or end <= start:
@@ -150,8 +148,8 @@ def _parse_reply(text: str) -> tuple[ProposedQuestion, ...]:
 
 
 def _question_to_dict(question: ProposedQuestion) -> dict:
-    """The catalog's record shape for `write_confirmed_inventory` — plain mappings,
-    because the data layer does not import this module's types."""
+    """A question in the plain-mapping shape `write_confirmed_inventory` stores; M-PKG does not
+    import M-SETUP's types."""
     return {
         "question_id": question.question_id,
         "ordinal": question.ordinal,
@@ -167,10 +165,10 @@ def _question_to_dict(question: ProposedQuestion) -> dict:
 
 
 def _assert_confirmed_shape(questions: Sequence[ProposedQuestion]) -> None:
-    """Re-validate AFTER corrections (`CT-PKG-12` in setup's own voice): a correction
-    set can collide ordinals or duplicate ids that the proposal alone never had. The
-    catalog re-validates at the write (`InventoryError`); this pre-check keeps the
-    failure in setup's taxonomy with the correction named."""
+    """Check the inventory again after the teacher's corrections, which can create duplicate ids or
+    colliding ordinals the proposal did not have. M-PKG checks again when writing
+    (`InventoryError`); this earlier check reports the failure as a setup error naming the
+    correction."""
     if not questions:
         raise SetupError(
             "a confirmed inventory carries at least one question — the corrections "
@@ -212,10 +210,8 @@ def _assert_confirmed_shape(questions: Sequence[ProposedQuestion]) -> None:
 
 
 def _proposal_from_row(v: PackageVersionId, row: Mapping[str, Any]) -> InventoryProposal:
-    """Rebuild the stored proposal — the resume path's read (`CT-SETUP-03`: state is
-    the database). The payload's entries become `ProposedQuestion`s verbatim; a
-    malformed stored payload raises `SetupError` naming the corruption rather than
-    silently re-proposing over it."""
+    """Rebuild the stored proposal, for resuming setup (CT-SETUP-03). A malformed stored payload
+    raises `SetupError` naming the problem, instead of silently proposing again."""
     try:
         payload = json.loads(row["payload"])
         entries = payload["entries"]
@@ -261,8 +257,8 @@ class InventoryStepMixin:
     # -- Stage A: propose, confirm (BLOCKING), publish ---------------------------------------
 
     def propose_inventory(self, assessment_doc: DocumentId) -> InventoryProposal:
-        """Propose the question inventory from the assessment document — ONCE per
-        version (`CT-SETUP-16`).
+        """Propose the question inventory from the assessment document, once per version
+        (CT-SETUP-16).
 
         The document is read through `M-INGEST` (`CT-SETUP-11`); one model call goes
         out through the provider seam per attempt (`CT-SETUP-12`'s budget, env-gated).
@@ -363,12 +359,10 @@ class InventoryStepMixin:
     def confirm_inventory(
         self, proposal_id: str, corrections: Sequence[QuestionCorrection] = (),
     ) -> None:
-        """The teacher's confirmation — BLOCKING gate 1 (`§4.2.1`). Applies the
-        corrections to the stored proposal and writes the confirmed inventory through
-        `M-PKG` in one transaction; the §6.2 lock engages at this write
-        (`FR-SETUP-02`), which is why confirmation is deliberate and refuses to be
-        anonymous: the `proposal_id` must be the version's stored proposal, so the
-        teacher confirms what was actually proposed.
+        """Record the teacher's confirmation of the inventory: blocking gate 1. Applies the
+        corrections to the stored proposal and writes the confirmed inventory through M-PKG in one
+        transaction; the schema lock takes effect at this write (FR-SETUP-02). The `proposal_id`
+        must be the version's stored proposal, so the teacher confirms exactly what was proposed.
 
         Returns None by design (`§3.6`'s protocol): the confirmation's observable
         result is the locked inventory, read back through `current_proposal` /
@@ -504,9 +498,8 @@ class InventoryStepMixin:
     # -- internals ----------------------------------------------------------------------------
 
     def _staged_criterion_ids(self, v: PackageVersionId) -> set[str]:
-        """The criterion ids the staging convention creates for the confirmed
-        inventory (`#53`) — the set the read-back guard tolerates: the staged
-        criteria are the read back's anchors, not its collisions."""
+        """The ids of the criteria staged for the confirmed inventory's multiple-choice questions.
+        The read-back step expects these and does not treat them as collisions."""
         return {
             _deterministic_criterion_id(row["question_id"])
             for row in self._catalog.questions(v)
@@ -514,16 +507,11 @@ class InventoryStepMixin:
         }
 
     def _stage_deterministic_criteria(self, v: PackageVersionId) -> list[str]:
-        """Stage the deterministic criteria the confirmed inventory implies
-        (`FR-SETUP-03`, `CT-SETUP-07`, #53): one criterion per mcq/mixed question,
-        id `CRIT-<question id>`, kind `mcq`, scoring model `atomic` (the carrier the
-        gate and the acceptance rule read), `evaluation_mode='deterministic'` bound
-        explicitly (`FR-SETUP-17`; #369 gave the vocabulary storage, retiring the
-        disclosed bet C07 recorded), EXACTLY the two bands
-        correct/incorrect — the zero-point band at the lower ordinal, per FR-PKG-06's
-        monotone mapping — and the question's own option set mirrored onto the
-        criterion. Never submitted to the §5.3 test —
-        the shape is fixed by the key, not classified.
+        """Create the multiple-choice criteria the confirmed inventory implies (FR-SETUP-03,
+        CT-SETUP-07): one per `mcq` or `mixed` question, with id `CRIT-<question id>`, kind `mcq`,
+        scoring model `atomic`, `evaluation_mode='deterministic'` (FR-SETUP-17), exactly two bands
+        (incorrect at 0 points on the lower ordinal, then correct), and the question's option set.
+        These are never classified for decomposability: the answer key fixes their shape.
 
         Idempotent: an id already present is left exactly as the teacher left it
         (keyed, perhaps). Returns the ids staged BY THIS CALL. A catalog without

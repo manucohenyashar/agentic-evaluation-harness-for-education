@@ -15,9 +15,9 @@ class SetupChecksMixin:
     def _validated_readback(
         self, criteria: Sequence[Mapping]
     ) -> tuple[dict, ...]:
-        """The structural half of the read-back write (`CT-PKG-12`): ids, the question
-        anchor, the band rules (`FR-PKG-06`) and the justification rule
-        (`FR-SETUP-04`). Descriptor content is M-SETUP's bar, not this module's."""
+        """Check the structure of a rubric read-back before it is written (CT-PKG-12): ids,
+        question links, the band rules (FR-PKG-06) and the justification rule (FR-SETUP-04).
+        Checking descriptor wording is M-SETUP's job."""
         validated: list[dict] = []
         seen_ids: set[str] = set()
         for index, record in enumerate(criteria):
@@ -149,11 +149,10 @@ class SetupChecksMixin:
     def _validated_inventory(
         self, questions: Sequence[Mapping]
     ) -> tuple[dict, ...]:
-        """The structural half of the confirmed write (`CT-PKG-12`): vocabulary, ids,
-        ordinals, and the option-set/type pairing — `mcq`/`mixed` carry a non-empty
-        option set, `open` carries none (a typed mismatch is a proposal bug, and the
-        schema's CHECK would refuse the row anyway; refusing it here keeps the exact
-        `InventoryError` type instead of a bare sqlite error)."""
+        """Check the structure of a confirmed inventory before it is written (CT-PKG-12): allowed
+        types, ids, ordinals, and options matching the type (`mcq` and `mixed` need options, `open`
+        has none). The schema would also refuse a mismatch, but checking here raises
+        `InventoryError` instead of a bare database error."""
         if not questions:
             raise InventoryError(
                 "a confirmed inventory carries at least one question — confirming an "

@@ -31,10 +31,9 @@ _BLIND_FLOW_QUERIES: tuple[str, ...] = (
 
 @dataclass(frozen=True)
 class BlindFlowRequest:
-    """One request the blind flow issues before submission: the path it fetches and
-    the payload it carries. Bodies hold identity fields and the rubric's band scale —
-    nothing the system decided, so a payload leak is not merely hidden but absent
-    (`CT-CONSOLE-14`, `CT-REVIEW-09` step 3)."""
+    """One request the blind-review flow sends before the teacher submits: the path and its
+    payload. Payloads carry only identity fields and the rubric's band scale, never anything the
+    system decided, so there is nothing to leak (CT-CONSOLE-14, CT-REVIEW-09 step 3)."""
 
     path: str
     body: dict[str, Any]
@@ -45,10 +44,10 @@ class BlindFlowRequest:
 
 @dataclass(frozen=True)
 class BlindFlowView:
-    """One blind unit's flow as the console serves it: the queries the flow reads
-    before submission, the payloads it sends to the browser, and whether the sitting
-    has been submitted. `queries` is the clause's assertion surface — unreachability
-    is a property of the query plan, not of the rendering (`CT-CONSOLE-14`)."""
+    """One unit's blind-review flow as served: the queries it runs before submission, the payloads
+    it sends to the browser, and whether the teacher has submitted. Tests check `queries`, because
+    the system's decision must be unreachable by the query plan itself, not just hidden in the page
+    (CT-CONSOLE-14)."""
 
     submitted: bool
     queries: tuple[str, ...]
@@ -56,10 +55,9 @@ class BlindFlowView:
 
 
 def blind_flow(*, run_id: str, submission_ref: str) -> BlindFlowView:
-    """The blind flow for one unit, before submission: what it reads (the unit's
-    identity, the criterion, the rubric's band scale; the draw arrives from M-REVIEW's
-    `blind_sample` session, not from a table) and what it sends (the same, serialized —
-    no view model with more in it than the template uses).
+    """The blind flow for one unit before submission. It reads the unit's identity, the criterion
+    and the band scale (the sample itself comes from M-REVIEW's `blind_sample` session), and sends
+    exactly that to the browser.
 
     The flow's tables are the §3.15 pair plus the rubric's band-descriptor table; the
     plan never names a system-output table or column, so no rendering decision can
@@ -86,11 +84,9 @@ def blind_flow(*, run_id: str, submission_ref: str) -> BlindFlowView:
 
 
 def blind_flow_requests(*, run_id: str, n: int) -> tuple[BlindFlowRequest, ...]:
-    """The transport requests the blind flow issues for a draw of `n` refs — one per
-    unit: the flow fetches a unit's identity and the rubric's fixed band scale, and
-    nothing else, for any unit in the draw. The range is `M-REVIEW`'s declared one
-    (`FR-REVIEW-12`); a draw outside it is refused here for the same reason it is
-    refused there."""
+    """The requests the blind flow sends for a sample of `n` units: one per unit, fetching its
+    identity and the band scale and nothing else. `n` must be in M-REVIEW's allowed range
+    (FR-REVIEW-12) and is refused here otherwise, for the same reason M-REVIEW refuses it."""
     low, high = BLIND_SAMPLE_RANGE
     if n < low or n > high:
         raise ValueError(

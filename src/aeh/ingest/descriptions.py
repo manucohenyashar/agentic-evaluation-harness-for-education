@@ -70,9 +70,9 @@ _NUMBER_PATTERN = re.compile(r"(?<![\w.])-?\d+(?:[.,]\d+)?")
 
 
 def load_bearing_facts(description: str | None) -> tuple[str, ...]:
-    """The description's load-bearing facts: its numbers, normalized (`2,50` and `2.5`
-    are one fact) and sorted, duplicates kept — a diagram with two 30° angles states a
-    different fact from one with a single 30° angle."""
+    """The facts a description depends on: its numbers, normalized (`2,50` and `2.5` are the same)
+    and sorted, duplicates kept, because a diagram with two 30° angles says something different
+    from one with a single 30° angle."""
     facts = []
     for raw in _NUMBER_PATTERN.findall(description or ""):
         value = raw.replace(",", ".")
@@ -98,11 +98,10 @@ def _second_description_min_similarity() -> float:
 
 
 def description_disagreement(primary: str | None, secondary: str | None) -> dict:
-    """Compare two descriptions of one crop (FR-INGEST-14). Returns the integrity
-    signal's body: `disagrees`, the `reasons` (`facts` when the load-bearing facts
-    differ, `similarity` when the content words fall under the floor), both fact
-    multisets, the facts only one side states, and the similarity. Never resolves
-    which description is right — that is `M-INTEG`'s and the human's."""
+    """Compare two descriptions of one graphic crop (FR-INGEST-14). Returns whether they disagree,
+    why (`facts` when the numbers differ, `similarity` when the wording is too different), both
+    sets of facts, the facts only one side states, and the similarity. It never decides which
+    description is right; that is for M-INTEG and a person."""
     left, right = load_bearing_facts(primary), load_bearing_facts(secondary)
     left_words = set(re.findall(r"[a-z]+", (primary or "").lower())) - _V4_STOPWORDS
     right_words = set(re.findall(r"[a-z]+", (secondary or "").lower())) - _V4_STOPWORDS
@@ -135,9 +134,8 @@ def description_disagreement(primary: str | None, secondary: str | None) -> dict
 
 @dataclass(frozen=True)
 class DescriptionIntegritySignal:
-    """One second-described region, as `M-INTEG` reads it (FR-INGEST-14): both
-    descriptions and their comparison. `disagreement` is `description_disagreement`'s
-    body; nothing here says which description is right."""
+    """One graphic that was described twice, as M-INTEG reads it (FR-INGEST-14): both descriptions
+    and their comparison. Nothing here says which is right."""
 
     region_id: str
     document_id: str
@@ -152,9 +150,9 @@ class DescriptionIntegritySignal:
 
 def description_integrity_signals(handle: Any, document_id: str
                                   ) -> tuple["DescriptionIntegritySignal", ...]:
-    """The FR-INGEST-14 integrity signals of one document, for `M-INTEG`: every region
-    that carries a second description, with the comparison derived from the two stored
-    texts. A disagreement is reported, never swallowed or resolved."""
+    """The description integrity signals of one document, for M-INTEG (FR-INGEST-14): every region
+    with a second description, and the comparison of the two stored texts. A disagreement is always
+    reported, never hidden or resolved."""
     rows = handle.query(INGEST_STATEMENTS["select_document_second_described_regions"],
                         document_id=document_id)
     record = second_description_pass(handle, document_id, rows=rows) or {}
@@ -186,10 +184,10 @@ def description_integrity_signals(handle: Any, document_id: str
 
 def second_description_pass(handle: Any, document_id: str, *, rows: Any = None
                             ) -> dict | None:
-    """The FR-INGEST-14 pass record stored with the document: `status` `ran` (with
-    the declared criteria, matched and failed counts and per-region outcomes) or
-    `not_run` (a revision), or `None` when no high-risk register was injected. Lets
-    `M-INTEG` tell "not high-risk" from "the pass did not run"."""
+    """The record of the second-description pass stored with the document (FR-INGEST-14): `status`
+    is `ran` (with the declared criteria, the matched and failed counts, and each region's outcome)
+    or `not_run` (a revision), or the record is None when no high-risk list was given. This lets
+    M-INTEG tell "nothing was high-risk" from "the pass did not run"."""
     if rows is None:
         rows = handle.query(
             INGEST_STATEMENTS["select_document_second_described_regions"],
@@ -227,7 +225,8 @@ _V4_STOPWORDS: frozenset[str] = frozenset(
 
 
 def _v4_lexical_affinity(a: str, b: str) -> float:
-    """Content-word Jaccard: the shared-vocabulary half of V4's semantic measure."""
+    """Word overlap (Jaccard) between two texts' content words: the shared-vocabulary part of V4's
+    semantic measure."""
     left = frozenset(_tokens(a)) - _V4_STOPWORDS
     right = frozenset(_tokens(b)) - _V4_STOPWORDS
     if not left and not right:

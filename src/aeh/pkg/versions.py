@@ -18,8 +18,8 @@ class VersionsMixin:
     def create_version(
         self, parent: PackageVersionId | None, draft: PackageDraft | None = None
     ) -> PackageVersionId:
-        """Mint a version: a brand-new package's first version (`parent=None`) or a
-        revision of an existing one (`FR-PKG-02`).
+        """Create a version: a new package's first version (`parent=None`) or a revision of an
+        existing one (FR-PKG-02).
 
         A revision **copies** the parent's content rows into the new version — the copy is
         how a §6.2 clarification edit happens (`FR-PKG-04`): the edit lands in the new,
@@ -74,8 +74,8 @@ class VersionsMixin:
         return version_id
 
     def publish(self, v: PackageVersionId, approved_by: str) -> None:
-        """Set `locked = 1` — the one permitted update to a version row, and the moment
-        its immutability begins (`FR-PKG-01`).
+        """Publish a version by setting `locked = 1`, the only update a version row allows. From
+        then on it cannot change (FR-PKG-01).
 
         `FR-PKG-06`'s count half runs at the publish boundary — every declared
         band_count fully populated and even/2..6 — and BEFORE the lock flips, so a
@@ -105,9 +105,8 @@ class VersionsMixin:
     # (FR-SETUP-02): `update_question_field` is the surface that proves it.
 
     def ensure_package(self) -> None:
-        """Create the package row if absent. `create_version` refuses to mint one —
-        its refusal names M-SETUP's initial version as the writer (`FR-SETUP-16`'s
-        first move is exactly this) — so setup's `ensure_version` calls here first."""
+        """Create the package row if it does not exist. `create_version` will not create one, so
+        M-SETUP's `ensure_version` calls this first (FR-SETUP-16)."""
         if not self._handle.query(PKG_STATEMENTS["count_package"],
                                   p=self._package_id)[0]["n"]:
             with self._handle.transaction() as tx:
@@ -115,26 +114,23 @@ class VersionsMixin:
             LOGGER.info("created package %s (M-SETUP's initial version)", self._package_id)
 
     def draft_version(self) -> PackageVersionId | None:
-        """The package's latest UNPUBLISHED version, or None — the version setup works
-        on, across processes (nothing is held in memory: resume is a fresh catalog
-        reading the same Tier P file, CT-SETUP-03). A published version is never the
-        draft: setup has already finished for it."""
+        """The package's latest unpublished version, or None: the version setup works on. It is
+        read from the file each time, so setup can resume in a new process (CT-SETUP-03). A
+        published version is never the draft."""
         rows = self._handle.query(PKG_STATEMENTS["select_latest_draft_version"],
                                   p=self._package_id)
         return rows[0]["package_version_id"] if rows else None
 
     def has_version(self) -> bool:
-        """Whether the package holds ANY version — the read that distinguishes
-        `setup has not started` (no version at all) from `setup has finished` (a
-        published version, no draft) in the console's step report."""
+        """Whether the package has any version at all. This tells "setup not started" (no version)
+        apart from "setup finished" (a published version and no draft)."""
         return bool(self._handle.query(PKG_STATEMENTS["select_has_version"],
                                        p=self._package_id))
 
     def latest_version(self) -> PackageVersionId | None:
-        """The package's most recent version, published or not (`#53`): the read
-        the FINISHED step report needs — once setup finishes the draft is gone,
-        but the step records the published version carries are still the truth
-        about what was taken, and the console reads them through this."""
+        """The package's newest version, published or not. After setup finishes there is no draft,
+        but the published version's step records still say what was taken, and the console reads
+        them through this."""
         rows = self._handle.query(PKG_STATEMENTS["select_latest_package_version"],
                                   p=self._package_id)
         return rows[0]["package_version_id"] if rows else None

@@ -12,7 +12,8 @@ from .errors import DiskFullError
 
 
 def _halt_process_on_disk_full(error: BaseException) -> None:
-    """The halt `FR-STORE-10` demands: end the process, now, from wherever the writer is.
+    """End the process immediately after a disk-full write failure, from whichever thread hit it
+    (FR-STORE-10).
 
     `os._exit` rather than `sys.exit`: it does not unwind, does not run `atexit` handlers and
     does not wait for other threads — which is the point. A run that keeps closing handles
@@ -31,7 +32,8 @@ def _halt_process_on_disk_full(error: BaseException) -> None:
 
 
 def _halt_if_disk_full(error: BaseException) -> None:
-    """Purge's door of `FR-STORE-10`'s sequence — classify, halt, raise the classified error.
+    """Used by purge: if the error is running out of disk space, halt the process and raise the
+    classified error (FR-STORE-10).
 
     Purge has no queue state to record, so its door is the classification plus the halt
     hook, and the hook's (test-only) return is answered by raising the `DiskFullError`.
@@ -47,36 +49,10 @@ def _halt_if_disk_full(error: BaseException) -> None:
 
 
 def _as_disk_full(error: BaseException, *, include_os_errors: bool = True) -> DiskFullError | None:
-    """Is this the out-of-space condition `FR-STORE-10` is about — and if so, the error.
+    """If this error means the disk is full (FR-STORE-10), the `DiskFullError` to raise; otherwise
+    None.
 
-    Two signatures, because the same condition arrives wearing two faces: SQLite's
-    `SQLITE_FULL` (`OperationalError: database or disk is full`) when the *database* layer
-    runs out — which on a dedicated data disk is the disk, not the database, since this
-    module sets no `max_page_count` — and the OS's `OSError(ENOSPC)` when the filesystem
-    itself refuses before SQLite is even reached (a `VACUUM` writing a temp copy can land
-    there, as can the WAL). Anything else is not disk-full and must not be classified as
-    one: a mis-classified error halts a process that could have kept going, and "halts the
-    process" is not an outcome to hand to a loose string match. The message check is
-    SQLite's own wording, not a guess at it.
-
-    `include_os_errors=False` is the **transaction body's** setting, and it is not a
-    technicality: a `transaction()` body runs arbitrary caller code, so a raw
-    `OSError(ENOSPC)` raised there can be the caller's *own* file export failing on an
-    unrelated path. Classifying that as the store's disk-full would halt the run for
-    somebody else's I/O. The body door therefore classifies only the store's own
-    `sqlite3` errors; the batch, commit and purge doors — whose failures are always this
-    module's I/O — keep `OSError(ENOSPC)` in scope.
-
-    Declared residual faces: out-of-space that surfaces as `SQLITE_CANTOPEN` ("unable to
-    open database file") or a generic `disk I/O error` is **not** classified, because
-    neither message is unique to exhaustion — the same codes fire for a wrong path or
-    permissions, and a mis-classified halt is exactly the loose string match this helper
-    refuses to be.
-
-    The returned error carries the decision-table wording and the original chained as its
-    cause. The door that saw the failure owns the state to record (the queue's failure
-    list and broken flag; purge has none) and then runs the halt hook — which is why this
-    helper only builds the error and never halts on its own.
+    More detail: `docs/code-notes/store.md`, section `disk_full.py: _as_disk_full`.
     """
     if isinstance(error, sqlite3.Error):
         if isinstance(error, sqlite3.OperationalError) and "database or disk is full" in str(

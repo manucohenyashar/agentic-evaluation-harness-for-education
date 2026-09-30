@@ -52,8 +52,8 @@ RUN_ALERT_NAMES: tuple[str, ...] = (
 
 @dataclass(frozen=True)
 class RunAlert:
-    """One fired alert (`FR-ORCH-32`): its stable `name`, and the `detail` that tells the
-    operator which figure fired it.
+    """One alert that fired (FR-ORCH-32): its fixed `name`, and a `detail` telling the operator
+    which figure caused it.
 
     `detail` is deliberately not part of equality-by-name usage — `OBS-05`'s oracle is
     about WHICH condition fired, and a test comparing whole objects would break whenever
@@ -68,9 +68,9 @@ class RunAlert:
 
 
 def _alert_knobs() -> dict[str, float]:
-    """The alert thresholds, read at CALL time (seam 3) and refused rather than clamped:
-    a `HARNESS_ORCH_COST_WARNING_FRACTION` of 1.5 would mean "warn only after the ceiling
-    is passed", which is not a warning, and a clamp would silently make it 1.0."""
+    """The alert thresholds, read from the environment each call (seam 3). Out-of-range values are
+    refused, not clamped: a `HARNESS_ORCH_COST_WARNING_FRACTION` of 1.5 would mean "warn only after
+    the ceiling is passed", and clamping it to 1.0 would hide the mistake."""
     return {
         "cost_warning_fraction": _env_float(
             COST_WARNING_FRACTION_ENV, COST_WARNING_FRACTION_DEFAULT,
@@ -91,9 +91,9 @@ def _alert_knobs() -> dict[str, float]:
 
 
 def _as_float(value: Any, default: float = 0.0) -> float:
-    """One figure from a row or mapping, with a declared default. A metric that is absent
-    is not a metric that is zero everywhere — but for these five rules the absent reading
-    is the quiet one (no spend recorded is no spend alert), which is the safe direction."""
+    """One number from a row or mapping, with a default. For these alert rules a missing value is
+    treated as the quiet case (no spend recorded means no spend alert), which errs on the safe
+    side."""
     if value is None:
         return default
     try:
@@ -103,8 +103,7 @@ def _as_float(value: Any, default: float = 0.0) -> float:
 
 
 def _mapping_get(row: Any, key: str, default: Any = None) -> Any:
-    """One field from whichever row shape the caller holds — `sqlite3.Row`, a mapping, or
-    a dataclass-ish object."""
+    """One field from a `sqlite3.Row`, a mapping or an object."""
     try:
         value = row[key]
     except (KeyError, IndexError, TypeError):
@@ -113,7 +112,7 @@ def _mapping_get(row: Any, key: str, default: Any = None) -> Any:
 
 
 def paused_milliseconds(control_rows: Any, *, now: str) -> float:
-    """How long the run spent paused, from its APPLIED control rows (`FR-ORCH-33`).
+    """How long the run was paused, from its applied control rows (FR-ORCH-33).
 
     Pairs each `pause` with the next `resume` after it. Two cases decide the shape:
 
@@ -143,7 +142,7 @@ def paused_milliseconds(control_rows: Any, *, now: str) -> float:
 
 
 def _provider_config(run_row: Any) -> dict[str, Any]:
-    """The run's FROZEN backend snapshot as a mapping, or empty when there is none.
+    """The run's frozen backend snapshot as a mapping, or empty if there is none.
 
     `run.provider_config` is the run as it was STARTED — the ceiling, the currency, the
     retention setting. Reading current configuration instead would relabel a finished
@@ -159,9 +158,9 @@ def _provider_config(run_row: Any) -> dict[str, Any]:
 
 
 def _as_utc(timestamp: Any) -> Any:
-    """One ledger timestamp as an aware datetime, or `None` when there is no honest one —
-    `_elapsed_seconds_since`'s reading, factored out so the two agree about what a naive
-    stamp means (UTC) and about an unparseable one (no reading, never a guess)."""
+    """One stored timestamp as a timezone-aware datetime, or None if it cannot be parsed. A
+    timestamp without a timezone is treated as UTC. Shared with `_elapsed_seconds_since` so both
+    read timestamps the same way."""
     if not timestamp:
         return None
     try:
@@ -174,8 +173,8 @@ def _as_utc(timestamp: Any) -> Any:
 
 
 def _millis_between(start: Any, end: Any) -> float:
-    """Milliseconds between two stored timestamps, or 0.0 when either is unreadable —
-    an unparseable stamp must not make the clock negative."""
+    """Milliseconds between two stored timestamps, or 0.0 if either cannot be parsed, so a bad
+    timestamp never produces a negative time."""
     began, ended = _as_utc(start), _as_utc(end)
     if began is None or ended is None:
         return 0.0
@@ -190,7 +189,7 @@ def evaluate_alerts(
     budget_state: Any = None,
     cache_history: Any = (),
 ) -> tuple[RunAlert, ...]:
-    """`FR-ORCH-32`: the run's fired alerts, as a pure function of already-read state.
+    """The run's fired alerts (FR-ORCH-32), computed purely from state that was already read.
 
     Pure on purpose. Every input is a value the caller has already gathered, so the rules
     can be exercised one condition at a time without a store, a clock or a model call —

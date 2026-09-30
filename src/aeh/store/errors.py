@@ -16,51 +16,13 @@ class StoreError(Exception):
 
 
 class ConfigurationProblem(StoreError):
-    """The data directory or a knob is unusable. Raised before any file is touched."""
+    """The data directory or a knob cannot be used. Raised before any file is touched."""
 
 
 class IncompleteMigrationChainError(StoreError):
-    """The process opened a tier before every module that contributes its migrations was imported.
+    """A tier was opened before every module that adds migrations to it had been imported.
 
-    The chains in `TIER_MIGRATIONS` are **concatenated at import time** by the modules that own
-    the schema they add — Tier P: `aeh.pkg` and `aeh.det`; Cohort: `aeh.ingest`, `aeh.det`,
-`aeh.orch`, `aeh.extract`, `aeh.judge`, `aeh.synth`, `aeh.agg` and `aeh.grade`; Tier D:
-    `aeh.det` and `aeh.integ` (#375's `calib_dual_scored_roster` is declared in THIS module,
-    for the reason its own block gives) — so the chain an open sees is only as long
-    as the list of contributing modules the process has imported so far. A file opened on the
-    short chain
-    builds at the base schema, and the columns the missing migrations would have added surface
-    **later, far from the open**, as `sqlite3.OperationalError: no such column:
-    parent_version_id` — #46's probe, disclosed in PR #208 and found suite-wide by #94, whose
-    seeds chose between the two worlds. #234's guard (`COMPLETE_SCHEMA_VERSIONS`, checked by
-    `_open_tier` before the tier file's parent directory is made and before any connection is
-    opened — `open_store`'s layout skeleton is made regardless) turns that distant phantom into
-    a refusal **at the open site, naming the cause**. The fix on the
-caller's side is one line — `import aeh.agg, aeh.det, aeh.extract, aeh.grade,
-    aeh.ingest, aeh.integ, aeh.judge, aeh.orch, aeh.pkg, aeh.synth,
-    aeh.review`
-    registers every tier's complete chain (`import aeh.pkg` alone is *not* enough: it does not
-    import `aeh.det`, and Tier P's chain is short by one migration without it; `aeh.extract`
-    pulls `aeh.ingest` and `aeh.orch` in transitively but is itself needed for Cohort's tail —
-    11 of its 18 migrations — `aeh.orch` for #61's `orch_run_lifecycle`, `aeh.synth` for
-    #97's `synth_narrative_key`, `aeh.judge` for #78's `judge_verdict_columns` and
-    #80's `judge_verdict_response_columns` — `aeh.orch` again for #62's
-    `orch_report_indexes`, `aeh.agg` for #92's `agg_confidence_columns`, and
-    `aeh.grade` for the last, #101's `grade_submission_grade_key`, Cohort 18;
-    `aeh.review` owns Durable's tail, #110's `review_label_store_columns`, after
-    `aeh.integ`'s #73 `integ_rate_dimensions`).
-
-    Import order has two failure modes, and #269's `_VersionOrderedRegistry` already fixed the
-    one it could fix at the root: a tier's chain arriving **out of version order** when an early
-    import appends a late migration first. Sorting each tier's tuple at write time makes the
-    order a contract instead of an accident of collection. What sorting cannot repair is a
-    module that was **never imported** — it contributes no migrations at all, so the chain is
-    short no matter how it is ordered, and this guard is the refusal for that world.
-
-    Sibling of `SchemaTooNewError`, not its subclass: the too-new refusal says the *file* is
-    ahead of the binary; this one says the *process* is behind its own binary. `CT-STORE-11`'s
-    exact-type oracles distinguish them, and a subclass relationship would let one pass for the
-    other exactly when a reader is diagnosing which of the two went wrong.
+    More detail: `docs/code-notes/store.md`, section `errors.py: IncompleteMigrationChainError`.
     """
 
 
@@ -100,7 +62,8 @@ class WriteThroughQueryError(StoreError):
 
 
 class PurgePreconditionError(StoreError):
-    """`purge_cohort` before promotion to Tier D (`FR-STORE-07`, `CT-STORE-10`).
+    """`purge_cohort` was called before the cohort's results were promoted to Tier D (FR-STORE-07,
+    CT-STORE-10).
 
     Raised by `SqliteStore.purge_cohort` with every unmet gate named, and **nothing is
     deleted** — the check runs before the purge touches the cohort file, and the refusal
@@ -111,7 +74,7 @@ class PurgePreconditionError(StoreError):
 
 
 class DiskFullError(StoreError):
-    """A write failed for want of disk space; the process halts (`FR-STORE-10`, `CT-STORE-11`).
+    """A write failed because the disk is full; the process stops (FR-STORE-10, CT-STORE-11).
 
     Raised from **every** write door — a queue batch, a `transaction()` body or its commit,
     purge's deletes or its `VACUUM` — with the SQLite or OS error chained as its cause,
@@ -129,8 +92,8 @@ class DiskFullError(StoreError):
 
 
 class StudentNameInTierDError(StoreError):
-    """An insert into Tier D carried a column mapped as a student-name field
-    (`FR-STORE-12`, `CT-STORE-09`).
+    """An insert into Tier D included a column that holds a student's name (FR-STORE-12,
+    CT-STORE-09).
 
     Raised by the write guard on the durable tier's two write doors — `enqueue_write` before
     the row is queued, `Tx.execute` before the statement runs — with the offending column
@@ -168,8 +131,8 @@ class WriteQueueClosed(StoreError):
 
 
 class CrossTierTransactionError(StoreError):
-    """A `transaction()` body attempted to open a second tier's transaction on the same
-    thread (`CT-STORE-03`).
+    """A `transaction()` body tried to open a second tier's transaction on the same thread
+    (CT-STORE-03).
 
     CT-STORE-03 provides atomicity **within one tier handle** and says so: "Cross-tier
     atomicity is **not** provided." The dangerous outcome is not the missing guarantee — it
@@ -182,7 +145,7 @@ class CrossTierTransactionError(StoreError):
 
 
 class InvalidContentHashError(StoreError):
-    """A `content_hash` that `put` could not have returned (`FR-STORE-06`, `SEC-09`).
+    """A `content_hash` that `put` could never have returned (FR-STORE-06, SEC-09).
 
     Raised **before the filesystem is touched**, which is the requirement rather than the
     implementation detail it looks like. Test plan `TC-STORE-22` fixes the rule: *"`get()` and
@@ -212,7 +175,7 @@ class InvalidContentHashError(StoreError):
 # it stays that way.
 
 class StatementConflictError(ValueError):
-    """A statement name registered a second time with different SQL (FR-STORE-16, CT-STORE-19).
+    """A statement name was registered a second time with different SQL (FR-STORE-16, CT-STORE-19).
 
     Raised at import by the module whose registration conflicts, naming both modules. The
     registry is left exactly as it was: a name has one SQL text whatever the import order."""

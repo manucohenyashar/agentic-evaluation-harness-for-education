@@ -29,7 +29,7 @@ from .results import CompositionFault, StageTrace
 
 
 def _criterion_value(catalog: Any, view: Any, version: str, criterion_id: str) -> Any:
-    """The criterion `aggregate` maps a panel through, assembled from the package.
+    """The criterion value `aggregate` needs, built from the package.
 
     **The package row is copied through wholesale rather than field by field, and that is
     `CT-AGG-09`.** The contract's rule is that outside its sanctioned readers no shipped module
@@ -69,7 +69,7 @@ def _criterion_value(catalog: Any, view: Any, version: str, criterion_id: str) -
 
 
 def _drain(executor: Any) -> list[StageTrace]:
-    """The executor's per-unit record so far, as one trace per stage, clearing it.
+    """The executor's per-unit records so far, as one trace per stage, and clear them.
 
     `FR-PIPE-01` wants one entry per stage executed, and extract and score are executed in the
     dispatch pass rather than in a hook — so without this they are the two stages a run never
@@ -86,7 +86,7 @@ def _drain(executor: Any) -> list[StageTrace]:
 
 
 def _integrity_pre_hook(orch: Any, handle: Any, gate: Any) -> StageTrace:
-    """`FR-PIPE-03`: verify once per cell whose extraction is terminal, and record the phase.
+    """Verify each cell whose extraction has finished, once, and record the phase (FR-PIPE-03).
 
     `units_consumed` is 0 by design here: `ready_cells("integrity_pre")` gates on the phase's
     PRESENCE and never on its count, so a number would be a figure nothing reads. The aggregate
@@ -111,12 +111,11 @@ _ESCALATION_INPUTS: dict[tuple[str, str], dict[str, tuple[Any, Any]]] = {}
 
 
 def _escalation_inputs(store: Any, handle: Any, catalog: Any, criterion: Any) -> tuple[Any, Any]:
-    """(baseline, history) for one criterion of the run, through each owner's public surface
-    (CT-PIPE-05: no SQL here). The baseline is `PackageCatalog.baselines_for` under the run's
-    key (its frozen backend profile and panel build); the
-    history is M-STATS' FR-STATS-24 figure over the package lineage. The criterion's own
-    part of the key comes from the package (`baselines_for`), never from this module. A `NoValidationData`
-    from either owner is passed as is, never `None` (CT-PIPE-10)."""
+    """`(baseline, history)` for one criterion of the run, read through each owner's public
+    interface (no SQL here, CT-PIPE-05). The baseline comes from `PackageCatalog.baselines_for`
+    under the run's frozen backend profile and panel build; the history is M-STATS' override figure
+    over the package lineage (FR-STATS-24). A `NoValidationData` from either is passed on as it is,
+    never as None (CT-PIPE-10)."""
     from aeh.stats import stored_override_histories
 
     # Keyed by the store's data directory AND the run: two stores in one process (every
@@ -146,7 +145,8 @@ def _escalation_inputs(store: Any, handle: Any, catalog: Any, criterion: Any) ->
 
 def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any,
                     store: Any = None) -> StageTrace:
-    """`FR-PIPE-04`: verify, read verdicts, aggregate, then ONE transaction for the rest.
+    """For each ready cell: verify it, read its verdicts, aggregate them, and write the rest in one
+    transaction (FR-PIPE-04).
 
     The order is the requirement's, and the single transaction is the half that matters: the
     score, the escalation it triggers and the phase recording both commit together or not at
@@ -314,7 +314,7 @@ _FAULT_PREFIX = "composition fault: "
 
 
 class _CellFault(Exception):
-    """An exception out of the aggregate hook, with the cell it was raised on (#595).
+    """An exception raised by the aggregate hook, together with the cell it was working on (#595).
 
     Internal to this module: `run_to_completion` unwraps it, so the pause reason carries the
     original exception's type and text exactly as before, and only the stage detail gains the

@@ -28,8 +28,7 @@ ROUNDING_MODES: tuple[str, ...] = ("nearest", "up", "down")
 @dataclass(frozen=True)
 class GateRule:
     """A gate: the named criterion must reach `minimum` for the computed grade to stand
-    (FR-GRADE-02's "optional gate"). The policy records the rule; the consequence is
-    M-GRADE's declared behaviour — the policy never encodes it a second way."""
+    (FR-GRADE-02). The policy records the rule; M-GRADE decides what happens."""
 
     criterion_id: str
     minimum: float
@@ -37,14 +36,15 @@ class GateRule:
 
 @dataclass(frozen=True)
 class ScaleRule:
-    """A scale: the raw total is multiplied by `factor` (e.g. target-max / raw-max)."""
+    """A scale: the raw total is multiplied by `factor` (for example, target maximum / raw
+    maximum)."""
 
     factor: float
 
 
 @dataclass(frozen=True)
 class GradePolicy:
-    """The grade policy as a structured object (`FR-PKG-14`).
+    """A grade policy as a structured object built from a fixed set of rules (FR-PKG-14).
 
     Fields are the closed vocabulary; everything not selected must be absent, so the
     object never carries a parameter no rule executes (a free parameter is how a formula
@@ -155,7 +155,7 @@ class GradePolicy:
 
     @property
     def plain_language(self) -> str:
-        """The approved wording, GENERATED from the object (`FR-PKG-15`).
+        """The policy in approved plain wording, generated from the object (FR-PKG-15).
 
         A property, not a field: there is no constructor argument, no setter and no
         stored form, so independent wording cannot enter through any API and the
@@ -190,9 +190,8 @@ class GradePolicy:
         return " ".join(parts)
 
     def to_dict(self) -> dict:
-        """The structured content as stored. `review_window_hours` is absent on purpose:
-        it lives in its own column (ADR-3), the single canonical place — writing it
-        twice in one row would be two representations of one rule."""
+        """The policy as stored. `review_window_hours` is left out on purpose: it has its own
+        column (ADR-3), and storing it twice would give one rule two representations."""
         return {
             "combination": self.combination,
             "weights": [list(pair) for pair in self.weights],
@@ -207,9 +206,8 @@ class GradePolicy:
 
     @classmethod
     def from_dict(cls, data: dict) -> "GradePolicy":
-        """Rebuild from stored JSON — re-validating against the closed vocabulary, so a
-        row hand-edited to hold a formula refuses on read too (`FR-PKG-14` holds at
-        every door, not only at the write)."""
+        """Rebuild a policy from stored JSON, checking it against the allowed rules again, so a row
+        hand-edited to hold a formula is refused on read too (FR-PKG-14)."""
         fields = dict(data)
         if isinstance(fields.get("gate"), dict):
             fields["gate"] = GateRule(**fields["gate"])
@@ -229,11 +227,10 @@ class GradePolicy:
 
 
 def default_grade_policy() -> GradePolicy:
-    """`FR-SETUP-12`'s default: unweighted sum of criteria into question and test
-    totals, raw points, no transforms, null review window (finalize on run completion).
-    `grade_policy()` answers this for a version with no stored policy, so M-GRADE
-    always finds a policy and never invents one (`CT-SETUP-10`); recording that the
-    default was used is M-SETUP's obligation, discharged by storing the policy."""
+    """The default policy (FR-SETUP-12): criteria summed without weights into question and test
+    totals, raw points, no transforms, and no review window (grades finalize when the run
+    completes). `grade_policy()` returns this for a version with no stored policy, so M-GRADE
+    always has a policy (CT-SETUP-10)."""
     return GradePolicy()
 
 
@@ -241,8 +238,7 @@ def default_grade_policy() -> GradePolicy:
 
 
 def points_for_band(bands: Sequence[Any], band_name: str) -> float:
-    """The canonical band→points mapping, module-level and pure (`CT-PKG-05`,
-    `NFR-AGG-02`; issue #91's mapping stage).
+    """The one mapping from a band to its points, as a pure function (CT-PKG-05, NFR-AGG-02).
 
     One definition, in M-PKG, of the only sanctioned reader of a band table's
     points: every consumer routes through this function rather than re-deriving a

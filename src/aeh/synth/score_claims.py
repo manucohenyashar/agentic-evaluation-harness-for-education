@@ -80,14 +80,14 @@ SYNTH_SCORE_CLAIM_PATTERNS: tuple[str, ...] = (
 def _compiled_score_claim_patterns(
     patterns: tuple[str, ...],
 ) -> tuple["re.Pattern[str]", ...]:
-    """The pattern list compiled, cached by VALUE — a changed list (CT-SYNTH-11's
-    externally visible change) recompiles, the same list never does."""
+    """The score-claim patterns, compiled and cached by value: changing the list recompiles it, the
+    same list is compiled once (CT-SYNTH-11)."""
     return tuple(re.compile(pattern, re.IGNORECASE) for pattern in patterns)
 
 
 def has_score_claim(text: str) -> bool:
-    """The score-claim predicate (`FR-SYNTH-03`): True when the text matches any
-    configured pattern — a numeral-bearing score claim or an overall-quality verdict.
+    """True when the text matches any score-claim pattern: a score with a number, or an overall
+    quality verdict (FR-SYNTH-03).
 
     Pure and total (`TC-SYNTH-04`): a `bool` for every input, never a raise — the
     re-request ladder branches on this predicate, so a crash here would be a crash on

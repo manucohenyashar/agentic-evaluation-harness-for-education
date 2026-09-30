@@ -23,34 +23,10 @@ from .transaction import Tx
 
 
 class WriteQueue:
-    """The single writer: one queue, one thread, batched commits, backpressure at the depth.
+    """The single writer: one queue and one thread, committing in batches and making callers wait
+    when the queue is full.
 
-    `FR-STORE-03` ("serialize all writes through a single writer thread fed by an in-process
-    queue; concurrent readers shall not block the writer"), `FR-STORE-04` (batch at 100 rows or
-    5 seconds, whichever comes first) and `FR-STORE-05` (backpressure above a configured depth)
-    are one mechanism, so they are one class.
-
-    **Why a second connection rather than a shared mutex.** The reader connection stays exactly
-    where #10 left it and this queue opens its own. Under WAL that is what makes `CT-STORE-04`
-    ("concurrent readers never block the writer") true *at the database level* -- a reader holds
-    no lock the writer needs. A single connection guarded by a lock would satisfy `TC-STORE-03`,
-    whose docstring says so plainly ("what this case does not catch: a per-operation shared
-    mutex"), and would fail `NFR-STORE-01` under real load. The contract is the promise; the
-    test is only what happens to be checkable.
-
-    **What "single writer" means once `transaction()` exists.** Section 3.3 hands the caller a
-    context manager, so a transaction body necessarily runs on the caller's thread -- it cannot
-    be marshalled to the writer thread without marshalling arbitrary user code. So the
-    serialization point is the write *connection*, guarded by `_write_lock`: the drain thread
-    takes it per batch, `transaction()` takes it for its whole body, and at most one write
-    transaction is ever open on the tier. One writer, in the sense the requirement is about --
-    never two writes interleaved, never a partially applied transaction observable -- and the
-    sense in which the design's own interface makes "one thread executes every statement"
-    unachievable is recorded here rather than quietly redefined.
-
-    **Ordering.** A `deque`, popped from the left, committed in slices. Single-caller FIFO holds
-    end to end, which is what `TC-STORE-03` asserts and `CT-STORE-04` promises; ordering
-    *across* callers is explicitly not promised and nothing here manufactures it.
+    More detail: `docs/code-notes/store.md`, section `write_queue.py: WriteQueue`.
     """
 
     __slots__ = (
@@ -107,7 +83,7 @@ class WriteQueue:
 
     @property
     def depth(self) -> int:
-        """Rows enqueued and not yet durable -- queued *or* mid-commit.
+        """Rows queued but not yet durable, whether waiting or being committed.
 
         "Not yet durable" rather than "still on the deque", and the difference is what a caller
         waiting for its writes depends on: `CT-STORE-02` makes `enqueue_write` asynchronous and
@@ -132,7 +108,8 @@ class WriteQueue:
 
     @property
     def backpressure_active(self) -> bool:
-        """`FR-STORE-05`'s level, at or above the configured depth.
+        """Whether the queue is at or above its configured depth, so writers are made to wait
+        (FR-STORE-05).
 
         At, not above. The requirement says "when the pending write queue exceeds a configured
         depth" and `TC-STORE-07` reads that boundary as inclusive -- `N-1` clear, `N` raised. A
@@ -150,7 +127,7 @@ class WriteQueue:
         return tuple(self._failures)
 
     def sustained_over_threshold(self) -> bool:
-        """Whether backpressure has held long enough to be the *alert* rather than the signal."""
+        """Whether the queue has been full long enough to raise the alert, not just the signal."""
         since = self._over_since
         if since is None:
             return False
@@ -159,7 +136,7 @@ class WriteQueue:
     # -- the caller side -----------------------------------------------------------------------
 
     def enqueue(self, unit: WriteUnit) -> None:
-        """Append, blocking while the queue is at or above the configured depth.
+        """Add a row, waiting while the queue is at or above its configured depth.
 
         Blocking is one of the two behaviours `FR-STORE-05` sanctions, and it is the one that
         cannot lie: a caller that is blocked has demonstrably reduced its dispatch rate, whereas
@@ -225,7 +202,7 @@ class WriteQueue:
 
     @contextmanager
     def transaction(self) -> Iterator[Tx]:
-        """Atomic and synchronous over the whole body, within one tier (`CT-STORE-03`).
+        """Run the whole body as one atomic, synchronous transaction within one tier (CT-STORE-03).
 
         `BEGIN IMMEDIATE` rather than a deferred begin: the write lock is already held, so taking
         the database's write lock at the same moment keeps the two in step and means a competing
@@ -322,7 +299,8 @@ class WriteQueue:
 
     def _disk_full_failure(self, error: BaseException, *,
                            include_os_errors: bool = True) -> DiskFullError | None:
-        """Classify `error`; on out-of-space record `DiskFullError`, break the queue, halt.
+        """If the error means the disk is full, record `DiskFullError`, stop the queue and halt the
+        process.
 
         The queue door of `FR-STORE-10`'s sequence — shared with `purge_cohort`, whose door
         has no queue state to record and calls `_as_disk_full` plus the halt hook directly.
@@ -378,7 +356,8 @@ class WriteQueue:
             self._thread = thread
 
     def _note_depth_locked(self) -> None:
-        """Track how long depth has been at or above the threshold. Call under `_condition`."""
+        """Track how long the queue has been at or above its threshold. Call while holding
+        `_condition`."""
         if self._pending >= self._limits.write_queue_depth:
             if self._over_since is None:
                 self._over_since = time.monotonic()
@@ -435,7 +414,7 @@ class WriteQueue:
             self._commit(batch)
 
     def _commit(self, batch: list[WriteUnit]) -> None:
-        """One batch, one transaction, one latency measurement.
+        """Commit one batch in one transaction, measuring how long it took.
 
         A failure is **recorded, not swallowed**. The rows are already off the queue, so a writer
         that logged and moved on would let `write_queue_depth` reach zero with the rows gone -- a
@@ -498,7 +477,7 @@ class WriteQueue:
     # -- lifecycle ------------------------------------------------------------------------------
 
     def close(self, *, timeout_s: float = 30.0) -> None:
-        """Flush what is queued, stop the thread, then re-raise the first write failure.
+        """Flush what is queued, stop the thread, then raise the first write failure.
 
         Flush rather than discard: `close()` is the controlled shutdown, and the bounded loss
         `NFR-STORE-02` permits is the loss to an *uncontrolled* kill. Dropping queued rows on a

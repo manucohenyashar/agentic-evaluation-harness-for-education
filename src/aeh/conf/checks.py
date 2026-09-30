@@ -43,12 +43,14 @@ _COST_BEARING_PROFILES = frozenset({"cloud-hosted", "dev-ci"})
 
 
 def _echo(key: str, value: Any) -> str:
-    """Render a value for an exception message, or hide it. See `_ECHOABLE_KEYS`."""
+    """A value as it may appear in an error message, or a placeholder when it must stay hidden (see
+    `_ECHOABLE_KEYS`)."""
     return repr(value) if key in _ECHOABLE_KEYS else "<not shown>"
 
 
 def _check_resolved(ref: ModelRef, what: str, backend_profile: str) -> None:
-    """`FR-CONF-03` plus the per-backend half of `CT-CONF-03`.
+    """Refuse a model reference that is not a pinned build in the form its backend needs
+    (FR-CONF-03, CT-CONF-03).
 
     `is_resolved()` answers "is this *a* resolved build". The backend then decides *which* form
     counts: a provider-pinned slug is a perfectly resolved identity and still wrong on
@@ -79,7 +81,7 @@ def _check_resolved(ref: ModelRef, what: str, backend_profile: str) -> None:
 
 
 def _positive_int(raw: Any, key: str, default: int) -> int:
-    """Parse an optional integer knob, refusing anything that is not one.
+    """Parse an optional integer knob, refusing anything that is not a positive integer.
 
     A knob that silently ignores a value it cannot parse is worse than one with no default:
     the operator believes they set it. `TC-CONF-15` additionally requires the refusal to be a

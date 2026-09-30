@@ -33,7 +33,7 @@ from .migrations import (
 
 @dataclass(frozen=True)
 class TierOpened:
-    """What opening one database actually did (`CLAUDE.md` seam 4).
+    """What opening one database actually did: created, migrated, or opened as it was.
 
     Per-field rather than a boolean, for the reason `IngestReport.gates` is per-gate: a bare
     "opened successfully" sitting on top of a database with `journal_mode=delete` and foreign keys
@@ -97,7 +97,7 @@ _LOCK_WAIT_SINK = threading.local()
 
 @contextmanager
 def _counting_lock_waits(counter: dict[str, int]) -> Iterator[None]:
-    """Install `counter` as this thread's lock-wait sink for the wrapped block.
+    """While the block runs, count this thread's lock waits into `counter`.
 
     Stack discipline, not assignment: a nested window (a caller running another handle's
     `query` inside a `transaction()` body) restores the outer sink on exit, so each
@@ -114,36 +114,10 @@ def _counting_lock_waits(counter: dict[str, int]) -> Iterator[None]:
 def _run(connection: sqlite3.Connection, declared: Statement,
          params: Mapping[str, Any] | None = None, *, retries: int = DEFAULT_BUSY_RETRIES
          ) -> sqlite3.Cursor:
-    """The module's single execute site (`FR-STORE-08`, `SEC-15`).
+    """The one place any SQL reaches SQLite (FR-STORE-08, SEC-15). It only ever runs a declared
+    `Statement`.
 
-    One site, so `KNOWN_EXECUTE_SITES` in `tests/artifact/test_store_query_surface.py` stays a
-    list a reviewer can actually read, and so the `SQLITE_BUSY` retry below cannot be forgotten
-    at some other call.
-
-    What is passed is `declared.sql` — an attribute of a declared statement, which is the shape
-    `tests/support/sql_scan.py` sanctions — never the parameter itself. Passing the parameter
-    would mean "whatever the caller passed reaches SQLite unchecked", and the scanner is right
-    that that is a different interface from the one §3.3 declares.
-
-    `SQLITE_BUSY` is retried here rather than at any call site (`CT-STORE-11`). Under WAL with one
-    writer it should not occur at all, and "should not" is why the retry is bounded: a lock held
-    by something outside this process is not a condition an unbounded retry improves.
-
-    So it is **bounded, not never** — exhausting the retries re-raises SQLite's own error rather
-    than a new one, and the caller sees `OperationalError` exactly as it would have without the
-    retry. §3.3 says busy "should not occur"; a helper that promised it could not would be
-    promising something no retry loop can deliver.
-
-    `lock_waits` (the `#118` export-seam figure) is counted through the thread-local sink
-    `_LOCK_WAIT_SINK`, not through this signature: a test that patches `_run` with a
-    same-shape wrapper (TC-STORE-13's does, verbatim) must keep working, and a new keyword
-    would break every one of them. A handle-owned window (`SqliteTierHandle.query`,
-    `WriteQueue._commit`, `WriteQueue.transaction`) installs its counter dict for the
-    statements it runs; every SQLITE_BUSY retry slept through inside the window increments
-    it, and the count surfaces in `SqliteTierHandle._metrics` → `store_metrics` →
-    `PipelineOutcome.lock_waits`. Open-time sites (migration, the pragmas) run outside any
-    window and are deliberately outside the count: the figure is about a *run's* waits,
-    not the file's construction.
+    More detail: `docs/code-notes/store.md`, section `connection.py: _run`.
     """
     attempt = 0
     while True:
@@ -163,7 +137,7 @@ def _run(connection: sqlite3.Connection, declared: Statement,
 
 def _connect(path: Path, *, read_only: bool, busy_timeout_ms: int,
              retries: int, check_same_thread: bool = True) -> sqlite3.Connection:
-    """Open one database and enable foreign keys. **Writes nothing.**
+    """Open one database and turn on foreign keys. Writes nothing.
 
     `foreign_keys` is set on **every** connection, including read-only ones: SQLite defaults it
     off and the setting is per-connection, not per-database, so the CHECK and FOREIGN KEY
@@ -275,7 +249,8 @@ def _migrate(connection: sqlite3.Connection, tier: Tier, already: frozenset[int]
 
 def _open_tier(path: Path, tier: Tier, *, read_only: bool, busy_timeout_ms: int,
                retries: int) -> tuple[sqlite3.Connection, TierOpened]:
-    """Open, refuse if too new, migrate if behind, and report what happened.
+    """Open a database: refuse it if its schema is newer than this code, migrate it if older, and
+    report what happened.
 
     The order is the requirement. Nothing writes to the file until the version check has passed,
     so `CT-STORE-11`'s *"refuses to open, no partial read"* and `TC-STORE-05`'s *"the file is
@@ -387,7 +362,7 @@ READ_VERBS: frozenset[str] = frozenset({"select", "with", "values", "explain", "
 
 
 def _refuse_write(declared: Statement) -> None:
-    """Raise unless `declared` starts with a read verb. See `SqliteTierHandle.query`."""
+    """Raise unless the statement starts with a read verb (see `SqliteTierHandle.query`)."""
     words = declared.sql.lstrip().lstrip("(").split(None, 1)
     first = words[0].lower() if words else ""
     if first in READ_VERBS:

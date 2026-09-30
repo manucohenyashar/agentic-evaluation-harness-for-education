@@ -19,12 +19,11 @@ class SetupRecordsMixin:
         self, v: PackageVersionId, question: str, options_offered: Sequence[str],
         answer_given: str, resulting_edit: str = "",
     ) -> str:
-        """Append one calibration-history row (`FR-PKG-20`, `FR-CALIB-14`): the question
-        asked, the options offered, the teacher's answer, the resulting edit. Appends
-        are allowed on PUBLISHED versions — the trail records conversations about the
-        rubric as it stands. The table is append-only in practice, not by convention:
-        migration 005 installs unconditional BEFORE UPDATE / BEFORE DELETE triggers,
-        and this surface offers no update or delete at all."""
+        """Append one calibration-history row (FR-PKG-20, FR-CALIB-14): the question, the options
+        offered, the teacher's answer and the resulting edit. Appending is allowed on published
+        versions, because the history records discussions about the rubric as it stands. The table
+        is append-only in fact: triggers refuse every update and delete, and there is no method for
+        either."""
         elicitation_id = uuid.uuid4().hex
         with self._handle.transaction() as tx:
             tx.execute(PKG_STATEMENTS["insert_elicitation"], id=elicitation_id, v=v,
@@ -37,10 +36,9 @@ class SetupRecordsMixin:
         self, v: PackageVersionId, *, proposal_id: str, assessment_doc_id: str,
         payload: str, template_version: str, model_ref: str, attempts: int,
     ) -> None:
-        """Record (first write) or replace (a re-request's payload, CT-SETUP-12) the
-        version's UNCONFIRMED inventory proposal. Refused when a proposal is already
-        confirmed — the inventory is locked then (FR-SETUP-02), and proposing again is
-        out of order (CT-SETUP-16: one proposal per version)."""
+        """Store the version's unconfirmed inventory proposal, or replace it when the model is
+        asked again (CT-SETUP-12). Refused once a proposal is confirmed, because the inventory is
+        then locked (FR-SETUP-02, CT-SETUP-16)."""
         self._refuse_unknown_version(v)
         self._refuse_mutation(v)
         row = self._handle.query(PKG_STATEMENTS["select_proposal"], v=v)
@@ -65,8 +63,8 @@ class SetupRecordsMixin:
                     proposal_id, v, attempts)
 
     def proposal(self, v: PackageVersionId) -> dict | None:
-        """The version's proposal row, or None — the read half (resume re-reads it
-        instead of re-proposing)."""
+        """The version's proposal row, or None. Resuming setup reads this instead of proposing
+        again."""
         rows = self._handle.query(PKG_STATEMENTS["select_proposal"], v=v)
         return dict(rows[0]) if rows else None
 
@@ -74,10 +72,9 @@ class SetupRecordsMixin:
         self, v: PackageVersionId, *, proposal_id: str,
         questions: Sequence[Mapping], confirmed_at: str,
     ) -> None:
-        """Write the confirmed inventory in ONE transaction (`FR-SETUP-02`): the
-        question rows, their options, and the proposal's confirmation stamp, all or
-        nothing — a half-written inventory that publish's gate could misread is worse
-        than a refused confirmation.
+        """Write the confirmed inventory in one transaction (FR-SETUP-02): the questions, their
+        options and the proposal's confirmation stamp, all or nothing. A half-written inventory
+        that the publish gate could misread is worse than a refused confirmation.
 
         Each question record is a mapping with `question_id`, `ordinal`,
         `prompt_text`, `question_type`, `max_points` and `options` (a sequence of
@@ -127,7 +124,7 @@ class SetupRecordsMixin:
                     v, len(validated), proposal_id)
 
     def questions(self, v: PackageVersionId) -> tuple[dict, ...]:
-        """The version's confirmed question rows, in confirmed order."""
+        """The version's confirmed questions, in confirmed order."""
         return tuple(
             dict(row) for row in
             self._handle.query(PKG_STATEMENTS["select_questions"], v=v)
@@ -136,7 +133,7 @@ class SetupRecordsMixin:
     def question_options(
         self, v: PackageVersionId, question_id: str
     ) -> tuple[dict, ...]:
-        """One confirmed question's option set, in declared order."""
+        """One confirmed question's options, in declared order."""
         return tuple(
             dict(row) for row in
             self._handle.query(PKG_STATEMENTS["select_options_by_question"],
@@ -146,7 +143,7 @@ class SetupRecordsMixin:
     def update_question_field(
         self, v: PackageVersionId, question_id: str, field: str, value: Any
     ) -> None:
-        """Edit one question field in place — the confirmation lock's write surface.
+        """Change one field of a confirmed question, subject to the confirmation lock.
 
         A CONFIRMED question row refuses every field except `reference_solution`
         (`FR-SETUP-02`: the lock engages at confirmation, earlier than publication —
@@ -188,9 +185,9 @@ class SetupRecordsMixin:
                        question_id=question_id, value=value)
 
     def readback(self, v: PackageVersionId) -> dict | None:
-        """The version's rubric read-back row, or None — the read half (resume re-reads
-        the stored row instead of re-reading the rubric, `CT-SETUP-03`; the row exists
-        only after a read back completed or degraded, never mid-flight)."""
+        """The version's rubric read-back row, or None. Resuming setup reads this instead of
+        reading the rubric again (CT-SETUP-03); the row exists only after a read-back finished or
+        fell back."""
         rows = self._handle.query(PKG_STATEMENTS["select_readback"], v=v)
         return dict(rows[0]) if rows else None
 
@@ -200,7 +197,7 @@ class SetupRecordsMixin:
         self, v: PackageVersionId, *, criterion_id: str, classification: str,
         decomposition_basis: str | None, source: str, recorded_at: str,
     ) -> None:
-        """Write one decomposability classification row (`#52`, `FR-SETUP-06`, R62).
+        """Store one decomposability classification (FR-SETUP-06, R62).
 
         `source` is `'default'` (the module's §5.3 table decided, the teacher has not
         spoken) or `'teacher'` (`confirm_classifications` upserts over the default row
@@ -222,8 +219,8 @@ class SetupRecordsMixin:
         self._invalidate()
 
     def classifications(self, v: PackageVersionId) -> tuple[dict, ...]:
-        """The version's stored classification rows, ordered by criterion id — the
-        audit read (`M-CALIB`/`M-STATS`'s teacher-vs-default distinction)."""
+        """The version's stored classifications, ordered by criterion id; M-CALIB and M-STATS read
+        these to tell teacher choices from defaults."""
         return tuple(
             dict(row) for row in
             self._handle.query(PKG_STATEMENTS["select_classifications"], v=v)
@@ -231,7 +228,7 @@ class SetupRecordsMixin:
 
     def classification(self, v: PackageVersionId,
                        criterion_id: str) -> dict | None:
-        """One criterion's stored classification row, or None."""
+        """One criterion's stored classification, or None."""
         rows = self._handle.query(PKG_STATEMENTS["select_classification"], v=v,
                                   criterion_id=criterion_id)
         return dict(rows[0]) if rows else None
@@ -240,7 +237,7 @@ class SetupRecordsMixin:
         self, v: PackageVersionId, *, step_id: str, status: str, payload: str,
         recorded_at: str,
     ) -> None:
-        """Upsert one setup step's provenance row (`FR-SETUP-14`, `#52`).
+        """Insert or update one setup step's provenance row (FR-SETUP-14).
 
         The write half of "a default taken is recorded": each optional setup step
         names itself here when it completes — by the teacher's action or, at
@@ -255,10 +252,9 @@ class SetupRecordsMixin:
         self, v: PackageVersionId, *, step_id: str, status: str, payload: str,
         recorded_at: str,
     ) -> bool:
-        """Record a step's default-taken row ONLY where the step carries no row of
-        its own — the publish-time skip record (`FR-SETUP-14`). Returns whether a
-        row was written: a step the teacher (or the step itself) already recorded is
-        never overwritten by a default."""
+        """Record that a step's default was taken, only if the step has no row of its own
+        (FR-SETUP-14). Returns whether a row was written; a step that was already recorded is never
+        overwritten."""
         if self.step_record(v, step_id) is not None:
             return False
         # The guard runs BEFORE the transaction, not inside it — the shape the
@@ -274,14 +270,14 @@ class SetupRecordsMixin:
         return True
 
     def step_record(self, v: PackageVersionId, step_id: str) -> dict | None:
-        """One setup step's provenance row, or None — the done half of the console's
-        step enumeration reads this."""
+        """One setup step's provenance row, or None. The console reads this to show which steps are
+        done."""
         rows = self._handle.query(PKG_STATEMENTS["select_step_record"], v=v,
                                   step_id=step_id)
         return dict(rows[0]) if rows else None
 
     def step_records(self, v: PackageVersionId) -> tuple[dict, ...]:
-        """All of the version's step-provenance rows, ordered by step id."""
+        """All of the version's setup-step rows, ordered by step id."""
         return tuple(
             dict(row) for row in
             self._handle.query(PKG_STATEMENTS["select_step_records"], v=v)
@@ -292,11 +288,10 @@ class SetupRecordsMixin:
         criteria: Sequence[Mapping], payload: str, template_version: str,
         model_ref: str, attempts: int, created_at: str,
     ) -> None:
-        """Write the rubric read-back in ONE transaction (`FR-SETUP-04/-05/-09`, #51):
-        every criterion row with its band set, `evidence_type` and `band_justification`,
-        plus the read-back provenance row — all or nothing (`CT-PKG-11`: a rejected
-        write is a no-op, so a failed read-back leaves nothing behind and the next
-        attempt re-proposes onto a clean draft).
+        """Write the rubric read-back in one transaction (FR-SETUP-04, FR-SETUP-05, FR-SETUP-09):
+        every criterion with its bands, `evidence_type` and `band_justification`, plus the
+        read-back's provenance row. All or nothing (CT-PKG-11), so a failed read-back leaves
+        nothing behind.
 
         Each criterion record is a mapping with `criterion_id`, `question_id`, `kind`,
         `max_points`, `scoring_model`, `band_count`, `evidence_type`,

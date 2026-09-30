@@ -21,17 +21,15 @@ _DETERMINISTIC_BANDS = frozenset({BAND_CORRECT, BAND_INCORRECT, BAND_UNRESOLVED}
 
 
 def _band_population_is_deterministic(bands: Sequence[str]) -> bool:
-    """Whether a criterion's bands name deterministic results (M-DET's vocabulary)
-    rather than judged bands. Empty is not deterministic — a figure needs a
-    population."""
+    """Whether a criterion's bands are deterministic results (M-DET's band names) rather than
+    judged bands. An empty population is not deterministic."""
     return bool(bands) and all(band in _DETERMINISTIC_BANDS for band in bands)
 
 
 def _shannon_entropy(counts: Sequence[int]) -> float:
-    """The distribution's Shannon entropy in nats over the observed histogram. Zero
-    cells contribute nothing (0·ln 0 = 0 by the standard convention); a
-    single-band population is genuinely 0.0 — that is a judged criterion with no
-    variation, not a deterministic one, and it keeps its real figure."""
+    """The Shannon entropy, in nats, of the observed band histogram. Empty cells contribute
+    nothing. A population in a single band really is 0.0: a judged criterion with no variation, not
+    a deterministic one."""
     total = sum(counts)
     if total <= 0:
         return 0.0
@@ -45,9 +43,8 @@ def _shannon_entropy(counts: Sequence[int]) -> float:
 def criterion_band_figures(
     scores: Iterable[Any], band_order: Sequence[str] = ()
 ) -> tuple[CriterionBandFigure, ...]:
-    """The per-criterion band figures over a population of criterion scores
-    (`FR-GRADE-14`; the pure seam `TC-GRADE-14` pins — the `apply_policy` shape:
-    score value objects in, figures out, no store and no model in the path).
+    """The band figures for each criterion over a population of criterion scores (FR-GRADE-14,
+    TC-GRADE-14). Pure: scores in, figures out, no store and no model.
 
     - **Histogram** — every band the criterion's rows carry, as a count; the
       histogram is a real figure even for a deterministic criterion (its

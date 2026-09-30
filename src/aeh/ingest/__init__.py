@@ -32,6 +32,8 @@ Files:
     assessment_match.py  V4: does the paper match the assessment it claims to be?
     aggregates.py    the cohort's run-level ingestion signals
     ingestor.py      `Ingestor`, the gateway itself
+
+Detailed design notes (the full original module description): `docs/code-notes/ingest.md`.
 """
 
 from __future__ import annotations

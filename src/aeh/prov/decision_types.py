@@ -80,7 +80,8 @@ def _check_text(value: Any, what: str, *, optional: bool = False) -> None:
 
 @dataclass(frozen=True)
 class ChoiceQuestion:
-    """Pick one of 2…255 unordered options. `options` is `((label, description | None), …)`."""
+    """Pick one of 2 to 255 unordered options. `options` is `((label, description or None), ...)`.
+    """
 
     key: str
     instructions: str
@@ -111,7 +112,7 @@ class ChoiceQuestion:
 
 @dataclass(frozen=True)
 class ScoreQuestion:
-    """Place the state on an ordered scale of 2…10 level descriptions, lowest first."""
+    """Place the state on an ordered scale of 2 to 10 level descriptions, lowest first."""
 
     key: str
     instructions: str
@@ -132,7 +133,7 @@ class ScoreQuestion:
 
 @dataclass(frozen=True)
 class NoulQuestion:
-    """A yes/no statement; the answer is the probability it is true."""
+    """A yes/no statement; the answer is the probability that it is true."""
 
     key: str
     instructions: str
@@ -151,8 +152,8 @@ DecisionQuestion = ChoiceQuestion | ScoreQuestion | NoulQuestion
 
 @dataclass(frozen=True)
 class DecisionCapabilities:
-    """What a decision implementation declares about itself (FR-PROV-27, the CT-PROV-04
-    posture): declared, never discovered, stable for the run."""
+    """What a decision provider declares about itself: declared up front, never discovered, and
+    fixed for the run (FR-PROV-27, CT-PROV-04)."""
 
     max_context_tokens: int
     max_choice_options: int
@@ -163,7 +164,8 @@ class DecisionCapabilities:
 
 @dataclass(frozen=True)
 class DecisionRequest:
-    """The closed, frozen request (FR-PROV-17): a state and an ordered tuple of questions."""
+    """A closed, frozen decision request: a state and an ordered tuple of questions (FR-PROV-17).
+    """
 
     state: str
     questions: tuple[DecisionQuestion, ...]
@@ -186,8 +188,8 @@ class DecisionRequest:
             raise DecisionRequestError(f"DecisionRequest repeats a question key: {keys}.")
 
     def validate_for(self, capabilities: DecisionCapabilities) -> None:
-        """The per-implementation half of FR-PROV-17: question count and Choice width against
-        the implementation's declared limits. Called by every `decide` before anything is sent."""
+        """Check the request against one provider's declared limits (question count and choice
+        width) (FR-PROV-17). Every `decide` calls this before anything is sent."""
         if len(self.questions) > capabilities.max_questions:
             raise DecisionRequestError(
                 f"{len(self.questions)} questions exceed this implementation's "
@@ -210,7 +212,8 @@ class ChoiceAnswer:
 @dataclass(frozen=True)
 class ScoreAnswer:
     """`probabilities[i]` is the probability of `levels[i]`. `score` is the probability-weighted
-    position; a consumer takes the band from the argmax, never from `score` (ADR-22)."""
+    position; a consumer takes the band from the most probable level, never from `score` (ADR-22).
+    """
 
     score: float
     probabilities: tuple[float, ...]
@@ -220,9 +223,9 @@ class ScoreAnswer:
 
 @dataclass(frozen=True)
 class NoulAnswer:
-    """A Noul's confidence is its `p_true`, Jev's calibrated P(yes) (design 1.8, FR-PROV-19):
-    `confidence == p_true` on every returned answer. `confidence_source` is `"reported"` for a
-    Jev build and `"derived"` for `openjev-small`; it has no default."""
+    """The answer to a yes/no question. Its confidence is `p_true`, the calibrated probability of
+    yes (FR-PROV-19). `confidence_source` is `"reported"` for a Jev build and `"derived"` for
+    `openjev-small`, with no default."""
 
     p_true: float
     confidence: float
@@ -234,8 +237,8 @@ DecisionAnswer = ChoiceAnswer | ScoreAnswer | NoulAnswer
 
 @dataclass(frozen=True)
 class Decision:
-    """One answered request (FR-PROV-18): exactly one answer per question key, typed as its
-    question. `cost` is null on edge-local and fixture (the CT-PROV-03 posture)."""
+    """One answered request: exactly one answer per question key, typed to match its question
+    (FR-PROV-18). `cost` is None for edge-local and fixture engines (CT-PROV-03)."""
 
     answers: Mapping[str, DecisionAnswer]
     tokens_in: int

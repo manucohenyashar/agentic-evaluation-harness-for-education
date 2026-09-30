@@ -182,9 +182,9 @@ _ALERT_MIN_CONSECUTIVE_ADMINISTRATIONS = 2
 
 
 def _calibration_knobs() -> dict[str, float]:
-    """The calibration knobs for one build, env-gated at call time (seam 3).
-    Invalid overrides refuse rather than fall back, so a typo cannot silently
-    take the production number."""
+    """The ranking calibration knobs for one build, read from the environment on each call. An
+    invalid override is refused rather than ignored, so a typo cannot silently fall back to the
+    production value."""
     return {
         "panel_spread_weight": _env_float(
             _knob_name("PANEL_SPREAD_WEIGHT"), REVIEW_PANEL_SPREAD_WEIGHT,
@@ -244,8 +244,8 @@ _LEGACY_KNOB_PREFIX = "AEH_REVIEW_"
 
 
 def _knob_name(suffix: str) -> str:
-    """The environment name a knob is read from: the new one when it is set, else the
-    legacy one when THAT is set, else the new one (so a refusal names the new spelling)."""
+    """Which environment variable a knob is read from: the new name when set, else the old name
+    when that is set, else the new name (so a refusal names the new spelling)."""
     new = _KNOB_PREFIX + suffix
     if os.environ.get(new, "").strip():
         return new
@@ -256,7 +256,7 @@ def _knob_name(suffix: str) -> str:
 
 
 def _env_float(name: str, default: float, *, low: float, high: float) -> float:
-    """One float environment knob, read at call time (``orch._env_float``'s shape).
+    """Read one float knob from the environment at call time.
 
     Absent or blank takes the default; an unparseable value or one outside
     ``[low, high]`` raises rather than falling back — a typo'd override silently
@@ -276,9 +276,8 @@ def _env_float(name: str, default: float, *, low: float, high: float) -> float:
 
 
 def _resolve_knob(explicit: Any, config: Any, name: str, default: Any) -> Any:
-    """One §3.15 knob: keyword-injected value, then ``config`` attribute, then
-    the module constant (``aeh.agg._escalation_knob``'s reading: the policy
-    reads no configuration beyond what the call passes)."""
+    """One review setting: the keyword argument if given, else the `config` attribute, else the
+    module constant."""
     if explicit is not None:
         return explicit
     if config is not None:

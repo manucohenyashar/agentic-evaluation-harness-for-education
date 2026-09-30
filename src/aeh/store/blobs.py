@@ -131,7 +131,8 @@ class ContentAddressedBlobStore:
             ) from error
 
     def path(self, content_hash: str) -> Path:
-        """Where `content_hash` lives on disk. **Validated before the filesystem is touched.**
+        """Where the blob with this hash lives on disk. The hash is checked before the filesystem
+        is touched.
 
         `SEC-09` attacks this with a crafted hash, and the order of the two lines below is the
         defence: the pattern is checked first, so `../`, an absolute path and a wrong length are
@@ -152,7 +153,7 @@ class ContentAddressedBlobStore:
         return resolved
 
     def delete(self, content_hash: str) -> bool:
-        """Remove the blob stored under `content_hash`; True when a file was removed (#225).
+        """Remove the blob stored under this hash; True when a file was removed.
 
         Purge's reclamation door. The caller owns the sharing decision — the store is
         content-addressed with no refcount table, so "does anyone else still reference
@@ -175,7 +176,8 @@ class ContentAddressedBlobStore:
     # -- accounting -------------------------------------------------------------------------------
 
     def reap_staged(self, older_than_s: float) -> int:
-        """Delete staging files left by a crash between `write_bytes` and `os.replace`.
+        """Delete staging files left behind by a crash between writing a blob and moving it into
+        place.
 
         Bounded by age rather than unconditional: a data directory can legitimately have a second
         process staging a blob right now, and deleting its file mid-write would turn one crash
@@ -200,7 +202,7 @@ class ContentAddressedBlobStore:
         return reaped
 
     def stats(self) -> dict[str, Any]:
-        """File count and bytes on disk, **by walking the directory**.
+        """File count and bytes on disk, found by walking the directory.
 
         A walk rather than a counter this module maintains. `TC-STORE-09` cross-checks this
         against its own walk and says why: *"a stats accessor that disagrees with the filesystem

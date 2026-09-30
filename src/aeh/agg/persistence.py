@@ -14,10 +14,10 @@ def record_review(
     tx: Any, run_id: str, submission_id: str, criterion_id: str, band: str,
     points: float | None,
 ) -> None:
-    """Record a teacher's review decision on the stored score row (#517, CT-REVIEW-06): the
-    band and points the reviewer settled on, routing `reviewed`, state `final`. M-GRADE's next
-    pass counts the criterion as reviewed, no longer provisional. Runs in the caller's
-    transaction, like `write_score`, and never opens one; a non-transaction is refused."""
+    """Record a teacher's review decision on a stored score row: the settled band and points,
+    routing `reviewed`, state `final` (CT-REVIEW-06). M-GRADE then counts the criterion as
+    reviewed. Runs inside the caller's transaction, like `write_score`, and refuses anything that
+    is not one."""
     if not callable(getattr(tx, "execute", None)):
         raise TypeError("record_review needs the caller's open transaction")
     tx.execute(AGG_STATEMENTS["record_review"], run_id=run_id, submission_id=submission_id,
@@ -27,7 +27,8 @@ def record_review(
 def write_score(
     tx: Any, run_id: str, submission_id: str, score: CriterionScore, signals: Any
 ) -> None:
-    """Persist one aggregated score in the caller's transaction (`FR-AGG-15`, `CT-AGG-18/19`).
+    """Store one aggregated score inside the caller's transaction (FR-AGG-15, CT-AGG-18,
+    CT-AGG-19).
 
     Upserts the row keyed `(run_id, submission_id, criterion_id)` with every field
     of `score` and all six integrity signals from `signals` (`FR-AGG-13`

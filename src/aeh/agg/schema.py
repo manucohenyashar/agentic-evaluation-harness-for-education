@@ -185,7 +185,8 @@ TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
 # fills (`described_evidence`, `extractor_disagreement`, `caps_fired`) arrive NULL: not measured.
 
 def _refuse_unattributable_scores(rows: list[Any]) -> None:
-    """Refuse the rebuild when existing score rows cannot be attributed to exactly one run."""
+    """Refuse the table rebuild when existing score rows cannot each be attributed to exactly one
+    run."""
     present, runs = int(rows[0][0]), int(rows[0][1])
     if present and runs != 1:
         raise MigrationError(f"criterion_score rows cannot be attributed to a run: {runs} runs")

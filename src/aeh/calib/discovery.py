@@ -29,12 +29,10 @@ from .errors import EditNotEligible, SideBySideRequired, TriageCategoryRequired
 
 @dataclass(frozen=True)
 class PipelineFinding:
-    """Where a model's failure lives (`FR-CALIB-04`): the finding a
-    `model_failure` verdict produces, naming the pipeline stage the failure
-    belongs to. Editing the rubric because the extractor failed changes the
-    assessment to accommodate a bug — the finding routes the failure to the
-    stage that owns it, and the rubric edit is structurally unreachable
-    (``EditNotEligible``)."""
+    """Where a model failure belongs (FR-CALIB-04): the pipeline stage a `model_failure` verdict
+    is about. Editing the rubric to work around an extraction bug would change the assessment to
+    fit a bug, so the finding sends the failure to the stage that owns it, and a rubric edit is
+    impossible (`EditNotEligible`)."""
 
     criterion_id: str
     stage: str
@@ -51,8 +49,8 @@ class PipelineFinding:
 
 @dataclass(frozen=True)
 class Disagreement:
-    """One criterion of one calibration sample where the teacher's band and
-    the panel's band under R₀ differ — the unit `triage()` categorizes.
+    """One criterion of one calibration paper where the teacher's band and the panel's band under
+    R0 differ. This is what `triage()` categorizes.
 
     ``category`` is the *required* triage category (`FR-CALIB-02`): discovery
     emits disagreements without one (categorizing is the triage step's
@@ -82,7 +80,7 @@ class Disagreement:
 
 @dataclass(frozen=True)
 class TriageVerdict:
-    """The recorded outcome of triaging one disagreement (`FR-CALIB-02`..`-04`).
+    """The recorded result of triaging one disagreement (FR-CALIB-02..04).
 
     The category is a **required** field, enforced twice: `triage()` refuses a
     disagreement that arrives without one, and this constructor refuses a
@@ -135,21 +133,16 @@ class TriageVerdict:
 
     @property
     def edit_eligible(self) -> bool:
-        """Whether this verdict may produce a proposed edit — derived from the
-        category inside the value, never set by a caller. Only
-        `rubric_ambiguity` is eligible (`FR-CALIB-02`); the derived form is
-        what makes the rule structural rather than a flag."""
+        """Whether this verdict may lead to a proposed edit. It is derived from the category, never
+        set by a caller: only `rubric_ambiguity` is eligible (FR-CALIB-02)."""
         return self.category == EDIT_ELIGIBLE_CATEGORY
 
     @property
     def fitted(self) -> bool:
-        """Whether this finding was fitted to — true only where an edit was
-        attached to the one category that must never be fitted to
-        (`FR-CALIB-03`). Reads as a tautology because it is one: the
-        constructor refuses `teacher_inconsistency` verdicts carrying edits, so
-        the property is the checkable statement of that refusal, and a future
-        edit that relaxed the constructor would turn this false-flag into the
-        failing assertion."""
+        """Whether an edit was attached to a `teacher_inconsistency` finding, the one category that
+        must never be fitted to (FR-CALIB-03). The constructor refuses such verdicts, so this is
+        always False; it exists so a test can assert that rule, and would fail if the constructor
+        were ever relaxed."""
         return self.category == TEACHER_INCONSISTENCY and (
             self.proposed_edit is not None
         )
@@ -157,7 +150,8 @@ class TriageVerdict:
 
 @dataclass(frozen=True)
 class DiscoveryReport:
-    """What discovery found, typed and labelled (`FR-CALIB-01`, `CT-CALIB-03`).
+    """What discovery found, with each disagreement categorized and labelled (FR-CALIB-01,
+    CT-CALIB-03).
 
     ``kind`` says what the value is — ambiguity discovery — so a consumer must
     discard the field that names it to mistake it for a measurement of
@@ -197,7 +191,7 @@ class DiscoveryReport:
 
 
 def field_names_of(value: Any) -> tuple[str, ...]:
-    """The inspectable field names of a structured value, whatever it is.
+    """The field names of a structured value, whatever kind of value it is.
 
     Exists because `CT-CALIB-03`'s assertion is over the *shape* of discovery
     output — that no field an accuracy figure falls out of can exist — and a
@@ -228,55 +222,10 @@ def discover(
     evaluation_modes: Mapping[str, str] | None = None,
     environ: Mapping[str, str] | None = None,
 ) -> DiscoveryReport:
-    """Score teacher-graded calibration samples under R₀ and identify
-    per-criterion disagreements (`FR-CALIB-01`).
+    """Score the teacher-graded calibration papers under R0 and find the disagreements per
+    criterion (FR-CALIB-01).
 
-    The samples arrive as ``calibration_papers`` — the refs stored-not-used at
-    setup (`FR-SETUP-15`) — and the teacher's grades for them as
-    ``teacher_bands`` (paper → criterion → band): the teacher's grades are the
-    *second opinion* the disagreement is measured against, never a gold
-    standard, and nothing here turns the comparison into one.
-
-    The panel's side is R₀-scoring, through one of two injected transports:
-
-    * ``model_bands`` — the panel's bands under R₀, already scored (paper →
-      criterion → band). The recorded-transport form: a run that already
-      scored the samples under the same rubric version hands its results over,
-      and discovery compares without another model call.
-    * ``scorer`` — the scoring seam as a callable, ``(paper, criterion_id)``
-      → band. A test binds a deterministic stub or `RecordedFixtureProvider`-
-      backed code (the provider stays the only egress point, `CT-PROV-15`);
-      production binds the panel. The calibration papers the teacher graded
-      are the criteria the teacher graded — discovery scores those, so an
-      unscored criterion is one the teacher never graded.
-
-    Both bound at once? The recorded bands win and the scorer stays
-    unexercised — one transport per run, and the run's notes name the ignored
-    one rather than dropping it silently.
-
-    The rubric version the caller names **is R₀** — the package's current
-    delivered version before any edit — and the report carries it as
-    ``package_version``, so every disagreement names the instrument both sides
-    read. Reading a published version is what discovery does; revising one is
-    what only elicitation (#138) through `M-PKG`'s lock may do.
-
-    Deterministic criteria are not calibration subjects (#89's separation, the
-    same exclusion `FR-REVIEW-12` draws for the blind sample): a criterion
-    declared ``deterministic`` in ``evaluation_modes`` is kept out by name and
-    reported in ``deterministic_excluded`` — scoring an answer-key lookup
-    with a panel would be theatre, and disagreeing with an answer key is a
-    key error, not a rubric ambiguity.
-
-    The report is ambiguity discovery, never a measurement of accuracy
-    (`CT-CALIB-03`): it carries the disagreements, what each stage did, and
-    nothing an accuracy figure falls out of. Where nothing could be scored the
-    report says why in ``notes`` — a bare success over an empty result is the
-    silent-failure shape the four seams exist to prevent.
-
-    Raises on programming errors only: a non-string or empty
-    ``package_version``, or an empty ``calibration_papers``, is a caller
-    defect and raises; a paper with no teacher bands is a finding's absence,
-    disclosed in the notes, never an exception.
+    More detail: `docs/code-notes/calib.md`, section `discovery.py: discover`.
     """
     if not isinstance(package_version, str) or not package_version.strip():
         raise TypeError(
@@ -465,33 +414,9 @@ def discover(
 
 
 def triage(disagreement: Disagreement) -> TriageVerdict:
-    """Categorize one disagreement and return the verdict that records it
-    (`FR-CALIB-02`).
+    """Categorize one disagreement and return the verdict recording it (FR-CALIB-02).
 
-    The category is the disagreement's *required* field: one that arrives
-    without one is refused with `TriageCategoryRequired`, because an
-    uncategorized disagreement would default into some path and the editable
-    path is the dangerous default. A category outside the closed set of three
-    is a caller defect and raises.
-
-    What each category produces is the eligibility rule, structurally:
-
-    * ``rubric_ambiguity`` — the only edit-eligible verdict
-      (`verdict.edit_eligible`). The edit itself does not exist yet: it is
-      generated from the teacher's answer during elicitation (#138,
-      `CT-CALIB-05`), so ``proposed_edit`` is None at triage even here.
-    * ``teacher_inconsistency`` — surfaced with both examples side by side
-      (`FR-CALIB-03`): the teacher's repeat labels, normalized to the
-      two-slot pair. Never fitted to — ``fitted`` reads False structurally,
-      because the verdict constructor refuses an edit on this category.
-    * ``model_failure`` — produces a `PipelineFinding` naming the pipeline
-      stage the failure lives in (`FR-CALIB-04`), and no rubric edit: the
-      category is not edit-eligible, structurally.
-
-    The disagreement's ``pipeline_stage`` declares where a known model failure
-    lives when the caller has that evidence; without it the finding names
-    ``panel_composition``, the surface a scored-band disagreement is observed
-    on — where it was *seen*, never a guess at where it was *caused*.
+    More detail: `docs/code-notes/calib.md`, section `discovery.py: triage`.
     """
     if not isinstance(disagreement, Disagreement):
         raise TypeError(

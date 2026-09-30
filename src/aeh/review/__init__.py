@@ -24,6 +24,8 @@ Files:
     stored_rows.py   stored score rows and the per-run facts the ranking needs
     constructors.py  building a review service over rows, an open store or a stored run
     labels.py        the process-level label store and the collection route
+
+Detailed design notes (the full original module description): `docs/code-notes/review.md`.
 """
 
 from __future__ import annotations

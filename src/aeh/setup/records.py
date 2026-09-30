@@ -12,7 +12,7 @@ from .settings import SETUP_EVIDENCE_TYPE_DEFAULT
 
 @dataclass(frozen=True)
 class ProposedOption:
-    """One option of a proposed `mcq`/`mixed` question, exactly as proposed.
+    """One option of a proposed `mcq` or `mixed` question, exactly as proposed.
 
     No correctness field — ADR-1's rule travels with the option set: correctness is
     the answer key, a separate blocking step (`FR-PKG-17`, S4)."""
@@ -24,10 +24,9 @@ class ProposedOption:
 
 @dataclass(frozen=True)
 class ProposedQuestion:
-    """One proposed question, exactly as the model proposed it (`FR-SETUP-01`): the
-    prompt text verbatim, a `question_type` from `aeh.pkg.QUESTION_TYPES`, and the
-    option set for any `mcq`/`mixed` question. The teacher confirms or corrects
-    THIS — never a paraphrase."""
+    """One question exactly as the model proposed it (FR-SETUP-01): the prompt text word for word,
+    a `question_type` from `aeh.pkg.QUESTION_TYPES`, and the options for an `mcq` or `mixed`
+    question. The teacher confirms or corrects this, never a paraphrase."""
 
     question_id: str
     ordinal: int
@@ -39,7 +38,7 @@ class ProposedQuestion:
 
 @dataclass(frozen=True)
 class QuestionCorrection:
-    """One teacher correction, applied at confirmation time.
+    """One correction the teacher makes when confirming the inventory.
 
     Actions: `set` patches fields of a proposed question; `remove` drops it;
     `add` contributes a question the model missed (and is the manual-entry vehicle
@@ -59,7 +58,7 @@ class QuestionCorrection:
 
 @dataclass(frozen=True)
 class InventoryProposal:
-    """The proposal a version holds, as rebuilt from its stored row.
+    """A version's stored proposal, rebuilt from its row.
 
     `status` is the payload's own word for how it got here: `proposed` (awaiting the
     teacher) or `needs_manual_entry` (the degraded path: the model's replies never
@@ -94,11 +93,9 @@ class InventoryProposal:
 
 @dataclass(frozen=True)
 class ProposedBand:
-    """One band of a read-back criterion, in the STORED order — ordinals contiguous
-    from 0, points non-decreasing (`FR-PKG-06`'s order half), so the band a judge can
-    retreat to is the LOW one, never a safe middle. The model ranks bands best-first;
-    `read_back_rubric` fixes the ordering on read-back, which is the order §3.6's
-    Requires table assigns to this module."""
+    """One band of a read-back criterion, in stored order: ordinals from 0 and points never
+    decreasing (FR-PKG-06), so a judge's fallback band is the lowest, never a safe middle. The
+    model ranks bands best first; `read_back_rubric` reorders them."""
 
     band: str
     ordinal: int
@@ -108,8 +105,8 @@ class ProposedBand:
 
 @dataclass(frozen=True)
 class CriterionDraft:
-    """One criterion as the read back proposes it — the draft #52's decomposability
-    classification consumes and the teacher's confirmation makes the package's content.
+    """One criterion as the read-back proposes it. The decomposability step classifies it, and the
+    teacher's confirmation makes it part of the package.
 
     `construct` is the criterion's own behavioural text as read from the rubric;
     `band_count` is EVEN in 2..6 (`FR-SETUP-04`); `bands` are `ProposedBand`s in stored
@@ -153,7 +150,7 @@ class CriterionDraft:
 
 @dataclass(frozen=True)
 class RubricReadback:
-    """The read back a version holds, as rebuilt from its stored row.
+    """A version's stored read-back, rebuilt from its row.
 
     `status` is the payload's own word: `proposed` (criteria and bands written to the
     draft, awaiting #52's classification and the teacher's confirmation) or
@@ -182,7 +179,7 @@ class RubricReadback:
 
 @dataclass(frozen=True)
 class DecomposabilityVerdict:
-    """One criterion's decomposability outcome (`§3.6`'s Interface, `#52`).
+    """One criterion's decomposability outcome (design §3.6).
 
     `classification` is one of `atomic` / `atomic_with_gate` / `holistic`;
     `deciding_question` names WHICH §5.3 question decided it — the audit field
@@ -201,9 +198,8 @@ class DecomposabilityVerdict:
 
 @dataclass(frozen=True)
 class DependencyProposal:
-    """One proposed criterion dependency (`FR-SETUP-10`, `#52`) — a PROPOSAL, never a
-    write: every criterion defaults to zero dependencies, and an edge exists only once
-    the teacher explicitly approves it (`CT-SETUP-08`).
+    """One proposed dependency between criteria (FR-SETUP-10). Only a proposal: every criterion
+    starts with none, and an edge exists only once the teacher approves it (CT-SETUP-08).
 
     `str()` renders the plain language `FR-SETUP-10` demands — both criteria named,
     the proposal's own reason carried, no payload syntax: a teacher reads a sentence,
@@ -222,10 +218,9 @@ class DependencyProposal:
 
 @dataclass(frozen=True)
 class PrefixBudgetReport:
-    """What `check_prefix_budget` found, per (question, criterion) pair (`FR-SETUP-11`,
-    `#53`) — the stage-level detail the four seams demand: not one boolean but the
-    per-pair counts, the ceiling they were compared against, what the remediation
-    dropped, and what is still over.
+    """What `check_prefix_budget` found (FR-SETUP-11): for each (question, criterion) pair, the
+    token count and the ceiling it was compared with, what was dropped to fix an overage, and what
+    is still over.
 
     `over_budget` is the POST-remediation fact: true when some pair's assembled prefix
     still exceeds the ceiling AFTER the drop policy ran (the drops stop at the
@@ -257,7 +252,7 @@ class PrefixBudgetReport:
 
 @dataclass(frozen=True)
 class SetupStep:
-    """One setup step as the console renders it (`NFR-SETUP-04`, `FR-CONSOLE-25`).
+    """One setup step as the console shows it (NFR-SETUP-04, FR-CONSOLE-25).
 
     A step that is not `available` yet is present-and-unavailable: the list names it
     and its staging story, so the teacher sees the whole sequence without being
@@ -274,9 +269,8 @@ class SetupStep:
 
 @dataclass(frozen=True)
 class SetupProgress:
-    """The setup state of one package version, structured for the console and the
-    headless driver: the enumerated steps, the honest remaining count (steps that are
-    available and not done), and whether `publish`'s two gates would pass right now."""
+    """The setup state of one package version, for the console and headless callers: the steps, the
+    number that remain (available and not done), and whether both publish gates would pass now."""
 
     package_version_id: PackageVersionId | None
     steps: tuple[SetupStep, ...]
@@ -284,10 +278,9 @@ class SetupProgress:
     ready_to_publish: bool
 
     def headline(self) -> str:
-        """The console's one-line state (`NFR-SETUP-04`): `setup incomplete — N steps
-        remain`, the ready line, or — with no draft version — the finished/not-started
-        line. A zero that is NOT a lie reads `ready`, because a count of remaining
-        steps that no one can act on is the console lying."""
+        """The console's one-line summary (NFR-SETUP-04): `setup incomplete — N steps remain`, the
+        ready line, or, with no draft version, the finished or not-started line. Zero remaining
+        reads as ready, because a count of steps nobody can act on would mislead."""
         if self.ready_to_publish:
             return f"setup complete for {self.package_version_id!r} — ready to publish"
         if self.package_version_id is None and self.remaining_steps == 0:

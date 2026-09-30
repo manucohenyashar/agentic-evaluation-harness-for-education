@@ -26,14 +26,10 @@ class BlindSamplingMixin:
     # -- the two samples, and the skip (#111) ---------------------------------------------------------
 
     def _rng(self, draw_index: int) -> random.Random:
-        """One draw's RNG: derived from the service's seed and the draw's
-        index, so the same seed reproduces the same *sequence* of draws while
-        successive draws on one service differ — a second sitting draws fresh
-        refs instead of re-drawing the first's (`CT-REVIEW-11`'s uniformity is
-        per draw, and a per-run rate aggregates sittings). A declared seed of
-        ``None`` stays entropy-per-draw: an undeclared seed must not silently
-        pin every administration to the same sample, which is first-N's defect
-        in disguise."""
+        """The random generator for one draw, derived from the service's seed and the draw number:
+        the same seed repeats the same sequence of draws, while successive draws on one service
+        differ (CT-REVIEW-11). A seed of None gives fresh randomness per draw, so an undeclared
+        seed never fixes every administration to the same sample."""
         if self._seed is None:
             return random.Random()
         # A str seed, not a tuple: Random() accepts only None/int/float/str/
@@ -42,13 +38,10 @@ class BlindSamplingMixin:
         return random.Random(f"{self._seed}:{draw_index}")
 
     def blind_sample(self, run_id: str = "run-1", n: int | None = None) -> BlindSession:
-        """Draw the blind sample (`FR-REVIEW-12`): 15–25 judged refs at random
-        over judged criteria, as one ``BlindSession``. The draw is
-        ``self._rng``-seeded ``sample`` over the admitted judged population —
-        uniform over the eligible set, reproducible from the service's seed,
-        and never first-N (`CT-REVIEW-11`'s distribution case). A pool smaller
-        than ``n`` floors the draw at the pool (the interpretations); a request
-        outside ``BLIND_SAMPLE_RANGE`` is refused, naming the range.
+        """Draw the blind sample (FR-REVIEW-12): 15 to 25 judged references, chosen uniformly at
+        random from the eligible judged population, reproducible from the service's seed, never
+        simply the first N (CT-REVIEW-11). A smaller pool gives a smaller draw; a size outside
+        `BLIND_SAMPLE_RANGE` is refused, naming the range.
 
         A run that recorded its skip refuses to draw: the skip's one
         consequence is the missing evidence, and a draw after a skip would
@@ -105,13 +98,10 @@ class BlindSamplingMixin:
         interrupted: bool = False,
         review_seconds: float = 0,
     ) -> list[str]:
-        """Submit a blind sitting's answers (`FR-REVIEW-12`'s collection path,
-        `CT-REVIEW-15`'s interrupted half): one ``blind`` label per answered
-        ref — ``saw_system_output = 0`` (earned: the session could not reach
-        the output, `CT-REVIEW-09` step 4), ``system_band = None``, no
-        ``review_queue_action`` — and nothing for a ref the teacher never
-        answered. A ref the session never drew is refused: a band for a
-        criterion the flow never posed is a judgement nobody made.
+        """Record a blind sitting's answers (FR-REVIEW-12, CT-REVIEW-15): one `blind` label per
+        answered reference, with `saw_system_output = 0` (the session could not reach the system's
+        output), `system_band = None` and no queue action. Nothing is written for unanswered
+        references, and a reference the session never drew is refused.
 
         ``interrupted`` records that the sitting ended early; the labels
         written are the answered ones either way, which is the clause in both
@@ -171,19 +161,12 @@ class BlindSamplingMixin:
     def whole_grade_sample(
         self, run_id: str = "run-1", n: int | None = None
     ) -> tuple[SubmissionGrade, ...]:
-        """Draw the whole-grade sample (`FR-REVIEW-14`): 10–15 complete final
-        grades from the auto-accepted population, each as the student would
-        receive it. The population is the submissions whose **every** criterion
-        row routed ``auto`` — sampling reviewed grades would measure the review,
-        not the system, so the restriction is the clause's point
-        (`CT-REVIEW-11`'s membership assertion), and a submission holding a
-        reviewed criterion is excluded with them: its grade mixes the teacher's
-        corrections into what is presented as the system's work, and a partial
-        band set presented as a final grade understates it. One grade per
-        submission, bands mapped to points through the one pinned mapping (the
-        default-policy sum — a package grade policy supersedes it the moment
-        one is attached); the offer writes no label. A request outside
-        ``WHOLE_GRADE_SAMPLE_RANGE`` is refused, naming the range."""
+        """Draw the whole-grade sample (FR-REVIEW-14): 10 to 15 complete final grades, each as the
+        student would receive it, from submissions where every criterion was auto-accepted.
+        Sampling reviewed grades would measure the review rather than the system, so any submission
+        with a reviewed criterion is left out (CT-REVIEW-11). Bands map to points through the one
+        pinned mapping. The sample writes no label; a size outside `WHOLE_GRADE_SAMPLE_RANGE` is
+        refused."""
         count = self._whole_grade_n if n is None else int(n)
         low, high = WHOLE_GRADE_SAMPLE_RANGE
         if count < low or count > high:
@@ -212,13 +195,10 @@ class BlindSamplingMixin:
         )
 
     def skip_blind_sample(self, run_id: str = "run-1") -> BlindSampleSkipReport:
-        """Record that this administration skips the blind sample
-        (`FR-REVIEW-13`): exactly one consequence — no new validation evidence
-        for this administration — and the report states the absence rather
-        than filling it. Grades deliver and finalize normally
-        (``ResidualReport.grades_delivered``/``grades_finalized``); the
-        report's ``current_figure`` is ``None``, never a previous
-        administration's figure. Idempotent: skipping twice skips once.
+        """Record that this administration skips the blind sample (FR-REVIEW-13). The only
+        consequence is that it adds no new validation evidence, and the report says so; grades are
+        delivered and finalized as normal, and `current_figure` is None, never an earlier
+        administration's figure. Skipping twice counts once.
 
         A run that already drew refuses the skip: the draw *is* validation
         evidence, and recording a skip beside it would make the report say
@@ -237,10 +217,8 @@ class BlindSamplingMixin:
         return self.skip_report(run_id)
 
     def skip_report(self, run_id: str = "run-1") -> BlindSampleSkipReport:
-        """A run's skip, read back as the report (`FR-REVIEW-13`): whether the
-        sample was skipped, the consequence said in words, and
-        ``current_figure = None`` — the honest None, whatever an earlier
-        administration produced."""
+        """Whether the run's blind sample was skipped, the consequence in words, and
+        `current_figure = None` whatever earlier administrations produced (FR-REVIEW-13)."""
         skipped = run_id in self._skipped_runs
         if skipped:
             message = (
@@ -258,12 +236,9 @@ class BlindSamplingMixin:
         return BlindSampleSkipReport(reported=skipped, message=message, current_figure=None)
 
     def render_blind_flow(self, session_id: str) -> str:
-        """The blind flow as the teacher sees it (`CT-REVIEW-09` step 2's
-        rendered probe): the drawn refs and the fixed band scale, built from
-        the session alone. Nothing the system decided can appear here, because
-        the session carries nothing the system decided — the render is a
-        projection of identity fields, not a template filtering a richer
-        object."""
+        """The blind flow as the teacher sees it (CT-REVIEW-09): the drawn references and the fixed
+        band scale, built from the session alone. Nothing the system decided can appear, because
+        the session holds nothing the system decided."""
         session = self._blind_sessions.get(session_id)
         if session is None:
             raise ReviewError(
@@ -291,19 +266,16 @@ class BlindSamplingMixin:
         return "\n".join(lines)
 
     def _blind_rate(self, run_id: str) -> float | None:
-        """The run's blind completion rate (`CT-REVIEW-18`): answered refs over
-        drawn refs, from the service's own bookkeeping. ``None`` for a run
-        that never drew — an unmeasured rate, never a silent zero."""
+        """The run's blind completion rate: answered references over drawn ones (CT-REVIEW-18).
+        None for a run that never drew: an unmeasured rate, never zero."""
         drawn = self._blind_drawn.get(run_id)
         if not drawn:
             return None
         return self._blind_answered.get(run_id, 0) / drawn
 
     def _row_for_ref(self, ref: BlindItem) -> Any:
-        """The score row a blind ref came from — the *service's* lookup, for
-        the label's routing/origin metadata. The session never sees it: the
-        guarantee is a property of what the session carries, not of what the
-        service's internals hold."""
+        """The score row a blind reference came from, looked up by the service for the label's
+        routing and origin. The session itself never sees it."""
         for row in self._rows:
             if (
                 str(getattr(row, "submission_id", "") or "") == ref.submission_id
@@ -313,18 +285,11 @@ class BlindSamplingMixin:
         return None
 
     def _auto_grade_population(self) -> list[tuple[str, str, str]]:
-        """The whole-grade sample's population (`FR-REVIEW-14`): the
-        completely auto-accepted submissions, as ``(submission_id,
-        criterion_id, band)`` triples — a submission holding any row with
-        another routing is excluded with the reviewed ones, because the grade
-        presented must be complete and wholly the system's (a partial band set
-        shown as the student's final grade understates it; a mixed one shows
-        the teacher's corrections as system work). The store form reads them
-        through the declared ``select_auto_grades`` statement, whose NOT IN
-        guard carries the same restriction — the service's own fetch admits
-        only the teacher's routings, so the sample needs its own declared read
-        (a ``.query``, never a runtime assembly, SEC-15); the in-memory form
-        filters its own rows to the same set."""
+        """The whole-grade sample's population (FR-REVIEW-14): submissions where every criterion
+        was auto-accepted, as `(submission_id, criterion_id, band)` triples. A submission with any
+        other routing is left out, because the grade shown must be complete and wholly the
+        system's. With a store, this uses the declared `select_auto_grades` statement; in memory,
+        the rows are filtered the same way."""
         if self._store is not None:
             triples: list[tuple[str, str, str]] = []
             for cohort_id in self._cohort_ids:
@@ -369,16 +334,11 @@ class BlindSamplingMixin:
         interrupted: bool,
         review_seconds: float,
     ) -> LabelRecord:
-        """One blind label (#111): the same record an action writes, collected
-        by the flow that could not see the output. ``score_id`` is ``None`` —
-        the flow cannot reach a score row, so there is no score id to name and
-        the honest label says so; ``review_queue_action`` is ``None`` — this is
-        not a queue action; ``system_band`` is ``None`` and
-        ``saw_system_output`` is 0, earned by the session's construction
-        (`CT-REVIEW-09` step 4). The band is the teacher's alone; its points
-        ride the one pinned mapping (`NFR-AGG-02`). Writes no reduction: the
-        row stays flagged — a blind label is evidence about the system, not a
-        resolution of it (`CT-REVIEW-06`'s indirection is the queue's)."""
+        """Write one blind label, collected by a flow that could not see the system's output.
+        `score_id`, `review_queue_action` and `system_band` are None and `saw_system_output` is 0
+        (CT-REVIEW-09); the band is the teacher's alone, and its points come from the pinned
+        mapping (NFR-AGG-02). The score row stays flagged: a blind label is evidence about the
+        system, not a decision on the row."""
         row = self._row_for_ref(ref)
         label = LabelRecord(
             label_id=self._mint_label_id(),
@@ -435,7 +395,8 @@ class BlindSamplingMixin:
         return label
 
     def _join_blind_system_bands(self, session: Any) -> None:
-        """CT-REVIEW-07 for blind labels (#518): every stored label carries both bands.
+        """Fill in the system's band on stored blind labels, so every stored label carries both
+        bands (CT-REVIEW-07).
 
         A blind label is written with `system_band = NULL`, because the sitting must not reach
         the score row while the teacher answers (CT-REVIEW-09). Once the sitting is submitted,
@@ -471,7 +432,7 @@ class BlindSamplingMixin:
                 tx.execute(REVIEW_STATEMENTS["set_blind_system_band"], **update)
 
     def _recorded_blind_labels(self, run_id: str) -> set[tuple[str, str]]:
-        """`(submission, criterion)` refs that already carry a durable blind label."""
+        """The `(submission, criterion)` references that already have a stored blind label."""
         if self._store is None:
             return set()
         attributed = self._attribution_run() or run_id

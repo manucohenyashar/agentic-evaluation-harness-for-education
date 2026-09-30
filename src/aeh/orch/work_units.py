@@ -12,7 +12,7 @@ from typing import Any
 
 @dataclass(frozen=True)
 class WorkUnit:
-    """One unit of work, as §3.7's v1.5 note defines it.
+    """One unit of work (§3.7).
 
     The field list is exactly the design note's: `work_id`, `run_id`, `stage`,
     `student_ref`, `student_name`, `submission_id`, `criterion_id`, `submission_text`,
@@ -47,7 +47,7 @@ class WorkUnit:
 
 @dataclass(frozen=True)
 class UnitProvenance:
-    """Where one work unit's text came from: unit -> submission -> document (#223).
+    """Where one unit's text came from: unit, then submission, then document (#223).
 
     Design §3.7's `WorkUnit` field list is closed, so the join is a lookup over the
     submission row rather than a field on the unit. The record carries identifiers only —
@@ -96,7 +96,7 @@ WORK_ID_INPUTS: tuple[str, ...] = (
 
 
 def _row_evaluation_mode(criterion: Any) -> str:
-    """One criterion row's declared evaluation mode (`FR-PKG-22`, `FR-ORCH-35`).
+    """One criterion row's declared evaluation mode (FR-PKG-22, FR-ORCH-35).
 
     Read from the column, with the shape default only for a row that predates the column
     — a package file migrated to version 11 always carries it, so the fallback covers the
@@ -119,7 +119,7 @@ def _row_evaluation_mode(criterion: Any) -> str:
 
 
 def _encode_field(value: str | None) -> bytes:
-    """The canonical byte encoding of one `work_id` input.
+    """The canonical bytes for one `work_id` input.
 
     **The encoding `M-ORCH` chose where §3.7 is silent** (recorded on the #57 PR, and the
     migration note `TC-REG-06`'s grounds require): each field is encoded as a **type tag
@@ -159,7 +159,7 @@ def compute_work_id(
     prompt_template_version: str,
     extractor_version: str,
 ) -> str:
-    """The content address of one unit of work (`FR-ORCH-01`, verbatim in structure).
+    """The content hash that identifies one unit of work (FR-ORCH-01).
 
     ``sha256`` over the nine named inputs, in `WORK_ID_INPUTS` order, under
     `_encode_field`'s canonical encoding; returned as the 64-character lowercase hex

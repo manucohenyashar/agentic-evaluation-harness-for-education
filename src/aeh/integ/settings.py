@@ -35,8 +35,8 @@ _ALERT_THRESHOLD_ENV = "INTEG_ALERT_THRESHOLD"
 
 
 def _ocr_conf_floor_override() -> float:
-    """The configured floor, or `inf` when unparseable — an unreadable floor
-    flags every region rather than certifying any (the fail-closed reading)."""
+    """The configured OCR confidence floor, or infinity when it does not parse, so an unreadable
+    setting flags every region instead of passing any."""
     raw = os.environ.get(_OCR_FLOOR_ENV)
     if raw is None or not raw.strip():
         return _DEFAULT_OCR_FLOOR
@@ -54,8 +54,7 @@ def _described_routes_enabled() -> bool:
 
 
 def _verification_disabled() -> bool:
-    """Whether the span-verification switch is explicitly set to a truthy value —
-    the differential-timing seam the plan's own oracle names.
+    """Whether span verification has been explicitly switched off, the seam the timing test uses.
 
     A truthy spelling (`1`, `true`, `yes`, `on`) disables; everything else —
     unset, empty, `0`, `false`, `off`, `no`, garbage — leaves verification ON.
@@ -105,7 +104,7 @@ INTEG_DOCUMENT_CACHE_ENTRIES_ENV = "HARNESS_INTEG_DOCUMENT_CACHE_ENTRIES"
 
 
 def _document_cache_entries() -> int:
-    """The document cache's bound, read at call time."""
+    """How many documents the cache may hold, read from its knob at call time."""
     raw = os.environ.get(INTEG_DOCUMENT_CACHE_ENTRIES_ENV)
     if raw is None or raw.strip() == "":
         return INTEG_DOCUMENT_CACHE_ENTRIES

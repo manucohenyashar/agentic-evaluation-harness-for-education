@@ -14,8 +14,8 @@ from .alerts import _mapping_get
 
 
 def decision_engine_record(decision_engine: Any) -> dict[str, Any]:
-    """The frozen decision engine as `panel_config` and `provider_config` record it (FR-ORCH-36/40):
-    provider, build, the four gate values (canonical spellings) and the render version."""
+    """The frozen decision engine as `panel_config` and `provider_config` store it (FR-ORCH-36/40):
+    provider, build, the four gate values (in canonical form) and the render version."""
     from aeh.conf import _canonical_decimal
 
     return {
@@ -30,7 +30,7 @@ def decision_engine_record(decision_engine: Any) -> dict[str, Any]:
 
 
 def panel_config_json(panel: Sequence[Any], *, decision_engine: Any = None) -> str:
-    """The canonical `panel_config` string a run records and hashes.
+    """The canonical `panel_config` string a run stores and hashes.
 
     `panel_config` is one of `FR-ORCH-01`'s nine inputs, so its serialization is part of
     the work-ID scheme and lives in exactly one place. The panel is serialized as a JSON
@@ -54,7 +54,7 @@ def panel_config_json(panel: Sequence[Any], *, decision_engine: Any = None) -> s
 
 
 def default_package_id_for(package_version_id: str) -> str:
-    """The Tier P key a version id lives under, by the catalog's own minted convention.
+    """The Tier P key a package version id is stored under, following the catalog's naming rule.
 
     `PackageCatalog.create_version` mints ``f"{package_id}@{uuid4().hex[:12]}"``, so the
     package id is everything before the **last** ``@``. Injectable on the orchestrator
@@ -77,8 +77,8 @@ def default_package_id_for(package_version_id: str) -> str:
 
 
 def _persisted_run_config(cfg: Any) -> str | None:
-    """The run's frozen `RunConfig` as `to_persisted_dict()` serializes it (CT-CONF-06), or
-    None for a config double that has no serializer."""
+    """The run's frozen `RunConfig` serialized by `to_persisted_dict()` (CT-CONF-06), or None for a
+    test double without one."""
     persisted = getattr(cfg, "to_persisted_dict", None)
     if not callable(persisted):
         return None
@@ -86,10 +86,9 @@ def _persisted_run_config(cfg: Any) -> str | None:
 
 
 def _refuse_profile_switch(row: Any) -> None:
-    """FR-CONF-15 / FR-ORCH-16 (#527): an explicit resume under a current configuration that
-    names a different `HARNESS_PROFILE` than the run froze is refused with
-    `BackendMismatchError`, naming both. A resume under no named profile replays the run's
-    own frozen backend, which is the resume-same-backend rule."""
+    """Refuse to resume a run under a different `HARNESS_PROFILE` than the one it froze, raising
+    `BackendMismatchError` naming both (FR-CONF-15, FR-ORCH-16, #527). With no profile set, the run
+    resumes on its own frozen backend."""
     from aeh.conf import BackendMismatchError, effective_config
 
     current = effective_config({}).get("HARNESS_PROFILE")
@@ -102,7 +101,7 @@ def _refuse_profile_switch(row: Any) -> None:
 
 
 def _panel_build_ref_of(row: Any) -> str:
-    """The run's frozen `panel_build_ref`, read from its persisted provider config."""
+    """The run's frozen `panel_build_ref`, from its saved provider config."""
     try:
         config = json.loads(_mapping_get(row, "provider_config") or "{}")
     except (TypeError, ValueError):
@@ -114,7 +113,7 @@ def record_run_start(
     store: Any, config: Any, *, run_id: str | None = None, summary: Any = None,
     recorded_at: str | None = None,
 ) -> str:
-    """Write the run-start audit record: the orchestrator's write of what graded this run.
+    """Write the run-start audit record: what configuration graded this run.
 
     **Invented here** — the name appears in no Interfaces block (checked: zero occurrences
     in either design document), which is exactly why it is this module's to define: the

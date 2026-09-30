@@ -32,10 +32,9 @@ _DIRECTIVE_L2 = (
 
 
 def prompt_for(request: L1Request | L2Request) -> PromptPayload:
-    """The rendered prompt, in a fixed field order — the payload the provider boundary
-    hashes. The level is visible in the fields: an L1 request carries its question's
-    criteria, verdicts and evidence; an L2 request carries ONLY the syntheses, because
-    that is all the type can hold."""
+    """Render a synthesis request as the prompt fields, in a fixed order; the provider hashes
+    exactly these fields. An L1 request carries its question's criteria, verdicts and evidence. An
+    L2 request carries only the L1 narratives, because that is all its type can hold."""
     if isinstance(request, L1Request):
         verdict_lines = "\n".join(
             f"criterion={v.criterion_id} judge={v.judge_id} band={v.band}"
@@ -72,7 +71,7 @@ def prompt_for(request: L1Request | L2Request) -> PromptPayload:
 
 
 def parse_narrative(text: str) -> tuple[str, tuple[str, ...]]:
-    """Parse the synthesis reply into `(narrative text, citations)`.
+    """Parse a synthesis reply into `(narrative text, citations)`.
 
     The reply is a JSON object whose `narrative` is the prose and whose `citations`
     list the criterion ids the narrative anchors to (`FR-SYNTH-04`). A reply that is
@@ -98,7 +97,7 @@ def parse_narrative(text: str) -> tuple[str, tuple[str, ...]]:
 
 
 def _payload_span_texts(payload: bytes) -> tuple[str, ...]:
-    """The evidence texts a persisted span payload decodes to.
+    """The evidence texts that a stored span payload decodes to.
 
     The payload is `M-EXTRACT`'s evidence record (a JSON object of byte-offset spans
     into the canonical document); the span texts are what the L1 request reads.

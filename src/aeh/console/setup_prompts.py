@@ -69,11 +69,10 @@ _SETUP_STEP_GENERIC_COST = (
 
 
 def render_setup_step(step: str) -> str:
-    """One setup step rendered as a non-blocking prompt (`FR-CONSOLE-06`, invariant 1):
-    the step's ask and a first-class skip control whose cost renders **in the same view**
-    (`R62`). Module-level so the headless driver can render one step without an app; the
-    S5 cards render through this same function, so the page and the step renderer cannot
-    drift into two consoles.
+    """One setup step as a non-blocking prompt (FR-CONSOLE-06, invariant 1): its question and a
+    skip button with its cost in the same view (R62). The setup screen's cards use this same
+    function, so the page and this renderer cannot drift apart; it is module-level so the headless
+    driver can use it without an app.
 
     The aggregation knobs are **declared** constants at Phase 1 (`CT-AGG-14`), and the
     copy says exactly that — presenting them as tuned, validated or otherwise

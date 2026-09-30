@@ -56,8 +56,8 @@ OPENJEV_MAX_CHOICE_OPTIONS = 52
 
 
 def _url_is_loopback(url: str) -> bool:
-    """True only for `localhost` or a loopback IP literal. A look-alike host
-    (`127.0.0.1.example.com`) is a DNS name, not an IP, and is not loopback."""
+    """True only for `localhost` or a loopback IP address. A look-alike host such as
+    `127.0.0.1.example.com` is a DNS name, not loopback."""
     import ipaddress
     from urllib.parse import urlsplit
 
@@ -96,9 +96,10 @@ _GENERIC_WEIGHTS_STEMS = frozenset({"model", "pytorch_model", "consolidated", "w
 
 
 def _weights_names(build_id: str) -> set[str]:
-    """The names an edge build's weights can be served under: the final path segment without
-    its weights suffix, plus its parent directory — so `/models/openjev-FP8/model.safetensors@
-    sha256:ab` (the resolved form FR-CONF-03 requires) matches vLLM serving `/models/openjev-FP8`."""
+    """The names an edge build's weights can be served under: the last path segment without its
+    weights suffix, plus its parent directory. So a pinned
+    `/models/openjev-FP8/model.safetensors@sha256:ab` matches a server serving
+    `/models/openjev-FP8`."""
     from aeh.conf import WEIGHTS_SUFFIXES
 
     parts = build_id.split("@sha256:", 1)[0].replace("\\", "/").rstrip("/").split("/")
@@ -115,9 +116,9 @@ def _weights_names(build_id: str) -> set[str]:
 
 
 class _LoopbackDecisionProvider(_BaseDecisionProvider):
-    """Shared loopback rule for the local decision providers (CT-PROV-22, CT-PROV-26): a
-    non-loopback base URL is refused at construction unless the provider's own allow-remote
-    knob is set."""
+    """The loopback rule the local decision providers share (CT-PROV-22, CT-PROV-26): a base URL
+    that is not loopback is refused at construction unless the provider's own allow-remote knob is
+    set."""
 
     _allow_remote_env = ""
     _base_url = ""
@@ -131,15 +132,16 @@ class _LoopbackDecisionProvider(_BaseDecisionProvider):
                 f"remote decision host (FR-PROV-22).")
 
     def verify_retention(self, model_refs: Sequence[ModelRef]) -> RetentionReport:
-        """Nothing is retained off-machine on loopback; a deliberately remote host cannot be
-        confirmed and is reported unconfirmed (edge-local has no retention gate to raise)."""
+        """Nothing is retained off the machine on loopback. A deliberately remote host cannot be
+        confirmed and is reported as unconfirmed (edge-local has no retention gate that would
+        raise)."""
         if _url_is_loopback(self._base_url):
             return RetentionReport(confirmed=tuple(model_refs), unconfirmed=())
         return RetentionReport(confirmed=(), unconfirmed=tuple(model_refs))
 
 
 class OpenJevLocalProvider(_LoopbackDecisionProvider):
-    """OpenJev on loopback: the local configuration's decision engine (FR-PROV-22).
+    """OpenJev served on loopback: the decision engine of the local configuration (FR-PROV-22).
 
     POSTs to the OpenJev shim's `/v1/systemone`. A separate class from `JevOpenRouterProvider`
     (user directive). Build identity comes from the vLLM server behind the shim, probed at run
@@ -169,9 +171,9 @@ class OpenJevLocalProvider(_LoopbackDecisionProvider):
                                     deterministic=True)
 
     def verify_build(self, model_ref: ModelRef) -> str:
-        """Probe vLLM's `GET /v1/models` and check the served weights name matches the
-        `ModelRef` (FR-PROV-24). Records the served identity; a later probe that differs raises
-        `BuildChangedError`. Returns the identity."""
+        """Ask the local server which weights it serves (`GET /v1/models`) and check they match the
+        `ModelRef` (FR-PROV-24). The served identity is recorded, and a later probe that differs
+        raises `BuildChangedError`. Returns the identity."""
         if not _url_is_loopback(self._vllm_url) and not _env_flag(self._allow_remote_env):
             raise ConfigurationError(f"the OpenJev build-probe URL {self._vllm_url!r} is not loopback.")
         response = self._transport.send(HttpRequest("GET", f"{self._vllm_url}/models", {}, b""))
@@ -248,7 +250,8 @@ OPENJEV_SMALL_MAX_CHOICE_OPTIONS = 16
 
 def _small_build_identity(build_id: str) -> tuple[str, str]:
     """`(subfolder, digest)` of an openjev-small build (FR-PROV-31, FR-CONF-27): the directory
-    holding a generic `model.safetensors`, else the final path segment, and the `@sha256:` pin."""
+    holding a generic `model.safetensors` (or else the last path segment), and the `@sha256:` pin.
+    """
     from aeh.conf import WEIGHTS_SUFFIXES
 
     path, _, digest = build_id.partition("@sha256:")
@@ -263,8 +266,8 @@ def _small_build_identity(build_id: str) -> tuple[str, str]:
 
 
 class OpenJevSmallLocalProvider(_LoopbackDecisionProvider):
-    """OpenJevSmall on loopback: the opt-in `edge-local` decision engine for machines too small
-    to hold OpenJev beside the judge (FR-PROV-30…32, design §3.11).
+    """OpenJevSmall served on loopback: an opt-in decision engine for `edge-local` machines too
+    small to hold OpenJev next to the judge (FR-PROV-30..32, design §3.11).
 
     A separate class from `OpenJevLocalProvider` — neither subclasses the other — with its own
     base URL, allow-remote knob and one-window budget. Unlike OpenJev, the build **digest** is
@@ -294,12 +297,13 @@ class OpenJevSmallLocalProvider(_LoopbackDecisionProvider):
 
     @staticmethod
     def resolved_build_for(model_ref: ModelRef) -> str:
-        """`openjev-small:<subfolder>@sha256:<digest>` — what every answer reports (FR-PROV-31)."""
+        """The build identity every answer reports: `openjev-small:<subfolder>@sha256:<digest>`
+        (FR-PROV-31)."""
         subfolder, digest = _small_build_identity(model_ref.build_id)
         return f"openjev-small:{subfolder}@sha256:{digest}"
 
     def build_info(self) -> dict[str, str]:
-        """The shim's `GET /v1/build` document (FR-PROV-36)."""
+        """The shim's build document from `GET /v1/build` (FR-PROV-36)."""
         response = self._transport.send(HttpRequest("GET", f"{self._base_url}/v1/build", {}, b""))
         if response.status != 200:
             raise ProviderUnavailableError(f"the openjev-small build probe got HTTP {response.status}")
@@ -313,10 +317,10 @@ class OpenJevSmallLocalProvider(_LoopbackDecisionProvider):
             raise MalformedResponseError(f"the openjev-small build probe is malformed: {exc}") from exc
 
     def verify_build(self, model_ref: ModelRef, *, placement: str | None = None) -> str:
-        """FR-PROV-31: the served `weights_sha256` and subfolder must equal the `ModelRef`'s,
-        else `BuildChangedError` — the 2B build against a 4B ref included; nothing swaps builds.
-        With `placement == "cpu"` (FR-CONF-28) the served device must be `cpu`, else
-        `ConfigurationError`. Returns the resolved build."""
+        """Check that the served weights hash and subfolder match the `ModelRef`, else raise
+        `BuildChangedError`, so builds are never swapped (FR-PROV-31). With `placement == "cpu"`
+        the served device must be `cpu`, else `ConfigurationError` (FR-CONF-28). Returns the
+        resolved build."""
         info = self.build_info()
         subfolder, digest = _small_build_identity(model_ref.build_id)
         if info["subfolder"] != subfolder or info["weights_sha256"] != digest:

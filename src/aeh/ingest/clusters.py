@@ -19,12 +19,10 @@ class TokenClustersMixin:
     # -- cohort-wide token clustering (FR-INGEST-20) --------------------------------------
 
     def clusters(self, cohort_id: str) -> tuple[TokenCluster, ...]:
-        """The cohort's unresolved-token clusters (`FR-INGEST-20`): every DISTINCT
-        unresolved token across the cohort's regions, grouped ONCE. The tokens are
-        what the transcription marked `<unresolved>...</unresolved>`; a cluster is
-        presented for operator resolution once, never once per occurrence. The
-        cluster id is derived from the token, so the same token always resolves
-        through the same cluster."""
+        """The cohort's unresolved-token clusters (FR-INGEST-20): each distinct token the
+        transcription marked `<unresolved>`, grouped once across all regions, so the operator
+        resolves it once rather than once per occurrence. The cluster id comes from the token, so
+        the same token always maps to the same cluster."""
         rows = self._handle.query(INGEST_STATEMENTS["select_all_regions"])
         grouped: dict[str, TokenCluster] = {}
         for row in rows:
@@ -47,34 +45,12 @@ class TokenClustersMixin:
         self, cluster_id: str, resolution: str,
         *, package_catalog: Any | None = None, package_version: str | None = None,
     ) -> "ClusterResolution":
-        """Apply one operator resolution to EVERY occurrence of the cluster's token
-        (`FR-INGEST-20`), **per region kind** (`FR-INGEST-36`): every region carrying it is
-        resolved in place, the resolution is recorded once in `token_cluster`, and the
-        document ids whose regions changed are returned — the set of documents the correction
-        touches.
+        """Apply one operator resolution to every occurrence of the cluster's token, handled per
+        region kind (FR-INGEST-20, FR-INGEST-36): each region carrying it is updated, the
+        resolution is recorded once in `token_cluster`, and the ids of the documents that changed
+        are returned.
 
-        The per-kind rule:
-
-        * `transcribed_text` and `described_graphic` — the content is replaced and nothing
-          else; `selection_state` is not the operator's to change by reading a word.
-        * `selection_mark` — the resolution must equal a declared `question_option.option_id`
-          for the region's question (`question_id` since `#373`, `element_kind` for rows
-          written before the column existed — M-DET's own reading). When it does,
-          `selection` and `selection_state='resolved'` are written **together**, in one
-          statement. Otherwise the region stays `ambiguous` with a NULL selection, its content
-          is still replaced, and it is listed under `selection_unresolved` on the returned
-          report — an operator who typed `E` for a four-option question learns it from the
-          report rather than from a student's lost mark (RISK-50).
-
-        The declared options come from `package_catalog`/`package_version` — given here, or
-        bound once on the gateway. **Without them no selection mark resolves**: the module will
-        not guess an option set, and fail-closed here means a region left ambiguous and listed,
-        never a resolved mark with no selection (`CT-INGEST-21`). A caller that resolves ticks
-        must therefore name the package; a caller that only ever resolves illegible words need
-        not, and nothing it does can produce the forbidden row.
-
-        The returned `ClusterResolution` IS the tuple of affected document ids — the shape
-        every existing caller reads — with the report riding beside it.
+        More detail: `docs/code-notes/ingest.md`, section `clusters.py: TokenClustersMixin.resolve_cluster`.
         """
         matches = [cluster for cluster in self.clusters(self._cohort_id)
                    if cluster.cluster_id == cluster_id]
@@ -123,9 +99,9 @@ class TokenClustersMixin:
         self, tx: Any, region_ids: Sequence[str], token: str, resolution: str,
         package_catalog: Any | None, package_version: str | None,
     ) -> list[str]:
-        """The per-kind writes of one cluster resolution; returns the region ids left
-        ambiguous. Writes through the CALLER's transaction, so the whole resolution — regions,
-        token, cluster record — commits or aborts together."""
+        """Write one cluster resolution's changes per region kind, and return the ids of regions
+        left ambiguous. Writes in the caller's transaction, so the whole resolution commits or
+        aborts together."""
         unresolved: list[str] = []
         for region_id in region_ids:
             rows = self._handle.query(

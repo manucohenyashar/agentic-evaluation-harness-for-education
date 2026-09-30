@@ -33,7 +33,7 @@ _ACTION_CONSTRUCTS: dict[str, str] = {
 
 @dataclass(frozen=True)
 class SanitizeResult:
-    """What the sanitizer did to one source PDF (`CLAUDE.md` seam 4).
+    """What the sanitizer found and did for one source PDF.
 
     `pdf_bytes` is the copy rasterization is allowed to read — the original when
     nothing needed removing, the rewritten document otherwise. `neutralized` names
@@ -56,8 +56,8 @@ class SanitizeResult:
 
 
 class PdfSanitizer:
-    """The PDF neutralize-and-bound seam (`CLAUDE.md` seam 2): the one place a source
-    PDF is inspected and rewritten before any rasterization.
+    """Inspects and rewrites a source PDF before it is rasterized: removes active content and
+    enforces size limits.
 
     `FR-INGEST-33` makes sanitization a precondition of rasterization — the seam
     exists so that, like the rasterizer and the model boundary, it is a dependency
@@ -69,21 +69,20 @@ class PdfSanitizer:
         max_decompressed_bytes: int | None,
         max_embedded_objects: int | None, deadline: float | None,
     ) -> SanitizeResult:
-        """Inspect `pdf_bytes`, remove the active constructs (`strip=True`), and
-        report what was found within the given bounds. Raising anything at all is
-        legitimate — the gateway wraps every failure into a refusal
-        (`NFR-INGEST-08`)."""
+        """Inspect `pdf_bytes`, remove active content when `strip=True`, and report what was found
+        within the given limits. It may raise anything; the gateway turns every failure into a
+        refusal (NFR-INGEST-08)."""
         raise NotImplementedError
 
 
 class _WalkAborted(Exception):
-    """A bound was crossed mid-walk (`FR-INGEST-34`): the walk stops HERE — no
-    further objects are visited, no further stream is decompressed — and the
-    partial observations ride out to the caller as the refusal's evidence."""
+    """A limit was crossed during the object walk (FR-INGEST-34). The walk stops at once, with
+    nothing more visited or decompressed, and what was seen so far goes to the caller as evidence
+    for the refusal."""
 
 
 def _chunked_flate_size(raw: bytes, budget: int) -> int:
-    """The decompressed size of a FlateDecode stream, measured in bounded chunks.
+    """The decompressed size of a Flate stream, measured in bounded chunks.
 
     Returns the running total — which may exceed `budget`, but only after the
     measurement STOPPED absorbing (the caller compares and refuses): a bomb is
@@ -126,9 +125,8 @@ def _chunked_flate_size(raw: bytes, budget: int) -> int:
 
 
 class PypdfSanitizer(PdfSanitizer):
-    """The live sanitizer, over `pypdf`. Imported LAZILY, like the live rasterizer:
-    the fast tier never needs the dependency, and an acceptance-run box installs it
-    explicitly.
+    """The live sanitizer, using `pypdf`. The library is imported only when first used, so the fast
+    test tier does not need it.
 
     Three passes, in order: a bounded MEASUREMENT walk of the original (detect the
     constructs, size the streams chunk-wise, count the objects, watch the clock) —
@@ -142,8 +140,7 @@ class PypdfSanitizer(PdfSanitizer):
 
     @staticmethod
     def _module() -> Any:
-        """The pypdf module, resolved lazily wherever a helper needs it (the lazy
-        import IS the seam; the module system caches the resolution)."""
+        """The `pypdf` module, imported on first use."""
         import pypdf  # noqa: PLC0415 -- the lazy import IS the seam
         return pypdf
 
@@ -248,7 +245,7 @@ class PypdfSanitizer(PdfSanitizer):
         max_decompressed_bytes: int | None, max_embedded_objects: int | None,
         deadline: float | None,
     ) -> dict:
-        """One bounded graph walk from the trailer, over every reachable object.
+        """One bounded walk over every object reachable from the PDF's trailer.
 
         Detection is structural: any dictionary carrying `/AA`, `/OpenAction`,
         `/JS`, `/XFA`, `/EF`, an action dictionary whose `/S` is one of the
@@ -325,7 +322,7 @@ class PypdfSanitizer(PdfSanitizer):
                 "max_declared_image_px": max_image_px, **pages}
 
     def _detect(self, obj: Any) -> set[str]:
-        """The construct classes one dictionary carries (`FR-INGEST-33`'s list)."""
+        """The kinds of active content one PDF dictionary contains (FR-INGEST-33)."""
         pypdf = self._module()
         found: set[str] = set()
         for key in ("/AA", "/OpenAction", "/JS", "/XFA", "/EF"):
@@ -349,8 +346,8 @@ class PypdfSanitizer(PdfSanitizer):
         return found
 
     def _measure_stream(self, stream: Any, budget: int) -> int | None:
-        """The stream's decompressed size within `budget` (-1 = unbounded), or
-        None when the stream cannot be bounded without fully decoding it.
+        """A stream's decompressed size within `budget` (-1 means no limit), or None when it cannot
+        be bounded without decoding it fully.
 
         Declared rule (review B3): exactly two families are measurable —
         UNFILTERED streams (the encoded bytes ARE the data; a plain `len`, no
@@ -378,16 +375,12 @@ class PypdfSanitizer(PdfSanitizer):
 
     @staticmethod
     def _encoded_bytes(stream: Any) -> bytes:
-        """The stream's ENCODED bytes, without decoding: the writer-side
-        StreamObject exposes them as `raw_data`; the reader-side
-        EncodedStreamObject keeps them (undecoded) in `_data` and offers no
-        public raw accessor (review B2)."""
+        """A stream's encoded bytes, without decoding them."""
         return stream.raw_data if hasattr(stream, "raw_data") else stream._data
 
     def _page_facts(self, reader: Any) -> dict:
-        """Structural page observations for the pre-raster bounds: the page count
-        and each page's point size (the expected raster's dimensions at the pinned
-        DPI are `pt / 72 * dpi`, checkable before the raster is allocated)."""
+        """The page count and each page's size in points, so raster limits can be checked before
+        any raster is made (a page's raster size is `pt / 72 * dpi`)."""
         try:
             pages = list(reader.pages)
         except Exception as error:  # noqa: BLE001 -- an unreadable page tree is a refusal
@@ -404,9 +397,8 @@ class PypdfSanitizer(PdfSanitizer):
         return {"page_count": len(pages), "page_sizes_pt": tuple(sizes)}
 
     def _strip(self, reader: Any, pypdf: Any) -> None:
-        """Remove the constructs from the reader's object graph in place. The walk
-        found them; this pass deletes the keys, the name-tree entries and the
-        file-attachment annotations — the verify pass then asserts the removal."""
+        """Remove the active content found by the walk, in place: the dictionary keys, name-tree
+        entries and file-attachment annotations. A later pass checks the removal."""
         visited: set[tuple[int, int]] = set()
 
         def prune(value: Any) -> None:
@@ -463,9 +455,8 @@ class PypdfSanitizer(PdfSanitizer):
             page[pypdf.generic.NameObject("/Annots")] = kept
 
     def _prune_dest_tree(self, node: Any, pypdf: Any) -> None:
-        """Drop name-tree destination entries whose action is an external or
-        active reference (a `/Dests` tree can carry `/GoToR` and `/URI` behind a
-        named destination exactly as an annotation can)."""
+        """Remove named destinations whose action points outside the document or runs something,
+        because a `/Dests` tree can hide `/GoToR` and `/URI` actions just as annotations can."""
         kids = node.get("/Kids")
         if isinstance(kids, pypdf.generic.IndirectObject):
             kids = kids.get_object()

@@ -26,7 +26,8 @@ class ReportingMixin:
     """Builds the progress report, evaluates the run's alerts and writes its metrics."""
 
     def flush_metrics(self, run_id: str) -> None:
-        """Persist the run's dispatch counters to `run_metrics` WITHOUT a dispatch pass (#596).
+        """Save the run's dispatch counters to `run_metrics` without running a dispatch pass
+        (#596).
 
         `progress()` flushes after every pass; model calls made after the last pass (synthesis)
         would otherwise accrue into counters nothing persists. `progress()` itself is not the
@@ -47,7 +48,7 @@ class ReportingMixin:
         run_id: str,
         state: dict[str, Any] | None,
     ) -> ProgressReport:
-        """Build the report from the ledger's own aggregates (`FR-ORCH-23`).
+        """Build the progress report from the ledger's own counts (FR-ORCH-23).
 
         Every figure is a count of rows — the ledger is the only bookkeeping, so a
         report computed from anything else would drift on exactly the growing ledger
@@ -160,7 +161,7 @@ class ReportingMixin:
     def _run_alerts(
         self, cohort: Any, run_id: str, run_row: Any, rate: float
     ) -> tuple[RunAlert, ...]:
-        """The run's fired alerts (`FR-ORCH-32`), gathered from the ledger and evaluated.
+        """The run's fired alerts (FR-ORCH-32), read from the ledger and evaluated.
 
         Gathering is here and the RULES are in `evaluate_alerts`: the split is what keeps
         each condition independently breachable without a store (`TC-ORCH-36`'s rung), and
@@ -229,7 +230,7 @@ class ReportingMixin:
         state: dict[str, Any],
         report: ProgressReport,
     ) -> None:
-        """Persist the pass's cumulative signals into `run_metrics` (`CT-ORCH-20`).
+        """Save this pass's running totals to `run_metrics` (CT-ORCH-20).
 
         M-ORCH is the table's sole writer (`CT-STORE-03`): the dispatch loop's own
         counters plus the ledger-derived totals, written at the end of every pass —
@@ -307,7 +308,7 @@ class ReportingMixin:
         self.record_run_metrics(run_id, metrics)
 
     def _run_wall_clock_ms(self, cohort: Any, run_id: str) -> float:
-        """`FR-ORCH-33`: elapsed since `run.started_at`, less every paused interval.
+        """Time since `run.started_at`, minus every paused period (FR-ORCH-33).
 
         Read from the LEDGER, never from `time.monotonic()`. A monotonic anchor measures
         how long *this process* has been running, so a run resumed after a restart
@@ -330,9 +331,8 @@ class ReportingMixin:
     def _run_resolved_builds(
         self, cohort: Any, run_id: str, state: Mapping[str, Any]
     ) -> list[str]:
-        """Every build this run resolved, as a sorted set. The pass's own answer plus
-        whatever earlier passes already recorded, so a restart does not shorten the
-        list to just what this process happened to see."""
+        """Every model build this run used, sorted: this pass's builds plus those earlier passes
+        recorded, so a restart does not shorten the list."""
         seen: set[str] = set()
         if state.get("resolved_build"):
             seen.add(str(state["resolved_build"]))
@@ -353,7 +353,7 @@ class ReportingMixin:
         return sorted(seen)
 
     def record_run_metrics(self, run_id: str, metrics: Mapping[str, Any]) -> None:
-        """Write one run's metrics as EAV rows — the write `CT-ORCH-20` makes contract.
+        """Write one run's metrics as one row per metric (CT-ORCH-20).
 
         **A reserved name, landed** (`#65` reserved it for TS-25; the design's Protocol
         has no metrics member): whether the dispatch flushes through it internally or a

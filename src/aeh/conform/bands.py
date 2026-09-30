@@ -60,7 +60,8 @@ def _band_scale(band: str) -> tuple[str, ...]:
 
 
 def _shift_bands_one_step(bands: Mapping[str, str]) -> dict[str, str]:
-    """One criterion's band, one step up its declared scale — the substitution shift.
+    """One criterion's band moved one step up its declared scale: the shift a simulated build
+    substitution causes.
 
     A shift of exactly one declared step is the smallest change that is still a change: it
     moves the distribution, it is detectable against the frozen references, and it stays inside

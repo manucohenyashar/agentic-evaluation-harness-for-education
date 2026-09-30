@@ -17,12 +17,10 @@ from .errors import IngestError, IngestGapError, IngestOrderError
 
 @dataclass(frozen=True)
 class AssembledDocument:
-    """The canonical assembled artifact the pure assembly seam returns: the Markdown,
-    its content hash, the transcriber build when the caller knows one (a file-page
-    assembly does not — the corpus pages predate any build), and the provenance: per
-    page, the source's content hash, its index within that source, and its position in
-    the assembled sequence (`FR-INGEST-07`), plus WHICH source decided the order
-    (`FR-INGEST-06`)."""
+    """The assembled canonical document: the Markdown, its content hash, the transcriber build when
+    known, and its provenance: for each page, the source's content hash, the page's index in that
+    source and its position in the document (FR-INGEST-07), plus which source decided the order
+    (FR-INGEST-06)."""
 
     canonical_markdown: str
     content_hash: str
@@ -32,9 +30,8 @@ class AssembledDocument:
 
     @property
     def source_blobs(self) -> str:
-        """The provenance as the document row records it (`FR-INGEST-06` names the
-        field): which source decided the order, and per page the source identity, its
-        page index and its assembled position."""
+        """The provenance as the document row stores it (FR-INGEST-06): which source decided the
+        order and, per page, the source, its page index and its position in the document."""
         return json.dumps(
             {"order_source": self.order_source, "pages": list(self.pages)},
             sort_keys=True,
@@ -42,9 +39,9 @@ class AssembledDocument:
 
 
 def _parse_page_number(text: str) -> tuple[int, int] | None:
-    """The page's (number, declared total) from a "Page N of M" header — the total is
-    what makes a GAP detectable: pages 1, 2, 4, 5, 6 of a declared 7 are missing 3 and
-    7, which counting the found pages could never see."""
+    """A page's `(number, declared total)` from a "Page N of M" header. The total is what makes a
+    gap visible: pages 1, 2, 4, 5, 6 of a declared 7 are missing 3 and 7, which counting the pages
+    found could never show."""
     match = _PAGE_NUMBER_PATTERN.search(text)
     return (int(match.group(1)), int(match.group(2))) if match else None
 
@@ -55,8 +52,8 @@ def _parse_fiducial(text: str) -> str | None:
 
 
 def _natural_key(name: str) -> list:
-    """Filename ordering that a human means: digits compare as numbers, so page-10
-    sorts after page-9 rather than between page-1 and page-2."""
+    """Sort key for file names the way a person means them: numbers compare as numbers, so page-10
+    comes after page-9, not between page-1 and page-2."""
     return [int(part) if part.isdigit() else part
             for part in re.split(r"(\d+)", name)]
 
@@ -65,9 +62,9 @@ def assemble_canonical_markdown(
     pages: Sequence[Any], *, transcriber_ref: str | None = None,
     order_hint: Sequence[Any] | None = None, filenames: dict[Any, str] | None = None,
 ) -> AssembledDocument:
-    """Assemble transcribed page files into the ONE canonical Markdown artifact
-    (`FR-INGEST-04`), with the order determined from the declared preference ladder
-    (`FR-INGEST-06`) and per-page provenance recorded (`FR-INGEST-07`).
+    """Assemble transcribed page files into the one canonical Markdown document (FR-INGEST-04),
+    ordering the pages by the declared preference ladder (FR-INGEST-06) and recording each page's
+    provenance (FR-INGEST-07).
 
     `pages` are page transcripts — file paths or any object `str()`/`read_text` can
     read. The preference ladder, in strict order: an operator-stated order

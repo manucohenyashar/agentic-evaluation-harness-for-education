@@ -17,7 +17,7 @@ class PolicyAndKeysMixin:
     """The grade policy, boundaries, answer keys and options of a version."""
 
     def points_for_band(self, criterion_id: str, band: str) -> float:
-        """The band→points mapping, monotone in ordinal (`FR-PKG-06`'s guarantee).
+        """The points for a band; points never decrease as ordinals rise (FR-PKG-06).
 
         The per-criterion face of the module-level `points_for_band` — the single
         canonical mapping (`CT-PKG-05`): one definition, in M-PKG, and every
@@ -33,12 +33,10 @@ class PolicyAndKeysMixin:
     # -- grade policy, boundaries, answer keys, elicitation history (#30) --------------------
 
     def set_grade_policy(self, v: PackageVersionId, policy: GradePolicy) -> None:
-        """Store the executed policy (`FR-PKG-14`). Only a `GradePolicy` instance is
-        accepted — a string (a free-text formula, an executable expression, a
-        lambda-shaped string) is refused HERE rather than stored and interpreted later,
-        because an executable formula in a package is an arbitrary-code surface and an
-        un-auditable grade. `plain_language` needs no storage: it is generated from the
-        object on read (`FR-PKG-15`)."""
+        """Store the grade policy (FR-PKG-14). Only a `GradePolicy` object is accepted: a string
+        (such as a formula or an expression) is refused here, because an executable formula in a
+        package would be a code-execution risk and a grade nobody can audit. The plain-language
+        wording is generated on read (FR-PKG-15)."""
         if not isinstance(policy, GradePolicy):
             raise GradePolicyError(
                 f"the grade policy must be a GradePolicy object drawn from the closed "
@@ -55,9 +53,8 @@ class PolicyAndKeysMixin:
         self._invalidate()
 
     def set_review_window(self, v: PackageVersionId, hours: int | None) -> bool:
-        """Set `grade_policy.review_window_hours` on version `v` (`FR-PKG-19`, ADR-3; the
-        console's "set review window" door, #398 / test plan Q-22). Returns whether
-        anything changed.
+        """Set the review window (`grade_policy.review_window_hours`) on version `v` (FR-PKG-19,
+        ADR-3); the console's "set review window" action. Returns whether anything changed.
 
         It goes through `set_grade_policy`, so it is under the same lock: ADR-3 puts the
         window inside the §6.2 lock, version-pinned with the rest of the policy, so a
@@ -72,12 +69,10 @@ class PolicyAndKeysMixin:
         return True
 
     def grade_policy(self, v: PackageVersionId) -> GradePolicy:
-        """The executed policy as a structured object (`FR-PKG-14`): parsed from the
-        stored JSON and RE-VALIDATED against the closed vocabulary, so a hand-edited row
-        holding a formula refuses on read too. `review_window_hours` comes from its
-        column (ADR-3) — null means finalize on run completion (`FR-PKG-19`), never wait
-        indefinitely. A version with no stored policy answers the default
-        (`FR-SETUP-12`) — M-GRADE always finds a policy and never has to invent one."""
+        """The version's grade policy (FR-PKG-14), parsed from the stored JSON and checked again
+        against the allowed rules. `review_window_hours` comes from its own column (ADR-3); None
+        means grades finalize when the run completes (FR-PKG-19). A version with no stored policy
+        gets the default (FR-SETUP-12)."""
         rows = self._handle.query(PKG_STATEMENTS["select_policy"], v=v)
         if not rows:
             return default_grade_policy()
@@ -94,22 +89,17 @@ class PolicyAndKeysMixin:
         return GradePolicy.from_dict(data)
 
     def grade_policy_declared(self, v: PackageVersionId) -> bool:
-        """Whether a grade-policy ROW is stored for the version (`#53`): the
-        distinction `grade_policy()` cannot make, since it answers the default
-        when no row exists — `FR-SETUP-12`'s recording obligation needs to know
-        whether the default was ever written down."""
+        """Whether a grade-policy row is actually stored for the version. `grade_policy()` cannot
+        tell, because it returns the default when there is none (FR-SETUP-12)."""
         return bool(self._handle.query(PKG_STATEMENTS["select_policy"], v=v))
 
     def set_boundaries(
         self, v: PackageVersionId, boundaries: Sequence[tuple[str, float]]
     ) -> None:
-        """Declare the version's grade boundary table (`FR-PKG-16`) — the SINGLE
-        canonical representation of the grade resolution rule; the policy object carries
-        no copy of it. Each pair is (grade, scaled_floor). Floors are INCLUSIVE:
-        `boundary_for` resolves a scaled score to the grade with the greatest floor
-        <= the score. An empty sequence clears the table (a draft's no-boundary-table
-        state); CT-PKG-10's null-equivalent is the ABSENCE of rows, and callers handle
-        that rather than inventing boundaries."""
+        """Set the version's grade boundary table (FR-PKG-16), the one place grade boundaries are
+        defined. Each pair is `(grade, scaled_floor)`, and floors are inclusive: a score gets the
+        grade with the highest floor at or below it. An empty sequence clears the table; with no
+        rows, there are no boundaries (CT-PKG-10)."""
         grades = [grade for grade, _ in boundaries]
         floors = [float(floor) for _, floor in boundaries]
         if any(not grade for grade in grades):
@@ -140,11 +130,9 @@ class PolicyAndKeysMixin:
         self._invalidate()
 
     def boundary_for(self, v: PackageVersionId, scaled_score: float) -> str | None:
-        """`FR-PKG-16`/`CT-PKG-10`: the grade for a scaled score — a PURE lookup over
-        `grade_boundary`, the single canonical representation. Floors are INCLUSIVE
-        (the declared rule): the grade with the greatest floor <= the score. A score
-        below the lowest floor has no grade, and a version with NO boundary table
-        answers None — never an invented boundary."""
+        """The grade for a scaled score: the grade with the highest floor at or below the score
+        (FR-PKG-16, CT-PKG-10). A score below every floor, or a version with no boundary table,
+        gets None; no boundary is invented."""
         resolved: str | None = None
         for row in self._handle.query(PKG_STATEMENTS["select_boundaries"], v=v):
             if float(row["scaled_floor"]) <= scaled_score:
@@ -156,10 +144,9 @@ class PolicyAndKeysMixin:
     def distance_to_nearest_boundary(
         self, v: PackageVersionId, scaled_score: float
     ) -> float | None:
-        """`FR-PKG-16`: how far a scaled score sits from the nearest cut — M-REVIEW's
-        boundary-proximity ranking signal. Exactly 0.0 ON a cut. None where the version
-        declares no boundary table (`CT-PKG-10`) — the caller handles it; no invented
-        distance."""
+        """How far a scaled score is from the nearest grade boundary, used by M-REVIEW's ranking
+        (FR-PKG-16). Exactly 0.0 on a boundary; None when the version has no boundary table
+        (CT-PKG-10)."""
         rows = self._handle.query(PKG_STATEMENTS["select_boundaries"], v=v)
         if not rows:
             return None
@@ -168,15 +155,12 @@ class PolicyAndKeysMixin:
     def set_answer_key(
         self, v: PackageVersionId, criterion_id: str, key: Sequence[str]
     ) -> None:
-        """Declare the multiple-choice key (`FR-PKG-17`, ADR-1):
-        `criterion.answer_key` is the SINGLE canonical representation — `mcq_option`
-        carries no correctness column, so a corrected key cannot leave two disagreeing
-        sources. The key is the sequence of acceptable option ids (one for
-        single-select, several for multi-select). Refused on a published version: a key
-        CORRECTION is a new version (`FR-PKG-18`) — create_version(parent, ...) copies
-        the prior key into the child, the correction lands there, and
-        `audit_record.answer_key_ref` resolves to exactly the key that produced a given
-        grade."""
+        """Set a multiple-choice criterion's answer key (FR-PKG-17, ADR-1): the acceptable option
+        ids, one for single-select or several for multi-select. `criterion.answer_key` is the only
+        place the key lives; options carry no correctness column, so a corrected key can never
+        disagree with another copy. Refused on a published version: a correction is a new version
+        (FR-PKG-18), which copies the old key and changes it there, so each grade's
+        `answer_key_ref` points to exactly the key that produced it."""
         ids = [str(option) for option in key]
         if not ids or any(not option for option in ids):
             raise PackageError(
@@ -195,11 +179,9 @@ class PolicyAndKeysMixin:
         self._invalidate()
 
     def answer_key(self, criterion_id: str) -> tuple[str, ...]:
-        """`FR-PKG-17`/`CT-PKG-08`: the criterion's key, from the version currently at
-        the top of the lineage — the one a grade produced NOW pins by
-        `answer_key_ref`. A prior version's key stays exactly where it was (read it
-        version-pinned via `criteria(parent_v)`), which is what makes `FR-PKG-18`'s
-        resolution exact. No key declared yet answers the empty tuple."""
+        """The criterion's answer key from the newest version in the lineage, the one a grade
+        produced now records (FR-PKG-17, CT-PKG-08). Earlier versions keep their own keys. An empty
+        tuple when no key is set."""
         rows = self._handle.query(PKG_STATEMENTS["select_answer_key_latest"],
                                   criterion_id=criterion_id)
         if not rows or rows[0]["answer_key"] is None:
@@ -215,10 +197,9 @@ class PolicyAndKeysMixin:
         self, v: PackageVersionId, criterion_id: str,
         options: Sequence[tuple[str, str]],
     ) -> None:
-        """Declare the criterion's options as (option_id, label) pairs (`FR-PKG-17`).
-        Deliberately NO correctness column exists on `mcq_option` (ADR-1): the key
-        lives once, on `criterion.answer_key`. Drafts only — the triggers refuse
-        published versions."""
+        """Set the criterion's options as `(option_id, label)` pairs (FR-PKG-17). There is
+        deliberately no correctness column: the key lives only on `criterion.answer_key` (ADR-1).
+        Drafts only."""
         ids = [option_id for option_id, _ in options]
         if any(not option_id for option_id in ids):
             raise PackageError("an mcq option carries a non-empty option_id.")
@@ -240,22 +221,18 @@ class PolicyAndKeysMixin:
         self._invalidate()
 
     def mcq_options(self, v: PackageVersionId, criterion_id: str) -> tuple:
-        """The criterion's declared options, as (option_id, label) pairs — the display
-        half of `FR-PKG-17`. Correctness is NOT here (ADR-1): read the key."""
+        """The criterion's options as `(option_id, label)` pairs, for display (FR-PKG-17). Which is
+        correct is not here; read the answer key."""
         rows = self._handle.query(PKG_STATEMENTS["select_mcq_options"], v=v,
                                   criterion_id=criterion_id)
         return tuple((row["option_id"], row["label"]) for row in rows)
 
     def set_default_grade_policy(self, v: PackageVersionId,
                                  policy: GradePolicy) -> bool:
-        """Write the default policy row ONLY where no policy exists — the
-        publish-path twin of `record_default_step` (`FR-SETUP-12`): a policy the
-        teacher declared is never overwritten by the default. Returns whether a
-        row was written. The guards run BEFORE the transaction, for the same
-        reason `record_default_step`'s do: this write sits on the publish path's
-        happy tail, and CT-SETUP-02 audits that path to exactly ONE lock-carrying
-        statement — an in-transaction guard would put a second package_version
-        statement (the guard's SELECT) in the audited window."""
+        """Write the default grade policy only if the version has none, so a policy the teacher
+        declared is never overwritten (FR-SETUP-12). Returns whether a row was written. The checks
+        run before the transaction, because the publish path's audit (CT-SETUP-02) allows exactly
+        one lock-related statement inside it."""
         if not isinstance(policy, GradePolicy):
             raise GradePolicyError(
                 f"the grade policy must be a GradePolicy object drawn from the closed "

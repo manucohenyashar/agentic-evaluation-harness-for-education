@@ -28,9 +28,9 @@ class AssessmentMatchMixin:
 
     def _v4_identifier_signal(self, markdown: str,
                               package_catalog: Any) -> tuple[str, dict]:
-        """The explicit-identifier signal: the paper's 'Assessment:' line against the
-        bound package's identity. `match` / `mismatch` when a line is present, `absent`
-        when the paper names no assessment."""
+        """The explicit-identifier signal: the paper's `Assessment:` line compared with the bound
+        package's identity. `match` or `mismatch` when the line is present, `absent` when the paper
+        names no assessment."""
         named = self._extract_assessment_identifier(markdown)
         declared = package_catalog.package_id
         if named is None:
@@ -42,11 +42,10 @@ class AssessmentMatchMixin:
 
     def _v4_structural_signal(self, regions: Sequence[Any], package_version: str,
                               package_catalog: Any) -> tuple[str, dict]:
-        """The structural fingerprint (`FR-INGEST-25`): question count, numbering and
-        MCQ option sets, read FROM the package (`FR-INGEST-18`) and compared with what
-        the submission's regions carry. A described_graphic region joins the
-        inventory only when it is tagged with a declared question id — free graphic
-        kinds are not question inventory."""
+        """The structural fingerprint (FR-INGEST-25): question count, numbering and multiple-choice
+        option sets, read from the package (FR-INGEST-18) and compared with the submission's
+        regions. A described graphic counts as a question only when it is tagged with a declared
+        question id."""
         declared_rows = package_catalog.criteria(package_version)
         declared = {row["question_id"] for row in declared_rows}
         criterion_for_question: dict[str, str] = {}
@@ -98,11 +97,9 @@ class AssessmentMatchMixin:
 
     @staticmethod
     def _question_inventory(regions: Sequence[Any]) -> set[str]:
-        """A paper's question inventory (FR-INGEST-38, FR-INGEST-26 amended): the
-        `element_kind`s of its regions, without the page-furniture sentinels (`text`,
-        `graphic`) and without free graphic kinds. A described graphic's kind counts only
-        when some non-graphic region carries the same id (a figure tagged to its question),
-        the same strictness the structural signal applies (#376 review)."""
+        """A paper's question inventory (FR-INGEST-38): the `element_kind`s of its regions, without
+        page furniture (`text`, `graphic`) or free graphics. A described graphic counts only when a
+        non-graphic region carries the same id, the same rule as the structural signal."""
         answered = {row["element_kind"] for row in regions
                     if row["region_kind"] != "described_graphic"
                     and row["element_kind"] not in ("text", "graphic")}
@@ -112,19 +109,16 @@ class AssessmentMatchMixin:
                      or row["element_kind"] in answered)}
 
     def _head_inventory(self, document_id: str) -> set[str]:
-        """A lineage head's question inventory — FR-INGEST-38's comparison set."""
+        """The question inventory of an assessment lineage's current head (FR-INGEST-38)."""
         return self._question_inventory(self._handle.query(
             INGEST_STATEMENTS["select_regions"], document_id=document_id))
 
     @staticmethod
     def _assessment_heads(assessments: Sequence[Any]) -> list[Any]:
-        """The HEAD of each assessment lineage: rows no other assessment row
-        references as its parent (`FR-INGEST-05` — a correction `revise_document`
-        mints a NEW row with `parent_doc_id` set and the original stays, so a
-        corrected assessment is TWO rows and one lineage). The V4 signals compare
-        against the lineage's current head, never the count of its rows; two
-        DISTINCT lineages (two genuinely different papers in one store) leave the
-        semantic signal `absent` — the module does not guess which is which."""
+        """The current head of each assessment lineage: rows no other assessment row names as its
+        parent. A corrected assessment is two rows in one lineage (FR-INGEST-05), so the V4 signals
+        compare with the head, never count rows. Two different lineages in one store leave the
+        semantic signal `absent`; the gate does not guess which is which."""
         ids = {row["document_id"] for row in assessments}
         parents = {row["parent_doc_id"] for row in assessments
                    if row["parent_doc_id"] is not None}
@@ -133,15 +127,11 @@ class AssessmentMatchMixin:
     def _v4_semantic_signal(self, markdown: str, regions: Sequence[Any],
                             package_version: str, package_catalog: Any,
                             ) -> tuple[str, dict]:
-        """The aggregate semantic correspondence (`FR-INGEST-25`, ADR-7's deterministic
-        base): shared-vocabulary overlap between the assessment artifact's question
-        text and the submission's answer content, per question, aggregated as the mean
-        word-level Jaccard. The assessment artifact is the store's `kind='assessment'`
-        document; where its regions carry question tags the pairing is per question,
-        otherwise the whole papers are compared. `absent` when the store holds no
-        unambiguous assessment LINEAGE (one head after corrections), or the
-        submission carries no answer text to compare — a blank paper cannot
-        discriminate an assessment mismatch."""
+        """How well the submission's answers match the assessment's questions (FR-INGEST-25,
+        ADR-7): the mean word-level overlap (Jaccard) between the assessment's question text and
+        the answers, per question when regions carry question tags, otherwise over the whole paper.
+        `absent` when the store has no single assessment lineage, or the submission has no answer
+        text; a blank paper cannot show a mismatch."""
         assessments = self._handle.query(
             INGEST_STATEMENTS["select_assessment_documents"])
         heads = self._assessment_heads(assessments)
@@ -219,11 +209,9 @@ class AssessmentMatchMixin:
 
     def _v4_escalate(self, markdown: str, signals: dict, package_version: str,
                      package_catalog: Any) -> None:
-        """ADR-7's model-assisted path: ONE call, only in the `uncertain` band, its
-        verdict RECORDED into the signals and never applied — the plan's exact-value
-        oracle pins the deterministic table, and a recorded verdict is what makes the
-        escalation rate the monitored metric ADR-7 asks for. A failing escalation is
-        contained: the deterministic outcome stands and the failure is recorded.
+        """Ask a model about an `uncertain` V4 result (ADR-7): one call, whose verdict is recorded
+        with the signals but never applied, so the escalation rate can be monitored. If the call
+        fails, the deterministic result stands and the failure is recorded.
 
         The transcript is fenced (`FR-INGEST-35`'s discipline, applied at this
         module's own prompt-assembly site): student-origin content sits inside one
@@ -296,8 +284,8 @@ class AssessmentMatchMixin:
     def _v4_evaluate(self, markdown: str, regions: Sequence[Any],
                      package_version: str, package_catalog: Any,
                      identity_matched: bool | None) -> tuple[str, dict]:
-        """The four signal families and the declared decision rule. Returns the
-        three-valued outcome and the signals record the submission carries."""
+        """Compute the four V4 signals and apply the declared decision rule. Returns the
+        three-valued outcome and the signals record for the submission."""
         identifier, identifier_detail = self._v4_identifier_signal(
             markdown, package_catalog)
         structural, structural_detail = self._v4_structural_signal(
@@ -331,16 +319,11 @@ class AssessmentMatchMixin:
 
     def _v4_build_proposal(self, regions: Sequence[Any],
                            markdown: str) -> dict:
-        """FR-INGEST-26 (amended, #376 / D4): a mismatch PROPOSES ranked candidates and never
-        applies one. Candidates are the lineage heads whose question inventory EQUALS the
-        submission's (the per-candidate structural match), ranked by a per-candidate
-        `semantic` value (the lexical affinity of the head's text with the submission's),
-        descending, ties broken by `assessment_document_id` ascending (CT-INGEST-22). The
-        list may be empty. With a single lineage in the store, that one head is the
-        candidate, as before. This builds the record only;
-        the row is written in the same transaction as the gates it belongs to. The
-        proposal row is the schema distinction the plan's oracle asserts: nothing
-        here writes another assessment onto the submission."""
+        """On a mismatch, propose ranked candidate assessments without applying any (FR-INGEST-26).
+        Candidates are the lineage heads whose question inventory equals the submission's, ranked
+        by how much vocabulary they share with it, then by `assessment_document_id` (CT-INGEST-22).
+        The list may be empty. This only builds the proposal record; it is written in the same
+        transaction as the gates, and nothing assigns another assessment to the submission."""
         printed = self._extract_assessment_identifier(markdown)
         # The same sentinel filter the structural signal applies: page furniture is
         # not question inventory, and counting it would inflate every candidate's
@@ -389,13 +372,11 @@ class AssessmentMatchMixin:
                 "candidates": candidates}
 
     def _v4_evaluate_breaker(self, tx: Any, cohort_id: str) -> dict | None:
-        """FR-INGEST-28, evaluated INSIDE the gate-write transaction: the combined
-        `mismatch`-plus-`uncertain` rate over the cohort's ingested submissions, at or
-        above the configured rate AND at or above the configured minimum, trips the
-        breaker. The table's primary key is the cohort id, so exactly ONE cohort-level
-        finding exists no matter how the ladder races — an INSERT OR IGNORE into an
-        occupied cohort is a no-op. Returns the breaker row when this call tripped it
-        (or found it tripped), else None."""
+        """Check the cohort breaker inside the gate-write transaction (FR-INGEST-28): it trips when
+        the combined `mismatch` plus `uncertain` rate over the cohort's submissions reaches the
+        configured rate, over at least the configured minimum. The table is keyed by cohort id, so
+        there is only ever one cohort-level finding, however submissions race. Returns the breaker
+        row when it is tripped, else None."""
         rows = tx.execute(INGEST_STATEMENTS["select_v4_rate"], cohort_id=cohort_id)
         counts = rows[0]
         ingested = int(counts["ingested"])
@@ -425,9 +406,8 @@ class AssessmentMatchMixin:
         return tripped
 
     def cohort_breaker(self, cohort_id: str) -> dict | None:
-        """The cohort's breaker state, or None — the read path `M-CONSOLE`'s S6
-        preflight uses to withhold run start (`FR-CONSOLE-28`) and the one place the
-        cohort-level finding surfaces between submissions."""
+        """The cohort's breaker state, or None. The console's preflight screen reads this to
+        withhold run start (FR-CONSOLE-28)."""
         rows = self._handle.query(INGEST_STATEMENTS["select_cohort_breaker"],
                                   cohort_id=cohort_id)
         return dict(rows[0]) if rows else None

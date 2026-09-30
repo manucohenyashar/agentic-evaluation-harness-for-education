@@ -14,7 +14,7 @@ from aeh.conf import ModelRef
 
 @dataclass(frozen=True)
 class PromptPayload:
-    """An assembled prompt, exactly as its caller built it.
+    """An assembled prompt, exactly as the caller built it.
 
     `fields` is an **ordered** sequence of `(name, value)` pairs and not a mapping, because
     `CT-PROV-05` forbids reordering and a mapping makes order an implementation detail of
@@ -55,7 +55,7 @@ class PromptPayload:
 
 @dataclass(frozen=True)
 class SamplingParams:
-    """The sampling knobs of one call.
+    """The sampling settings for one call.
 
     Named but unspecified in design §3.2, so the field set is chosen here. Every field is part
     of the request key: `FR-PROV-10` keys the fixture on the *fully-assembled request*, and
@@ -72,7 +72,7 @@ class SamplingParams:
     stop: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        """Refuse a non-finite float, because the alternative failure is confusing.
+        """Refuse a float that is not finite; the failure it would cause later is confusing.
 
         `float("nan")` keys and records perfectly well and can then never be read back: the
         stored request is compared for equality on the way out, and `nan != nan`. The result
@@ -91,7 +91,7 @@ class SamplingParams:
 
 @dataclass(frozen=True)
 class Completion:
-    """One model answer, with its accounting. Design §3.2 Interfaces, `CT-PROV-03`.
+    """One model answer, with its token counts, latency and cost (design §3.2, CT-PROV-03).
 
     `cost` is the **only** nullable field, and null only on `edge-local` and fixture — where
     nothing was billed and therefore nothing was measured. A `cost` of `Decimal("0")` on a
@@ -111,7 +111,7 @@ class Completion:
     cost: Decimal | None
 
     def __post_init__(self) -> None:
-        """Shape only, on construction, so a malformed value cannot reach a consumer.
+        """Check field types when built, so a malformed value never reaches a consumer.
 
         `ValueError` rather than `MalformedResponseError`: this is a type-level guard against a
         caller building a nonsense value, not the classification of a provider response. #19's
@@ -144,7 +144,7 @@ class Completion:
 
 @dataclass(frozen=True)
 class Capabilities:
-    """What an implementation *declares* about itself. `FR-PROV-02`, `CT-PROV-04`.
+    """What a provider declares about itself (FR-PROV-02, CT-PROV-04).
 
     Declared per implementation, never discovered at call time — `capabilities()` answers with
     the transport hard-blocked, and the answer is stable for the life of the run.
@@ -167,7 +167,7 @@ class Capabilities:
 
 @dataclass(frozen=True)
 class CallPlan:
-    """A planned batch, for `estimate_cost`. `FR-PROV-09`.
+    """A planned batch of calls, for `estimate_cost` (FR-PROV-09).
 
     Call count and per-call token budgets only — design §3.2's signature takes no `ModelRef`,
     so the per-token price comes from the implementation's own `Capabilities`.
@@ -180,7 +180,7 @@ class CallPlan:
 
 @dataclass(frozen=True)
 class CostEstimate:
-    """The pure result of `estimate_cost`. `cost` is `None` where nothing is billed."""
+    """What `estimate_cost` returns. `cost` is None where nothing is billed."""
 
     calls: int
     tokens_in: int
@@ -190,7 +190,7 @@ class CostEstimate:
 
 @dataclass(frozen=True)
 class RetentionReport:
-    """The result of `verify_retention`. `FR-PROV-14`, `CT-PROV-13`.
+    """What `verify_retention` returns (FR-PROV-14, CT-PROV-13).
 
     Carries both halves rather than a boolean, because the operator has to be told *which*
     panel member could not be confirmed — `TC-PROV-16` is "confirmed for two of three".

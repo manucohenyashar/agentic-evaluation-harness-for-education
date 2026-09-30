@@ -10,10 +10,9 @@ from .schema import EXTRACT_STATEMENTS
 
 
 def _percentile(values: Sequence[float], q: float) -> float | None:
-    """The value at rank `q·(n−1)` over the sorted sample, linearly interpolated between
-    closest ranks — NumPy's default and `statistics.quantiles(..., method="inclusive")`, the
-    method the gap-fix test plan pins for these figures. `None` for an empty sample: a
-    percentile of nothing is absent, never zero."""
+    """The `q` percentile of a sample, linearly interpolated between the closest ranks (NumPy's
+    default method). Returns None for an empty sample: a percentile of nothing is missing, not
+    zero."""
     ordered = sorted(float(value) for value in values)
     if not ordered:
         return None
@@ -27,7 +26,7 @@ def _percentile(values: Sequence[float], q: float) -> float | None:
 
 @dataclasses.dataclass(frozen=True)
 class ExtractionMetrics:
-    """One run's extraction signals, per criterion (`FR-EXTRACT-12`, `CT-EXTRACT-17`).
+    """One run's extraction signals, per criterion (FR-EXTRACT-12, CT-EXTRACT-17).
 
     Every field is a mapping keyed by criterion id, and the names are the contract's. Values
     are read from stored rows alone — no re-extraction, no provider call:
@@ -56,10 +55,9 @@ class ExtractionMetrics:
 
 
 def _span_key(spans: Any) -> frozenset:
-    """A span set as a comparable key — the `(start, end, text)` prints as a SET, which is the
-    comparison `M-INTEG`'s `extractor_disagreement` makes over the same payload
-    (`integ._disagreement_verdict`). A set, not a tuple: `parse_spans` keeps the reply's own
-    order, so ordering alone is not disagreement."""
+    """A set of spans as a comparable key, the same comparison M-INTEG makes for extractor
+    disagreement. It is a set rather than a tuple because span order alone is not a disagreement.
+    """
     prints = []
     for span in spans or ():
         if isinstance(span, dict):
@@ -70,7 +68,7 @@ def _span_key(spans: Any) -> frozenset:
 
 
 def extraction_metrics(handle: Any, run_id: str) -> ExtractionMetrics:
-    """One run's extraction metrics, per criterion (`FR-EXTRACT-12`).
+    """Compute one run's extraction metrics, per criterion (FR-EXTRACT-12).
 
     Reads the run's stored `evidence` rows through the cohort handle — the payload this
     module wrote (`{"spans": [...], "second_family": {...}}`) and the latency column — and

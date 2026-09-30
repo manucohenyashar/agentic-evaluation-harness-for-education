@@ -7,8 +7,8 @@ from typing import Any, Sequence
 
 
 def _safe_filename_part(raw: str) -> str:
-    """A run id or student ref as a safe filename part — the same character class
-    the CSV export's filename uses; anything else becomes an underscore."""
+    """A run id or student reference made safe for a file name: any character outside the allowed
+    set becomes an underscore."""
     return "".join(
         character if character.isalnum() or character in "-_." else "_"
         for character in raw
@@ -26,7 +26,7 @@ def _student_pdf_bytes(
     coverage: tuple[int, int, int, int, int],
     missing: Sequence[str],
 ) -> bytes:
-    """One student's feedback document as PDF bytes — hand-assembled, deliberately.
+    """One student's feedback document as PDF bytes, built by hand on purpose (no PDF library).
 
     A PDF library (or a text-report dependency) would buy nothing this document
     needs and would add a reviewed supply-chain surface for it; the document is a
@@ -96,5 +96,5 @@ def _student_pdf_bytes(
 
 
 def _write_student_pdf(path: Path, **fields: Any) -> None:
-    """Write one student's PDF (the bytes from `_student_pdf_bytes`) to `path`."""
+    """Write one student's PDF (from `_student_pdf_bytes`) to `path`."""
     path.write_bytes(_student_pdf_bytes(**fields))

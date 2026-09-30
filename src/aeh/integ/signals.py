@@ -17,7 +17,7 @@ def _verification_outcome(
     span_items: "list[tuple[int, int, bytes]] | None",
     citation: bool,
 ) -> "tuple[bool, bool]":
-    """`(spans_verified, evidence_present)` for this verify's span read.
+    """`(spans_verified, evidence_present)` for the spans this verification read.
 
     The disabled switch, a faulted span read, or an unreadable document all
     report `(False, False)` — nothing was verified, so no evidence can be
@@ -45,7 +45,7 @@ def _region_signals(
     span_items: "list[tuple[int, int, bytes]] | None",
     floor: float,
 ) -> "tuple[bool, bool, Any]":
-    """`(ocr_overlap_risk, described_evidence, crop_ref)` for this verify.
+    """`(ocr_overlap_risk, described_evidence, crop_ref)` for this verification.
 
     A faulted region read — or a span read that left the cited extents
     unknown — flags both routing-candidate values and carries no crop: an
@@ -86,7 +86,7 @@ def _disagreement_verdict(
     second: Any,
     span_items: "list[tuple[int, int, bytes]] | None",
 ) -> "bool | None":
-    """The extractor-disagreement tri-state for this verify.
+    """Whether the two extractors disagree: true, false, or not measured.
 
     `None` only when no second family was configured — distinguishable from
     False by identity, never by truthiness. A faulted read or a malformed
@@ -107,9 +107,8 @@ def _disagreement_verdict(
 
 
 def _computed_insufficient(panel_flags: "tuple[bool, ...] | None") -> bool:
-    """The panel's COMPUTED insufficiency — the routing input, never the
-    reported flag: any member reporting the evidence insufficient. A faulted
-    panel read is insufficient (fail-closed)."""
+    """The panel's computed insufficiency, which drives routing (the reported flag never does):
+    true when any judge found the evidence insufficient. A failed read counts as insufficient."""
     if panel_flags is None:
         return True
     return any(not flag for flag in panel_flags)
@@ -120,7 +119,7 @@ def _failure_rate(
     span_items: "list[tuple[int, int, bytes]] | None",
     verified: bool,
 ) -> float:
-    """The cell's span-verification failure rate (1.0 or 0.0).
+    """The cell's span-verification failure rate, 1.0 or 0.0.
 
     A rate that moves only when the extractor hallucinated: 1.0 when spans
     were READ — the document resolved and at least one span arrived — and
@@ -136,7 +135,7 @@ def _failure_rate(
 
 @dataclass(frozen=True)
 class IntegritySignals:
-    """The six signals, and nothing else (FR-INTEG-01; CT-INTEG-04's output half).
+    """The six integrity signals and nothing else (FR-INTEG-01, CT-INTEG-04).
 
     `extractor_disagreement` is tri-state: `None` when no second extraction ran,
     `True`/`False` when one ran and disagreed/agreed — a consumer collapsing

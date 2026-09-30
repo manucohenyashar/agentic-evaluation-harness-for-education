@@ -25,7 +25,8 @@ from .panel import _build_identity, compute_panel_build_ref
 @_typeerror_on_mutation
 @dataclass(frozen=True)
 class CohortRef:
-    """The cohort a run grades. `consent_class` is ADR-5's column.
+    """The cohort a run grades. `consent_class` records whether its work may leave the building
+    (ADR-5).
 
     The default is `"real"` and that is load-bearing: `TC-CONF-08` calls the undeclared-cohort
     row "the difference between a fail-closed and a fail-open design". The gate that reads it is
@@ -36,7 +37,7 @@ class CohortRef:
     consent_class: Literal["synthetic", "consented", "real"] = "real"
 
     def __post_init__(self) -> None:
-        """Shape only, like `ModelRef`'s.
+        """Check field types only, as `ModelRef` does.
 
         `_check_consent` tests `consent_class in CONSENTED_CLASSES` against a `frozenset`, so an
         unhashable value escaped `resolve_run_config` as a bare `TypeError` — undeclared, which
@@ -59,7 +60,7 @@ class CohortRef:
 @_typeerror_on_mutation
 @dataclass(frozen=True)
 class BuildSummary:
-    """One model build, in the form a console renders and an audit record keeps.
+    """One model build, in the form the console shows and the audit record keeps.
 
     A projection of `ModelRef`, not the ref itself: `is_resolved()` and `build_form()` are
     resolution-time questions with no meaning on a stored record, and a summary that carried
@@ -84,34 +85,11 @@ class BuildSummary:
 @_typeerror_on_mutation
 @dataclass(frozen=True)
 class ProfileSummary:
-    """`FR-CONF-09`'s record: "backend profile, panel builds, transcriber build, quantization,
-    and (cloud only) retention setting, in a form the console renders on any view showing a
-    grade and the audit record stores verbatim."
+    """The run's grader identity (FR-CONF-09): backend profile, panel builds, transcriber build,
+    quantization and, for cloud runs, the retention setting. The console shows it next to every
+    grade, and the audit record stores it as is.
 
-    The design names this type twice and never specifies it, so the field set is chosen here.
-    Two consumers constrain it and both are worth naming, because a later editor will otherwise
-    read the shape as arbitrary:
-
-    * `CT-CONSOLE-10` puts it on **every** grade view — "a grade is never displayed without its
-      provenance" — which is why `quantization` is never blank (see `PROVIDER_MANAGED`).
-    * `TC-CONF-17` is a **differential**: the stored summary must be byte-identical to the one
-      logged at run start. That is what `to_canonical_json` is for, and why both paths must call
-      it rather than each formatting the record their own way.
-
-    `panel_build_ref` is carried although `FR-CONF-09` does not list it — additive per §3.1's
-    Compatibility note, and an audit record holding a run's grader identity without the key that
-    identity is filed under would be a strange thing to have stored.
-
-    Credential-free with respect to everything this module reads (`CT-CONF-10`): every field is
-    a build identity, a profile name or a retention setting, and none is read from the
-    environment. That is not the same as credential-free against *caller* data — a key embedded
-    in a `build_id` would land here and in the log record. The four-surface sentinel scan that
-    settles it is `TC-CONF-11`, on issue #8.
-
-    Note for `TC-CONF-C14`'s reflection sweep (issue #9): this **constructor** takes
-    `backend_profile`, `panel` and `retention_setting`, as `RunConfig`'s already does. The sweep
-    is over operations that rebind *an object that already exists*, so it must exempt
-    constructors — otherwise every frozen value object in the module fails it.
+    More detail: `docs/code-notes/conf.md`, section `run_config.py: ProfileSummary`.
     """
 
     backend_profile: str
@@ -127,7 +105,8 @@ class ProfileSummary:
     decision_threshold: str | None = None
 
     def to_canonical_json(self) -> str:
-        """The one serialization, so `TC-CONF-17`'s differential can hold.
+        """The one serialization of this summary, so the same summary always gives the same bytes
+        (TC-CONF-17).
 
         `M-ORCH` stores this record and `log_run_start` logs it. If each formatted the summary
         its own way, "byte-identical to the one logged at run start" would fail on whitespace
@@ -148,7 +127,7 @@ class ProfileSummary:
 @_typeerror_on_mutation
 @dataclass(frozen=True)
 class RunConfig:
-    """One frozen answer to "which grader is this run" (design §3.1 Interfaces).
+    """One frozen answer to "which grader is this run?" (design §3.1).
 
     The field set is **exactly** these thirteen (Jev design delta FR-CONF-17 added
     `decision_engine`, defaulted `None` so a literal written before it still constructs an
@@ -184,8 +163,7 @@ class RunConfig:
     decision_engine: DecisionEngine | None = None
 
     def __post_init__(self) -> None:
-        """`CT-CONF-02` and `CT-CONF-03`, enforced on the **type** rather than only in the
-        resolver.
+        """Enforce CT-CONF-02 and CT-CONF-03 on the type itself, not only in the resolver.
 
         This is what makes the invariants unforgeable. `dataclasses.replace` does not route
         through `__replace__` (see `_typeerror_on_mutation`), so without this a caller could
@@ -240,7 +218,7 @@ class RunConfig:
                 )
 
         # `CT-CONF-02`'s third nullability rule, and `FR-CONF-12`. On the type rather than only
-        # in the resolver, for the reason the module docstring gives about the other two: an
+        # in the resolver, for the reason `docs/code-notes/conf.md` gives about the other two: an
         # invariant enforced only by the function that builds the value is forgeable — through
         # `dataclasses.replace`, through a hand-written literal, and through `rehydrate_run_config`,
         # which reconstructs from a row rather than from `cfg` and so never reaches the resolver's
@@ -329,7 +307,7 @@ class RunConfig:
             )
 
     def profile_summary(self) -> ProfileSummary:
-        """`FR-CONF-09` — the run's grader identity, renderable and storable.
+        """The run's grader identity, ready to show or store (FR-CONF-09).
 
         Every reachable build appears, in panel order. "Every" is the load-bearing word: a
         summary listing the first judge and dropping the other two describes a panel that never
@@ -364,7 +342,7 @@ class RunConfig:
         )
 
     def to_persisted_dict(self) -> dict[str, Any]:
-        """The credential-free serialization `M-ORCH` writes to the `run` row (`FR-CONF-11`).
+        """The configuration without credentials, as M-ORCH writes it to the run row (FR-CONF-11).
 
         Shaped as design §3.1's three columns — *"`RunConfig` is serialized into
         `run.backend_profile`, `run.panel_config`, and `run.provider_config`. No new tables"* —

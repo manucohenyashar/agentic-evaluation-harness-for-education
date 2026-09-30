@@ -78,7 +78,8 @@ _SET_CACHE: dict[tuple[str, str], FixtureSet] = {}
 
 
 def induced_divergence(dimension: str) -> Any:
-    """Drive one dimension's divergence for the runs taken inside the block.
+    """Within the block, force a divergence on one dimension for the runs taken; used to test the
+    classification.
 
     The induced value stands in for a measured divergence the recorded transport cannot
     produce on its own — a clean replay of declared references agrees by construction, so the
@@ -102,7 +103,7 @@ def induced_divergence(dimension: str) -> Any:
 
 
 def classify_divergence(dimension: str, divergence: Any) -> str:
-    """The declared classification of `dimension` (§7.4's table, read from the vocabulary).
+    """How a divergence on this dimension is classified, from the design's table (§7.4).
 
     Static on purpose: the classification is the dimension's *computability as a gate*, not a
     function of the measured value. The score-distribution gate is `unavailable` whether or not
@@ -114,7 +115,8 @@ def classify_divergence(dimension: str, divergence: Any) -> str:
 
 
 def silent_build_substitution(backend_config: Mapping[str, Any]) -> Any:
-    """Swap the backend config for one whose build was silently substituted.
+    """Replace the backend configuration with one whose build was silently substituted; used to
+    test detection.
 
     The substitution keeps the reported build identical and changes only what the model does —
     the shape of a provider swapping a quantization behind an unchanged name (RISK-22), the
@@ -137,7 +139,7 @@ def silent_build_substitution(backend_config: Mapping[str, Any]) -> Any:
 
 
 def _source_bands() -> dict[str, dict[str, str]]:
-    """The declared per-criterion reference bands, joined from the source corpora.
+    """The declared reference band for each criterion, collected from the source corpora.
 
     `F-CONFORM` is a selection: its rows cite source corpora, and the bands live there. The
     join is by member id (the frozen set's `submission_id` is the source row's `id`), over the
@@ -160,10 +162,9 @@ def _source_bands() -> dict[str, dict[str, str]]:
 
 
 def _load_set_memo(pin: str) -> FixtureSet:
-    """The loaded set, memoized per (fixture root, pin): the verification is the load, once
-    per process. Keyed by the root as well as the pin — `_SOURCE_BANDS_CACHE`'s deliberate
-    keying — so a mid-process `HARNESS_FIXTURE_ROOT` override loads fresh instead of being
-    served another root's set under the same pin."""
+    """The loaded fixture set, cached per (fixture root, pin) so the digest checks run once per
+    process. The root is part of the key, so changing `HARNESS_FIXTURE_ROOT` mid-process loads the
+    new root's set."""
     key = (str(_fixture_root()), pin)
     cached = _SET_CACHE.get(key)
     if cached is None:
@@ -178,7 +179,7 @@ def _derive_units(
     *,
     substituted: bool = False,
 ) -> dict[str, tuple[dict[str, str], UnitOutcome]]:
-    """The recorded replay: every declared-reference fixture's bands and its judgment.
+    """Replay the recordings: every fixture with a declared reference, with its bands and judgment.
 
     The replay IS the derivation — the corpus declares what a correct judgment found, and the
     recorded transport replays it through the grading semantics (per-criterion bands, the unit
@@ -219,7 +220,7 @@ def _figures_for(
     units: Mapping[str, tuple[dict[str, str], UnitOutcome]],
     repeats: Mapping[str, tuple[dict[str, str], UnitOutcome]],
 ) -> dict[str, Any]:
-    """One backend's per-dimension figures — what every divergence value stands on.
+    """One backend's figures for each dimension; every divergence value is computed from these.
 
     The self-agreement figure is computed from the two derivation passes: the agreement rate is
     the share of fixtures whose two judgments agree, and `n` — the figure's stated sample size
@@ -268,7 +269,8 @@ def _figures_for(
 def _score_distribution_distance(
     first: Mapping[str, Mapping[str, float]], second: Mapping[str, Mapping[str, float]]
 ) -> float:
-    """The total variation distance between two per-criterion distributions, worst criterion.
+    """The total variation distance between two backends' per-criterion distributions, for the
+    worst criterion.
 
     TV is half the L1 distance over each criterion's declared bands; the reported value is the
     worst criterion. A distribution is per criterion precisely so a shift on one criterion is
@@ -288,7 +290,7 @@ def _score_distribution_distance(
 def _dimension_divergence(
     results: Sequence[BackendResult], induced: frozenset[str]
 ) -> DivergenceReport:
-    """The five dimensions' divergence between two backends' figures.
+    """The divergence between two backends on each of the five dimensions.
 
     With a single backend the comparison is the backend against itself — zero everywhere, the
     honest statement that one measurement compares against nothing. An induced dimension's

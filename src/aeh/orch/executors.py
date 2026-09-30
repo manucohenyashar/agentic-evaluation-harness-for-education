@@ -11,7 +11,7 @@ from typing import Any, NamedTuple, Protocol
 
 
 class StageExecutor(Protocol):
-    """What the composition layer hands the orchestrator to do a unit's real work.
+    """What the pipeline layer gives the orchestrator to do a unit's actual work.
 
     `execute(unit, governed)` runs ONE leased unit through its stage's shipped worker — the
     extraction worker, the scoring worker — with `governed` as the provider those workers call.
@@ -49,7 +49,7 @@ class StageOutcome:
 
 
 class GovernedProvider:
-    """The run's provider, with the run's dispatch counters wrapped around it (`FR-ORCH-27`).
+    """The run's provider wrapped with the run's dispatch counters (FR-ORCH-27).
 
     Every `complete()` a stage worker makes through this object accrues to the run: tokens in
     and out, cost, cached prefix tokens, the resolved build, and the in-flight/peak concurrency
@@ -82,7 +82,7 @@ class GovernedProvider:
         return answer
 
     def spent(self) -> Decimal:
-        """The run's accrued actual cost so far, as this wrapper's counters hold it (#596)."""
+        """The run's actual cost so far, as these counters hold it (#596)."""
         with self._state["lock"]:
             return Decimal(self._state["cost"])
 
@@ -91,7 +91,7 @@ class GovernedProvider:
 
 
 class TransportStageExecutor:
-    """The `transport=` seam, as an executor (`FR-ORCH-27`): test-only, call-counting.
+    """The `transport=` test hook wrapped as an executor (FR-ORCH-27); it counts calls.
 
     It exists so the two seams are one code path rather than two: the dispatch loop always
     submits `executor.execute(...)`, and this is what a `transport=`-driven orchestrator binds.
@@ -155,8 +155,8 @@ class _PreparedExecutor:
 
 
 def _accrue_completion(state: dict[str, Any], answer: Any) -> None:
-    """Accrue one model answer to a run's counters (`CT-PROV-11`) — the ONE definition both
-    seams use.
+    """Add one model answer to a run's counters (CT-PROV-11). Both dispatch paths use this one
+    function.
 
     The fields are read directly rather than through `getattr(..., 0)`: an answer that is not
     a `Completion` is a defect in whatever produced it, and a lenient read would accrue silent
@@ -184,7 +184,7 @@ READY_HOOKS: tuple[str, ...] = ("integrity_pre", "aggregate")
 
 
 class CellKey(NamedTuple):
-    """One cell: a (submission, criterion) pair, named so a tuple of them reads."""
+    """One cell: a (submission, criterion) pair."""
 
     submission_id: str
     criterion_id: str
@@ -192,7 +192,7 @@ class CellKey(NamedTuple):
 
 @dataclass(frozen=True)
 class RunHandle:
-    """Everything a composition layer needs to drive one run without reading the ledger.
+    """Everything the pipeline layer needs to drive one run without reading the ledger itself.
 
     `M-PIPE` opens the transaction that `write_score`, `enqueue_escalation` and
     `mark_cell_phase` share (`FR-PIPE-04` requires the three to commit together), and a
@@ -227,8 +227,8 @@ class RunHandle:
 
 
 class PackageCatalogProtocol(Protocol):
-    """The slice of `PackageCatalog` enumeration reads. Typed as a protocol so a test
-    double satisfies it without a Tier P file (`CLAUDE.md` seam 2 — no network, no real
-    upstream; the package arrives by injection like every other dependency)."""
+    """The part of `PackageCatalog` that enumeration reads. It is a protocol so a test double can
+    stand in without a Tier P file (seam 2: the package is passed in like every other dependency).
+    """
 
     def criteria(self, v: str, question_id: str | None = None) -> tuple: ...

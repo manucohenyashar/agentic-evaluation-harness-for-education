@@ -22,6 +22,8 @@ Files:
     decision_engine.py  the Jev path: eligibility, the request, the confidence gate
     worker.py           `ScoringWorker`, which judges one leased unit and stores the verdict
     metrics.py          the decision-engine outcome metrics for a run
+
+Detailed design notes (the full original module description): `docs/code-notes/judge.md`.
 """
 
 from __future__ import annotations

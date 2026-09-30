@@ -20,36 +20,10 @@ class LeasingMixin:
     """Leases units to workers and records how each one ends."""
 
     def lease(self, worker_id: str, stage: str, n: int) -> Sequence[WorkUnit]:
-        """Claim up to `n` pending units of one stage for `worker_id`, exclusively.
+        """Claim up to `n` pending units of one stage for `worker_id`. No other worker can claim
+        them while the lease lasts.
 
-        The claim mechanics — the `pending → leased` transition, the expiry derived from
-        `M-STORE`'s monotonic counter, the guarded write that makes one claim win — are
-        `_claim_pass`'s, stated once there. This surface adds two things over the raw
-        pass:
-
-        **Self-healing enumeration.** A first pass that claims nothing triggers the
-        base enumeration `resume()` uses — idempotent by construction — but only for
-        runs whose ledger holds no units at all **and** whose cohort holds an
-        admissible submission (`_runs_missing_units`: a cohort that is all-refused
-        enumerates to the empty set legitimately, and a drained poll must not pay
-        for re-deriving that), and claims again, so a caller that created a run and
-        leased receives units without a separate enumerate step while a drained poll
-        late in a large run pays one claim query and one existence probe, never a
-        full pass. An empty return after that is a true empty (the stage's units are
-        done, in flight, or the run is not dispatching), not a bookkeeping gap.
-
-        **The unit handed over.** The returned units carry `student_ref`;
-        `student_name` and `submission_text` stay `None` — the ledger holds neither
-        (Tier C carries pseudonymous refs, the text lives in the documents), and
-        resolving them is the assembler's act at dispatch, `M-EXTRACT`'s territory.
-        #57's WorkUnit docstring expected #58 to resolve them; that expectation is
-        hereby reconciled to the schema — the lease resolves the identity, the
-        assembler the words.
-
-        Leasing is **at-least-once with an expiry** (`CT-ORCH-04`): an abandoned lease
-        returns to `pending` via `sweep_expired_leases()` and the unit is claimed again.
-        Workers must therefore be safe to run twice on the same unit — a precondition on
-        the worker, not a guarantee from the orchestrator.
+        More detail: `docs/code-notes/orch.md`, section `leasing.py: LeasingMixin.lease`.
         """
         if n <= 0:
             raise WorkLedgerError(
@@ -76,70 +50,9 @@ class LeasingMixin:
         return tuple(self._unit_from_row(row) for row in claimed)
 
     def _claim_pass(self, worker_id: str, stage: str, n: int) -> list[Any]:
-        """One claim sweep over every cohort's open runs, up to `n` units.
+        """One claim pass over every cohort's open runs, taking up to `n` units.
 
-        Each claim transitions the unit `pending → leased` with the worker as `lease_owner`
-        and an expiry `ORCH_LEASE_SECONDS` (env: `HARNESS_ORCH_LEASE_SECONDS`) out, derived
-        from `M-STORE`'s **monotonic counter** — the store's `LeaseClock.issue()` persists
-        the expiry before the claim commits, so a lease that survives an uncontrolled kill
-        still compares honestly after a restart whose wall clock moved backwards
-        (`FR-STORE-11`, `CT-STORE-14`).
-
-        **The walk and its order (#59's two-sweep plan).** Cohorts are walked sorted, and
-        within a cohort each open run individually — the dispatch order is a function of
-        the run's own package (its dependency topology and criteria), so candidates are
-        gathered, ordered and claimed per run, in `run_id` order. A paused run schedules
-        nothing (`CT-ORCH-12`): its units are never candidates. The stage's order is
-        `_dispatch_order`'s: Sweep 1 in topological dependency order (`FR-ORCH-05`),
-        Sweep 2 gated on done extraction and then keyed judge → question → criterion
-        (`FR-ORCH-06/07`); every other stage keeps `work_id` order. The claim applies the
-        order front to back, so the units a claim hands out are the sweep's head.
-
-        **Exclusivity is the guard on the write**, not the read: candidates are read
-        `status = 'pending'`, the expiry is issued, and the claim is an
-        `UPDATE ... WHERE status = 'pending'` whose `changes()` — read in the same
-        transaction — decides whether *this* claim won. A claim that loses the guard
-        writes nothing and returns nothing; the unit's new holder is whoever won. The
-        lost-guard race leaves the persisted high-water raised by one unused expiry —
-        the store's own stated conservatism (a restart expires every outstanding lease,
-        `CT-STORE-14`), arrived at from the harmless side: a raised counter can only make
-        the sweeper *more* willing to reclaim, never less.
-
-        **The order cache** (`NFR-ORCH-01`). The sweep key is not expressible in SQL —
-        it reads the run's package topology and panel — so the ordered candidates are
-        derived in Python, and deriving them per poll made a one-at-a-time drain
-        quadratic (re-reading and re-sorting the whole pending set per claim: measured
-        5.3 ms/unit at 750 pending, over budget, and growing). The ordered ready list
-        is therefore cached per `(run_id, stage)` and drained front to back across
-        passes; the guard on the write stays the only correctness check. The cache's
-        invalidation set is exactly the events that can falsify it:
-
-        - **Exhaustion** — the remaining candidates were claimed; new units (a later
-          enumeration) are discoverable only from the ledger, so the entry is dropped
-          and the next pass re-reads.
-        - **A lost guard** — another writer won a unit this cache held pending, so
-          the view of pending is stale; the entry is dropped wholesale.
-        - **A requeue** — a failure below the ceiling (`fail`) or a sweeper reclaim
-          returns a unit this cache has already popped to `pending`; the run's entries
-          are dropped so the next pass re-reads — a requeue the cached order cannot
-          see is a unit lost to the run (`TC-ORCH-18`).
-        - **A budget deferral** (`FR-ORCH-14`) — an escalation unit the dispatch gate
-          deferred was skipped mid-pass; the entry is dropped so the next pass
-          re-derives with the current observed rate. Unlike the Sweep 2 gate, this
-          gate's answer can move both ways (completions raise the rate, growth lowers
-          it), so a deferral the cached order could not revisit would be a deferral
-          that never lifts — the provisional remainder must stay recoverable.
-        - **Re-enumeration** — `enumerate_units` drops the run's entries, because it
-          may add rows this cache has never seen.
-
-        An empty order is never cached: readiness only grows, but it grows outside
-        the cache's view, so a stage whose candidates are all gated out re-derives
-        per pass — caching the empty list would starve the newly ready. What the
-        cache deliberately does **not** re-check per pass is the Sweep 2 gate: the
-        gate was evaluated at derivation, and a unit ready then stays ready (an
-        extraction's `done` is terminal within a run), so serving the cached order
-        can never dispatch a judge over absent evidence; only the not-yet-ready set
-        can change, and those units are not in the cache at all.
+        More detail: `docs/code-notes/orch.md`, section `leasing.py: LeasingMixin._claim_pass`.
         """
         ttl = self._lease_ttl()
         lease_clock_obj = self._lease_clock()
@@ -418,39 +331,9 @@ class LeasingMixin:
     def _dispatch_order(
         self, run_row: Any, stage: str, rows: Sequence[Any], cohort: Any
     ) -> list[Any]:
-        """The candidates of one run's stage, in the order they may be handed out.
+        """One run's candidate units for a stage, in the order they may be handed out.
 
-        `Sweep 1` (`extract`) is **topological order over the criterion dependency
-        graph** (`FR-ORCH-05`) — a priority order over pending units, not a completion
-        gate: the design dispatches extraction in dependency order, and nothing in it
-        says a criterion's extraction waits for another's to finish. `Sweep 2`
-        (`score`) first **gates** (`FR-ORCH-06`) — a score unit is ready only when its
-        own criterion's extraction and every extraction in its dependency closure, for
-        its submission, are `done` — and then **orders by the fixed key and nothing
-        else** (`FR-ORCH-07`): judge model outermost, then question, then criterion, the
-        submissions parallel beneath. No criterion-graph term appears in the key; the
-        graph was Sweep 1's, and re-ordering scoring by it would cost cache locality for
-        nothing. Every other stage (the deterministic units, and the stages later stories
-        add) keeps `work_id` order.
-
-        The gate reads `done` on the extraction units of the run — one indexed query per
-        pass (`select_not_done_extracts`); a quarantined extraction is not `done`, so the
-        scoring it feeds stays gated until an operator re-queues it: the gate never
-        scores over nothing. Deterministic criteria carry no extraction unit, so a
-        dependency on one is satisfied vacuously — there is nothing to wait for.
-
-        **Interpretations recorded (#59):** the gate is per (criterion, submission) — a
-        score unit reads that submission's evidence — and it includes the criterion's own
-        extraction plus the transitive closure of its dependencies; the requirement's
-        "every extraction unit that criterion depends on" leaves direct-vs-transitive and
-        own-extraction open (`TC-ORCH-07` discloses the same), and this reading is the
-        one under which no judge ever reads absent evidence. Within a `(judge, question,
-        criterion)` group the submission order is `work_id`'s — `CT-ORCH-21` explicitly
-        does not promise submission order inside a batch. The key's judge term is the
-        judge's position in the run's panel order (the dispatch order, not the build
-        id's lexical order), and its criterion term is the criterion id ascending;
-        `FR-ORCH-07` fixes the levels, not the within-level measure, and these are the
-        stable choices.
+        More detail: `docs/code-notes/orch.md`, section `leasing.py: LeasingMixin._dispatch_order`.
         """
         if stage not in (STAGE_EXTRACT, STAGE_SCORE):
             return list(rows)
@@ -502,7 +385,7 @@ class LeasingMixin:
     def _score_dependencies_done(
         row: Any, blocked: set[tuple[str, str]], plan: SweepPlan
     ) -> bool:
-        """Whether one score unit's extraction evidence is all `done` (`FR-ORCH-06`)."""
+        """Whether all of one score unit's extraction units are `done` (FR-ORCH-06)."""
         if (row["criterion_id"], row["submission_id"]) in blocked:
             return False
         closure = plan.dependency_closure.get(row["criterion_id"], frozenset())
@@ -512,7 +395,7 @@ class LeasingMixin:
 
     @staticmethod
     def _judge_key(judge_id: str | None, arms: Sequence[str]) -> tuple[int, int | str]:
-        """`FR-ORCH-07`'s outermost key: the judge's position in the run's panel.
+        """The first sort key of FR-ORCH-07: the judge's position in the run's panel.
 
         Panel order, not the build id's lexical order — the panel order is the dispatch
         order and the escalation ladder's first arm (`panel_config_json`), and the fixed
@@ -537,7 +420,7 @@ class LeasingMixin:
         return (0, arms.index(judge_id)) if judge_id in arms else (1, judge_id)
 
     def _sweep_plan(self, run_row: Any) -> SweepPlan:
-        """The dispatch-order data for the run's package version, derived once.
+        """The ordering data for the run's package version, computed once.
 
         Pure functions of the immutable version: the topological order comes from
         `M-PKG` (`FR-PKG-05`, consumed rather than re-derived), the question map from the
@@ -566,7 +449,7 @@ class LeasingMixin:
         return plan
 
     def heartbeat(self, work_id: str, owner: str | None = None) -> None:
-        """Extend a live lease by another TTL — the while-it-works half of `FR-ORCH-04`.
+        """Extend a live lease by another TTL while the worker is still working (FR-ORCH-04).
 
         A slow-but-alive worker must not lose its unit at the original expiry: the
         heartbeat re-issues the lease from **now**, so the expiry moves out by a full
@@ -624,7 +507,7 @@ class LeasingMixin:
             )
 
     def sweep_expired_leases(self) -> SweeperReport:
-        """Return every lease whose expiry has passed to `pending`, and report the sweep.
+        """Return every expired lease to `pending`, and report what was done.
 
         The comparison is `ticks >= lease_expires_ticks` on the store's **monotonic
         counter** — the same inequality `LeaseClock.expired()` states — and never the
@@ -693,7 +576,7 @@ class LeasingMixin:
     # -- the failure taxonomy (FR-ORCH-18) ------------------------------------------------------
 
     def complete(self, work_id: str, result: WorkResult | None = None) -> None:
-        """Record a unit's completion: `leased → done`, lease columns cleared.
+        """Record that a unit finished: `leased` becomes `done`, and the lease columns are cleared.
 
         Idempotent (`CT-ORCH-03`): a completion recorded twice leaves one `done` row.
         A completion arriving after the sweeper requeued the unit still lands —
@@ -736,37 +619,10 @@ class LeasingMixin:
         self._maybe_complete_run(cohort, row["run_id"])
 
     def fail(self, work_id: str, error: WorkError | str) -> None:
-        """Count one failed attempt against a unit; requeue it, or quarantine it at the
-        ceiling (`FR-ORCH-18`).
+        """Record one failed attempt: put the unit back in the queue, or quarantine it once it
+        reaches the retry limit (FR-ORCH-18).
 
-        The unit's `attempts` increments; below `ORCH_MAX_ATTEMPTS`
-        (env: `HARNESS_ORCH_MAX_ATTEMPTS`) it returns to `pending` and is claimable
-        again; at the ceiling it becomes `quarantined` with `last_error` retained —
-        the operator surface can say *what* happened, not just that something did. Both
-        arms clear the lease columns; the run continues either way — "fail the unit,
-        never the run" (`NFR-ORCH-03`) is the whole point of the taxonomy, so **no arm
-        of this method raises into the caller's loop over a unit's own failure**: the
-        only raise is for a work id that resolves to no unit at all. A won report also
-        drops this run's dispatch-order cache entries — the requeued unit must be
-        visible to the very next claim pass (`TC-ORCH-18`).
-
-        **A failure report wins over a live lease.** The design fixes this signature at
-        `(work_id, error)` — no owner identity — so the report cannot name its holder,
-        and the ledger treats it as authoritative about the attempt: the unit requeues
-        (or quarantines) and its lease columns clear even if another worker currently
-        shows as holding them. At-least-once leasing makes the holder tolerate losing
-        the claim; its own next heartbeat is a named refusal (the guard catches it), so
-        the stale holder cannot keep working silently.
-
-        Races are absorbed by the ledger's state at write time, not raised: a failure
-        for a unit that completed (a completion beat this report — under
-        `CT-ORCH-04`'s at-least-once that is an expected outcome, and the real result
-        exists), one already quarantined (the record stands; a duplicate report from a
-        double-run worker must not double-count it), or one whose state moved between
-        the read and the guarded write — all no-ops. The count and the ceiling
-        comparison are computed **inside the statement** from the row as the write sees
-        it, so two concurrent reports cannot both read the same count and lose an
-        attempt; quarantine lands on the report that actually reaches the ceiling.
+        More detail: `docs/code-notes/orch.md`, section `leasing.py: LeasingMixin.fail`.
         """
         max_attempts = _env_int(MAX_ATTEMPTS_ENV, ORCH_MAX_ATTEMPTS)
         message = error.message if isinstance(error, WorkError) else str(error)
@@ -801,7 +657,7 @@ class LeasingMixin:
     def _requeue_units(
         self, cohort: Any, run_id: str, work_ids: Sequence[str]
     ) -> None:
-        """Return units to `pending` without consuming an attempt or writing an error.
+        """Put units back to `pending` without counting an attempt or recording an error.
 
         The transport-condition requeue (rate limit, OOM — `RES-11`, `RES-13`): the
         unit's failure history is not the provider's or the box's to write, and an

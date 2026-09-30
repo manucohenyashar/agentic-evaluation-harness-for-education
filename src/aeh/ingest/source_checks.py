@@ -34,13 +34,11 @@ class SourceChecksMixin:
 
     def _sanitize_source(self, blob_hash: str, pdf_bytes: bytes, *,
                          pages_used: int, deadline: float) -> SanitizeResult:
-        """The stage every source PDF passes through before any rasterization
-        (`FR-INGEST-33`/`FR-INGEST-34`): neutralize the active constructs, then
-        check the ceilings the sanitizer's structural read makes checkable BEFORE
-        allocation — the page ceiling against the structural page count (this
-        document's running total included), the pixel ceiling against each page's
-        expected raster dimensions (`pt / 72 * dpi`) and every embedded image's
-        declared dimensions.
+        """Sanitize one source PDF before anything is rasterized (FR-INGEST-33, FR-INGEST-34):
+        remove active content, then check the limits that can be checked before allocating memory:
+        the page limit against the page count (including this document's running total) and the
+        pixel limit against each page's expected raster size and each embedded image's declared
+        size.
 
         Every failure is a refusal (`NFR-INGEST-08`): a sanitizer exception of any
         kind, unremovable active content, or a crossed bound raises
@@ -121,19 +119,11 @@ class SourceChecksMixin:
         return result
 
     def _check_rasters(self, blob_hash: str, pages: Sequence[PageImage]) -> None:
-        """The pixel ceiling and the resolution floor against the ACTUAL rasters.
-        The declared-dimensions check above runs first and is the before-allocation
-        form; this is the belt-and-braces on the same bounds — a seam that lied
-        about what it read is caught before transcription spends a model call on
-        it. The floor (FR-INGEST-21) reads `HARNESS_INGEST_RESOLUTION_FLOOR` at
-        call time and quarantines a page whose raster falls below the profile's
-        resolution on either linear dimension: the design denominates the floor
-        in DPI, and the raster the module can actually measure is the page's
-        linear extent in px, so that extent is the measured resolution the
-        refusal names (the F4 probe: a 50x70 px page refuses; #227). Fail-closed
-        like every bound evaluation: a fault here resolves to the declared
-        refusal, never to processing and never to a foreign exception
-        (NFR-INGEST-08, #231)."""
+        """Check the actual rasters against the pixel limit and the resolution floor, as a second
+        check after the size estimates, so a rasterizer that misreported sizes is caught before a
+        model call is spent. The floor (`HARNESS_INGEST_RESOLUTION_FLOOR`, FR-INGEST-21)
+        quarantines a page whose raster is too small in either dimension. Any fault here ends in
+        the declared refusal, never in processing (NFR-INGEST-08)."""
         try:
             max_pixels = self._configured_int(MAX_IMAGE_PIXELS_ENV,
                                               DEFAULT_MAX_IMAGE_PIXELS)
@@ -159,12 +149,9 @@ class SourceChecksMixin:
                 f"pixel-bound check: {error!r} (NFR-INGEST-08).") from error
 
     def _file_deadline(self, blob_hash: str) -> float:
-        """The per-source-file wall-clock deadline (`FR-INGEST-34`): now plus the
-        `MAX_FILE_SECONDS` ceiling. The ceiling's read is itself a bound
-        evaluation, so a fault inside it fails closed to the declared refusal
-        (NFR-INGEST-08, #231); on the setup path that refusal raises to the
-        uploading teacher (FR-INGEST-32). A malformed ceiling value keeps its
-        own declared `IngestError`."""
+        """The time limit for processing one source file: now plus `MAX_FILE_SECONDS`
+        (FR-INGEST-34). A fault while reading the limit ends in the declared refusal
+        (NFR-INGEST-08); a malformed limit value raises its own `IngestError`."""
         try:
             return time.monotonic() + self._configured_seconds(
                 MAX_FILE_SECONDS_ENV, DEFAULT_MAX_FILE_SECONDS)
@@ -177,11 +164,9 @@ class SourceChecksMixin:
 
     def _refuse_past_deadline(self, blob_hash: str, deadline: float,
                               phase: str) -> None:
-        """The wall-clock ceiling's boundary reads (`FR-INGEST-34`): past the
-        deadline the artifact is refused, and a fault inside the read itself
-        fails closed to the same declared refusal (NFR-INGEST-08, #231). On the
-        setup path this refusal raises to the uploading teacher — a setup
-        artifact has no operator to quarantine to (FR-INGEST-32)."""
+        """Refuse the file once its time limit has passed (FR-INGEST-34); a fault while checking
+        also ends in refusal (NFR-INGEST-08). For a setup document the teacher sees the refusal,
+        since there is no operator queue for setup files (FR-INGEST-32)."""
         try:
             exceeded = time.monotonic() >= deadline
         except IngestError:

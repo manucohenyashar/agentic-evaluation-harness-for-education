@@ -42,7 +42,7 @@ def _env_int(name: str, default: int) -> int:
 
 
 def upload_chunk_bytes() -> int:
-    """The chunk size the upload walk uses this call (knob read at call time)."""
+    """The upload chunk size for this call (the setting is read each time)."""
     return max(1, _env_int("HARNESS_CONSOLE_UPLOAD_CHUNK_BYTES", _UPLOAD_CHUNK_DEFAULT))
 
 
@@ -50,7 +50,7 @@ def upload_chunk_bytes() -> int:
 #: `M-REVIEW`'s declared default (`CT-REVIEW-02`), not a number this module recomputes.
 #: Env-gated (seam 3) and read at call time, like every knob here.
 def blind_reserve_minutes() -> int:
-    """The blind-reservation default this console run uses (knob read at call time)."""
+    """The default time reserved for blind review (the setting is read each time)."""
     return max(0, _env_int("HARNESS_CONSOLE_BLIND_RESERVE_MINUTES", REVIEW_BLIND_RESERVE_MINUTES))
 
 
@@ -58,7 +58,7 @@ def blind_reserve_minutes() -> int:
 #: `finalize_batch` settles when no store is attached. A knob, so a slower box can
 #: shrink it and a load test can grow it without a code change.
 def headless_batch_size() -> int:
-    """The submission count the headless driver settles per finalized batch."""
+    """How many submissions the headless driver finalizes per batch."""
     return max(1, _env_int("HARNESS_CONSOLE_HEADLESS_BATCH", 12))
 
 

@@ -337,3 +337,38 @@ interrupted-session half, and the blind path of `CT-REVIEW-08`):
   a draw after a skip, and a skip beside a draw, are both refused, so the
   report's "no new validation evidence was collected" is guaranteed to agree
   with the evidence on record rather than asserted over it.
+
+## Details moved out of the code
+
+These notes were the longer parts of docstrings in `aeh.review`. Each section is named after the file and the function or class it describes.
+
+### labels.py: record_label
+
+``saw_system_output`` records whether the teacher saw the system's output
+before deciding (`FR-REVIEW-09`'s visibility column): 1 means the system
+output was visible, 0 means the label was written blind. It defaults from
+the label type — a ``blind`` label is by definition blind, every other type
+is by default an operational one — and an explicit value wins, so a caller
+that knows better can record it. The label is fully typed: band, routing,
+origin, attribution, the visibility flag — no field is left implicit. There
+is deliberately no ``new_points`` parameter: a score edit is a band
+choice (`FR-REVIEW-10`), and points enter only as the *derived* value a
+service label carries — the mapping is never handed a caller's number.
+
+Two routes, one signature (`#115`'s collection route completes the shape
+this docstring anticipated at #110):
+
+* **The in-memory route** — ``run_id=``, ``score_id=``, ``label_type=``
+  (the original #110 surface). The label lives in the process-level store
+  and dies with the process; this is the vocabulary the C07/C08 contract
+  reads.
+* **The durable collection route** — ``label=`` with ``data_dir=`` (and an
+  optional ``cohort_id=``): the label object is written straight to Tier
+  D's ``label`` table through ``upsert_label``, the store being cached per
+  data directory so a collection loop pays the open once. The statistics
+  cases (`TC-STATS-C01` rung 2, `TC-STATS-C17`, `TC-STATS-C18`) collect
+  through this route, and `M-STATS` reads the same rows back.
+
+The two are mutually exclusive by signature — a call carrying both is
+refused rather than guessed at, and a call carrying neither route's
+required arguments is a programming error, not a silent default.

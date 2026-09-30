@@ -12,8 +12,8 @@ _QUESTION_CONVENTION = re.compile(r"\A(Q\d+)C")
 
 
 def _question_of_criterion(question_id: str, criterion_id: str) -> str:
-    """The question a criterion belongs to: the package's own mapping when it carries
-    one, the naming convention otherwise, and nothing when neither does."""
+    """The question a criterion belongs to: the package's own mapping if it has one, otherwise the
+    `Q<n>C...` naming convention, otherwise None."""
     if question_id:
         return question_id
     matched = _QUESTION_CONVENTION.match(criterion_id)
@@ -21,8 +21,8 @@ def _question_of_criterion(question_id: str, criterion_id: str) -> str:
 
 
 def narrative_work_id(run_id: str, submission_id: str, level: str, question_id: str) -> str:
-    """The deterministic work identity of one narrative row — the id a retried unit
-    re-derives, so the conflict-on-duplicate is observable in the id itself."""
+    """The work id of one narrative row. It is deterministic, so a retried unit gets the same id
+    and the duplicate shows up as a key conflict."""
     return f"nar:{run_id}:{submission_id}:{level}:{question_id}"
 
 
@@ -31,8 +31,8 @@ def narrative_work_id(run_id: str, submission_id: str, level: str, question_id: 
 
 @dataclass(frozen=True)
 class CriterionVerdict:
-    """One criterion's verdict as an L1 request carries it — the judge's band, and
-    nothing numeric: there is no score field to carry a per-judge number through."""
+    """One criterion's verdict as an L1 request carries it: the judge's band only. There is
+    deliberately no numeric field, so no per-judge score can leak into a narrative."""
 
     criterion_id: str
     judge_id: str
@@ -41,8 +41,8 @@ class CriterionVerdict:
 
 @dataclass(frozen=True)
 class L1Request:
-    """The per-question request: ONE question's criteria, verdicts and evidence for
-    ONE submission (`FR-SYNTH-01`, `FR-SYNTH-05` — exactly one `submission_id`)."""
+    """The per-question request: one question's criteria, verdicts and evidence, for exactly one
+    submission (FR-SYNTH-01, FR-SYNTH-05)."""
 
     run_id: str
     submission_id: str
@@ -54,7 +54,7 @@ class L1Request:
 
 @dataclass(frozen=True)
 class L2Request:
-    """The test-level request: the L1 syntheses and NOTHING else (`NFR-SYNTH-03`).
+    """The whole-test request: the L1 narratives and nothing else (NFR-SYNTH-03).
 
     The boundary is the type itself — there is no field here that could carry a raw
     verdict (`CT-SYNTH-02`'s construction probe proves a smuggled one is refused), so
@@ -69,9 +69,8 @@ class L2Request:
 
 @dataclass(frozen=True)
 class SynthesisResult:
-    """One synthesized narrative — `{work_id, question_id, text}` at L1 and
-    `{work_id, text}` at L2 (`CT-SYNTH-01`: the `question_id` is simply absent at L2).
-    No numeric field exists to write a score into."""
+    """One narrative: `{work_id, question_id, text}` at L1 and `{work_id, text}` at L2, where
+    `question_id` is absent (CT-SYNTH-01). There is no numeric field to put a score in."""
 
     work_id: str
     question_id: str | None
@@ -80,7 +79,7 @@ class SynthesisResult:
 
 @dataclass(frozen=True)
 class SynthesisReport:
-    """The per-call report — the fourth seam's surface (`CT-SYNTH-12`).
+    """What one synthesis call did, reported next to its status (CT-SYNTH-12).
 
     `model_calls` counts the provider calls actually made (retries included);
     `narratives` and `failures` are the failure rate's stored and failed counts;

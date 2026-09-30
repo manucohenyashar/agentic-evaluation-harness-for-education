@@ -58,10 +58,10 @@ class QueuesMixin:
     # -- queues: separate routes, separate counts, nothing crossing --------------------------------------
 
     def review_queue(self, run_id: str = "r-unaddressed", *, budget_minutes: int | None = None) -> QueueView:
-        """The teacher's queue. Its reads never reach a quarantined row (§11.3,
-        `FR-INGEST-30`): the query names the review table only, and quarantine is the
-        operator's parallel workstream on its own route. `review_queue` is a cohort-tier
-        table, so the read walks the cohort files.
+        """The teacher's review queue. It never reads a quarantined row (§11.3, FR-INGEST-30): the
+        query uses only the review table, and quarantine is the operator's separate queue on its
+        own route. `review_queue` lives in the cohort tier, so the read goes across the cohort
+        files.
 
         The blind reservation is read — and subtracted — **before** the ranking query
         runs (`FR-CONSOLE-19`, `CT-REVIEW-02`): the ranked set is drawn from a budget
@@ -208,11 +208,10 @@ class QueuesMixin:
         )
 
     def quarantine(self, cohort_id: str = "c-unaddressed") -> QueueView:
-        """The operator's quarantine queue, on its own route with its own count (§11.3):
-        resolving an item here must never move the teacher's count. The park is the
-        FLAG (`submission.quarantined`, a cohort-tier column), so the read walks the
-        cohort files and the count is the last write's flag per submission — a resolve
-        clears it, which is what makes the operator count move at all."""
+        """The operator's quarantine queue, on its own route with its own count (§11.3); resolving
+        an item here never changes the teacher's count. An item is quarantined when
+        `submission.quarantined` is set (a cohort-tier column), so the count uses the latest flag
+        value per submission; resolving clears the flag, which is what lowers the count."""
         queries: list[str] = []
         rows = self._read_cohort_files(
             _SELECT_COHORT_QUARANTINE,

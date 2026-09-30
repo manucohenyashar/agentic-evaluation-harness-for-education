@@ -14,24 +14,25 @@ from .runtime import _open_store, _provider_for
 
 
 def record_upload(store: Any, cohort_id: str, filename: str, blob_ref: str) -> None:
-    """The console's door to M-INGEST's upload record (FR-CONSOLE-27, #531): the console's
-    declared seams include this module, not `aeh.ingest` (TC-CONSOLE-36). No SQL here."""
+    """Record one uploaded scan part through M-INGEST, for the console (FR-CONSOLE-27). The
+    console's declared dependencies include M-PIPE but not M-INGEST, so it goes through here
+    (TC-CONSOLE-36). No SQL here."""
     from aeh.ingest import record_upload_part
 
     record_upload_part(store, cohort_id, filename, blob_ref)
 
 
 def uploaded_parts(store: Any, cohort_id: str) -> tuple[str, ...]:
-    """The cohort's uploaded parts in assembled order, from M-INGEST (FR-CONSOLE-27, #531)."""
+    """The cohort's uploaded parts in assembled order, read through M-INGEST (FR-CONSOLE-27)."""
     from aeh.ingest import upload_parts_in_order
 
     return upload_parts_in_order(store, cohort_id)
 
 
 class RunAlreadyStartedError(ValueError):
-    """`start_run_in_background` asked to start a run that already left `pending`.
-    A repeated "start run" (a double-click, a second tab) is refused rather than
-    re-driven: the first request's worker owns the run (`FR-CONSOLE-02`)."""
+    """`start_run_in_background` was asked to start a run that is no longer `pending`. A repeated
+    "start run" (a double-click, a second tab) is refused, because the first request's worker
+    already owns the run (FR-CONSOLE-02)."""
 
 
 def start_run_in_background(
@@ -46,7 +47,8 @@ def start_run_in_background(
     allow_running: bool = False,
     **drive_keywords: Any,
 ) -> tuple[str, Any]:
-    """The console's "start run" door (`FR-CONSOLE-34`, `NFR-CONSOLE-08`, #398).
+    """Start a run on a worker thread: the console's "start run" action (FR-CONSOLE-34,
+    NFR-CONSOLE-08).
 
     Synchronously, on the caller's store: resolve the run configuration exactly as
     `aeh run` does, then create the run, or reuse a `pending` run for the same cohort and
@@ -130,9 +132,9 @@ def start_run_in_background(
 def resume_runs_in_background(
     store: Any, *, config: Mapping[str, Any], provider: Any = None, **drive_keywords: Any,
 ) -> list[tuple[str, Any]]:
-    """After a restart, drive every `running` run again on its own worker thread
-    (`NFR-CONSOLE-08`, #398). Call it after `recover`, which reclaims the dead
-    process's leases: `recover` resets state, and this is what makes the run finish.
+    """After a restart, drive every `running` run again, each on its own worker thread
+    (NFR-CONSOLE-08). Call it after `recover`: `recover` reclaims the dead process's leases, and
+    this is what then finishes the runs.
 
     A run whose frozen backend profile differs from this process's is skipped. `recover`
     has already recorded why it stays where it is (`FR-CONF-15`). Returns the

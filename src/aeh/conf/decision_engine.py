@@ -73,7 +73,8 @@ DEFAULT_TOKEN_BYTES_RATIO = 3
 
 def _decimal_knob(raw: Any, key: str, default: Decimal, low: Decimal, high: Decimal,
                   *, high_inclusive: bool, low_inclusive: bool = True) -> Decimal:
-    """A frozen-at-resolution decimal knob, refused (never clamped) outside its domain."""
+    """Read a decimal setting that is fixed when the configuration is resolved. A value outside its
+    range is refused, never clamped."""
     if raw is None or (isinstance(raw, str) and not raw.strip()):
         return default
     if isinstance(raw, bool):
@@ -107,8 +108,8 @@ def _bounded_int(raw: Any, key: str, default: int, low: int, high: int) -> int:
 
 
 def _canonical_decimal(value: Decimal) -> str:
-    """One spelling per number, so `0.8`, `0.80` and `Decimal("0.800")` are one work identity
-    (FR-CONF-22): trailing zeros stripped, never scientific notation."""
+    """One spelling per number, so `0.8`, `0.80` and `Decimal("0.800")` give the same work identity
+    (FR-CONF-22): trailing zeros removed, never scientific notation."""
     text = format(value.normalize(), "f")
     return text
 
@@ -117,7 +118,8 @@ def _canonical_decimal(value: Decimal) -> str:
 @dataclass(frozen=True)
 class DecisionEngine:
     """The decision engine a run is frozen to (FR-CONF-17): the model and the four values that
-    decide which verdict counts. All are fixed at resolution and never re-read (CT-CONF-18)."""
+    decide which verdict counts. All are fixed when the configuration is resolved and never re-read
+    (CT-CONF-18)."""
 
     model: ModelRef
     confidence_threshold: Decimal
@@ -166,7 +168,8 @@ class DecisionEngine:
             raise ConfigurationError(f"persisted decision_engine is incomplete or malformed: {exc}") from None
 
     def identity(self) -> str:
-        """The encoding `compute_panel_build_ref` mixes in (FR-CONF-22)."""
+        """The encoding of this engine that `compute_panel_build_ref` includes in its hash
+        (FR-CONF-22)."""
         return _FIELD_SEP.join((_build_identity(self.model), _canonical_decimal(self.confidence_threshold),
                                 _canonical_decimal(self.cite_threshold), str(self.max_citation_questions),
                                 str(self.token_bytes_ratio)))

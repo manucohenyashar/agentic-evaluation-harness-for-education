@@ -45,7 +45,8 @@ from .reports import (
 
 
 class EscalationMixin:
-    """Widens a cell's panel under the run-wide budget and the criterion breaker."""
+    """Adds judges to a cell's panel, within the run-wide escalation budget and the per-criterion
+    breaker."""
 
     # -- escalation, the breakers and the budget (FR-ORCH-09/10/13/14, FR-ORCH-26) --------------
 
@@ -57,80 +58,10 @@ class EscalationMixin:
         *,
         expected_value: float | None = None,
     ) -> tuple[EscalationReport, ...]:
-        """Widen one (submission, criterion) panel — the escalation path M-AGG walks
-        when a verdict lands outside its band (`FR-ORCH-09/10`, §7.1), in the design's
-        own form (`CT-ORCH-08`): **the caller's transaction first**, the criterion
-        score key second — the ``(run_id, submission_id, criterion_id)`` triple, the
-        way `criterion_score` names its rows (#359, `FR-ORCH-34`) — and the judges to
-        ADD third. The shape is
-        the requirement, not a convenience: a run's score result for a criterion and
-        the escalation that widens that criterion's panel are one logical step, *both
-        present or both absent after any crash* is `CT-STORE-03`'s atomicity clause
-        read across the boundary — so the widened units are written into the
-        transaction the CALLER opened and commits (or aborts) with its verdict. This
-        method never commits and never rolls back the transaction it is handed, and it
-        never opens one of its own: a caller with no transaction of its own wraps the
-        call in `cohort.transaction()` — the same discipline every other ledger writer
-        follows.
+        """Add judges to one (submission, criterion) panel: the escalation M-AGG requests when a
+        verdict falls outside its band (FR-ORCH-09/10, §7.1, CT-ORCH-08).
 
-        **The key names its run** (`FR-ORCH-34`, `CT-ORCH-26`): the escalation widens
-        that run's panel only, and the one-element tuple returned is that run's report.
-        The two-element ``(submission_id, criterion_id)`` form is **deprecated**: it
-        resolves the run from the ledger only when exactly one open run holds the
-        pair's score units, and raises `WorkLedgerError` — before anything is written
-        — when none or two or more do. A run whose base units all completed has
-        auto-completed (`_maybe_complete_run`), so a caller escalating it names the
-        run with the three-element key. A key no run holds a panel for raises
-        `EscalationPlanError` before anything is written.
-
-        **The decision, in order** (each stage reported in `gates` — seam 4):
-
-        1. *Plan.* The pair's prior judges are the score units the ledger enumerates
-           for it — any origin, any status: the panel IS the enumerated units, not the
-           verdicts landed so far. `escalation_plan` widens 1→3, 3→5 (never to two,
-           `FR-ORCH-10`; `validate_escalation_plan` is the rule's pure surface) —
-           with caller-named judges exactly, or the ladder's next two arms when
-           `judges` is None. A plan that is not a widening, produces an even
-           `judge_count`, or names a judge twice raises before anything is written
-           (`EvenEscalationPlanError` is the subclass `TC-ORCH-20` asserts).
-        2. *Idempotence.* A pair already carrying escalation-origin units is a no-op
-           (`admitted`, zero units): the widened panel exists, whatever path built it
-           — including a random-arm draw, whose units are the SAME rows this path
-           would insert (origin is not a `work_id` input, `CT-ORCH-15`), so a retried
-           enqueue inserts nothing and reports honestly.
-        3. *Criterion breaker* (`FR-ORCH-13`). A latched breaker for the criterion
-           halts immediately (`halted_by_breaker`); otherwise the first
-           `ORCH_CRITERION_BREAKER_MIN_N` submissions processed for the criterion —
-           by completion tick, the ledger's honest ordering — are checked with
-           `criterion_breaker_tripped`, and a trip latches a content-addressed
-           breaker row (INSERT OR IGNORE: one trip, one event) whose detail names the
-           mark the design requires — `un-gradeable_by_panel`, remainder single-judge
-           provisional. The mark on the criterion's RESULT is `M-AGG`'s artifact to
-           write; the ledger's breaker row and this report's decision are what tell
-           it to. Random-arm units are never counted here (origin='escalation'
-           only) — the breaker gates the routing policy, not its control sample.
-        4. *The units.* The escalation's units are inserted **unconditionally** — the
-           budget rations dispatch, not the plan write. The atomicity clause leaves
-           no choice: a budget that refused the insert would put the escalation
-           OUTSIDE the verdict's transaction, and a crash between the two would leave
-           exactly the partial write `CT-STORE-03` forbids — a verdict recorded, its
-           panel never widened. The caller's `expected_value` is recorded on the
-           request row (content-addressed, INSERT OR IGNORE) as the ranking key the
-           dispatch-time admission consumes.
-        5. *The budget, at dispatch* (`FR-ORCH-14`). The claim pass admits pending
-           escalation units through `admit_escalations` only while the run's observed
-           escalation rate is at or under `ORCH_ESCALATION_BUDGET`; above it the
-           units stay pending — the remainder `FR-ORCH-14` marks provisional — and
-           dispatch resumes in expected-value order when growth returns headroom.
-           `escalation_budget_state` is the operator surface that shows the split;
-           nothing here reads the budget, because the decision is dispatch's, not the
-           plan write's.
-
-        The inserted units invalidate this run's dispatch-order cache (the claim pass
-        must see them). Pure policy — `escalation_plan`, `validate_escalation_plan`,
-        `criterion_breaker_tripped`, `admit_escalations` — does every decision here;
-        the method only reads the ledger and writes rows, and never contacts a judge
-        (`NFR-ORCH-04`: the escalation policy is evaluable with no model call).
+        More detail: `docs/code-notes/orch.md`, section `escalation.py: EscalationMixin.enqueue_escalation`.
         """
         key = tuple(str(part) for part in criterion_score_key)
         if len(key) == 3:
@@ -193,8 +124,8 @@ class EscalationMixin:
     def enqueue_replacement_arm(
         self, tx: Any, criterion_score_key: Sequence[str],
     ) -> ReplacementArmReport:
-        """FR-ORCH-43 / CT-ORCH-33 (#524, ADR-34): one replacement arm for a panel quarantine
-        left even.
+        """Add one replacement judge to a panel that quarantine left with an even number of judges
+        (FR-ORCH-43, CT-ORCH-33, #524, ADR-34).
 
         Inserts, in the caller's transaction, one further escalation arm (the next arm the
         pair does not carry, `_extension_arms` — never re-adding one, FR-ORCH-39) so the
@@ -275,7 +206,7 @@ class EscalationMixin:
         judges: Sequence[str] | None,
         expected_value: float | None,
     ) -> EscalationReport:
-        """The enqueue's decision, run inside a transaction the caller sees.
+        """The escalation decision, made inside the caller's transaction.
 
         Every read and write goes through `tx` — the caller's (`CT-ORCH-08`) or this
         method's own — so the decision is one consistent step against the ledger: the
@@ -500,7 +431,7 @@ class EscalationMixin:
         criterion_id: str,
         additions: Sequence[str],
     ) -> int:
-        """One pair's widening, inserted `origin='escalation'` (`FR-ORCH-09`).
+        """Insert the new units for one widened panel, with `origin='escalation'` (FR-ORCH-09).
 
         The additions are the plan's — derived by the caller from the pair's CURRENT
         panel in this same transaction, with the caller's named judges when it named
@@ -528,8 +459,8 @@ class EscalationMixin:
         return inserted
 
     def _escalation_dispatch_admission(self, cohort: Any, run_id: str) -> frozenset:
-        """The pairs whose pending escalation units may dispatch this pass
-        (`FR-ORCH-14`).
+        """The (submission, criterion) pairs whose pending escalation units may be dispatched this
+        pass (FR-ORCH-14).
 
         `admit_escalations` IS the decision — the claim pass is the production caller
         the pure policy owes its honesty to: the candidates are the run's pending
@@ -562,9 +493,8 @@ class EscalationMixin:
     def _escalation_rate(
         self, read: Callable[..., Sequence[Any]], run_id: str
     ) -> tuple[int, int, float]:
-        """(processed pairs, escalated pairs, rate) for one run — the budget's
-        numerator and denominator are always the ledger's own aggregates
-        (`FR-ORCH-14`, `FR-ORCH-02`).
+        """`(processed pairs, escalated pairs, rate)` for one run. Both counts always come from the
+        ledger (FR-ORCH-14, FR-ORCH-02).
 
         `read` is a bound reader — a transaction's `execute` (reads are legal inside a
         transaction; the read-modify-write every ledger transition is) or a cohort
@@ -601,7 +531,7 @@ class EscalationMixin:
         breaker_tripped: bool,
         gates: dict[str, str],
     ) -> EscalationReport:
-        """Assemble the report with the queue depth read in the same transaction."""
+        """Build the escalation report, reading the queue depth in the same transaction."""
         queue_depth = int(tx.execute(
             ORCH_STATEMENTS["select_queue_depth"], run_id=row["run_id"]
         )[0]["n"])
@@ -623,8 +553,8 @@ class EscalationMixin:
         )
 
     def escalation_budget_state(self, run_id: str) -> EscalationBudgetState:
-        """The run-wide escalation ledger's state — the operator surface the
-        rate-above-budget alert reads (`FR-ORCH-14`, `CT-ORCH-16`).
+        """The run-wide escalation budget's state; the "rate above budget" alert reads this
+        (FR-ORCH-14, CT-ORCH-16).
 
         Every number is read from the ledger at call time: the rate is recomputed, the
         queue depth counted, the tripped criteria listed — no cached counters, because
@@ -698,10 +628,9 @@ class EscalationMixin:
         )
 
     def tripped_breakers(self, run_id: str) -> tuple[BreakerTrip, ...]:
-        """The run's latched circuit breakers, criterion-ordered (`FR-ORCH-13`) — the
-        alert surface ("any criterion tripping the circuit breaker") reads these rows;
-        each carries the window arithmetic that tripped it, so the alert answers
-        'why', not just 'what'."""
+        """The run's tripped criterion breakers, ordered by criterion (FR-ORCH-13). The alert reads
+        these rows, and each includes the counts that tripped it, so the alert can say why, not
+        just what."""
         row = self._run_row(run_id)
         cohort = self._store.cohort(row["cohort_id"])
         return tuple(

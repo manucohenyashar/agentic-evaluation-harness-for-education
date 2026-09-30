@@ -7,7 +7,7 @@ from typing import Any
 
 
 class CompositionFault(RuntimeError):
-    """A hook raised something that is not a provider condition.
+    """A hook raised an error that is not a provider condition.
 
     Never swallowed and never re-raised past `run_to_completion`: the run is paused with
     `pause_reason="composition fault: <type>: <msg>"` and the fault rides in the stage's
@@ -18,7 +18,7 @@ class CompositionFault(RuntimeError):
 
 @dataclass(frozen=True)
 class StageTrace:
-    """What one stage did on one call (seam 4).
+    """What one stage did during one call.
 
     `detail` is never a bare status: a `status=success` sitting on an empty result is the top
     silent-failure trap, so every entry says what was processed.
@@ -36,7 +36,7 @@ class StageTrace:
 
 @dataclass(frozen=True)
 class RunResult:
-    """The result of driving one run. `status` is the STORED `run.status` (`FR-PIPE-01`)."""
+    """The result of driving one run. `status` is the run's stored status (FR-PIPE-01)."""
 
     run_id: str
     status: str
@@ -48,7 +48,7 @@ class RunResult:
 
 @dataclass(frozen=True)
 class RecoveryReport:
-    """What `recover` reclaimed, resumed and regraded (`FR-PIPE-07`).
+    """What `recover` reclaimed, resumed and regraded (FR-PIPE-07).
 
     `recover()` fills it (`FR-PIPE-07`): what one sweep reclaimed, which paused runs it
     resumed, and which complete runs it re-graded after a review window lapsed.

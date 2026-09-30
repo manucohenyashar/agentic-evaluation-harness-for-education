@@ -50,7 +50,8 @@ _CONTROL_CHARS: frozenset[str] = frozenset(chr(c) for c in (*range(0x20), 0x7F))
 
 
 def _has_floating_tag(build_id: str) -> bool:
-    """Whether `build_id` carries a floating tag, checked in **tag positions only**.
+    """Whether `build_id` carries a floating tag such as `latest`, looking only where a tag can
+    appear.
 
     A tag position is the `@pin` suffix, or a `:tag` on the final path/slug segment. Splitting
     on every `@` and `:` instead would reject `/models/main/llama.gguf@sha256:aa`, where `main`
@@ -73,31 +74,10 @@ def _has_floating_tag(build_id: str) -> bool:
 @_typeerror_on_mutation
 @dataclass(frozen=True)
 class ModelRef:
-    """A pinned build identity. Design §3.1 Interfaces.
+    """A pinned model build: which model, exactly which build of it, and how it is served (design
+    §3.1).
 
-    `build_id` takes one of two forms, and `is_resolved()` judges it by form alone — there is no
-    backend argument on this type, so the per-backend rule ("weights path for `edge-local`,
-    pinned slug otherwise") lives in `resolve_run_config`.
-
-    | `build_id` | `quantization` | form | resolved |
-    |---|---|---|---|
-    | `/models/llama-3.3-70b.gguf@sha256:aaaa` | `"q4"` | edge-weights | yes |
-    | `/models/llama-3.3-70b.gguf@sha256:aaaa` | `None` | — | no — `FR-CONF-03` wants path **plus quantization plus** hash |
-    | `/models/llama-3.3-70b.gguf` | `"q4"` | — | no — no weights hash |
-    | `/models/llama:latest.gguf@sha256:aaaa` | `"q4"` | — | no — floating tag, on either form |
-    | `openrouter/llama-3.3-70b-instruct@2024-12-06` | any | provider-pinned | yes |
-    | `openrouter/llama-3.3-70b-instruct` | any | — | no — a bare slug is not pinned |
-    | `llama3.3:latest@2024-12-06` | any | — | no — floating tag |
-    | `Llama 3.3 70B` | any | — | no — a friendly name (`FR-CONF-03`, verbatim) |
-
-    The two forms are told apart by `WEIGHTS_SUFFIXES`, not by the presence of `@sha256:`
-    alone: a hosted build pinned by content digest (`openrouter/x@sha256:abcd`) is
-    provider-pinned, not a weights path.
-
-    The digest is required to be hex and non-empty, but **not** 64 characters: the repository
-    already commits `sha256:aaaa` as a legal judge build
-    (`tests/unit/prov/test_recorded_fixture_provider.py`). Verifying that a digest matches the
-    bytes on disk belongs to `M-STORE`, not here — this module never opens a file.
+    More detail: `docs/code-notes/conf.md`, section `model_ref.py: ModelRef`.
     """
 
     role: ModelRole
@@ -106,7 +86,7 @@ class ModelRef:
     quantization: str | None
 
     def __post_init__(self) -> None:
-        """Type hygiene only — never form, which is `build_form`'s question.
+        """Check field types only; whether the build id is in a valid form is `build_form`'s job.
 
         `provider` and `build_id` are hashed into `panel_build_ref`, which `CT-CONF-07` makes a
         `package_validation` primary-key component. A `None` provider would be hashed as the
@@ -163,7 +143,7 @@ class ModelRef:
                 )
 
     def build_form(self) -> BuildForm | None:
-        """Which of the two resolved forms `build_id` takes, or `None` if it takes neither."""
+        """Which of the two pinned forms `build_id` takes, or None if neither."""
         if not isinstance(self.build_id, str):
             return None
         build_id = self.build_id.strip()
@@ -195,7 +175,8 @@ class ModelRef:
         return "provider-pinned"
 
     def is_resolved(self) -> bool:
-        """`FR-CONF-03` / `CT-CONF-03`: `build_id` is sufficient to identify what answered."""
+        """Whether `build_id` alone identifies exactly which model answered (FR-CONF-03,
+        CT-CONF-03)."""
         return self.build_form() is not None
 
 

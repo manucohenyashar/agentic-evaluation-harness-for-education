@@ -43,13 +43,10 @@ _REFERENCE_EXPORT_POPULATION: tuple[tuple[str, str, float, str], ...] = (
 
 
 def _reference_export_cohort(run_id: str) -> tuple[Store, Any, Path]:
-    """The reference cohort's (store, cohort handle, store root) for the
-    school-facing export's no-store call — the golden baseline's reproducible
-    world. Any other run id is a caller mistake: without a store there is nothing
-    to read, and inventing one would be exactly the guess the golden discipline
-    refuses. The caller owns the ephemeral world: it closes the store and removes
-    the directory when the read is done (the export's output is files, the ledger
-    is scaffolding)."""
+    """The reference cohort's `(store, cohort handle, store root)`, used when the school-facing
+    export is called without a store; this is the golden baseline's reproducible world. Any other
+    run id without a store is a caller mistake. The caller closes the store and removes the
+    directory when done."""
     from aeh.store import open_store
 
     if run_id != _REFERENCE_EXPORT_RUN:
@@ -116,10 +113,9 @@ def export_grade_artifacts(
     dest: Path | str,
     store: Store | None = None,
 ) -> GradeArtifacts:
-    """The school-facing export (`FR-GRADE-17`, `TC-REG-03`'s producer): one CSV of
-    marks and one PDF per student, written into `dest`, read from the **named**
-    revision — exporting a named revision is what makes the amendment trail usable
-    (revision 1's export reproduces the marks as they were delivered then).
+    """The school-facing export (FR-GRADE-17, TC-REG-03): one CSV of marks and one PDF per student,
+    written into `dest`, from the named revision. Exporting a named revision is what makes the
+    amendment trail usable: revision 1's export reproduces the marks as first delivered.
 
     The marks CSV is `_MARKS_COLUMNS` verbatim; the PDFs are named by student ref,
     one per student the CSV carries, byte-deterministic (see `_student_pdf_bytes`).

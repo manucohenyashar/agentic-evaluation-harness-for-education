@@ -46,7 +46,8 @@ RETENTION_CONFIRMED_ANSWERS: frozenset[str] = frozenset(
 
 
 def _is_retention_confirmed(answer: object) -> bool:
-    """Is this retention answer an explicit zero-retention confirmation? **Fail-closed.**
+    """Whether a retention answer explicitly confirms zero retention. Anything else counts as not
+    confirmed.
 
     `True` (a boolean) confirms; a string confirms only if it is exactly one of
     `RETENTION_CONFIRMED_ANSWERS`; everything else — `False`, `None`, empty, hedged,
@@ -81,11 +82,10 @@ ROUTING_PROHIBITED_KINDS: frozenset[str] = frozenset({"scoring", "extraction"})
 
 
 def _openai_body(prompt: PromptPayload, model_ref: ModelRef, params: SamplingParams) -> bytes:
-    """The dispatched body. The payload is carried **unchanged**: every `(name, value)`
-    field appears verbatim, in declaration order — no added field, no reordering, no
-    templating (`FR-PROV-13`, `TC-PROV-03`'s differential oracle). NFR-PROV-04: identity
-    reaches the body as the caller's `student_ref` field values (the roster mapping happened
-    in `M-INGEST`); no student name exists anywhere in the payload to leak."""
+    """The request body sent to the model. The caller's payload goes in unchanged: every `(name,
+    value)` field, in order, with nothing added, reordered or templated (FR-PROV-13, TC-PROV-03).
+    Students appear only as the caller's `student_ref` values; no name is in the payload
+    (NFR-PROV-04)."""
     import json
 
     body = {
@@ -105,7 +105,7 @@ def _openai_body(prompt: PromptPayload, model_ref: ModelRef, params: SamplingPar
 
 
 def _parse_completion(response: HttpResponse, model_ref: ModelRef) -> "Completion":
-    """OpenAI-shaped response to a `Completion`, or `MalformedResponseError`.
+    """Turn an OpenAI-style response into a `Completion`, or raise `MalformedResponseError`.
 
     The resolved build is what the response *reported* (the body's `model` field, falling
     back to the `x-served-build` header) — never the requested ref (`FR-PROV-04`)."""
@@ -177,7 +177,7 @@ def _parse_completion(response: HttpResponse, model_ref: ModelRef) -> "Completio
 
 
 class _BaseLiveProvider:
-    """The shared dispatch machinery of the two live providers.
+    """The dispatch machinery the two live completion providers share.
 
     Not part of the public surface (`CT-PROV-01` closes it): the two classes below are the
     implementations, and this class exists so the request/parse/display logic is written
@@ -204,11 +204,11 @@ class _BaseLiveProvider:
 
     @property
     def counters(self) -> RunCounters:
-        """`CT-PROV-11`'s surface: the six names, for `M-ORCH` to persist."""
+        """The six run counters, for M-ORCH to save (CT-PROV-11)."""
         return self._counters.snapshot()
 
     def record_run_build(self, model_key: str, build_id: str) -> None:
-        """The run-start build record `BuildWatch` guards (`FR-PROV-05`)."""
+        """Record each model's build at run start, which `BuildWatch` then guards (FR-PROV-05)."""
         self._build_watch.record(model_key, build_id)
 
     def _dispatch(self, model_ref: ModelRef, prompt: PromptPayload,
@@ -270,10 +270,9 @@ class _BaseLiveProvider:
         return completion
 
     def estimate_cost(self, plan: CallPlan) -> CostEstimate:
-        """`FR-PROV-09`: a pure function of the plan and the declared per-token costs.
-        Dispatches nothing — the estimator reads the plan's call count and per-call token
-        budgets against the implementation's own declared rate (`TC-PROV-12`'s
-        hand-computed reference); the run's *actual* cost accumulates in the counters."""
+        """The estimated cost of a plan: its call count and per-call token budgets at this
+        provider's declared rates (FR-PROV-09). Sends nothing; the run's actual cost is tracked in
+        the counters."""
         per_call_cost = (Decimal(plan.tokens_in_per_call) * self._cost_per_token_in
                          + Decimal(plan.tokens_out_per_call) * self._cost_per_token_out)
         return CostEstimate(
@@ -288,7 +287,7 @@ class _BaseLiveProvider:
 
 
 class LocalServerProvider(_BaseLiveProvider):
-    """The on-premise OpenAI-compatible server (`FR-PROV-11`'s first implementation).
+    """An on-premise, OpenAI-compatible model server (FR-PROV-11).
 
     Retention is trivially confirmed — the model runs on school hardware, and no bytes
     leave the building. `verify_retention` answers from that fact, not from a network
@@ -317,7 +316,7 @@ class LocalServerProvider(_BaseLiveProvider):
         return self._dispatch(model_ref, prompt, params)
 
     def capabilities(self, model_ref: ModelRef) -> Capabilities:
-        """Declared statically (`CT-PROV-04`): no network call during capabilities()."""
+        """The declared capabilities; no network call is made (CT-PROV-04)."""
         import decimal
 
         return Capabilities(
@@ -327,8 +326,8 @@ class LocalServerProvider(_BaseLiveProvider):
         )
 
     def verify_retention(self, model_refs: Sequence[ModelRef]) -> RetentionReport:
-        """Local inference: nothing is dispatched off the machine, so zero-retention holds
-        for every panel member by construction (`CT-PROV-09`'s report shape).
+        """Local inference sends nothing off the machine, so zero retention holds for every panel
+        member (CT-PROV-09).
 
         The report carries the panel members themselves, in the same shape
         `OpenRouterProvider` returns — the report is contract, and a caller that consumes
@@ -339,8 +338,8 @@ class LocalServerProvider(_BaseLiveProvider):
 
 
 class OpenRouterProvider(_BaseLiveProvider):
-    """The OpenRouter hosted provider, with the retention gate and the routing prohibition
-    (`FR-PROV-11`, `FR-PROV-14`).
+    """The hosted router provider, with the retention gate and the ban on price-based routing
+    (FR-PROV-11, FR-PROV-14).
 
     `retention_answers` is `FR-PROV-15`'s seam for the open TBD: the wire shape of a
     zero-retention confirmation is unknown, so the gate takes a *source of answers*
@@ -407,7 +406,7 @@ class OpenRouterProvider(_BaseLiveProvider):
         return self._dispatch(model_ref, prompt, params)
 
     def verify_retention(self, model_refs: Sequence[ModelRef]) -> RetentionReport:
-        """Zero-retention confirmation for every panel member, **fail-closed**.
+        """Confirm zero retention for every panel member, refusing when any cannot be confirmed.
 
         The answers come from the injected source (or the provider's endpoint via the
         transport when no source is given — the same fail-closed evaluation either way).
@@ -450,15 +449,15 @@ class OpenRouterProvider(_BaseLiveProvider):
         )
 
     def require_retention(self, model_refs: Sequence[ModelRef]) -> RetentionReport:
-        """`cloud-hosted`'s gate, as an explicit name: `verify_retention` raises on any
-        unconfirmed panel member (naming which), and returns the report when the whole
-        panel is cleared. The alias exists so a caller's intent reads at the call site."""
+        """The `cloud-hosted` retention gate: raises naming any unconfirmed panel member, and
+        returns the report when the whole panel is confirmed. Same as `verify_retention`; the name
+        makes the caller's intent clear."""
         return self.verify_retention(model_refs)
 
     def capabilities(self, model_ref: ModelRef) -> Capabilities:
-        """Declared statically (`CT-PROV-04`). The hosted provider supports prefix caching
-        and seeds; concurrency is the run-config's to decide, so the declared ceiling is
-        generous and `FR-PROV-07`'s governor throttles in flight."""
+        """The declared capabilities (CT-PROV-04): prefix caching and seeds are supported. The
+        declared concurrency ceiling is generous because the run configuration decides concurrency
+        and the governor throttles (FR-PROV-07)."""
         return Capabilities(
             supports_seed=True, supports_prefix_cache=True, max_concurrency=8,
             deterministic_at_temperature_zero=False,
@@ -466,11 +465,10 @@ class OpenRouterProvider(_BaseLiveProvider):
         )
 
     def enforce_routing_rule(self, model_ref: ModelRef, kind: str) -> None:
-        """`FR-PROV-11`: price-based routing across providers is refused for scoring and
-        extraction calls — the cheapest path must never decide a judgment. Permitted
-        elsewhere (formatting, embedding); where the API permits it, the upstream provider
-        is pinned via the model suffix `:upstream` convention (detection of drift stays
-        with `FR-PROV-05` — prevention is design §3.2's open TBD and is not claimed)."""
+        """Refuse price-based routing across providers for scoring and extraction calls: the
+        cheapest path must never decide a judgment (FR-PROV-11). It is allowed for other calls.
+        Where the API allows, the upstream provider is pinned with the `:upstream` model suffix;
+        detecting drift is FR-PROV-05's job."""
         if kind.lower() in ROUTING_PROHIBITED_KINDS:
             raise ConfigurationError(
                 f"price-based routing across providers is refused for {kind} calls "

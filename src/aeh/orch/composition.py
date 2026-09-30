@@ -12,7 +12,8 @@ from .executors import CELL_PHASES, CellKey, READY_HOOKS, RunHandle
 
 
 class CompositionMixin:
-    """The cell phases and ready cells the composition layer uses between stages."""
+    """Tracks each cell's progress through the pipeline stages and reports which cells are ready
+    for the next stage."""
 
     def mark_cell_phase(
         self, tx: Any, run_id: str, submission_id: str, criterion_id: str,
@@ -47,7 +48,7 @@ class CompositionMixin:
         )
 
     def run_handle(self, run_id: str) -> RunHandle:
-        """The run's cohort handle and identities, for a composition layer (`FR-PIPE-04`).
+        """The run's cohort handle and ids, for the pipeline layer (FR-PIPE-04).
 
         `M-PIPE` needs a transaction to commit a score, its escalation and its cell phase
         together, and a transaction comes from the cohort handle. It is forbidden its own SQL
@@ -71,7 +72,8 @@ class CompositionMixin:
         )
 
     def cell_unit_counts(self, run_id: str, stage: str) -> dict["CellKey", tuple[int, int]]:
-        """`(terminal, total)` units per cell for one stage — the count a phase is computed over.
+        """`(finished, total)` unit counts per cell for one stage; a cell's phase is computed from
+        these.
 
         `mark_cell_phase(..., units_consumed=n)` wants the number of TERMINAL units the phase
         consumed, and `ready_cells` compares that number against the cell's terminal count to
@@ -94,7 +96,7 @@ class CompositionMixin:
         return counts
 
     def cell_quarantined_counts(self, run_id: str, stage: str) -> dict["CellKey", int]:
-        """Each cell's QUARANTINED unit count for one stage, from the ledger (#524).
+        """Each cell's number of quarantined units for one stage, from the ledger (#524).
 
         The composition layer needs it to tell a panel quarantine left even (FR-PIPE-18's
         replacement, FR-PIPE-05's fallback) from an even panel reached any other way, which is
@@ -108,7 +110,7 @@ class CompositionMixin:
         }
 
     def ready_cells(self, run_id: str, hook: str) -> tuple["CellKey", ...]:
-        """The cells ready for one composition hook (`FR-ORCH-29`), in ledger order.
+        """The cells ready for one pipeline hook (FR-ORCH-29), in ledger order.
 
         * `integrity_pre` — every extract unit of the cell is terminal and the cell carries no
           `integrity_pre` phase yet. That is the moment the integrity gate can read a complete
@@ -131,7 +133,8 @@ class CompositionMixin:
 
     def _ready_cells_in(self, cohort: Any, run_id: str, hook: str,
                         phase_rows: Any = None) -> tuple["CellKey", ...]:
-        """`ready_cells` over an already-resolved cohort (the completion probe's door)."""
+        """`ready_cells` for a cohort handle the caller already has (used by the completion check).
+        """
         counts: dict[tuple[str, str], dict[str, tuple[int, int]]] = {}
         for row in cohort.query(ORCH_STATEMENTS["select_cell_unit_counts"], run_id=run_id):
             key = (str(row["submission_id"]), str(row["criterion_id"]))
@@ -159,7 +162,7 @@ class CompositionMixin:
         return tuple(ready)
 
     def _awaiting_aggregation(self, cohort: Any, run_id: str) -> bool:
-        """Whether a composition layer still owes a cell its aggregation (#524).
+        """Whether any cell is still waiting for the pipeline layer to aggregate it (#524).
 
         A run driven through the composition hooks records cell phases (`mark_cell_phase`),
         and its aggregate hook decides, AFTER the last unit closes, whether a cell needs more
@@ -176,8 +179,8 @@ class CompositionMixin:
         return bool(self._ready_cells_in(cohort, run_id, "aggregate", phases))
 
     def _cells_with_integrity_pre(self, cohort: Any, run_id: str) -> set[tuple[str, str]]:
-        """The cells whose `integrity_pre` phase is recorded — the Sweep-2 gate's extra
-        condition when an executor is bound (`FR-ORCH-30`)."""
+        """The cells whose `integrity_pre` phase has been recorded. When an executor is bound, a
+        cell must be in this set before its scoring sweep can start (FR-ORCH-30)."""
         return {
             (str(row["submission_id"]), str(row["criterion_id"]))
             for row in cohort.query(ORCH_STATEMENTS["select_cell_phases"], run_id=run_id)

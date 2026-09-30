@@ -34,9 +34,8 @@ KNOBS: dict[str, Any] = {
 
 
 def contrasting_values_for(knob: str) -> tuple[Any, Any]:
-    """Two values a run can tell apart for ``knob`` (`CT-CALIB-13`'s sweep moves the
-    behaviour between them). Chosen per knob for where they land on the behaviour, not
-    for contrast's own sake."""
+    """Two values of a knob that produce observably different behaviour, for the knob sweep
+    (CT-CALIB-13)."""
     if knob == "CALIB_MAX_QUESTIONS":
         return (1, 3)
     if knob == "CALIB_NONINFERIORITY_THRESHOLD":
@@ -64,8 +63,7 @@ def _probe_cohort_id(fraction: float, class_size: int) -> str:
 
 
 def observable_behaviour_with(knob: str, value: Any) -> Any:
-    """What a caller outside the module can observe when ``knob`` is set to ``value``
-    (`CT-CALIB-13`).
+    """What a caller outside M-CALIB can observe when the knob is set to `value` (CT-CALIB-13).
 
     The knob is **moved and the difference observed**, not reported on: the question
     count elicitation asks, the gate's outcome and applied threshold, the

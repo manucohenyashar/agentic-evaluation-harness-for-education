@@ -31,34 +31,9 @@ def rehydrate_run_config(
     cfg: Mapping[str, Any] | None = None,
     cohort: CohortRef | None = None,
 ) -> RunConfig:
-    """Reconstruct the `RunConfig` a persisted `run` row was written from, or refuse.
+    """Rebuild the `RunConfig` a stored run row was written from, or refuse.
 
-    `FR-CONF-04`: *"a run resumed after interruption resolves to the `backend_profile` and
-    `provider_config` persisted on its `run` row, and a mismatch against current configuration
-    raises `BackendMismatchError` rather than proceeding."* RISK-22 is a resumed run silently
-    changing the grader — half a cohort scored by one panel, half by another, and nothing in the
-    record saying so.
-
-    **`cfg` is optional, and that is deliberate.** `TC-CONF-16`'s round-trip property calls this
-    with the row alone, so a one-argument call must reconstruct; `TC-CONF-04` steps 2 and 3 call
-    it *"with current configuration set to `cloud-hosted`"* and require `BackendMismatchError`.
-    Both hold only if current configuration is an optional second argument — additive to §3.1's
-    `rehydrate_run_config(run_row)`.
-
-    The comparison is against `cfg` **directly**, never against `resolve_run_config(cfg, cohort)`:
-    resolving would run the consent gate and could raise `ConsentGateError` where `TC-CONF-04`
-    expects a mismatch, and it would demand a `cohort` a resume check has no reason to hold.
-
-    Reconstruction is from the **row**, never from current configuration — that is the whole
-    point. Current configuration is only ever consulted to *refuse*.
-
-    **`cohort` re-runs the consent gate on resume, and is optional for the same reason.**
-    `FR-CONF-08` says "refuse to produce a `RunConfig` binding a remote provider" for
-    non-consented work, and this function produces exactly that. The row can only exist if
-    `resolve_run_config` already passed the gate — but consent can be *withdrawn* between a run
-    starting at 9pm and resuming at 3am, and a hand-edited row is a back door this module
-    already documents. Pass the cohort and the gate runs again; omit it and it does not, which
-    is the caller asserting the run is unattended machinery replaying its own row.
+    More detail: `docs/code-notes/conf.md`, section `rehydrate.py: rehydrate_run_config`.
     """
     if not isinstance(run_row, Mapping):
         raise ConfigurationError(
@@ -155,7 +130,7 @@ def rehydrate_run_config(
 
 
 def _refuse_on_mismatch(persisted: RunConfig, cfg: Mapping[str, Any]) -> None:
-    """Compare a rehydrated run against current configuration and refuse any disagreement.
+    """Compare a rebuilt run configuration with the current one, and refuse on any difference.
 
     Compared: everything that decides **which grader this run is** — the backend, the ordered
     panel, the transcriber, the off-panel checker, the prompt template, and (on `edge-local`)

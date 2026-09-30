@@ -13,6 +13,8 @@ Files:
     signals.py       computing the six signals (`IntegritySignals`)
     view.py          `StoreExtractionView`, the store-backed read the gate uses in production
     gate.py          `IntegrityGate`, which verifies a cell and routes it
+
+Detailed design notes (the full original module description): `docs/code-notes/integ.md`.
 """
 
 from __future__ import annotations

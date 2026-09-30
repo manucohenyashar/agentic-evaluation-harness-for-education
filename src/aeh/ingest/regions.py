@@ -21,9 +21,8 @@ from .errors import IngestError
 
 def _evaluative_offences(description: str,
                          terms: Sequence[str] | None = None) -> list[str]:
-    """The evaluative terms the description contains (`FR-INGEST-11`'s mechanical
-    check): PREFIX matches over the configured list with the optional negation prefix
-    ("in-"/"in"/"un") and any suffix — see the constant's morphology decision."""
+    """The evaluative words a description contains (FR-INGEST-11): prefix matches against the
+    configured list, allowing a negating prefix ("in-", "in", "un") and any suffix."""
     configured = terms if terms is not None else _configured_evaluative_terms()
     lowered = description.lower()
     offences: list[str] = []
@@ -40,8 +39,8 @@ def _evaluative_offences(description: str,
 
 
 def _parse_region_attributes(header: str) -> dict[str, str]:
-    """`kind=x element_kind=y crop=1,2,3,4` — attribute pairs in ANY order, so a
-    model that reorders or adds attributes still parses (review M3's drift case)."""
+    """Parse region attributes such as `kind=x element_kind=y crop=1,2,3,4` in any order, so a
+    model that reorders or adds attributes still parses."""
     attributes: dict[str, str] = {}
     for token in header.split():
         if "=" in token:
@@ -54,8 +53,7 @@ _UNTRUSTED_ATTR = re.compile(r"\bis_untrusted_content(?:=\w+)?")
 
 
 def _wrap_untrusted(body: str) -> str:
-    """One region the harness owns: submission-origin text wrapped in the marker
-    that names it data (`FR-INGEST-35`)."""
+    """Wrap one piece of student text in a region marked as data (FR-INGEST-35)."""
     return (f"{REGION_OPEN} kind=transcribed_text is_untrusted_content=1 -->\n"
             f"{body}\n{REGION_CLOSE}")
 
@@ -67,31 +65,21 @@ _ESCAPED_UNTRUSTED_CLOSE = "<\\/" + UNTRUSTED_CLOSE[2:]
 
 
 def _fence_untrusted_content(content: str) -> str:
-    """The escalation fence writer (`FR-INGEST-35`'s rule at `_v4_escalate`'s
-    prompt-assembly site, issue #224): submission-origin content is emitted ONLY
-    inside the delimited block the instruction names as data, and the writer does
-    not trust the transcript to leave that boundary alone — every occurrence of
-    the closing marker inside the content is escaped, so the only terminator in
-    the fenced payload is the harness's own and no submission byte can step
-    outside the block. Plain concatenation was the disclosed G6 probe (#49, PR
-    #212): a transcript carrying a literal `</untrusted_student_content>` line
-    terminated the fence early and let the remainder of the student text address
-    the model from beyond the fence. The substitution is idempotent and
-    byte-stable on content that carries no terminator."""
+    """Put student text inside the block the prompt declares as data, for the V4 escalation prompt
+    (FR-INGEST-35). Every closing marker inside the text is escaped, so the only terminator is the
+    harness's own and no student text can step outside the block. (A transcript containing a
+    literal closing marker once ended the fence early.) Text without a marker is unchanged."""
     escaped = content.replace(UNTRUSTED_CLOSE, _ESCAPED_UNTRUSTED_CLOSE)
     return f"{UNTRUSTED_OPEN}\n{escaped}\n{UNTRUSTED_CLOSE}"
 
 
 def _mark_untrusted_content(transcript: str) -> str:
-    """`FR-INGEST-35`'s emission rule, applied BY the harness rather than asked of
-    the model: every region header of a submission transcript carries
-    `is_untrusted_content=1`, and every byte of transcript text OUTSIDE the region
-    protocol is wrapped into a region that does — so the full content of a
-    submission sits inside marked regions, and prompt assembly (`M-EXTRACT`,
-    `M-JUDGE`) can enclose it in one unambiguous delimited block. Setup artifacts
-    are never passed through here (`TC-INGEST-36`): the marker DISCRIMINATES —
-    reference and rubric content is the teacher's, and blanket-marking would put
-    the answer key inside the untrusted block.
+    """Mark all of a submission's transcript as untrusted (FR-INGEST-35), done by the harness
+    rather than trusted to the model: every region header gets `is_untrusted_content=1`, and any
+    text outside the region markers is wrapped in a marked region. Prompt assembly (M-EXTRACT,
+    M-JUDGE) can then enclose it in one delimited block. Setup documents are never marked
+    (TC-INGEST-36): they are the teacher's, and marking them would put the answer key inside the
+    untrusted block.
 
     The model is not trusted to have added the marker, and the transform is
     idempotent: a header already carrying the attribute is rewritten to `=1`, not
@@ -338,23 +326,12 @@ def _parse_regions(transcript: str, source_hash: str, page_no: int,
 
 
 def _backfill_region_conf(regions: list[dict]) -> list[dict]:
-    """CT-INGEST-04's data clause (#221): EVERY stored region carries a non-null
-    `ocr_conf`. The prompt tags confidence only inside the marker protocol, so
-    every outside-marker fragment (the 'Student:'/'Assessment:' head every
-    submission transcript carries) and every region tagged without `conf=`
-    arrives with none — and a setup artifact's marker-less transcript arrives
-    with nothing tagged at all. Design interpretation, disclosed on the issue:
-    `ocr_conf` is the region's READING confidence (FR-INGEST-15 — impact
-    routing intersects per-region confidence with the spans a criterion
-    cites, and those spans can cite the head text too), so the
-    design-consistent value is the head region's transcript confidence. The
-    model expresses none for untagged text, so the module derives it from the
-    same reading pass's tagged evidence, in the conservative direction: the
-    page's MINIMUM tagged confidence — an unvouched read is treated as no
-    better than the page's worst vouched read. A page that tagged no
-    confidence at all records the floor itself: no reading evidence either
-    way, and (the floor comparison being strictly-below) the absence of
-    evidence does not by itself flag the submission."""
+    """Give every stored region an `ocr_conf` value (CT-INGEST-04). The model only tags confidence
+    inside region markers, so text outside them (such as the `Student:` and `Assessment:` header)
+    and untagged regions arrive with none. They get the page's lowest tagged confidence, the
+    cautious choice: an unvouched reading is treated as no better than the page's worst vouched
+    one. A page with no tagged confidence at all records the floor itself, which does not flag the
+    submission by itself."""
     tagged_confs = [region["ocr_conf"] for region in regions
                     if region["ocr_conf"] is not None]
     fallback = min(tagged_confs) if tagged_confs else _ocr_conf_floor()

@@ -7,45 +7,44 @@ from __future__ import annotations
 
 
 class DeterministicError(Exception):
-    """Base for every `M-DET` refusal. Nothing here is transient; no caller
-    should retry (`CT-DET-10`), so there is deliberately no retry taxonomy."""
+    """Base class for every M-DET refusal. None of them is transient, so none should be retried
+    (CT-DET-10)."""
 
 
 class MalformedSelectionRead(DeterministicError):
-    """A region state outside the declared vocabularies — impossible from a
-    migrated store, so it means a caller bypassed the store's CHECKs."""
+    """A region state outside the declared vocabularies. A migrated store's CHECK constraints
+    prevent this, so it means a caller bypassed them."""
 
 
 class MalformedAnswerKey(DeterministicError):
-    """A key that cannot be compared: empty, bad JSON, or shaped for a
-    different select count. `FR-SETUP-03` makes a missing key a
-    publication-time failure, so this cannot be raised by a published
-    package — the guard exists to name the impossible situation loudly."""
+    """An answer key that cannot be compared: empty, not valid JSON, or the wrong shape for the
+    question's select count. A published package always has a valid key (FR-SETUP-03), so this only
+    names a situation that should be impossible."""
 
 
 class UndeclaredPartialCreditPolicy(DeterministicError):
-    """A multi-select criterion scored with no declared policy (`TC-DET-03`
-    cell 11). The module never infers one."""
+    """A multi-select criterion has no declared partial-credit policy (TC-DET-03). M-DET never
+    guesses one."""
 
 
 class UnknownPartialCreditPolicy(DeterministicError):
-    """A declared policy outside the closed vocabulary."""
+    """A declared partial-credit policy that is not in the allowed list."""
 
 
 class NotDeterministicCriterion(DeterministicError):
-    """A criterion whose evaluation is not lookup reached the lookup module —
-    an `M-ORCH` admission failure (`FR-ORCH-08`), never a scoring outcome."""
+    """A criterion that is not scored by lookup reached M-DET. That is an M-ORCH admission failure
+    (FR-ORCH-08), never a scoring outcome."""
 
 
 class UnknownCriterion(DeterministicError):
-    """No such criterion in the named package version."""
+    """The named package version has no such criterion."""
 
 
 class UnknownRun(DeterministicError):
-    """No run row in any cohort ledger for the given run id."""
+    """No cohort ledger has a run with this id."""
 
 
 class UnknownCohort(DeterministicError):
-    """No cohort ledger on file for the given cohort id. Opening the tier handle
-    would CREATE the file, so the lookup checks the ledger directory first — a
-    typo'd cohort id must be named, not silently materialized."""
+    """No cohort ledger file exists for this cohort id. Opening the tier handle would create the
+    file, so the directory is checked first: a mistyped cohort id is reported, not silently
+    created."""

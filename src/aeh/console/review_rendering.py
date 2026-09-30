@@ -19,12 +19,10 @@ from .provenance import _PROVENANCE_FOOTER
 
 
 def _items_covered(entries: Any) -> int:
-    """How many review **items** a shown list covers — a group entry covers its
-    members, a plain entry is one item. The same arithmetic `M-REVIEW` derives
-    `residual_provisional` from (`CT-REVIEW-04`'s arithmetic is about items, not
-    entries): `len(shown)` counts entries, and a queue presenting 200 items as 16
-    groups shows 16 entries and covers 200 items — a header that mixed the units
-    would reconcile with nothing, least of all with the residual beside it."""
+    """How many review items a list of entries covers: a group counts as all its members, a plain
+    entry counts as one. This matches how M-REVIEW computes `residual_provisional` (CT-REVIEW-04).
+    A queue showing 200 items as 16 groups has 16 entries but covers 200 items; mixing the two in
+    the header would make the figures disagree."""
     total = 0
     for entry in entries or ():
         members = getattr(entry, "members", None)
@@ -33,11 +31,9 @@ def _items_covered(entries: Any) -> int:
 
 
 def _review_queue_header_html(*, flagged: int, shown: int, left: int) -> str:
-    """The queue header: the three figures as data attributes (what `review_queue_header`
-    reads back) and as visible text (what a reader sees — `FR-CONSOLE-13` states the residual,
-    and a figure computed but not printed has rendered nothing). All three are **items**:
-    the unit the residual is computed in, so flagged minus shown is left provisional by
-    construction rather than by coincidence."""
+    """The queue header: the three figures as data attributes (read back by `review_queue_header`)
+    and as visible text (FR-CONSOLE-13). All three count items, so flagged minus shown always
+    equals what is left provisional."""
     figures = (
         f"Flagged for review: {int(flagged)}. Shown: {int(shown)} items. "
         f"Left provisional: {int(left)}."
@@ -70,9 +66,8 @@ def _review_queue_header_html(*, flagged: int, shown: int, left: int) -> str:
 
 
 def _review_queue_budget_html(budget_minutes: int | None) -> str:
-    """The budget line, and only when a budget was given. `CT-REVIEW-19`'s rule is
-    consumer-side and runs over this copy: the budget is a plan for the sitting, so the
-    copy names it estimated and promises nothing about elapsed time."""
+    """The budget line, shown only when a budget was given. The wording calls it an estimate and
+    promises nothing about actual time (CT-REVIEW-19)."""
     if budget_minutes is None:
         return ""
     return _section(
@@ -85,13 +80,10 @@ def _review_queue_budget_html(budget_minutes: int | None) -> str:
 
 
 def _review_item_html(*, label: str, narrative: str, mark: str) -> str:
-    """One review item in the §11.6 invariant-10 order: narrative, then the mark. A
-    narrative shown after the mark is read as justification for it rather than as the
-    evidence the teacher is meant to weigh — the order is the affordance, not layout.
-    Invariant 16 (`FR-CONSOLE-20`, #125) puts an editable band control in the item's
-    actions: the queue displays a band, so it changes one — review actions are available
-    from any view that displays a band (`FR-REVIEW-15`), and a select the reader could
-    change is what that looks like in markup."""
+    """One review item, with the explanation before the mark (§11.6 invariant 10). An explanation
+    shown after the mark reads as a justification for it rather than evidence to weigh. The item
+    also has an editable band dropdown (invariant 16, FR-CONSOLE-20, #125): any view that shows a
+    band must let the teacher change it (FR-REVIEW-15)."""
     return (
         '<div data-role="review-item">'
         f"<p>{escape(label)}</p>"
@@ -107,10 +99,10 @@ def _review_item_html(*, label: str, narrative: str, mark: str) -> str:
 
 
 def _review_queue_entries(entries: Any) -> str:
-    """The queue's entries — whatever shape the source presented them in. This module's
-    `QueueContents.shown` carries mapping rows; `M-REVIEW`'s `ReviewQueue.shown` carries
-    `ReviewItem`s and `ReviewGroup`s. One renderer, duck-typed, because the invariants are
-    about the rendered order and not about which module built the entries."""
+    """The queue's entries, whatever shape the source used: `QueueContents.shown` holds mapping
+    rows, M-REVIEW's `ReviewQueue.shown` holds `ReviewItem`s and `ReviewGroup`s. One renderer
+    handles both, because the rules are about the rendered order, not about who built the entries.
+    """
     if not entries:
         return (
             "<p>This run has no flagged work queued yet; the item below shows the shape "
@@ -191,11 +183,10 @@ def _review_queue_body(
     entries: str,
     provenance: str = _PROVENANCE_FOOTER,
 ) -> str:
-    """The review screen's body, shared by the route and the module-level renderer:
-    header first (invariant 8), then the budget line, then group actions above the
-    items (invariant 9) — every item narrative-first (invariant 10). The provenance
-    footer closes the body (`CT-CONSOLE-10`, #125): the queue displays grades, so it
-    displays what produced them."""
+    """The review screen's body, used by both the route and the module-level renderer: the header
+    first (invariant 8), then the budget line, then group actions above the items (invariant 9),
+    each item with its explanation first (invariant 10). A provenance footer ends it, because the
+    queue shows grades and must show what produced them (CT-CONSOLE-10, #125)."""
     return (
         _review_queue_header_html(flagged=flagged, shown=shown, left=left)
         + _review_queue_budget_html(budget_minutes)

@@ -17,6 +17,8 @@ Files:
     rederive.py         re-deriving scores after an answer-key correction
     item_stats.py       per-question item statistics
     evaluator.py        `DeterministicEvaluator`: scores a criterion or a whole cohort
+
+Detailed design notes (the full original module description): `docs/code-notes/det.md`.
 """
 
 from __future__ import annotations

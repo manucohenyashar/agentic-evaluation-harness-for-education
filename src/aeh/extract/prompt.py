@@ -84,7 +84,7 @@ _ESCAPED_UNTRUSTED_OPEN = "<\\/" + UNTRUSTED_OPEN[1:]
 
 
 def _render_submission(transcript: str) -> str:
-    """The submission, LAST, inside exactly one delimited block.
+    """Render the submission last, inside exactly one delimited block.
 
     The field's value IS the fence — the opening marker is its first byte and the
     closing marker its last (`TC-EXTRACT-06`'s positional lint) — and it is BUILT,
@@ -104,7 +104,7 @@ def _render_submission(transcript: str) -> str:
 
 
 def prompt_fields(request: ExtractionRequest | None = None) -> Any:
-    """The extraction prompt, in the fixed field order — or the order itself.
+    """The extraction prompt as fields in a fixed order, or, with no request, just the field order.
 
     With a request, the `PromptPayload` the provider boundary hashes (`CT-PROV-05`
     makes the order contract; the fixture recordings key on exactly this render).

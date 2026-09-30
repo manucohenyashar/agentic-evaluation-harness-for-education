@@ -44,8 +44,7 @@ def build_review(
     administration_id: str | None = None,
     previous_administration: Any = None,
 ) -> ReviewService:
-    """The rung-0/1 constructor: a review service over score rows — or, in the
-    store form, over a whole store.
+    """Build a review service over score rows, or, given a store, over the whole store.
 
     The four §3.15 knobs arrive as keywords (``review_blind_n=20``), as
     ``config=`` attributes named after the constants, or not at all — the
@@ -111,7 +110,7 @@ def review_service_over(
     catalog: Any = None,
     config: Any = None,
 ) -> ReviewService:
-    """A review service over an ALREADY-OPEN store (`FR-CONSOLE-35`).
+    """Build a review service over a store that is already open (FR-CONSOLE-35).
 
     `open_review` is the constructor for a caller holding a path: it opens its own store and
     asks it for a cohort keyed by the run id, which creates that cohort's file. A caller that
@@ -146,8 +145,8 @@ def _service_from_store(
     administration_id: str | None = None,
     previous_administration: Any = None,
 ) -> ReviewService:
-    """The rung-2 constructor's body, shared by ``open_review`` (one named
-    cohort) and ``build_review`` (a whole store — every cohort it carries).
+    """Build a store-backed review service, shared by `open_review` (one cohort) and `build_review`
+    (every cohort in the store).
 
     Reads the cohort's stored ``criterion_score`` rows through ``aeh.store`` —
     the deterministic store, no egress — and maps them onto the score-row
@@ -251,7 +250,7 @@ def open_review(
     administration_id: str | None = None,
     previous_administration: Any = None,
 ) -> ReviewService:
-    """The rung-2 constructor: a review service over a stored run's flagged rows.
+    """Build a review service over one stored run's flagged score rows.
 
     Reads the cohort's own ``criterion_score`` rows through ``aeh.store`` — the
     deterministic store, no egress — and admits the same population the

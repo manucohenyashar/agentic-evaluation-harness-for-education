@@ -24,6 +24,8 @@ Files:
     openjev_local.py    OpenJev and OpenJevSmall served on loopback
     fixtures.py         `RecordedFixtureProvider`, the network-free provider used by tests
     factories.py        choosing the provider a model reference names
+
+Detailed design notes (the full original module description): `docs/code-notes/prov.md`.
 """
 
 from __future__ import annotations

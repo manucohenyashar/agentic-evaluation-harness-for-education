@@ -18,7 +18,8 @@ from .decision_engine import _engine_tag
 
 
 class ProductionStageExecutor:
-    """`FR-ORCH-27`'s `StageExecutor`, bound to the real stage doors (`FR-PIPE-02`).
+    """The stage executor M-ORCH calls in production, wired to the real stage entry points
+    (FR-ORCH-27, FR-PIPE-02).
 
     One leased unit in, one `StageOutcome` out. The orchestrator owns the ledger transition —
     this never completes or quarantines a unit — and it owns the pool and the counters. What
@@ -66,7 +67,8 @@ class ProductionStageExecutor:
     # -- model identities ----------------------------------------------------------------
 
     def judge_for(self, build_id: str) -> Any:
-        """The `ModelRef` for one arm: a panel member, an override, or a derived extension arm.
+        """The `ModelRef` for one panel arm: a panel member, an override, or a derived escalation
+        arm.
 
         The derivation is the panel's first arm with the build id swapped — a widened panel
         runs on the backend the run froze (`FR-CONF-07`), not on one this module invented. A
@@ -93,7 +95,7 @@ class ProductionStageExecutor:
     # -- the seam ------------------------------------------------------------------------
 
     def execute(self, unit: Any, governed: Any) -> StageOutcome:
-        """Run ONE leased unit through its stage's shipped door.
+        """Run one leased unit through its stage's worker.
 
         Deterministic units never arrive here — the orchestrator's walk closes them directly
         and `run_to_completion` has already written their score rows (see the module
@@ -158,7 +160,7 @@ class ProductionStageExecutor:
 
 
     def _quarantined(self, unit: Any) -> bool:
-        """Whether the WORKER struck this unit out. `quarantined` only, never `done`.
+        """Whether the worker quarantined this unit (the status `quarantined`, never `done`).
 
         `ExtractionWorker.process` marks a successful unit `done` in its own transaction
         before returning, so treating `done` as a strike-out misreads every successful
@@ -175,7 +177,8 @@ class ProductionStageExecutor:
 
 
 def _default_extractor(run_config: Any) -> Any:
-    """The transcriber's backend identity, re-roled (see the module docstring, gap 2)."""
+    """The extractor's model: the transcriber's backend identity, given the extractor role (see
+    docs/code-notes/pipeline.md, gap 2)."""
     transcriber = getattr(run_config, "transcriber", None)
     if transcriber is None:
         raise ValueError(
@@ -191,7 +194,8 @@ def _default_extractor(run_config: Any) -> Any:
 
 
 def _default_synthesizer(run_config: Any) -> Any:
-    """The transcriber's backend identity re-roled, for the same reason the extractor is."""
+    """The synthesizer's model: the transcriber's backend identity, given the synthesizer role, for
+    the same reason as the extractor's."""
     transcriber = getattr(run_config, "transcriber", None)
     if transcriber is None:
         raise ValueError(

@@ -36,3 +36,64 @@ The four seams (`CLAUDE.md`):
    production values are the defaults.
 4. **Stage-level observability** — `IngestReport` carries per-gate columns (populated by
    #40/#41) and the ingest surface logs page counts, hashes and the transcriber build.
+
+## Details moved out of the code
+
+These notes were the longer parts of docstrings in `aeh.ingest`. Each section is named after the file and the function or class it describes.
+
+### aggregates.py: RunAggregatesMixin.run_aggregates
+
+Signal definitions (each also stated in `basis`, with its denominator):
+
+- `ocr_failure_rate`: submissions whose V0 or V1 gate failed, over all
+  submissions — the file/OCR pipeline failed to deliver a usable
+  transcript (remedy: re-scan/re-ingest). V2–V4's remedies differ,
+  which is the clause's reason the rates are separate signals.
+- `unresolved_mark_rate`: selection-mark regions whose
+  `selection_state` is not `resolved`, over all selection-mark regions
+  (remedy: operator reading — CT-INGEST-05).
+- `pages_with_text_layer`: the count over the cohort's submission
+  documents; 0 with no documents is the honest zero (a count, not a
+  rate).
+- `mean`/`max_text_layer_divergence`: over the documents that carry a
+  measurement (each recorded value is that document's per-page
+  maximum, F6); None when none measured.
+- `gate_pass_counts`/`gate_fail_counts`: per gate over the five
+  columns under `GATE_PASS_VALUES`/`GATE_FAIL_VALUES`;
+  `not_reached`/`not_run` count in neither.
+- `quarantine_counts_by_gate`: each quarantined row attributed to the
+  FIRST failing gate in ladder order (the C19 derivation: a
+  quarantined row names exactly one failing gate). A quarantined row
+  that names none counts under `unattributed` — surfaced, never
+  folded away.
+- `second_pass_disagreement_rate`: second-described regions whose two
+  descriptions disagree on a load-bearing fact or fall under the content
+  floor (`description_disagreement`, FR-INGEST-14), over second-described
+  regions; None when no region carries a second description, so a zero
+  would lie. Failed second calls carry no second description and are not
+  in this rate — they are in each document's `second_description_pass`.
+
+### clusters.py: TokenClustersMixin.resolve_cluster
+
+The per-kind rule:
+
+* `transcribed_text` and `described_graphic` — the content is replaced and nothing
+  else; `selection_state` is not the operator's to change by reading a word.
+* `selection_mark` — the resolution must equal a declared `question_option.option_id`
+  for the region's question (`question_id` since `#373`, `element_kind` for rows
+  written before the column existed — M-DET's own reading). When it does,
+  `selection` and `selection_state='resolved'` are written **together**, in one
+  statement. Otherwise the region stays `ambiguous` with a NULL selection, its content
+  is still replaced, and it is listed under `selection_unresolved` on the returned
+  report — an operator who typed `E` for a four-option question learns it from the
+  report rather than from a student's lost mark (RISK-50).
+
+The declared options come from `package_catalog`/`package_version` — given here, or
+bound once on the gateway. **Without them no selection mark resolves**: the module will
+not guess an option set, and fail-closed here means a region left ambiguous and listed,
+never a resolved mark with no selection (`CT-INGEST-21`). A caller that resolves ticks
+must therefore name the package; a caller that only ever resolves illegible words need
+not, and nothing it does can produce the forbidden row.
+
+The returned `ClusterResolution` IS the tuple of affected document ids — the shape
+every existing caller reads — with the report riding beside it.

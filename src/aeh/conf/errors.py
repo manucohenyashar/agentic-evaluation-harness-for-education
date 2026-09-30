@@ -7,7 +7,7 @@ from __future__ import annotations
 
 
 class RunConfigError(Exception):
-    """Base for every `M-CONF` failure.
+    """Base class for every M-CONF failure.
 
     A **neutral** base with four siblings under it, never a chain: if
     `UnresolvedModelRefError` subclassed `ConfigurationError`, every "exact exception type"
@@ -22,7 +22,8 @@ class RunConfigError(Exception):
 
 
 class ConfigurationError(RunConfigError):
-    """A required key is absent, unrecognized, or of the wrong shape (`FR-CONF-01`, `-06`, `-07`).
+    """A required key is missing, not recognized, or has the wrong shape (FR-CONF-01, FR-CONF-06,
+    FR-CONF-07).
 
     Raised rather than defaulting. `CT-CONF-11`: "No key has a silent default that selects a
     backend — absence raises."
@@ -30,14 +31,14 @@ class ConfigurationError(RunConfigError):
 
 
 class UnresolvedModelRefError(RunConfigError):
-    """A `ModelRef` is not a resolved build identity, or is the wrong form for the backend.
+    """A `ModelRef` is not a pinned build, or is in the wrong form for its backend.
 
     `FR-CONF-03`: a friendly name such as `"Llama 3.3 70B"` fails validation.
     """
 
 
 class BackendMismatchError(RunConfigError):
-    """A resumed run's persisted backend disagrees with current configuration (`FR-CONF-04`).
+    """A resumed run's stored backend does not match the current configuration (FR-CONF-04).
 
     Declared here so the taxonomy `CT-CONF-08` names is complete and `TC-CONF-15`'s invariant
     ("one of the four declared exception types") can be written. Raised by `rehydrate_run_config`
@@ -46,8 +47,8 @@ class BackendMismatchError(RunConfigError):
 
 
 class ConsentGateError(RunConfigError):
-    """A remote provider was bound for a cohort that is neither synthetic nor consented
-    (`FR-CONF-08`, RISK-10).
+    """A remote provider was chosen for a cohort that is neither synthetic nor consented
+    (FR-CONF-08, RISK-10).
 
     Declared here for the same reason as `BackendMismatchError`. Raised by `_check_consent`, on
     resolution and — when a cohort is supplied — on resume.

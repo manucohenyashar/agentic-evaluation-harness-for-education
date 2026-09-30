@@ -36,7 +36,8 @@ from .decision_parsing import confidence_rule, decision_questions_document, pars
 
 @runtime_checkable
 class DecisionProvider(Protocol):
-    """FR-PROV-16. `decide` is synchronous and blocking; one call is one engine request."""
+    """The interface every decision provider implements (FR-PROV-16). `decide` is synchronous and
+    blocking; one call is one engine request."""
 
     def decide(self, request: DecisionRequest, model_ref: ModelRef) -> Decision: ...
 
@@ -105,10 +106,10 @@ def _env_positive_float(name: str, default: float) -> float:
 
 
 def _safe_excerpt(body: Any, state: str) -> str:
-    """The engine's own short error message, for diagnosis, only when it cannot carry student
-    work (FR-PROV-23: no request bytes in an exception). Only `error.message`/`error.code`/
-    `message` fields are read, never the raw body, so a JSON-escaped echo is compared as the
-    string it decodes to. A message sharing any 12-character run with the state is dropped."""
+    """The engine's own short error message, kept for diagnosis only when it cannot contain student
+    work (FR-PROV-23: no request bytes in an exception). Only the `error.message`, `error.code` and
+    `message` fields are read, never the raw body. A message that shares any 12-character run with
+    the request's state is dropped."""
     try:
         document = body if isinstance(body, dict) else json.loads(bytes(body).decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
@@ -130,8 +131,9 @@ def _safe_excerpt(body: Any, state: str) -> str:
 
 
 def _decision_status_error(response: HttpResponse, state: str = "") -> ProviderError | ConfigurationError | None:
-    """FR-PROV-23's non-retried statuses. 429 and 5xx never reach here: the shared loop retries
-    them (and surfaces `ProviderUnavailableError` past the budget, CT-PROV-07)."""
+    """The error for an HTTP status that is not retried (FR-PROV-23). 429 and 5xx never get here:
+    the shared retry loop handles them, raising `ProviderUnavailableError` when the attempts run
+    out (CT-PROV-07)."""
     status = response.status
     if 200 <= status <= 299:
         return None
@@ -150,9 +152,9 @@ def _decision_status_error(response: HttpResponse, state: str = "") -> ProviderE
 
 
 class _BaseDecisionProvider:
-    """Shared HTTP machinery of the live decision providers: the one retry loop, the status map,
-    validation through `parse_decision`, build watching, latency and the decision counters. Each
-    subclass supplies its URL, headers, body and capabilities. Not public surface."""
+    """The HTTP machinery the live decision providers share: the retry loop, the status map,
+    response checking through `parse_decision`, build watching, latency and the decision counters.
+    Each subclass supplies its URL, headers, body and capabilities. Not public."""
 
     #: Whether calls are billed: a billed provider always returns a cost (measured, else derived).
     _billed = False
@@ -174,9 +176,10 @@ class _BaseDecisionProvider:
         return self._counters.decision_snapshot()
 
     def record_run_build(self, model_ref: ModelRef, served_build: str) -> None:
-        """The run-start served build `BuildWatch` guards (FR-PROV-24). `served_build` is what
-        the engine *reports* (`Decision.resolved_build`, e.g. `typesafe/jev-1.13-20260917`),
-        never the requested wire slug — recording the slug would fail the first call."""
+        """Record the build the engine served at run start, which `BuildWatch` then guards
+        (FR-PROV-24). `served_build` is what the engine reports (for example
+        `typesafe/jev-1.13-20260917`), never the model name requested; recording the requested name
+        would fail the first call."""
         self._build_watch.record(self._model_key(model_ref), served_build)
 
     @staticmethod
@@ -184,14 +187,15 @@ class _BaseDecisionProvider:
         return f"decision:{model_ref.provider}:{model_ref.build_id}"
 
     def capabilities(self, model_ref: ModelRef) -> DecisionCapabilities:
-        """Alias of `decision_capabilities` on the decision-only providers (FR-PROV-16)."""
+        """Same as `decision_capabilities`, for providers that only make decisions (FR-PROV-16)."""
         return self.decision_capabilities(model_ref)
 
     def decision_capabilities(self, model_ref: ModelRef) -> DecisionCapabilities:
         raise NotImplementedError
 
     def estimate_cost(self, plan: CallPlan) -> CostEstimate:
-        """Input tokens only: decision output tokens are free (design §1.2)."""
+        """The estimated cost from input tokens only; decision output tokens are free (design
+        §1.2)."""
         tokens_in = plan.calls * plan.tokens_in_per_call
         per_token = self._cost_per_input_token()
         return CostEstimate(calls=plan.calls, tokens_in=tokens_in, tokens_out=0,
@@ -201,7 +205,8 @@ class _BaseDecisionProvider:
         return None
 
     def _prepare_document(self, document: Any) -> Any:
-        """The decoded response before validation; a provider may drop what it must not trust."""
+        """The decoded response before it is checked; a provider may remove anything it must not
+        trust."""
         return document
 
     def _decide_http(self, request: DecisionRequest, model_ref: ModelRef, url: str,

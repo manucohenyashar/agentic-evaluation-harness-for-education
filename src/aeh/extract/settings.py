@@ -65,9 +65,8 @@ SECOND_FAMILY_MODEL_ENV = "HARNESS_EXTRACT_SECOND_FAMILY_MODEL"
 
 
 def _env_bool(name: str, default: bool) -> bool:
-    """A boolean knob, read at call time: absent means the default, a known word
-    means its truth, anything else is REFUSED (`_env_int`'s discipline — a knob that
-    guesses is a lie the deployment cannot see)."""
+    """Read a boolean knob at call time. An unset knob gives the default, a known word gives its
+    value, and anything else is refused rather than guessed."""
     raw = os.environ.get(name)
     if raw is None or not raw.strip():
         return default
@@ -82,9 +81,9 @@ def _env_bool(name: str, default: bool) -> bool:
 
 
 def _second_family_ref(explicit: Any) -> Any:
-    """The effective second-family `ModelRef`: the caller's when given, else the
-    env override, else this module's default — read at call time, so a deployment
-    adjusts without a code change."""
+    """The `ModelRef` for the second-family extractor: the caller's if given, else the environment
+    override, else this module's default. Read at call time, so a deployment can change it without
+    a code change."""
     if explicit is not None:
         return explicit
     raw = os.environ.get(SECOND_FAMILY_MODEL_ENV)

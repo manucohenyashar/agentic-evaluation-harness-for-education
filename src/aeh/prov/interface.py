@@ -20,7 +20,7 @@ from .records import (
 
 @runtime_checkable
 class InferenceProvider(Protocol):
-    """The one interface. Design §3.2, `CT-PROV-01`.
+    """The one interface every completion provider implements (design §3.2, CT-PROV-01).
 
     All four operations are **synchronous and blocking**, and exactly one of them —
     `complete` — makes a model call. One `complete` is one model call: no batching, no

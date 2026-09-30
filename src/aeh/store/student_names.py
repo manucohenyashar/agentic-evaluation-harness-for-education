@@ -92,7 +92,7 @@ TIER_D_IDENTITY_COLUMN = "student_ref"
 
 
 def is_student_name_column(column: str) -> bool:
-    """Does this column name a student's name?
+    """Whether a column name refers to a student's name.
 
     `person token AND name token`, with a pseudonym token vetoing the match. See the block
     comment above for why this is not a `*_name` rule.
@@ -186,32 +186,9 @@ _INSERT_COLUMN_LIST = re.compile(
 
 
 def _reject_tier_d_student_name_insert(declared: Statement) -> None:
-    """Raise `StudentNameInTierDError` if `declared` inserts a student-name column into Tier D.
+    """Raise `StudentNameInTierDError` if the statement inserts a student-name column into Tier D.
 
-    Runs on the durable tier's two write doors (`enqueue_write` before queueing,
-    `Tx.execute` before executing) and nowhere else: the requirement is about *inserts* into
-    *Tier D*, and a guard on the other tiers or on reads would be a rule without a threat
-    behind it. Parses the column list out of the statement's INSERT header — `INSERT [OR …]
-    INTO tbl (cols)`, `REPLACE INTO tbl (cols)` — and applies `is_student_name_column` to
-    each named column.
-
-    What the parse tolerates, because each was a silent bypass in an earlier draft: CTE
-    prefixes (`WITH x AS (...) INSERT INTO ...` — hence the unanchored search, with its
-    string-literal trade recorded above), comments between the header's tokens and inside
-    the column list, and schema-qualified tables (`main.label` — the last identifier is the
-    table). What it deliberately does not: a statement with **no column list** (`INSERT
-    INTO t DEFAULT VALUES`, `INSERT INTO t SELECT ...`, or a bare `VALUES (...)`) names no
-    column and passes the header parse — the rest of that defense is structural, not
-    textual: the schema authorizer (`_refuse_tier_d_schema`) refuses to let a name-bearing
-    column be *created* through a Tier D write connection, so the tables a no-column-list
-    insert can reach are exactly those the migrations shipped, which the sweep
-    (`TC-STORE-12`'s third limb) holds clean at test time. Nor does the mapping see
-    unsegmented abbreviations (`sname`) — `is_student_name_column`'s own stated limit.
-
-    Exactness is the control that makes this a guard rather than a wrapper: only a
-    name-mapped column raises. Every other failure — a typo'd column, a CHECK violation, a
-    locked database — passes through exactly as SQLite raised it, so a caller can trust
-    `StudentNameInTierDError` to mean the one thing it names.
+    More detail: `docs/code-notes/store.md`, section `student_names.py: _reject_tier_d_student_name_insert`.
     """
     matched = _INSERT_COLUMN_LIST.search(declared.sql)
     if matched is None:
@@ -294,7 +271,7 @@ _SQLITE_DENY = getattr(sqlite3, "SQLITE_DENY", getattr(sqlite3, "DENY", 1))
 
 def _refuse_tier_d_schema(action: int, arg1: Any, arg2: Any, db_name: Any,
                           trigger_or_view: Any) -> int:
-    """Deny schema DDL (and cross-database ATTACH) on a Tier D write connection.
+    """Deny schema changes (and attaching other databases) on a Tier D write connection.
 
     Installed via `set_authorizer` on the durable tier's write connections only — see the
     section comment above for why. Everything that is not schema DDL is allowed: rows,

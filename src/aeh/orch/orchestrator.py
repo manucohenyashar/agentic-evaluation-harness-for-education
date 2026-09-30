@@ -29,93 +29,10 @@ from .reporting import ReportingMixin
 
 
 class Orchestrator(RunLifecycleMixin, CostsMixin, EnumerationMixin, LeasingMixin, EscalationMixin, DispatchMixin, CompositionMixin, ReportingMixin):
-    """The ledger slice of §3.7's Orchestrator: create a run, enumerate its units,
-    resume, lease them under the two-sweep plan, and widen panels — escalation
-    (`enqueue_escalation`), the random arm, the criterion breakers and the run-wide
-    escalation budget are #60's. **#61 lands the run lifecycle** (`FR-ORCH-25`):
-    `start(run_id)` is the `pending → running` edge and displays the run's estimated
-    cost before any dispatch (`FR-ORCH-15`); `pause(run_id, cause=...)` writes the
-    control row and applies it through the read pass the claim loop shares — a
-    `ProviderUnavailableError` (`FR-ORCH-16`), a `BuildChangedError` (`FR-ORCH-17`) or
-    an operator request pause a run without substituting anything; the cost ceiling the
-    run froze is enforced from the provider seam's measured figures inside every claim
-    transaction, and a crossing dispatch pauses the run naming spend and remaining
-    (`CT-ORCH-12`'s four pause conditions — the fourth being the sensed ceiling).
-    Pauses touch lifecycle columns only, so a resume re-binds to the frozen backend
-    structurally: there is no substitution code path to suppress. Control rows written
-    while the orchestrator was not dispatching queue in `run_control` and are honoured
-    at the next read (`CT-ORCH-13`). Dispatch isolation and `ProgressReport` are #62's,
-    below. `resume` takes no arguments from its first commit.
+    """Manages a grading run's work: creates the run, creates its work units, leases them to
+    workers, widens judge panels, and moves the run through its states (§3.7).
 
-    **Recorded interpretations (#62) — dispatch, residency, concurrency, progress.**
-    The dispatch loop's model-call seam takes the stage's ASSEMBLED closed request —
-    `ScoringRequest` via `M-JUDGE`'s `ScoringWorker.assemble`, `ExtractionRequest`
-    via `M-EXTRACT`'s `assemble_request` (`FR-ORCH-20`'s own wording: "exactly one
-    submission per scoring or extraction request" — what is dispatched is the
-    request, and its exactly-one form is assertable only over the closed type,
-    `CT-JUDGE-02`). The loop's classification, batching and residency are untouched
-    by the payload's shape; deterministic units cross nothing (their evaluation
-    makes no model call), so the deterministic walk completes directly. Residency
-    batches **judge models only**:
-    `residency_policy` lists the roles permitted resident, and the units this loop
-    dispatches are score units whose `judge_id` names a model — the transcriber's
-    residency is the transcription stage's, not yet this module's. A judge's
-    **batch** is its dispatchable work: the units the ready order hands out for it,
-    plus the ones in flight; a gated or budget-deferred pending unit is not
-    dispatchable (it may never become ready without an operator) and cannot hold a
-    model resident — a residency held over undispatchable work starves every judge
-    behind it — and when gated work becomes ready the model reloads to serve it. A
-    residency swap's
-    duration is the wall time of the first model call after the swap — the load rides
-    that call; a swap whose first call is still to come records the count and adds the
-    duration when the load is actually paid. The dispatch loop's extract walk sends
-    the assembled `ExtractionRequest` (extraction IS a model call — `FR-ORCH-20`
-    covers extraction requests); the deterministic walk is the ledger transition
-    itself, completed with no transport (a deterministic criterion's evaluation makes
-    no model call): completing the transition is what unlocks the judged batch, and
-    the walks are bounded per pass by `HARNESS_ORCH_DISPATCH_WALK_BATCH`. The
-    concurrency governor's cap is per run, starts at the run's frozen
-    `concurrency_ceiling` (never the environment's — `FR-CONF-07`'s freeze), divides
-    once per pass on any rate-limited/OOM call (floor 1) and is clamped per pass while
-    M-STORE signals write backpressure (`CT-STORE-06`: a signal to reduce, never a
-    fault — the clamp is sensed at the pass's start and does not persist). The report's
-    `concurrency` is the cap the NEXT pass will run at (post-clamp, post-reduction) —
-    the operator reads the reduction that takes effect. The OOM remedy requeues the
-    judge's in-flight units without consuming attempts (the box's condition is not the
-    unit taxonomy's, §9.11), halves the cap, and at the drop threshold removes the
-    judge from the run's `panel_config` as a strict subset (never below one judge) —
-    its un-run units stay in the ledger for an operator to re-queue under a smaller
-    panel, never silently discarded. The completion predicate on the report is
-    **ledger-derived, not run-status-derived** (`FR-ORCH-12`): nothing pending and no
-    in-flight scoring judgment — a score unit in flight can still disagree with its
-    panel and spawn an escalation. The report's estimate feeds
-    `estimated_completion_seconds` with the ledger's own totals. `progress()` with no
-    transport dispatches nothing: it is the report-only surface (the console's poll).
-
-    **Recorded interpretations (#61).** The ceiling comparison is strict `>` per
-    dispatch (a dispatch landing exactly at the ceiling proceeds; the run pauses once
-    spend sits at the ceiling) — the breaker's and budget's reading of an "at or above"
-    boundary; the at-ceiling sense fires only when the claim actually moved spend (a
-    not-billed figure adds nothing and consumes no ceiling, so replayed work drains
-    past an at-ceiling pause without re-pausing it). The estimate displayed at start is
-    the sum of the units' seam figures. Every pause and resume — operator, sensed, or
-    explicit `resume(run_id)` — is written as a `run_control` row and effected through
-    the control-read pass (request ≠ effect, `CT-ORCH-13`); a resume supersedes the
-    pauses queued before it (latest control intent wins, bounded by request time), and
-    a queued pause on a `pending` run is honoured at `start` (the machine's declared
-    edges have no `pending → paused` from mid-flight); a queued pause on a `running`
-    run applies at the next claim pass; an operator's pause stays sticky across a
-    no-argument `resume` (a stop outranks a scheduler's restart). Run-level `complete`
-    is probed after every won lifecycle write and fires only for a `running` run with
-    at least one unit and none open (quarantined units are not open — their record
-    stands).
-
-    The store is injected (`CLAUDE.md` seam 2). Nothing here opens a network connection
-    or contacts a judge: enumeration is a pure function of the ledger, the package
-    catalog and the roster, over an injected store, and every escalation decision is
-    pure policy over ledger state (`NFR-ORCH-04`). The provider seam is injected the
-    same way and consulted only for cost figures — no dispatch, retry or pause decision
-    ever asks the provider what to do.
+    More detail: `docs/code-notes/orch.md`, section `orchestrator.py: Orchestrator`.
     """
 
     def __init__(
@@ -227,7 +144,7 @@ class Orchestrator(RunLifecycleMixin, CostsMixin, EnumerationMixin, LeasingMixin
         self._dispatch_states: dict[str, dict[str, Any]] = {}
 
     def _invalidate_order_cache(self, run_id: str) -> None:
-        """Drop the dispatch-order cache entries for one run (`NFR-ORCH-01`).
+        """Clear the cached dispatch order for one run (NFR-ORCH-01).
 
         Any write that changes the claimable set — enumeration, a failure requeue, a
         sweeper reclaim — can falsify a cached order; the next claim pass re-reads
@@ -239,7 +156,7 @@ class Orchestrator(RunLifecycleMixin, CostsMixin, EnumerationMixin, LeasingMixin
     # -- the lease (FR-ORCH-04) -----------------------------------------------------------------
 
     def _lease_clock(self) -> LeaseClock:
-        """The store's monotonic lease counter, built on this orchestrator's clock.
+        """The store's always-increasing lease counter, driven by this orchestrator's clock.
 
         Lazily, and cached: `lease_clock()` allows one instance per store, and the first
         caller's clock is the store's clock for its lifetime — a second orchestrator
@@ -252,11 +169,11 @@ class Orchestrator(RunLifecycleMixin, CostsMixin, EnumerationMixin, LeasingMixin
         return self._lease_clock_obj
 
     def _lease_ttl(self) -> int:
-        """The lease TTL in seconds, read from the environment at **call** time."""
+        """The lease length in seconds, read from the environment each call."""
         return _env_int(LEASE_SECONDS_ENV, ORCH_LEASE_SECONDS)
 
     def _wall_expiry(self, clock: Any, ttl_seconds: int) -> str:
-        """The expiry rendered on the wall clock, for the operator reading the row.
+        """The lease expiry as a wall-clock time, for an operator reading the row.
 
         Recorded beside the ticks, never compared (`LeaseClock`'s own split, `FR-STORE-11`):
         a wall-clock expiry would read every lease live after the host clock moved
@@ -316,7 +233,7 @@ class Orchestrator(RunLifecycleMixin, CostsMixin, EnumerationMixin, LeasingMixin
         return work_id, params
 
     def _unit_from_row(self, row: Any) -> WorkUnit:
-        """The `WorkUnit` a claimed ledger row becomes when handed to a worker.
+        """Turn a claimed ledger row into the `WorkUnit` handed to a worker.
 
         The claim select carries `student_ref` (the identity the assembler needs) and
         aliases `attempts AS attempt` to the type's field; `student_name` and
@@ -339,7 +256,7 @@ class Orchestrator(RunLifecycleMixin, CostsMixin, EnumerationMixin, LeasingMixin
         )
 
     def _find_unit(self, work_id: str) -> tuple[Any, Any]:
-        """(cohort handle, ledger row) for one work unit, by walking the cohort files.
+        """`(cohort handle, ledger row)` for one work unit, found by searching the cohort files.
 
         The same no-side-index discipline as `_run_row`: the ledger is its own
         directory, and a side index of work ids would be exactly the bookkeeping
@@ -360,17 +277,14 @@ class Orchestrator(RunLifecycleMixin, CostsMixin, EnumerationMixin, LeasingMixin
         )
 
     def _cohort_keys(self) -> tuple[str, ...]:
-        """The store's cohort tier keys, in sorted order — the discovery surface resume's
-        no-argument form walks. Every key's file is opened and read; a cohort with no
-        open runs costs one query."""
+        """The store's cohort file keys, sorted; `resume()` with no arguments searches these. Every
+        file is opened; a cohort with no open runs costs one query."""
         return tuple(sorted(self._cohort_keys_for(self._store)))
 
     def _catalog(self, row: Any) -> PackageCatalogProtocol:
-        """The package catalog for the run's version, opened on the version's Tier P
-        database. Imported here, not at module top: `aeh.pkg` appends its own migrations
-        to the Tier P registry on import, and the import order of the owning modules is
-        each module's own concern — `test_migrations.py` imports them explicitly for the
-        same reason.
+        """The package catalog for the run's version, opened on its Tier P database. `aeh.pkg` is
+        imported here rather than at the top of the file, because importing it adds its migrations
+        to the Tier P registry and each module manages its own import order.
 
         One catalog instance is held open per (package_id, package_version_id): the
         catalog's own cache is per instance (`NFR-PKG-05`), and the claim pass reads the
@@ -390,7 +304,7 @@ class Orchestrator(RunLifecycleMixin, CostsMixin, EnumerationMixin, LeasingMixin
         return catalog
 
     def _run_row(self, run_id: str) -> Any:
-        """The run's ledger row, found by walking the cohort files.
+        """The run's ledger row, found by searching the cohort files.
 
         There is deliberately no index of run ids outside the ledger: the run row lives
         in its cohort's Tier C file (§9.6 puts run state beside cohort state), and a
@@ -400,10 +314,8 @@ class Orchestrator(RunLifecycleMixin, CostsMixin, EnumerationMixin, LeasingMixin
         return self._find_run(run_id)[1]
 
     def _find_run(self, run_id: str) -> tuple[Any, Any]:
-        """(cohort handle, run row) for one run — the lifecycle writers need both, and
-        re-walking the cohorts to turn the row back into its handle would be the same
-        scan twice. Same no-side-index rule as `_run_row`, which is this minus the
-        handle."""
+        """`(cohort handle, run row)` for one run. The lifecycle methods need both, and finding the
+        handle again from the row would repeat the search."""
         for key in self._cohort_keys():
             cohort = self._store.cohort(key)
             rows = cohort.query(ORCH_STATEMENTS["select_run"], run_id=run_id)
@@ -416,7 +328,7 @@ class Orchestrator(RunLifecycleMixin, CostsMixin, EnumerationMixin, LeasingMixin
         )
 
     def _panel_arms(self, panel_config: str) -> tuple[str, ...]:
-        """The panel's ordered judge ids, from the run row's canonical `panel_config`."""
+        """The panel's judge ids in order, from the run's `panel_config`."""
         arms = json.loads(panel_config).get("arms")
         if not isinstance(arms, list) or not all(isinstance(a, str) for a in arms):
             raise WorkLedgerError(
@@ -426,20 +338,13 @@ class Orchestrator(RunLifecycleMixin, CostsMixin, EnumerationMixin, LeasingMixin
         return tuple(arms)
 
     def _dropped_judges(self, run_row: Any) -> frozenset[str]:
-        """The judges the OOM ladder dropped from this run's panel (`RES-13`), read
-        from the run row itself: the arms the FROZEN `provider_config` snapshot named
-        minus the arms the run's `panel_config` names now. The drop is durable in the
-        run row — the remedy rewrote `panel_config` down to the smaller panel — so the
-        skip this set drives survives a restart, where the in-memory dispatch state
-        does not (#62 review: a fresh Orchestrator over the same store must skip the
-        same units the recording one skipped; the dropped judges' un-run units stay
-        pending for an operator to re-queue under the smaller panel). A judge the
-        frozen panel never carried is not a drop: derived escalation arms
-        (`escalation-arm-<k>`, `_extension_arms`) and explicitly-passed escalation
-        judges are outside both panels, so they are never in this set. An unreadable
-        frozen panel skips nothing — stranding units on an unreadable snapshot is the
-        conservative side, and `_concurrency_ceiling` refuses malformed configs
-        loudly beside this."""
+        """The judges removed from this run's panel after running out of memory (RES-13): the
+        judges in the frozen `provider_config` snapshot minus those in the current `panel_config`.
+
+        Because this is read from the run row, a new Orchestrator after a restart skips the same
+        units the old one did (#62). The dropped judges' unfinished units stay pending for an
+        operator to re-queue. Escalation judges were never in either panel, so they never appear
+        here. If the frozen panel cannot be read, nothing is skipped."""
         try:
             frozen = json.loads(run_row["provider_config"]).get("panel")
             current = set(self._panel_arms(run_row["panel_config"]))
@@ -452,7 +357,7 @@ class Orchestrator(RunLifecycleMixin, CostsMixin, EnumerationMixin, LeasingMixin
         )
 
     def unit_status(self, work_id: str) -> str:
-        """One unit's ledger status, or `""` if the ledger has no such unit.
+        """One unit's ledger status, or `""` if there is no such unit.
 
         A stage executor needs it to tell "the worker did the work" from "the worker struck
         the unit out and the ledger already closed it". `complete()` refuses the second case
@@ -467,7 +372,7 @@ class Orchestrator(RunLifecycleMixin, CostsMixin, EnumerationMixin, LeasingMixin
         return ""
 
     def cohort_ref(self, cohort_id: str) -> "CohortRef":
-        """The cohort's declared identity, as `M-CONF` wants it (`FR-CONF-08`, `ADR-5`).
+        """The cohort's declared identity, in the form M-CONF needs (FR-CONF-08, ADR-5).
 
         `CohortRef`'s `consent_class` defaults to `'real'`, deliberately: an undeclared cohort
         must fail closed against a remote backend. That makes the stored value something a
@@ -488,7 +393,7 @@ class Orchestrator(RunLifecycleMixin, CostsMixin, EnumerationMixin, LeasingMixin
         return CohortRef(cohort_id=cohort_id)
 
     def runs(self, statuses: Sequence[str] | None = None) -> tuple[RunHandle, ...]:
-        """Every run the store holds, optionally filtered by status, in ledger order.
+        """Every run in the store, optionally filtered by status, in ledger order.
 
         `recover` (`FR-PIPE-07`) needs the runs that are COMPLETE but not fully graded, and
         `resume`'s discovery deliberately sees only open ones. A composition layer cannot walk
@@ -517,16 +422,15 @@ class Orchestrator(RunLifecycleMixin, CostsMixin, EnumerationMixin, LeasingMixin
         return tuple(found)
 
     def submissions(self, run_id: str) -> tuple[str, ...]:
-        """FR-ORCH-42 / CT-ORCH-32 (#523): every submission `run_id` enumerated, in
-        enumeration order, whatever its criteria's evaluation modes — deterministic-only
-        submissions included — and never another run's. Read-only. Raises
-        `RunNotFoundError` for an unknown run."""
+        """Every submission enumerated for `run_id`, in enumeration order, including submissions
+        whose criteria are all deterministic, and never another run's (FR-ORCH-42, CT-ORCH-32,
+        #523). Read-only. Raises `RunNotFoundError` for an unknown run."""
         cohort, _run_row = self._find_run(run_id)
         return tuple(str(row["submission_id"]) for row in cohort.query(
             ORCH_STATEMENTS["select_run_enumerated_submissions"], run_id=run_id))
 
     def _run_row_in(self, cohort: Any, run_id: str) -> Any:
-        """The run's row from a cohort handle the caller already holds.
+        """The run's row, from a cohort handle the caller already has.
 
         Distinct from `_run_row(run_id)`, which WALKS the cohort files to find which one
         owns the run. Both flush and report already know the cohort, so re-walking would
@@ -535,7 +439,7 @@ class Orchestrator(RunLifecycleMixin, CostsMixin, EnumerationMixin, LeasingMixin
         return rows[0] if rows else None
 
     def _wall_now(self) -> str:
-        """The wall time this orchestrator writes and measures with (FR-ORCH-44)."""
+        """The current wall-clock time this orchestrator writes and measures with (FR-ORCH-44)."""
         if self._wall_clock is None:
             return _now()
         return self._wall_clock().isoformat()

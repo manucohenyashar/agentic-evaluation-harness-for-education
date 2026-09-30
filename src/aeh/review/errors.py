@@ -7,16 +7,15 @@ from __future__ import annotations
 
 
 class ReviewError(Exception):
-    """Base class for the review module's refusals, so callers can catch the
-    module's own failures without catching the package's too."""
+    """Base class for M-REVIEW's refusals, so callers can catch these without also catching M-PKG's
+    errors."""
 
 
 class StaleReviewItemError(ReviewError):
-    """An action arrived for a score row the queue no longer reflects
-    (`CT-REVIEW-15`): the row was superseded by an escalation after this queue
-    was built, and acting on the stale copy would overwrite a judgment somebody
-    else already made. The message says to refresh the queue."""
+    """An action arrived for a score row the queue no longer reflects (CT-REVIEW-15): an escalation
+    replaced the row after the queue was built, and acting on the old copy would overwrite someone
+    else's judgment. The message says to refresh the queue."""
 
 
 class UnknownRunError(LookupError):
-    """`open_review` was given a run id no store holds (FR-REVIEW-24). Nothing was created."""
+    """`open_review` was given a run id that no store holds (FR-REVIEW-24). Nothing was created."""

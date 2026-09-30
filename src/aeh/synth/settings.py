@@ -50,8 +50,8 @@ SCORE_CLAIM_FLAG = "score_claim_flag"
 
 
 def _env_float(name: str, default: float) -> float:
-    """A float knob, read at call time: absent means the default, anything unparsable
-    is REFUSED — a knob that guesses is a lie the deployment cannot see."""
+    """Read a float knob at call time. An unset knob gives the default; a value that does not parse
+    is refused rather than guessed."""
     raw = os.environ.get(name)
     if raw is None or not raw.strip():
         return default

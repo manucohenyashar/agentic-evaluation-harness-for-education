@@ -53,9 +53,9 @@ class DocumentIngestionMixin:
         report_detail: dict | None = None,
         high_risk_question_ids: Sequence[str] | None = None,
     ) -> DocumentId:
-        """Ingest one logical document: rasterize every page of every source PDF, run
-        exactly ONE VLM transcription call per page, and emit exactly ONE immutable
-        Markdown `document` row (`FR-INGEST-02`, `FR-INGEST-04`).
+        """Ingest one logical document: rasterize every page of every source PDF, make exactly one
+        vision-model transcription call per page, and write exactly one immutable Markdown
+        `document` row (FR-INGEST-02, FR-INGEST-04).
 
         `blobs` are content hashes in the blob store. The assembly order comes from
         the declared preference ladder (FR-INGEST-06): an operator-stated
@@ -473,8 +473,8 @@ class DocumentIngestionMixin:
         return document_id
 
     def _enforce_evaluative_bar(self, regions: list[dict]) -> list[dict]:
-        """The FR-INGEST-11 gate over parsed regions: re-request up to the budget,
-        then refuse. Factored so ingest and revise enforce the SAME bar."""
+        """Refuse evaluative wording in graphic descriptions (FR-INGEST-11): ask again up to the
+        budget, then refuse. Shared so ingest and revision apply the same rule."""
         offenders = [region for region in regions
                      if region["description"]
                      and _evaluative_offences(region["description"])]
@@ -487,15 +487,11 @@ class DocumentIngestionMixin:
         return regions
 
     def _persist_raster(self, page: PageImage) -> str | None:
-        """`FR-STORE-06`'s storage form for the full-page raster (issue #226):
-        the blob goes into the same content-addressed store as the source PDFs
-        and the crops — keyed by SHA-256, deduplicated on write — and only the
-        hash is recorded, in `document.source_blobs`' per-page provenance.
-        Retention follows the crop precedent: kept until the cohort's Tier C
-        purge (`NFR-INGEST-04`, student PII). `HARNESS_INGEST_RETAIN_PAGE_RASTERS`
-        is the environment-sensitive bound, read at call time (seam 3): off,
-        the skip is what the provenance honestly records (a null
-        `raster_hash`) and `FR-INGEST-13`'s crops still flow."""
+        """Store a full-page raster in the content-addressed blob store with the source PDFs and
+        crops, and record only its hash in the page's provenance (FR-STORE-06). It is kept until
+        the cohort's Tier C purge, like the crops (NFR-INGEST-04).
+        `HARNESS_INGEST_RETAIN_PAGE_RASTERS` can switch this off; the provenance then records a
+        null `raster_hash`, and crops still flow (FR-INGEST-13)."""
         if not self._configured_bool(RETAIN_PAGE_RASTERS_ENV,
                                      DEFAULT_RETAIN_PAGE_RASTERS):
             return None
@@ -504,11 +500,10 @@ class DocumentIngestionMixin:
     def _second_describe(self, regions: list[dict],
                          high_risk_questions: Sequence[str], *,
                          transcriber_ref: str | None = None) -> dict | None:
-        """FR-INGEST-14: describe each high-risk described graphic's crop a second
-        time with the different-family model. Returns the pass record — `None` only
-        when no high-risk register was injected — so "register given, nothing
-        matched" is never silent: the record names the declared questions, how many
-        graphics the document holds, how many matched, and each region's outcome.
+        """Describe each high-risk graphic's crop a second time, with a model from a different
+        family (FR-INGEST-14). Returns the pass record, which is None only when no high-risk list
+        was given; it names the declared questions, how many graphics the document has, how many
+        matched, and each region's outcome.
 
         **Which question a graphic belongs to.** The pinned transcription prompt tags
         a graphic by `element_kind`, not by question, so a graphic belongs to the
@@ -611,14 +606,9 @@ class DocumentIngestionMixin:
     def _retain_crops(self, regions: list[dict],
                       sanitized_of: dict[str, bytes],
                       page: PageImage) -> list[dict]:
-        """FR-INGEST-13: a described_graphic's crop is an IMAGE crop carved from the
-        page raster through the rasterizer seam, retained in the blob store. The
-        crop reads the SANITIZED source bytes (#42, review B1) — never the
-        original blob. A region with no box crops the WHOLE page raster — the
-        rect of the page these regions were parsed from (`page`, the same image
-        the model saw), matching the ingest path's default; a zero rect would
-        be refused by the live crop rather than silently clamped, and the
-        scripted doubles masked that disagreement for years (review, #226)."""
+        """Keep an image crop of each described graphic in the blob store (FR-INGEST-13), cut from
+        the page raster through the rasterizer. The crop is taken from the sanitized source, never
+        the original. A region with no box gets the whole page."""
         for region in regions:
             if region["region_kind"] != "described_graphic":
                 continue

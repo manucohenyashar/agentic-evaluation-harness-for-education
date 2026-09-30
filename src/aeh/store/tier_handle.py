@@ -18,7 +18,7 @@ from .write_queue import WriteQueue
 
 
 class SqliteTierHandle:
-    """One tier's database. `query`, `enqueue_write`, `transaction` — and nothing else.
+    """One tier's database, offering `query`, `enqueue_write` and `transaction`, and nothing else.
 
     The member list is `CT-STORE-01`'s and it is closed on purpose: `FUZZ-07`'s docstring records
     an earlier draft that reached for `handle.has_result()` and `handle.status()`, which would
@@ -105,7 +105,7 @@ class SqliteTierHandle:
     # -- the write connection ----------------------------------------------------------------
 
     def _open_write_connection(self) -> sqlite3.Connection:
-        """The second connection, opened on first write and kept for the handle's life.
+        """The write connection, opened on the first write and kept while the handle is open.
 
         **Separate from the read connection, and that is `CT-STORE-04`.** Under WAL a reader
         holds no lock a writer needs, so two connections is what makes "concurrent readers never
@@ -157,7 +157,7 @@ class SqliteTierHandle:
         return self._opened
 
     def query(self, statement: Statement, **params: Any) -> Sequence[Row]:
-        """Run a declared **read** and return its rows.
+        """Run a declared read and return its rows.
 
         **No order is promised** (`CT-STORE-18`): rows come back in whatever order SQLite
         produces, and a caller needing an order states it in the statement. Nothing here sorts,
@@ -188,7 +188,8 @@ class SqliteTierHandle:
                         retries=self._retries).fetchall()
 
     def _connection_for_this_thread(self) -> sqlite3.Connection:
-        """`_connection` on the thread that opened the handle, a private one on any other.
+        """The handle's main connection on the thread that opened it, or a private connection on
+        any other thread.
 
         Compared by thread identity rather than by trying the connection and catching
         `ProgrammingError`: a probe would be a second `execute()` in this module, and
@@ -200,7 +201,7 @@ class SqliteTierHandle:
         return self._read_connection()
 
     def enqueue_write(self, unit: WriteUnit | Statement | str, /, **params: Any) -> None:
-        """Queue one write and return. **Asynchronous** (`CT-STORE-02`).
+        """Queue one write and return at once; the write happens later (CT-STORE-02).
 
         Returns before the row is durable, and that is the clause design 3.3 calls "the single
         most load-bearing clause in this contract and the easiest to get wrong". A caller that
@@ -237,7 +238,8 @@ class SqliteTierHandle:
         self._queue.enqueue(queued)
 
     def transaction(self) -> ContextManager[Tx]:
-        """Atomic, synchronous, whole-body, within one tier (`CT-STORE-03`).
+        """Run the whole body as one atomic, synchronous transaction within this tier
+        (CT-STORE-03).
 
         Within **one tier handle**. Cross-tier atomicity is deliberately not provided, and a
         caller needing a row in Tier C and a row in Tier D together does not get it from here --
@@ -250,9 +252,8 @@ class SqliteTierHandle:
 
     @property
     def _metrics(self) -> dict[str, Any]:
-        """This tier's share of `CT-STORE-17`'s signals. Aggregated by `store_metrics`,
-        which reads this private name — the handle's public surface is closed
-        (`CT-STORE-01`), and an observability accessor is not a contract member."""
+        """This tier's share of the store's signals (CT-STORE-17). `store_metrics` reads this
+        private method; it is not part of the handle's public surface (CT-STORE-01)."""
         queue = self._queue
         return {
             "write_queue_depth": 0 if queue is None else queue.depth,
@@ -265,7 +266,7 @@ class SqliteTierHandle:
         }
 
     def _close(self) -> None:
-        """Flush the queue, then close both connections.
+        """Flush the write queue, then close both connections.
 
         **Private, and `CT-STORE-01` is why.** Design §3.3 fixes the `TierHandle` surface at
         `query`, `enqueue_write` and `transaction` — *"and nothing else"* — and `TC-STORE-15`

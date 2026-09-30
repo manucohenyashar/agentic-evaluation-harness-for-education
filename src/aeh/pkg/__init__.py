@@ -30,6 +30,8 @@ Files:
     setup_checks.py     the structural checks on the inventory and read-back writes
     catalog.py          `PackageCatalog`
     in_memory.py        the module-level entry points over an in-memory catalog
+
+Detailed design notes (the full original module description): `docs/code-notes/pkg.md`.
 """
 
 from __future__ import annotations

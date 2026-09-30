@@ -24,7 +24,7 @@ _OPEN_TX_TIERS = threading.local()
 
 
 class Statement(str):
-    """A SQL statement the caller declared, rather than assembled.
+    """A SQL statement declared as a constant, never assembled from strings at run time.
 
     A `str` subclass, and deliberately so: a module-level SQL literal **is** a declared
     statement, which is the pattern every caller already uses (`FUZZ-07`'s `LEDGER_ROW`,
@@ -48,7 +48,7 @@ class Statement(str):
 
     @property
     def sql(self) -> str:
-        """The statement text. Passing this, rather than the parameter, is the point."""
+        """The statement's text. The store passes this to SQLite, never anything a caller built."""
         return str(self)
 
 
@@ -60,7 +60,7 @@ Row = sqlite3.Row
 
 @dataclass(frozen=True)
 class WriteUnit:
-    """One row bound for the single-writer queue (`FR-STORE-03`).
+    """One row waiting in the single writer's queue (FR-STORE-03).
 
     Declared so `TierHandle.enqueue_write`'s signature matches §3.3's Interfaces block from the
     first commit. #11 owns what happens to it.
@@ -74,7 +74,8 @@ class WriteUnit:
 
 
 class TierHandle(Protocol):
-    """`query`, `enqueue_write`, `transaction` — and nothing else (`CT-STORE-01`)."""
+    """One tier's database, offering exactly `query`, `enqueue_write` and `transaction`
+    (CT-STORE-01)."""
 
     def query(self, statement: Statement, **params: Any) -> Sequence[Row]: ...
 
@@ -84,7 +85,7 @@ class TierHandle(Protocol):
 
 
 class BlobStore(Protocol):
-    """Content-addressed on SHA-256 (`CT-STORE-07`). Implemented by #12."""
+    """Storage for files keyed by the SHA-256 of their content (CT-STORE-07)."""
 
     def put(self, data: bytes) -> str: ...
 
@@ -94,7 +95,8 @@ class BlobStore(Protocol):
 
 
 class Store(Protocol):
-    """Exactly three handle kinds, plus `blobs()` and `purge_cohort()` (`CT-STORE-01`)."""
+    """The store: exactly three kinds of tier handle, plus `blobs()` and `purge_cohort()`
+    (CT-STORE-01)."""
 
     def package(self, package_id: str) -> TierHandle: ...
 
@@ -111,7 +113,7 @@ class Store(Protocol):
 
 
 class Tier(str, Enum):
-    """The three physical databases, named as §3.3's data model names them.
+    """The three kinds of database file (design §3.3).
 
     Three rather than four: **C and R share one file**, deliberately, because they are created
     and purged together and one file keeps `purge_cohort` a `VACUUM` on one database rather than

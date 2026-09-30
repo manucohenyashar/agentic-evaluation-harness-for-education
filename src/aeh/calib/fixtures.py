@@ -21,9 +21,9 @@ def findings_fixture(
     count: int | None = None,
     affected_counts: Sequence[int] | None = None,
 ) -> tuple[Finding, ...]:
-    """Hand-built findings with known affected counts — the fixture the ranking and cap
-    assertions need (`CT-CALIB-05`): discovery-order output also looks plausible, so the
-    counts are supplied, distinct, and deliberately out of order.
+    """Test seam: hand-built findings with known affected counts, for the ranking and cap tests
+    (CT-CALIB-05). The counts are distinct and deliberately out of order, because output in
+    discovery order also looks plausible.
 
     Criterion ids are zero-padded (`CRIT-001`, ...) so they never collide with the ids a
     real test package carries (`CRIT-1`) — an elicitation session from one fixture must
@@ -48,7 +48,7 @@ def findings_fixture(
 
 
 def tier_p_path_for_test() -> Path:
-    """The Tier P file a test store will use: `<tmp>/packages/pkg-calib-test.pkg.sqlite`.
+    """Test seam: the Tier P file a test store uses, `<tmp>/packages/pkg-calib-test.pkg.sqlite`.
 
     The shape is the store's own layout (`data_dir/packages/<package_id>.pkg.sqlite`),
     so `open_store` on the returned path's grandparent opens exactly this file — which
@@ -101,9 +101,9 @@ def _build_published_package(data_dir: Path, package_id: str) -> str:
 
 
 class _AuditedStoreWrite:
-    """The claim the write-audit oracle checks against: every `sqlite3.connect` on the
-    fixture's Tier P file is `M-STORE`'s (the layer that owns the connection), initiated
-    by `M-CALIB` (the module whose `apply_answers` started the chain).
+    """What the write-audit test checks against: every database connection opened on the fixture's
+    Tier P file belongs to M-STORE (which owns the connection) and was started by M-CALIB (whose
+    `apply_answers` began the chain).
 
     A plain class with a duck-typed `__eq__` — it matches the audit's `WriteAttempt`
     records field-wise without importing the test-support module, and the comparison
@@ -131,7 +131,7 @@ class _AuditedStoreWrite:
 
 
 class _FixtureCatalog:
-    """A `PackageCatalog` facade over a real Tier P store that reopens lazily.
+    """A `PackageCatalog` wrapper over a real Tier P store that reopens the store only when needed.
 
     The store is built (`_build_published_package`) and closed BEFORE the facade is
     handed to a test; the first call forwarded reopens it. Two readings of why:
@@ -166,10 +166,9 @@ class _FixtureCatalog:
 
     @property
     def audited_writes(self) -> tuple[_AuditedStoreWrite, ...]:
-        """The writes this facade claims on the Tier P file: the store reopens fresh
-        (its `sqlite3.connect` events land on the audit log), and it writes only
-        through the catalog. Anything else touching the file inside an audit window is
-        a direct write (`CT-CALIB-06`'s forbidden path)."""
+        """The writes this wrapper expects on the Tier P file: the store reopens (so its
+        connections are logged) and writes only through the catalog. Anything else touching the
+        file during an audit is a direct write (CT-CALIB-06)."""
         return (
             _AuditedStoreWrite(
                 api="sqlite3.connect",
@@ -186,9 +185,7 @@ class _FixtureCatalog:
         return self._catalog().criteria(version)
 
     def bands(self, criterion_id: str) -> tuple:
-        """A read, not a write: never recorded on `.writes` — the record is of what
-        the edit path WROTE, and composing against the current descriptor only reads
-        it (the catalog's own `bands`, the current-version read it contracts)."""
+        """Read the current bands. This is a read, so it is not recorded in `.writes`."""
         return self._catalog().bands(criterion_id)
 
     def create_version(self, parent: str | None) -> str:
@@ -226,8 +223,8 @@ class _FixtureCatalog:
 
 
 def catalog_for_test(tier_p_path: Path | None = None) -> _FixtureCatalog:
-    """A `_FixtureCatalog` over a real published package, its store closed and its
-    file ready to reopen on first use (see `_FixtureCatalog` for why)."""
+    """Test seam: a `_FixtureCatalog` over a real published package, with its store closed and
+    ready to reopen on first use."""
     if tier_p_path is None:
         tier_p_path = tier_p_path_for_test()
     package_id = tier_p_path.name.removesuffix(".pkg.sqlite")
@@ -237,9 +234,8 @@ def catalog_for_test(tier_p_path: Path | None = None) -> _FixtureCatalog:
 
 @dataclass(frozen=True)
 class _ElicitationHistoryRow:
-    """One read-back row: the question asked, the options offered, the answer, the
-    edit it produced — the reconstruction `CT-CALIB-11` asserts the history alone can
-    answer."""
+    """One history row read back: the question asked, the options offered, the answer, and the edit
+    it produced (CT-CALIB-11)."""
 
     question: str
     options: tuple[str, ...]
@@ -264,7 +260,7 @@ _HISTORY_UPDATE_STATEMENTS: dict[str, str] = {
 
 
 class _ElicitationHistoryFixture:
-    """A real Tier P store's elicitation history, wrapped for the append-only sweep.
+    """A real Tier P store's elicitation history, wrapped for the append-only test.
 
     The append routes through `PackageCatalog.append_elicitation` — the one write door
     the table has (`FR-PKG-20`). The attempted update and delete are deliberately RAW
@@ -308,13 +304,13 @@ class _ElicitationHistoryFixture:
 
     def append(self, *, question: str, options: Sequence[str], answer: str,
                edit: str = "") -> str:
-        """Append one row through the catalog's door; returns its row id."""
+        """Append one row through the catalog and return its row id."""
         return self._catalog.append_elicitation(
             self._version, question, options, answer, resulting_edit=edit,
         )
 
     def update(self, row_id: str, **changes: Any) -> None:
-        """Attempt a row update — the store's trigger pair must abort it."""
+        """Try to update a row; the store's triggers must abort it."""
         if not changes:
             raise ValueError("update needs at least one field to attempt.")
         for name, value in changes.items():
@@ -334,7 +330,7 @@ class _ElicitationHistoryFixture:
                 ) from error
 
     def delete(self, row_id: str) -> None:
-        """Attempt a row delete — the store's trigger pair must abort it."""
+        """Try to delete a row; the store's triggers must abort it."""
         try:
             with self._handle.transaction() as tx:
                 tx.execute(
@@ -347,7 +343,7 @@ class _ElicitationHistoryFixture:
             ) from error
 
     def all(self) -> tuple[_ElicitationHistoryRow, ...]:
-        """Every row, in append order, reconstructed from the history alone."""
+        """Every row in append order, rebuilt from the history alone."""
         rows = self._handle.query(
             "SELECT question, options_offered, answer_given, resulting_edit "
             "FROM elicitation_history ORDER BY rowid"
@@ -364,6 +360,6 @@ class _ElicitationHistoryFixture:
 
 
 def elicitation_history_for_test() -> _ElicitationHistoryFixture:
-    """A real Tier P store holding an `elicitation_history` table, for the append-only
-    sweep (`CT-CALIB-11`): the refusal is the store's, at rung 2, not a double's."""
+    """Test seam: a real Tier P store with an `elicitation_history` table, for the append-only test
+    (CT-CALIB-11). The store itself does the refusing."""
     return _ElicitationHistoryFixture()

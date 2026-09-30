@@ -87,9 +87,10 @@ def _cite_instructions(label: str) -> str:
 
 
 def is_decision_seat(unit: Any, run_config: Any) -> bool:
-    """FR-JUDGE-23: the decision seat is the unit judged by the **frozen** run panel's first
-    member, `RunConfig.panel[0]` — never the run row's `panel_config`, which the OOM-drop path
-    may rewrite (a rewrite would otherwise promote an LLM arm into a second seat)."""
+    """Whether this unit is the decision seat: the unit judged by the first member of the run's
+    frozen panel, `RunConfig.panel[0]` (FR-JUDGE-23). The run row's `panel_config` is not used,
+    because dropping a judge after an out-of-memory error can rewrite it and would turn an LLM arm
+    into a second seat."""
     panel = getattr(run_config, "panel", ()) or ()
     if not panel:
         return False
@@ -98,8 +99,8 @@ def is_decision_seat(unit: Any, run_config: Any) -> bool:
 
 
 def _render_decision_submission(request: ScoringRequest) -> str:
-    """`_render_submission` with each own-evidence line labelled `[span a]`, `[span b]`, … inside
-    the fence (the labels the citation Nouls name). Delimiters are neutralized the same way."""
+    """`_render_submission` with each evidence line labelled `[span a]`, `[span b]`, ... inside the
+    fence; the citation questions name these labels. Delimiters are neutralized the same way."""
     lines: list[str] = []
     own = [f"[span {_span_label(i)}] " + json.dumps(_span_document(span), sort_keys=True)
            for i, span in enumerate(request.evidence)]
@@ -130,9 +131,9 @@ def _decision_sections(request: ScoringRequest) -> tuple[tuple[str, str], ...]:
 
 
 def decision_fields(request: ScoringRequest) -> str:
-    """The Jev request's `state` (§3.3.1): `### <name>\n<value>` per field in
-    `DECISION_FIELD_NAMES` order, blank-line separated. Everything before `### submission` is
-    byte-identical across a (question, criterion) batch (NFR-JUDGE-09)."""
+    """The decision request's `state` text: `### <name>\n<value>` for each field in
+    `DECISION_FIELD_NAMES` order, separated by blank lines (design §3.3.1). Everything before `###
+    submission` is identical across a (question, criterion) batch (NFR-JUDGE-09)."""
     if not isinstance(request, ScoringRequest):
         raise TypeError(f"decision_fields renders a ScoringRequest, got {type(request).__name__}")
     return "\n\n".join(f"### {name}\n{value}" for name, value in _decision_sections(request))
@@ -147,7 +148,8 @@ def _band_level(view: BandView) -> str:
 
 
 def decision_request(request: ScoringRequest, engine: Any) -> DecisionRequest:
-    """FR-JUDGE-24: the Jev request for one unit, derived only from the whitelisted request.
+    """The decision-engine request for one unit, built only from the whitelisted scoring request
+    (FR-JUDGE-24).
 
     A Score `band` over the declared bands in ordinal-ascending order, a Noul
     `evidence_sufficient`, and one Noul `cite_<label>` per own-evidence span. Callers check
@@ -208,11 +210,10 @@ def _offending_numeral(text: str, *, rubric: bool) -> str | None:
 
 
 def scan_decision_request(request: ScoringRequest, decision: DecisionRequest) -> None:
-    """FR-JUDGE-25 / CT-JUDGE-27: `assert_isolated` on the source request, then the numeral
-    prohibition over the surfaces that carry the **rubric's** scoring language. Rubric
-    strictness: every Jev question string (the band levels are the declared descriptors) and
-    the static directive. Content strictness: the exemplar material, where a planted anchor
-    ("worth 4 out of 4") is caught and a legitimate "12 kg" survives.
+    """Check a decision request before it is sent (FR-JUDGE-25, CT-JUDGE-27): `assert_isolated` on
+    the source request, then the ban on numerals in the rubric's scoring language. The question
+    strings and the fixed directive are checked strictly; the worked examples are checked as
+    content, so a planted "worth 4 out of 4" is caught while a legitimate "12 kg" is not.
 
     Not scanned, on purpose: the criterion and question fields carry the question's own prompt
     text and reference solution ("travels 60 km in 2 hours"; "60/2 = 30 km/h"), which are
@@ -250,7 +251,8 @@ class Eligible:
 
 @dataclass(frozen=True)
 class Ineligible:
-    """The unit goes straight to the LLM path; `reason` is recorded (FR-JUDGE-26/34)."""
+    """The unit goes straight to the LLM path, and `reason` is recorded (FR-JUDGE-26, FR-JUDGE-34).
+    """
 
     reason: str
 
@@ -260,10 +262,11 @@ ELIGIBILITY_REASONS: tuple[str, ...] = ("no_band_set", "band_count", "too_many_s
 
 def decision_eligibility(request: ScoringRequest, engine: Any,
                          capabilities: DecisionCapabilities) -> Eligible | Ineligible:
-    """FR-JUDGE-26, checked in this order, first failure reported: no declared band set; a band
-    count outside 2…10; more own spans than `max_citation_questions`; an estimated context over
-    90% of the engine's window (`ceil(bytes / token_bytes_ratio)`, never truncated); more
-    questions than the engine accepts."""
+    """Whether the decision engine may answer this unit (FR-JUDGE-26). Checked in this order,
+    reporting the first failure: no declared band set; a band count outside 2..10; more evidence
+    spans than `max_citation_questions`; an estimated context over 90% of the engine's window
+    (`ceil(bytes / token_bytes_ratio)`, never truncated); more questions than the engine accepts.
+    """
     bands = request.criterion.bands
     if not bands:
         return Ineligible("no_band_set")
@@ -288,7 +291,8 @@ def decision_eligibility(request: ScoringRequest, engine: Any,
 
 @dataclass(frozen=True)
 class Accepted:
-    """The gate passed; `result` is the decision-engine verdict (FR-JUDGE-27/28)."""
+    """The confidence gate passed; `result` is the decision engine's verdict (FR-JUDGE-27,
+    FR-JUDGE-28)."""
 
     result: ScoringResult
     gate: float
@@ -296,15 +300,17 @@ class Accepted:
 
 @dataclass(frozen=True)
 class BelowGate:
-    """The gate did not pass; the unit falls back to the LLM path (FR-JUDGE-27/31)."""
+    """The confidence gate did not pass; the unit falls back to the LLM path (FR-JUDGE-27,
+    FR-JUDGE-31)."""
 
     gate: float | None
     reason: str
 
 
 def _inventory(decision: Decision, bands: tuple[BandView, ...], cited_labels: list[str]) -> str:
-    """FR-JUDGE-29: deterministic, non-prose, four decimal places; names cited spans so the
-    FR-JUDGE-10 span-reference test passes on substance."""
+    """The verdict's evidence assessment for a decision-engine answer: deterministic, not prose,
+    four decimal places, and naming the cited spans so it passes the span-reference check on
+    substance (FR-JUDGE-29, FR-JUDGE-10)."""
     band_answer = decision.answers["band"]
     probabilities = ", ".join(f"{view.band}={p:.4f}" for view, p in zip(bands, band_answer.probabilities))
     cited = ", ".join(f"span {label}" for label in cited_labels) if cited_labels else "none"
@@ -315,11 +321,11 @@ def _inventory(decision: Decision, bands: tuple[BandView, ...], cited_labels: li
 
 def gate_decision(decision: Decision, request: ScoringRequest, engine: Any, *,
                   judge_id: str = "", attempts: int = 1) -> Accepted | BelowGate:
-    """FR-JUDGE-27/28, pure. `gate = min(c_band, c_sufficient)`; accept iff
-    `gate > engine.confidence_threshold` (strict: exactly the threshold falls back) and the band
-    argmax is unique. The band is the **argmax** of the Score probabilities — never a rounding
-    of `score` (ADR-22). Citation verification against the canonical document is dispatch's
-    (FR-JUDGE-30), because it needs the store."""
+    """Apply the confidence gate to a decision-engine answer (FR-JUDGE-27, FR-JUDGE-28). Pure. The
+    gate is `min(c_band, c_sufficient)`; the answer is accepted only if the gate is strictly above
+    the engine's threshold and one band clearly has the highest probability. The band is that
+    argmax, never a rounded `score` (ADR-22). Checking citations against the document happens at
+    dispatch, because it needs the store (FR-JUDGE-30)."""
     bands = _ordered_bands(request)
     band_answer = decision.answers["band"]
     sufficiency = decision.answers["evidence_sufficient"]

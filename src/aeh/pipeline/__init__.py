@@ -20,6 +20,8 @@ Files:
     runtime.py          opening the store and choosing a run's provider
     background.py       the console's doors: start or resume runs on worker threads, uploads
     cli.py              the `aeh` command line (`main`)
+
+Detailed design notes (the full original module description): `docs/code-notes/pipeline.md`.
 """
 
 from __future__ import annotations

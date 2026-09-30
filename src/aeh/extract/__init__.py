@@ -14,6 +14,8 @@ Files:
     spans.py     turning the model's reply into spans, checked against the document
     worker.py    `ExtractionWorker`, which processes one leased unit
     metrics.py   per-criterion extraction metrics for a run
+
+Detailed design notes (the full original module description): `docs/code-notes/extract.md`.
 """
 
 from __future__ import annotations

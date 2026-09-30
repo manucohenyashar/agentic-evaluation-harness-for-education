@@ -91,3 +91,50 @@ The four seams, from the first commit:
 
 Coverage note: the `TC-SETUP-*` cases (test plan §5.6) land with issue #54, the
 co-evolution test story paired with this one.
+
+## Details moved out of the code
+
+These notes were the longer parts of docstrings in `aeh.setup`. Each section is named after the file and the function or class it describes.
+
+### service.py: SetupService
+
+`SetupService(catalog, ingestor, provider, model_ref)` — the Tier P catalog the
+package lives in, the `M-INGEST` gateway the assessment is read through, and the
+`M-PROV` seam the proposal call goes through. `params` defaults to
+`SamplingParams(temperature=0.0)`: a proposal is a reading task, not a sampling
+one.
+
+Design §3.6's protocol, and what this story stages:
+
+============================  =============================================
+operation                     status
+============================  =============================================
+`propose_inventory`           here — one proposal per version (`CT-SETUP-16`)
+`confirm_inventory`           here — BLOCKING gate 1; locks the rows
+`read_back_rubric`            here — #51: criteria and even band sets, magnitude
+                              descriptors rejected and re-requested; one read
+                              back per version (`CT-SETUP-16`)
+`set_answer_keys`             here — BLOCKING gate 2; the full FR-SETUP-03
+                              semantics since #53 (the confirmed inventory's
+                              deterministic criteria are staged, every key is
+                              validated against its question's options)
+`classify_decomposability`    here — #52: the §5.3 ANSWERS from the model, the
+                              decision table from the module; confirmations
+                              capped at `SETUP_MAX_CONFIRMATIONS` headlessly
+`confirm_classifications`     here — #52: the teacher's confirmation recorded
+                              apart from the module's default (`R62`)
+`propose_dependencies`        here — #52: plain-language proposals, nothing
+                              written; `confirm_dependencies` writes only on
+                              explicit approval
+`publish`                     here — refused until both gates hold; records
+                              each skipped step's default (FR-SETUP-14)
+`ensure_version`, `steps`,    here — the resume and console surfaces
+`current_proposal`
+`set_grade_policy`            here — #53: the declared policy, or the default
+                              taken explicitly and recorded (FR-SETUP-12)
+`check_prefix_budget`         here — #53: per-(question, criterion) counts,
+                              lowest-value exemplar drops behind a calibration
+                              floor (FR-SETUP-11)
+`store_calibration_papers`    here — #53: stored-not-used intake; ambiguity
+                              discovery waits for M-CALIB (FR-SETUP-15)
+============================  =============================================

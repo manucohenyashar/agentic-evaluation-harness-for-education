@@ -10,8 +10,8 @@ from .results import StageTrace
 
 
 def _engine_tag(run_config: Any, result: Any) -> str:
-    """FR-PIPE-14: which engine produced a score, **only when a decision engine is
-    configured** — with the engine off the line is byte-identical to before (NFR-SYS-14)."""
+    """Which engine produced a score, added only when a decision engine is configured. With the
+    engine off, output is byte-for-byte what it was before (FR-PIPE-14, NFR-SYS-14)."""
     if getattr(run_config, "decision_engine", None) is None:
         return ""
     if getattr(result, "scoring_engine", "llm") == "decision":
@@ -21,10 +21,10 @@ def _engine_tag(run_config: Any, result: Any) -> str:
 
 
 def _decision_provider_for_run(run_config: Any, provider: Any, decision_provider: Any) -> Any:
-    """FR-PIPE-11: the decision provider for the frozen engine — the injected one, else the
-    fixture recordings already bound as `provider` when the engine is `fixture`, else
-    `decision_provider_for`, the only construction path (CT-PROV-22). `None` when the engine
-    is off: an engine-off run constructs nothing (CT-PIPE-09)."""
+    """The decision provider for the run's frozen engine: the one passed in, else the fixture
+    recordings already bound as `provider` for the `fixture` engine, else `decision_provider_for`,
+    the only way to build one (FR-PIPE-11, CT-PROV-22). None when the engine is off; an engine-off
+    run builds nothing (CT-PIPE-09)."""
     engine = getattr(run_config, "decision_engine", None)
     if engine is None:
         return None
@@ -39,9 +39,9 @@ def _decision_provider_for_run(run_config: Any, provider: Any, decision_provider
 
 
 def _decision_run_start_checks(run_config: Any, decision_provider: Any) -> None:
-    """FR-PIPE-12: before the first lease, the cloud decision model's retention is confirmed
-    and a local engine's served build is probed. A failure raises out of
-    `run_to_completion` with nothing dispatched."""
+    """Before the first lease, confirm the cloud decision model's retention setting, or probe a
+    local engine's served build (FR-PIPE-12). A failure raises out of `run_to_completion` before
+    anything is dispatched."""
     engine = getattr(run_config, "decision_engine", None)
     if engine is None or decision_provider is None:
         return
@@ -69,7 +69,7 @@ def _decision_run_start_checks(run_config: Any, decision_provider: Any) -> None:
 
 
 def _decision_summary(handle: Any, run_id: str) -> StageTrace:
-    """FR-PIPE-13 / CT-PIPE-08: the run's decision-engine outcome mix on the score stage."""
+    """The run's decision-engine outcome mix for the scoring stage (FR-PIPE-13, CT-PIPE-08)."""
     from aeh.judge import decision_engine_metrics
 
     m = decision_engine_metrics(handle.cohort, run_id)

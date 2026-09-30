@@ -18,25 +18,24 @@ class CriterionEditsMixin:
     """Adds, removes and edits criteria, bands and exemplars on a draft version."""
 
     def add_criterion(self, v: PackageVersionId, criterion_id: str) -> None:
-        """Add a criterion in place — refused on published versions (`TC-PKG-03` case 2);
-        the sanctioned vehicle is a revision (`FR-PKG-04`)."""
+        """Add a criterion with its dependency edges, refusing a cycle (FR-PKG-05). Published
+        versions refuse the add; drafts accept it. The content arguments have defaults, so a
+        published version refuses before any content is needed."""
         with self._handle.transaction() as tx:
             self._guard(tx, v, "criterion.add")
 
     def remove_criterion(self, v: PackageVersionId, criterion_id: str) -> None:
-        """Remove a criterion in place — refused on published versions (case 3)."""
+        """Remove a criterion; refused on published versions."""
         with self._handle.transaction() as tx:
             self._guard(tx, v, "criterion.remove")
 
     def set_dependencies(
         self, v: PackageVersionId, edges: Sequence[tuple[str, str]]
     ) -> None:
-        """Declare the version's dependency edges in one write (`FR-PKG-05`): each edge
-        is (before, after) — `after` depends on `before`, i.e. `before` is extracted
-        first. Replaces the version's edge set; a cycle raises
-        `CyclicDependencyError` INSIDE the transaction, so the write rolls back and the
-        refusal is a no-op (`CT-PKG-11`) — a published version whose graph cannot be
-        ordered must never exist, not merely fail later at read time."""
+        """Set the version's dependency edges in one write (FR-PKG-05). Each edge is `(before,
+        after)`: `after` depends on `before`, so `before` is extracted first. It replaces the whole
+        edge set. A cycle raises `CyclicDependencyError` inside the transaction, so nothing is
+        written (CT-PKG-11): a published version whose graph cannot be ordered must never exist."""
         with self._handle.transaction() as tx:
             self._guard(tx, v, "criterion_dependency.alter")
             tx.execute(PKG_STATEMENTS["delete_dependencies"], v=v)
@@ -64,8 +63,7 @@ class CriterionEditsMixin:
         self._invalidate()
 
     def update_criterion_dependency(self, v: PackageVersionId) -> None:
-        """Add/remove/alter a dependency row in place — refused on published versions
-        (cases 11-13). The row-level shape is #28's; the lock fires here first."""
+        """Add, remove or change a dependency row; refused on published versions."""
         with self._handle.transaction() as tx:
             self._guard(tx, v, "criterion_dependency.alter")
 
@@ -78,10 +76,9 @@ class CriterionEditsMixin:
         band_count: int | None = None, evidence_type: str | None = None,
         evaluation_mode: str | None = None,
     ) -> None:
-        """Add a criterion with its dependency edges, refusing a cycle (`FR-PKG-05`) —
-        the guard's add-refusal applies to published versions; drafts add freely. The
-        content arguments default so a published version's refusal fires before any
-        content is needed (TC-PKG-03 row 2 passes only the id).
+        """Add a criterion with its dependency edges, refusing a cycle (FR-PKG-05). Published
+        versions refuse the add; drafts accept it. The content arguments have defaults, so a
+        published version refuses before any content is needed.
 
         `evidence_type` (`FR-SETUP-09`, #232) declares what kind of textual evidence
         satisfies a JUDGED criterion — the declaration M-INTEG routes on
@@ -147,7 +144,7 @@ class CriterionEditsMixin:
         self, v: PackageVersionId, criterion_id: str, ordinal: int,
         band: str, points: float, descriptor: str = "",
     ) -> None:
-        """Add one band, enforcing the structural rules on the whole set (`FR-PKG-06`).
+        """Add one band, checking the structural rules on the whole band set (FR-PKG-06).
 
         The validation runs INSIDE the transaction, so a refused band is a no-op
         (`CT-PKG-11`): the whole-set rules (contiguity, monotone points, the declared
@@ -190,8 +187,8 @@ class CriterionEditsMixin:
         self, v: PackageVersionId, exemplar_id: str, criterion_id: str, band: str,
         provenance: str = "synthetic", blob_hash: str | None = None,
     ) -> None:
-        """Add an exemplar, refusing a band that does not name a band declared for the
-        criterion (`FR-PKG-07`).
+        """Add a worked example, refusing a band that is not declared for the criterion
+        (FR-PKG-07).
 
         `provenance` is ADR-4's closed vocabulary (synthetic | paraphrased |
         real_verbatim); anything else — including the superseded `real_consented` — is
@@ -228,10 +225,10 @@ class CriterionEditsMixin:
     def set_exemplar_provenance(
         self, v: PackageVersionId, exemplar_id: str, provenance: str
     ) -> None:
-        """Record the paraphrase-and-approval outcome on a draft exemplar
-        (`FR-PKG-11`'s remediation half): 'real_verbatim' → 'paraphrased' clears the
-        gate once every such row is through it. Drafts only — a published version's
-        exemplars are history (the sanctioned vehicle is a revision)."""
+        """Record that a draft worked example was paraphrased and approved (FR-PKG-11): changing
+        `real_verbatim` to `paraphrased` clears the export gate once every such example has been
+        changed. Drafts only; a published version's examples are history, and changing them needs a
+        new revision."""
         if provenance not in PROVENANCE_VOCABULARY:
             raise PackageError(
                 f"exemplar provenance {provenance!r} is not in the vocabulary "
@@ -250,9 +247,8 @@ class CriterionEditsMixin:
         self._invalidate()
 
     def remove_exemplar(self, v: PackageVersionId, exemplar_id: str) -> None:
-        """Drop a draft exemplar (`FR-PKG-11`'s other remediation half); the derived
-        flag refreshes in the same transaction. Drafts only, like every content
-        edit."""
+        """Remove a draft worked example (FR-PKG-11); the package's real-text flag is refreshed in
+        the same transaction. Drafts only."""
         with self._handle.transaction() as tx:
             self._guard(tx, v, "exemplar.remove")
             if not tx.execute(PKG_STATEMENTS["select_exemplar_by_id"], v=v,
@@ -266,17 +262,16 @@ class CriterionEditsMixin:
         self._invalidate()
 
     def exemplars(self, v: PackageVersionId) -> tuple[dict, ...]:
-        """The version's exemplar rows, ordered by exemplar id (`#53`): the read
-        the prefix budget's per-pair assembly consumes (`FR-SETUP-11` — a
-        (question, criterion) prefix includes its exemplars' material)."""
+        """The version's worked-example rows, ordered by id. The prefix budget counts their
+        material (FR-SETUP-11)."""
         return tuple(
             dict(row) for row in
             self._handle.query(PKG_STATEMENTS["select_exemplars"], v=v)
         )
 
     def blob_text(self, blob_hash: str | None) -> str:
-        """One blob's content as text, by hash — the exemplar material a judge
-        prompt would carry, which the prefix budget counts (`#53`, `FR-SETUP-11`).
+        """One blob's content as text, by hash: the worked-example material a judge prompt would
+        carry, which the prefix budget counts (FR-SETUP-11).
 
         None (a text-only exemplar) answers the empty string. A hash with NO blob
         store attached to this catalog refuses: silently under-counting the
@@ -299,8 +294,8 @@ class CriterionEditsMixin:
         return data.decode("utf-8", errors="replace")
 
     def _read_bands(self, criterion_id: str) -> list:
-        """Bands read straight from the database — the validators and the exemplar guard
-        run against the truth, not against the cache."""
+        """Bands read directly from the database, so the checks run against the stored truth rather
+        than the cache."""
         return self._handle.query(PKG_STATEMENTS["select_bands_by_criterion"],
                                   criterion_id=criterion_id)
 
@@ -311,8 +306,8 @@ class CriterionEditsMixin:
         return None
 
     def _validate_band_order(self, rows) -> None:
-        """`FR-PKG-06`'s order half: ordinals contiguous from 0, points non-decreasing
-        in ordinal — the monotone mapping M-AGG and M-GRADE assume."""
+        """Check band order (FR-PKG-06): ordinals run from 0 without gaps, and points never
+        decrease as ordinals rise, as M-AGG and M-GRADE assume."""
         ordinals = sorted(row["ordinal"] for row in rows)
         points = [float(row["points"]) for row in sorted(rows, key=lambda r: r["ordinal"])]
         if ordinals != list(range(len(ordinals))):
@@ -327,8 +322,8 @@ class CriterionEditsMixin:
             )
 
     def _validate_band_count(self, count: int) -> None:
-        """`FR-PKG-06`'s count half: even, within 2..6 — the even count removes the safe
-        middle band a hesitant judge retreats to (design §5.10, R40)."""
+        """Check the band count (FR-PKG-06): even, and between 2 and 6. An even count removes the
+        safe middle band a hesitant judge would retreat to (design §5.10, R40)."""
         if count < 2 or count > 6 or count % 2 != 0:
             raise BandSetError(
                 f"a band set of {count} bands is outside 2..6 or odd (FR-PKG-06). The "
@@ -336,11 +331,10 @@ class CriterionEditsMixin:
             )
 
     def _validate_band_sets(self, rows_of, *, boundary: str) -> None:
-        """`FR-PKG-06`'s count half over ONE version's rows: every declared
-        `band_count` fully populated and even/2..6. `rows_of` resolves a statement name
-        to that version's rows — through the handle at the publish boundary, through
-        the open transaction at the revision copy (#230) — so what is validated is
-        exactly that version's own rows, never another revision's copied ids.
+        """Check the band counts over one version's rows (FR-PKG-06): every declared `band_count`
+        fully filled, even, and between 2 and 6. `rows_of` reads that version's rows (through the
+        handle at publish time, through the open transaction when copying a revision), so only that
+        version's own rows are checked.
 
         At the copy the failure refuses the revision: a parent whose declared band set
         was never completed would otherwise ship the half set as the child's
@@ -364,9 +358,9 @@ class CriterionEditsMixin:
     def update_criterion_field(
         self, v: PackageVersionId, criterion_id: str, field: str, value: Any
     ) -> None:
-        """Set one criterion column — the guarded mutation surface `M-CALIB` writes
-        through (`FR-CALIB-07`). Refuses locked fields on published versions with
-        `SchemaLockViolation` naming the field; permits everything on drafts.
+        """Set one criterion column; M-CALIB writes through this (FR-CALIB-07). On a published
+        version, a locked field raises `SchemaLockViolation` naming the field; drafts accept any
+        change.
 
         `answer_key` is refused here regardless of lock state: the key has exactly one
         write door, `set_answer_key` (ADR-1's single canonical representation) — this
@@ -390,7 +384,7 @@ class CriterionEditsMixin:
         self, v: PackageVersionId, criterion_id: str, ordinal: int,
         field: str, value: Any,
     ) -> None:
-        """Set one band column, under the same guard (`TC-PKG-03` cases 7-10)."""
+        """Set one band column, under the same lock check."""
         with self._handle.transaction() as tx:
             self._guard(tx, v, f"band.{field}")
             tx.execute(

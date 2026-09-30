@@ -12,7 +12,7 @@ from typing import Any, Mapping
 
 @dataclass(frozen=True)
 class WorkError:
-    """What a worker reports when a unit fails (`FR-ORCH-18`'s input).
+    """What a worker reports when a unit fails (input to FR-ORCH-18).
 
     One field, deliberately: the ledger retains the **message** — `last_error` is what
     the operator surface reads when it asks what happened to a quarantined unit, and a
@@ -26,7 +26,7 @@ class WorkError:
 
 @dataclass(frozen=True)
 class WorkResult:
-    """What a worker reports when a unit completes (the design's `WorkResult`).
+    """What a worker reports when a unit completes.
 
     Deliberately minimal in this slice: the **payload** each stage persists is that
     stage's to own (extraction spans, verdicts — #68 and onward land beside `M-EXTRACT`
@@ -43,7 +43,7 @@ class WorkResult:
 
 @dataclass(frozen=True)
 class EnumerationReport:
-    """What one enumeration pass did (`CLAUDE.md` seam 4).
+    """What one enumeration pass did (seam 4).
 
     The `gates` dict is deliberately per-gate rather than one boolean — the
     `IngestReport.gates` precedent (`CT-INGEST-08`): a bare `status=enumerated` on top of
@@ -73,7 +73,7 @@ class EnumerationReport:
 
 @dataclass(frozen=True)
 class SweepPlan:
-    """The two sweeps' ordering data for one package version, derived once (`FR-ORCH-05/07`).
+    """The ordering data for both sweeps of one package version, computed once (FR-ORCH-05/07).
 
     Everything the dispatch order needs, read off the immutable package and cached:
     `extract_positions` is the criterion's position in `M-PKG`'s topological order
@@ -94,7 +94,7 @@ class SweepPlan:
 
 @dataclass(frozen=True)
 class SweeperReport:
-    """What one lease-expiry sweep did (`CLAUDE.md` seam 4).
+    """What one lease-expiry sweep did (seam 4).
 
     A bare count would be the silent-failure shape — a sweep that examined nothing and
     requeued nothing is indistinguishable from one that never ran — so the report names
@@ -134,8 +134,8 @@ def estimated_completion_seconds(
     elapsed_seconds: float,
     escalation_rate_so_far: float,
 ) -> float:
-    """The run's estimated completion, from observed throughput adjusted for the
-    escalation rate observed so far (`FR-ORCH-24`, pure — `NFR-ORCH-04`).
+    """The run's estimated time to finish, from the throughput so far adjusted for the escalation
+    rate so far (FR-ORCH-24). A pure function (NFR-ORCH-04).
 
     The naive figure is `remaining / observed_throughput`, with the throughput the
     run has actually sustained (`completed` units over `elapsed_seconds`) — not the
@@ -158,7 +158,7 @@ def estimated_completion_seconds(
 
 @dataclass(frozen=True)
 class ProgressReport:
-    """The run-state report `progress(run_id)` returns (design §3.7, `FR-ORCH-23`).
+    """The progress report `progress(run_id)` returns (§3.7, FR-ORCH-23).
 
     The field set is the design's, exactly and deliberately: the position fields
     (which stage, which criterion, which judge the open work sits at), the four
@@ -298,9 +298,8 @@ _CONTENT_ID_KIND_REPLACEMENT = "replacement_arm"
 
 
 def _content_id(kind: str, *parts: str) -> str:
-    """A content-addressed id for escalation bookkeeping: sha256 over the kind and the
-    row's identity parts, `\\x1f`-joined under the module prefix. Pure and total — the
-    same facts always address the same row."""
+    """A content-based id for escalation records: a sha256 of the kind and the row's identifying
+    parts, joined with `\x1f`. The same inputs always give the same id."""
     digest = hashlib.sha256()
     digest.update(b"aeh.orch\x1f")
     digest.update(kind.encode())
@@ -328,7 +327,7 @@ REPLACEMENT_NOT_APPLICABLE = "not_applicable"
 
 @dataclass(frozen=True)
 class ReplacementArmReport:
-    """What one `enqueue_replacement_arm` did (FR-ORCH-43, CT-ORCH-33, seam 4)."""
+    """What one `enqueue_replacement_arm` call did (FR-ORCH-43, CT-ORCH-33, seam 4)."""
 
     run_id: str
     submission_id: str
@@ -342,7 +341,7 @@ class ReplacementArmReport:
 
 @dataclass(frozen=True)
 class EscalationReport:
-    """What one escalation enqueue did (`FR-ORCH-09/10/13/14`, seam 4).
+    """What one escalation call did (FR-ORCH-09/10/13/14, seam 4).
 
     `decision` is the enqueue's outcome — `admitted` (units inserted), `queued` (over
     budget, held in the persisted queue in expected-value order; the caller marks its
@@ -371,7 +370,7 @@ class EscalationReport:
 
 @dataclass(frozen=True)
 class BreakerTrip:
-    """One criterion-breaker trip, as the operator surface reads it (`FR-ORCH-13`).
+    """One tripped criterion breaker, as the operator sees it (FR-ORCH-13).
 
     The alert the design names ("any criterion tripping the circuit breaker") reads
     these rows: which criterion, when, and the window arithmetic that tripped it —
@@ -387,7 +386,7 @@ class BreakerTrip:
 
 @dataclass(frozen=True)
 class EscalationBudgetState:
-    """The run-wide escalation ledger's state, as the operator reads it (`FR-ORCH-14`).
+    """The run-wide escalation budget's state, as the operator sees it (FR-ORCH-14).
 
     The rate-above-budget alert's source (`CT-ORCH-16`: both breakers degrade visibly):
     the processed/escalated pair the rate is computed from, the budget it is compared

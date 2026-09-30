@@ -19,6 +19,8 @@ Files:
     persistence.py    writing a score and recording a teacher's review
     metrics.py        per-criterion aggregation signals for a run
     escalation.py     `should_escalate` and the escalation ranking of criteria
+
+Detailed design notes (the full original module description): `docs/code-notes/agg.md`.
 """
 
 from __future__ import annotations

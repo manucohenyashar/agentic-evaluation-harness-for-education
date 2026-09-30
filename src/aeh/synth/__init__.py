@@ -12,6 +12,8 @@ Files:
     records.py       the request, result and report types
     prompts.py       building the prompt and parsing the model's reply
     worker.py        `SynthesisWorker`, which runs both levels for one submission
+
+Detailed design notes (the full original module description): `docs/code-notes/synth.md`.
 """
 
 from __future__ import annotations

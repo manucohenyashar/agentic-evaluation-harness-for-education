@@ -16,7 +16,7 @@ from .statements import STATEMENTS
 
 
 class Clock(Protocol):
-    """Wall time and monotonic time, separately (`FR-STORE-11`).
+    """Wall-clock time and monotonic time, kept separate (FR-STORE-11).
 
     Two methods rather than one because the requirement is about the difference between them:
     lease expiry derives from the monotonic counter, and the wall clock is recorded beside it for
@@ -34,7 +34,7 @@ class Clock(Protocol):
 
 
 class SystemClock:
-    """The production `Clock`. UTC, and `time.monotonic` for the counter."""
+    """The production clock: UTC wall time, and `time.monotonic` for the counter."""
 
     __slots__ = ()
 
@@ -47,7 +47,7 @@ class SystemClock:
 
 @dataclass(frozen=True)
 class Lease:
-    """A claim with an expiry, expressed in the store's own monotonic ticks.
+    """A claim with an expiry, measured in the store's own monotonic ticks.
 
     `expires_ticks` is what `expired()` compares. `issued_at` is the wall clock at issue and is
     for an operator reading a ledger row -- it is deliberately *not* what expiry is computed
@@ -61,7 +61,8 @@ class Lease:
 
 
 class LeaseClock:
-    """Lease expiry from a monotonic counter persisted alongside wall clock (`FR-STORE-11`).
+    """Lease expiry from a monotonic counter saved next to the wall clock, so expiry stays correct
+    across restarts and clock changes (FR-STORE-11).
 
     `CT-STORE-14` states the failure this exists to prevent: NTP corrects the host clock
     backwards while a run is resumed, and every expired lease reads as live -- so `M-ORCH`'s
@@ -107,7 +108,7 @@ class LeaseClock:
     # -- the counter --------------------------------------------------------------------------
 
     def ticks(self) -> float:
-        """The current monotonic tick: what was persisted, plus this process's own elapsed time.
+        """The current tick: the saved value plus the time this process has been running.
 
         Never derived from the wall clock, in either term. Moving the host clock backwards
         changes `now()` and changes nothing here, which is `CT-STORE-14`'s assertion.
@@ -115,7 +116,7 @@ class LeaseClock:
         return self._persisted_ticks + (self._clock.monotonic() - self._origin)
 
     def issue(self, ttl_seconds: float) -> Lease:
-        """Issue a lease expiring `ttl_seconds` from now, and persist its expiry first."""
+        """Issue a lease that expires `ttl_seconds` from now, saving its expiry first."""
         if ttl_seconds <= 0:
             raise ConfigurationProblem(
                 f"a lease TTL must be positive, got {ttl_seconds}. A lease that expires on issue "
@@ -133,7 +134,7 @@ class LeaseClock:
         )
 
     def expired(self, lease: Lease) -> bool:
-        """Whether `lease` has expired. The comparison `M-ORCH`'s sweeper trusts."""
+        """Whether the lease has expired. M-ORCH's sweeper relies on this comparison."""
         return self.ticks() >= lease.expires_ticks
 
     # -- persistence ---------------------------------------------------------------------------
@@ -143,7 +144,8 @@ class LeaseClock:
         return float(rows[0]["ticks"]) if rows else 0.0
 
     def _persist(self, ticks: float, wall: datetime) -> None:
-        """Raise the persisted high water to `ticks`. **The max is SQL's, not Python's.**
+        """Raise the saved high-water mark to `ticks`. The maximum is taken in SQL, not in Python,
+        so concurrent writers cannot lower it.
 
         An earlier form read the stored value, took `max()` in Python and wrote the result. That
         is a TOCTOU, and review measured it: eight threads issuing leases interleave read /

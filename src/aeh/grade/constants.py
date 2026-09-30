@@ -75,7 +75,7 @@ _DEFAULT_EXPORT_SUBDIR = "aeh-grade-exports"
 
 
 def export_dir(environ: Mapping[str, str] | None = None) -> Path:
-    """The directory exports are written to, resolved at call time (CLAUDE.md seam 3).
+    """The directory exports are written to, read from its knob at call time.
 
     `HARNESS_GRADE_EXPORT_DIR` wins, then the design §3.14 configuration name
     `GRADE_EXPORT_DIR`, then a subdirectory of the platform temp dir — a default that

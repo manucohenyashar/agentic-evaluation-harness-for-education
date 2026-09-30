@@ -19,7 +19,7 @@ RUN_START_EVENT = "run_start"
 
 
 def log_run_start(config: RunConfig, logger: logging.Logger | None = None) -> ProfileSummary:
-    """Emit the one structured log line a run start produces, and return what it carried.
+    """Write the one structured log line a run start produces, and return what it contained.
 
     **Why this is not inside `resolve_run_config`.** `CT-CONF-12` gives `M-CONSOLE` the right to
     resolve on the request path, and `M-ORCH` resolves again when it constructs the run. If

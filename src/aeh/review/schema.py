@@ -290,7 +290,7 @@ REVIEW_QUEUE_STATEMENTS: dict[str, Statement] = {
 
 
 def _queue_id_for(run_id: str, submission_id: str, criterion_id: str) -> str:
-    """The queue row's id for one cell of one run.
+    """The queue row id for one cell of one run.
 
     `M-GRADE` mints `q-<hash>` and `M-INTEG` mints `integ-<reason>-...`, so there is no single
     spelling to reuse; this is the review side's own, and it is deterministic so a rebuild

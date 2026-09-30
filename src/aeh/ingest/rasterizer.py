@@ -13,8 +13,8 @@ from .errors import IngestError
 
 @dataclass(frozen=True)
 class PageImage:
-    """One rasterized page: the image bytes (PNG), its 1-based index in the source
-    file, and its pixel dimensions."""
+    """One rendered page: PNG bytes, its 1-based page number in the source file, and its size in
+    pixels."""
 
     page_no: int
     png: bytes
@@ -23,25 +23,23 @@ class PageImage:
 
 
 class Rasterizer:
-    """The PDF-to-page-image seam (`CLAUDE.md` seam 2): the one place a PDF is decoded.
+    """Turns PDF pages into images: the one place a PDF is decoded.
 
     `FR-INGEST-01` makes this module the sole gateway — the seam exists so the rasterizer
     is a dependency like the model boundary, with a deterministic double for tests and a
     real implementation for the acceptance run."""
 
     def rasterize(self, pdf_bytes: bytes, dpi: int) -> Sequence[PageImage]:
-        """Render every page of `pdf_bytes` at `dpi`. Page numbers are 1-based."""
+        """Render every page of `pdf_bytes` at `dpi`. Page numbers start at 1."""
         raise NotImplementedError
 
     def crop(self, pdf_bytes: bytes, page_no: int, box, dpi: int) -> bytes:
-        """The box — `(x, y, w, h)` in the raster pixel space of `dpi` — carved
-        from page `page_no` (1-based) of `pdf_bytes`, as PNG bytes
-        (`FR-INGEST-13`, issue #226). A box outside the page is refused, never
-        clamped; the live implementation records the full contract."""
+        """A box `(x, y, w, h)`, in the pixel space of `dpi`, cut from page `page_no` (1-based) as
+        PNG bytes (FR-INGEST-13). A box outside the page is refused, never clamped."""
         raise NotImplementedError
 
     def text_layer(self, pdf_bytes: bytes, page_no: int) -> str:
-        """The page's embedded text layer, or "" where it has none (`FR-INGEST-03`).
+        """The page's embedded text, or "" when it has none (FR-INGEST-03).
 
         Extracted IN ADDITION to transcription, never instead: the layer is what the
         divergence check compares against the transcript. Default "" — a rasterizer
@@ -51,8 +49,8 @@ class Rasterizer:
 
 
 class PdfiumRasterizer(Rasterizer):
-    """The live rasterizer, over `pypdfium2`. Imported LAZILY: the fast tier never
-    needs the dependency, and an acceptance-run box installs it explicitly."""
+    """The live rasterizer, using `pypdfium2`. The library is imported only when first used, so the
+    fast test tier does not need it."""
 
     def rasterize(self, pdf_bytes: bytes, dpi: int) -> Sequence[PageImage]:
         try:
@@ -99,13 +97,8 @@ class PdfiumRasterizer(Rasterizer):
             pdf.close()
 
     def crop(self, pdf_bytes: bytes, page_no: int, box, dpi: int) -> bytes:
-        """The page's image crop as PNG bytes (`FR-INGEST-13`, issue #226): the
-        box — `(x, y, w, h)` in the RASTER PIXEL SPACE of `dpi`, the form the
-        ingest path already speaks when its no-box default passes the full-page
-        rect of the raster it just made — carved from the page rendered at
-        `dpi`. `page_no` is 1-based. The signature is the test doubles'
-        contract: they are the de-facto seam surface, and the live class now
-        matches it.
+        """An image crop of a page as PNG bytes (FR-INGEST-13): the box `(x, y, w, h)` in the pixel
+        space of the page rendered at `dpi`. `page_no` is 1-based.
 
         A box that reaches outside the page — and a negative, degenerate or
         malformed one — is REFUSED, never clamped: a clamped crop would resolve
@@ -151,11 +144,9 @@ class PdfiumRasterizer(Rasterizer):
 
 
 def _validated_crop_box(box) -> tuple[int, int, int, int]:
-    """The crop box, validated before any render: exactly four integers, a
-    non-negative origin, positive width and height. Every malformation refuses
-    (`IngestError`) rather than clamping or guessing — issue #226's recorded
-    interpretation for the out-of-bounds case, applied to the malformed ones
-    too."""
+    """Check a crop box before rendering: exactly four integers, a non-negative origin, and
+    positive width and height. Anything else raises `IngestError` rather than being clamped or
+    guessed."""
     if not isinstance(box, (tuple, list)) or len(box) != 4:
         raise IngestError(
             f"crop box {box!r} is not an (x, y, w, h) four-tuple; the crop is "

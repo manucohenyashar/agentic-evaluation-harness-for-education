@@ -112,7 +112,7 @@ DETERMINISTIC_EXCLUSION = "label.evaluation_mode <> 'deterministic'"
 
 
 def unresolved_alert_rate(environ: Mapping[str, str] | None = None) -> float:
-    """The unresolved-count alert rate, read at call time (`CLAUDE.md` seam 3).
+    """The unresolved-count alert rate, read from its environment knob at call time.
 
     `HARNESS_DET_UNRESOLVED_ALERT_RATE` is a fraction of a question's cohort in
     (0, 1]. An unparseable or out-of-range value falls back to the default

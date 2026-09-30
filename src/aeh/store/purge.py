@@ -309,7 +309,7 @@ _BLOB_HASH_RUN_ANYCASE = re.compile(
 def _assert_purge_order_matches_fk_graph(
     connection: sqlite3.Connection, found: set[str], path: Path, *, retries: int,
 ) -> None:
-    """Assert the sweep order against the cohort file's **live** FK graph (#225).
+    """Check the deletion order against the cohort file's actual foreign-key graph.
 
     Walks `pragma foreign_key_list` for every table the file actually carries and checks
     the result against `_COHORT_PURGE_ORDER`: every found table is IN the tuple (a name
@@ -357,7 +357,7 @@ def _assert_purge_order_matches_fk_graph(
 def _collect_blob_hash_references(
     connection: sqlite3.Connection, tables: set[str], *, retries: int,
 ) -> set[str]:
-    """Every hash-shaped value in the given tables' rows, from declared scans (#225).
+    """Every hash-like value in the given tables' rows, using the declared scans.
 
     The blob store is content-addressed and deliberately keyless: no cohort table carries
     a foreign key to it, so "which blobs does this file reference" cannot be derived from
@@ -385,7 +385,7 @@ def _collect_blob_hash_references(
 
 
 def _collect_blob_hash_references_from_dump(connection: sqlite3.Connection) -> set[str]:
-    """Hash-shaped values in an arbitrary-schema database, via stdlib's dump walk (#225).
+    """Hash-like values in a database of any schema, found by walking its SQL dump.
 
     Package files and Tier D carry their owning modules' schemas — `M-STORE` owns no
     schema meaning, so there are no declared row-scans to reuse for them, and assembling
@@ -404,7 +404,7 @@ def _collect_blob_hash_references_from_dump(connection: sqlite3.Connection) -> s
 
 @dataclass(frozen=True)
 class PurgeReport:
-    """What `purge_cohort` actually did (`CLAUDE.md` seam 4).
+    """What `purge_cohort` actually did.
 
     Per-field rather than a boolean, for the reason `IngestReport.gates` is per-gate: purge
     is irreversible, and a bare "purged" sitting on top of an empty report is the top

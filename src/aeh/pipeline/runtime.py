@@ -8,15 +8,15 @@ from typing import Any, Mapping
 
 
 def _open_store(data_dir: str) -> Any:
-    """The store. The migration chain is already complete — this module imports all eleven
-    contributors at module scope, which is what makes this entry point safe to open from."""
+    """Open the store. The migration chain is already complete, because this package imports all
+    eleven contributing modules, so this is safe to call."""
     from aeh.store import open_store
 
     return open_store(Path(data_dir))
 
 
 def _provider_for(config: Mapping[str, Any]) -> Any:
-    """The provider the run's backend profile names.
+    """The provider that the run's backend profile names.
 
     **A declared resolution of a gap, not a shipped factory.** `FR-PIPE-08` says the command
     resolves its configuration and then drives the run, but nothing in the design says which
@@ -66,7 +66,7 @@ def _provider_for(config: Mapping[str, Any]) -> Any:
 
 
 def _load_config_file(path: str | None) -> dict[str, Any]:
-    """The `--config` file, parsed by `M-CONF`'s own reader.
+    """Read the `--config` file with M-CONF's own parser.
 
     `parse_config_document` is the declared loader: it handles both formats, turns model
     tables into `ModelRef`s and raises `ConfigurationError` with a sentence an operator can

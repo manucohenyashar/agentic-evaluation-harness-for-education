@@ -14,7 +14,7 @@ _FAULT = object()
 
 
 def _document_raw_bytes(doc: Any) -> "bytes | None":
-    """The document's canonical bytes, from whatever the caller handed over.
+    """The document's canonical bytes, from whatever form the caller passed.
 
     A plain `str` IS the Markdown; bytes/bytearray are taken as-is; anything
     with a `.markdown` attribute (or a mapping under the `"markdown"` key)
@@ -39,7 +39,7 @@ def _document_raw_bytes(doc: Any) -> "bytes | None":
 
 
 def _span_item(span: Any) -> "tuple[int, int, bytes] | None":
-    """One span as `(start, end, text_bytes)`, or None when malformed."""
+    """One span as `(start, end, text_bytes)`, or None when it is malformed."""
     try:
         if isinstance(span, dict):
             start = span.get("start")
@@ -61,7 +61,7 @@ def _span_item(span: Any) -> "tuple[int, int, bytes] | None":
 
 
 def _span_items(spans: Any) -> "list[tuple[int, int, bytes]] | None":
-    """A span sequence as items, or None on any malformation (a fault)."""
+    """A list of spans as items, or None if any span is malformed."""
     if isinstance(spans, (str, bytes, bytearray)):
         return None
     try:
@@ -78,7 +78,8 @@ def _span_items(spans: Any) -> "list[tuple[int, int, bytes]] | None":
 
 
 def _region_items(regions: Any) -> "tuple[tuple[Any, int, int, Any, Any], ...] | None":
-    """Regions as `(region_kind, start, end, ocr_conf, crop_ref)`, or None."""
+    """The regions as `(region_kind, start, end, ocr_conf, crop_ref)` tuples, or None if malformed.
+    """
     if isinstance(regions, (str, bytes, bytearray)):
         return None
     try:
@@ -109,7 +110,7 @@ def _region_items(regions: Any) -> "tuple[tuple[Any, int, int, Any, Any], ...] |
 
 
 def verify_span(doc: Any, span: Any) -> bool:
-    """Whether `span`'s bytes appear verbatim in `doc`'s canonical bytes.
+    """Whether the span's bytes appear, exactly, in the document's canonical bytes.
 
     Pure, deterministic, zero-cost: a function of the document BYTES handed to
     it and the span's byte offsets — no store, no model, no network, and it

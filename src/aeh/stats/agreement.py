@@ -21,12 +21,9 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class AgreementFigure:
-    """One chance-corrected agreement figure, carrying its scope in the same
-    value (`CT-STATS-02`, `NFR-STATS-02`): the statistic and the ``n``,
-    the scoring model, ``population_scope_id``, ``backend_profile`` and
-    ``panel_build_ref`` it is a claim about are one value, and the dataclass
-    refuses to represent a figure without them (`TC-STATS-C02` asserts the
-    refusal by construction).
+    """One chance-corrected agreement figure together with its scope (CT-STATS-02, NFR-STATS-02):
+    the statistic, `n`, the scoring model, `population_scope_id`, `backend_profile` and
+    `panel_build_ref`. A figure cannot be built without all of them.
 
     Field order is §3.16's declaration order; ``degenerate_band_shape`` is
     this suite's declared ninth field (`CT-STATS-21`'s disclosure). The three
@@ -57,10 +54,7 @@ class AgreementFigure:
 
     @property
     def computed_over(self) -> str:
-        """The column the figure is computed over — bands, never points
-        (`CT-REVIEW-07`, `TC-REVIEW-C07`'s disclosure). One value either way:
-        the claim is coarse exactly because it is the thing a reader checks at
-        a glance."""
+        """What the figure is computed over: bands, never points (CT-REVIEW-07)."""
         return "band"
 
 
@@ -73,7 +67,7 @@ class AgreementFigure:
 
 
 def _band_ordinals(pairs: Sequence[tuple[Any, Any]]) -> tuple[list[tuple[int, int]], int]:
-    """Both sides of each pair mapped onto one ordinal scale, and ``K``.
+    """Both sides of each label pair mapped onto one ordinal scale, and the number of bands `K`.
 
     Integer bands map to ``int(v) − 1``; any other shape maps to its rank in
     the sorted set of observed values, which keeps ``"B1".."B4"`` in suffix
@@ -98,7 +92,7 @@ def _band_ordinals(pairs: Sequence[tuple[Any, Any]]) -> tuple[list[tuple[int, in
 
 
 def _observed_and_expected(pairs: Sequence[tuple[int, int]]) -> tuple[float, float]:
-    """Observed agreement ``po`` and chance agreement ``pe`` over the pairs.
+    """Observed agreement `po` and chance agreement `pe` over the pairs.
 
     ``pe`` sums each category's two marginal frequencies over the union of
     the categories either side used — a category the system never used still
@@ -122,7 +116,7 @@ def _observed_and_expected(pairs: Sequence[tuple[int, int]]) -> tuple[float, flo
 
 
 def _chance_corrected_coefficient(po: float, pe: float) -> float | None:
-    """Cohen's kappa = (po − pe)/(1 − pe); undefined only when pe = 1.
+    """Cohen's kappa, `(po - pe) / (1 - pe)`; undefined only when `pe = 1`.
 
     pe = 1 is the single-category population — every chance-corrected
     coefficient is 0/0 there, and the figure carries the unanimity it sits in
@@ -138,8 +132,8 @@ def _chance_corrected_coefficient(po: float, pe: float) -> float | None:
 def _weighted_coefficient(
     pairs: Sequence[tuple[int, int]], band_count: int
 ) -> float | None:
-    """The quadratic-weighted kappa over the ordinal pairs, undefined below
-    K = 2 or at a degenerate denominator.
+    """The quadratic-weighted kappa over the ordinal pairs; undefined when there are fewer than two
+    bands or the denominator is zero.
 
     The weight matrix is the plan's quadratic form, ``w = (i − j)²/(K − 1)²``,
     over the observed joint against the independence expectation — the same
@@ -175,11 +169,10 @@ def _weighted_coefficient(
 def _distance_coefficient(
     pairs: Sequence[tuple[int, int]], band_count: int
 ) -> float | None:
-    """Ordinal Krippendorff's alpha over the two-rater population,
-    `aeh.agg`'s declared convention (issue #91): ``alpha = 1 − D_o/D_e``,
-    the unanimous exact 1.0 checked **before** the band-count test, ``None``
-    below K = 2 or at a degenerate ``D_e``. ``D_o`` is the two-rater form —
-    the mean per-label distance between the panel's side and the teacher's."""
+    """Ordinal Krippendorff's alpha for two raters, following `aeh.agg`'s convention: `alpha = 1 -
+    D_o/D_e`. Complete agreement gives exactly 1.0 (checked before the band count); fewer than two
+    bands, or `D_e` of zero, gives None. `D_o` is the mean distance between the panel's band and
+    the teacher's."""
     if not pairs:
         return None
     if len({ordinal for pair in pairs for ordinal in pair}) == 1:
@@ -208,7 +201,7 @@ def _distance_coefficient(
 def _corrected_statistics(
     pairs: Sequence[tuple[int, int]], band_count: int
 ) -> tuple[float | None, float | None, float | None, float, float]:
-    """The three chance-corrected statistics over the paired population.
+    """The three chance-corrected statistics over the paired labels.
 
     Kappa, QWK and ordinal alpha (`FR-STATS-02`): at least one of them
     carries a value on every figure this module emits — a figure with all
@@ -225,7 +218,7 @@ def _corrected_statistics(
 def _achievable_precision(
     n: int, po: float | None, pe: float | None
 ) -> tuple[float | None, float | None]:
-    """The interval the sample size can honestly buy, centred on its figure.
+    """The confidence interval the sample size supports, centred on the figure.
 
     ``h = 1.96 · sqrt(po(1 − po)/n) / (1 − pe)`` centred on the kappa the
     marginals give — the Fleiss asymptotic standard error of kappa at
@@ -259,10 +252,9 @@ def agreement(
     panel_build_ref: str | None = None,
     scoring_model: str | None = None,
 ) -> "AgreementFigure | NoValidationData":
-    """The agreement figure for one criterion, one population, one backend
-    profile, one panel build and one scoring model (`FR-STATS-02`,
-    `FR-STATS-03`) — or the explicit absence value for the kind of absence
-    found (`FR-STATS-04`).
+    """The agreement figure for one criterion, population, backend profile, panel build and scoring
+    model (FR-STATS-02, FR-STATS-03), or a value saying which kind of data is missing
+    (FR-STATS-04).
 
     The population is the admissible one, always (`FR-STATS-01`): the filter
     exists once (`NFR-STATS-04`) and this call routes through it. A

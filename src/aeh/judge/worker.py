@@ -46,7 +46,7 @@ from .decision_engine import (
 
 
 class ScoringWorker:
-    """The judgment driver: one leased score unit in, a verdict row out.
+    """Runs judging for one leased score unit: the unit in, a verdict row out.
 
     `ScoringWorker(store, provider, judge)` — the store the rubric and evidence read
     from and the verdict written through, the provider boundary (injected;
@@ -70,7 +70,7 @@ class ScoringWorker:
         self._run_config = run_config
 
     def assemble(self, unit: Any) -> ScoringRequest:
-        """One unit in, one whitelist request out, and exactly one parameter.
+        """Build the whitelisted request for one unit. It takes exactly one parameter.
 
         The request itself stays pure. Beside it, the worker remembers the unit's roster name
         by `work_id` (#593): the request never carries the name, but the citation gate needs
@@ -87,10 +87,10 @@ class ScoringWorker:
         return self.__dict__.get("_roster_names", {}).get(request.work_id)
 
     def dispatch(self, request: ScoringRequest, judge: Any) -> ScoringResult:
-        """One verdict for one unit (FR-JUDGE-22/31). On the decision seat, with an engine
-        configured, the decision engine pre-screens first and its answer is the verdict when
-        the gate passes; otherwise, and for every other unit, today's LLM path runs unchanged
-        (`_dispatch_llm`) — its request is byte-identical to engine-off (CT-JUDGE-22)."""
+        """Produce one verdict for one unit (FR-JUDGE-22, FR-JUDGE-31). On the decision seat, with
+        an engine configured, the decision engine answers first and its answer is the verdict when
+        the gate passes. Otherwise, and for every other unit, the LLM path runs unchanged, with
+        exactly the request it would send with the engine off (CT-JUDGE-22)."""
         engine = getattr(self._run_config, "decision_engine", None)
         prescreen_outcome: str | None = None
         if (engine is not None and self._decision_provider is not None
@@ -105,14 +105,13 @@ class ScoringWorker:
                                    prescreen_outcome=prescreen_outcome)
 
     def _is_seat(self, judge: Any) -> bool:
-        """FR-JUDGE-23 from the arm being dispatched: the decision seat is the frozen
-        `RunConfig.panel[0]`. Equivalent to `is_decision_seat(unit, run_config)`, since the
-        judge passed here is the unit's arm."""
+        """Whether the arm being dispatched is the decision seat, the frozen `RunConfig.panel[0]`
+        (FR-JUDGE-23). Same answer as `is_decision_seat(unit, run_config)`."""
         panel = getattr(self._run_config, "panel", ()) or ()
         return bool(panel) and _judge_id_of(judge) == panel[0].build_id
 
     def _dispatch_llm(self, request: ScoringRequest, judge: Any) -> ScoringResult:
-        """Send one assembled request across the injected boundary and parse the reply.
+        """Send one assembled request to the model and parse the reply.
 
         Temperature zero by default — judgment is not a sampling task — with the knob
         (`HARNESS_JUDGE_TEMPERATURE`) and the output cap (`HARNESS_JUDGE_MAX_OUTPUT_
@@ -236,9 +235,9 @@ class ScoringWorker:
     def _write_prescreen(self, request: ScoringRequest, engine: Any, outcome: str, *,
                          reason: str | None = None, decision: Any = None,
                          gate: float | None = None, argmax_band: str | None = None) -> None:
-        """One row per decision-seat unit, INSERT OR IGNORE on the work id, in its own
-        transaction before the LLM path or `persist` (FR-JUDGE-34). A worker with no store
-        (rung-0 callers) records nothing."""
+        """Record one pre-screen row per decision-seat unit (insert-or-ignore on the work id), in
+        its own transaction before the LLM path or `persist` (FR-JUDGE-34). A worker without a
+        store records nothing."""
         if self._store is None:
             return
         keys = self._unit_keys(request.work_id)
@@ -277,8 +276,8 @@ class ScoringWorker:
 
     @staticmethod
     def _decision_from_row(row: Any) -> Any:
-        """Rebuild the accepted `Decision` from its stored pre-screen (FR-JUDGE-33), so a
-        redelivered unit reproduces the same verdict without calling the engine again."""
+        """Rebuild the accepted decision from its stored pre-screen row (FR-JUDGE-33), so a
+        redelivered unit gives the same verdict without calling the engine again."""
         from types import MappingProxyType
 
         from aeh.prov import Decision as _Decision, NoulAnswer, ScoreAnswer
@@ -298,11 +297,11 @@ class ScoringWorker:
                          int(row["latency_ms"] or 0), row["engine_build"], None)
 
     def _prescreen(self, request: ScoringRequest, engine: Any, judge: Any) -> "ScoringResult | str":
-        """The decision seat's pre-screen. Returns the decision-engine verdict when the gate
-        passes, else the outcome name (`ineligible`, `below_gate`, `rejected`, `malformed`)
-        for the LLM fallback to record. Engine outages (`RateLimitedError`,
-        `ProviderUnavailableError`, `BuildChangedError`) propagate: an outage pauses the run,
-        it is never a fallback (FR-JUDGE-32, CT-JUDGE-25)."""
+        """The decision seat's pre-screen. Returns the engine's verdict when the gate passes,
+        otherwise the outcome name (`ineligible`, `below_gate`, `rejected` or `malformed`) for the
+        LLM fallback to record. Engine outages (`RateLimitedError`, `ProviderUnavailableError`,
+        `BuildChangedError`) are raised: an outage pauses the run and is never a fallback
+        (FR-JUDGE-32, CT-JUDGE-25)."""
         from aeh.prov import DecisionRequestRejectedError
 
         judge_id = _judge_id_of(judge)
@@ -362,9 +361,9 @@ class ScoringWorker:
     def _record_contract_violations(
         self, request: ScoringRequest, judge: Any, violations: int
     ) -> None:
-        """Add this dispatch's contract violations to the run's per-(criterion, judge) count
-        (`FR-JUDGE-21`). A dispatch with none writes nothing; a worker with no store (the
-        rung-0 cases) has nowhere to count and records nothing.
+        """Add this dispatch's response-contract violations to the run's count per (criterion,
+        judge) (FR-JUDGE-21). Nothing is written when there are none, or when the worker has no
+        store.
 
         The count is of violating **responses**, not of units: it accumulates on conflict, so
         a redelivered unit's fresh provider calls add their own refusals rather than replacing
@@ -388,15 +387,13 @@ class ScoringWorker:
             )
 
     def persist(self, unit: Any, result: ScoringResult) -> None:
-        """One verdict row and the arm's done transition, in one guarded transaction —
-        the `M-EXTRACT` at-least-once shape. The verdict row is `INSERT OR IGNORE` on
-        `verdict_id = work_id` (`FR-JUDGE-11`: the row carries the band AND the band's
-        position in the declared set, plus the judge's own confidence — and, `#80`'s
-        response contract, the cited-span inventory, the sufficiency answer and the
-        uncited mark; never a points value, `FR-JUDGE-11`), and the
-        done-marking is guarded on the leased/pending states inside the same
-        transaction, so a double-run cannot double-write. Another completion having
-        landed first is the at-least-once contract working: its row stands."""
+        """Write one verdict row and mark the unit done, in one guarded transaction.
+
+        The verdict row is insert-or-ignore on `verdict_id = work_id`. It carries the band, the
+        band's position in the declared set, the judge's own confidence, the cited spans, the
+        sufficiency answer and the uncited mark, and never a score value (FR-JUDGE-11). Marking
+        the unit done only applies to a leased or pending unit, in the same transaction, so running
+        twice cannot write twice; if another completion landed first, its row stands."""
         if self._store is None:
             raise JudgmentError(
                 "no store bound to this worker — persist writes through the store the "

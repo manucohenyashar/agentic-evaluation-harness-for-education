@@ -28,7 +28,8 @@ from .prompts import _CLASSIFY_INSTRUCTION
 def _classify_answers(
     answers: Mapping[str, Any],
 ) -> tuple[str, str | None]:
-    """The five-question decision table — THE module's, not the model's (`FR-SETUP-06`).
+    """The five-question decision table that turns answers into a classification (FR-SETUP-06). The
+    table is M-SETUP's; the model only answers the questions.
 
     The model answers the §5.3 questions; this table turns answers into a
     classification. Scanned in the HLD's order, the first `no` decides: `gates`
@@ -82,8 +83,8 @@ def _draft_criterion_identity(draft: Any) -> dict:
 
 
 def _json_object(text: str) -> dict:
-    """The one JSON object a reply carries, tolerating prose around it (models add
-    it) — the shared first half of the reply parsers."""
+    """The one JSON object in a model reply, ignoring any prose around it. The reply parsers all
+    start here."""
     stripped = text.strip()
     start, end = stripped.find("{"), stripped.rfind("}")
     if start < 0 or end <= start:
@@ -98,11 +99,10 @@ def _json_object(text: str) -> dict:
 
 
 def _parse_classify_reply(text: str, criterion_id: str) -> tuple[dict, list[str], str]:
-    """Parse the classifier's reply into (answers, warning_signs, reasoning), raising
-    `_ReplyError` on anything that is not a valid §5.3 answer set — the failure the
-    attempt loop re-requests. The reply carries ANSWERS, never a classification
-    (`FR-SETUP-06`: the table is the module's); a reply naming a different criterion
-    than the draft is a schema failure, not an answer to accept."""
+    """Parse the classifier's reply into `(answers, warning_signs, reasoning)`, raising
+    `_ReplyError` for anything that is not a valid answer set, so the attempt loop asks again. The
+    reply carries answers, never a classification (FR-SETUP-06). A reply about a different
+    criterion than the draft is a schema failure."""
     parsed = _json_object(text)
     reply_id = parsed.get("criterion_id")
     if reply_id is not None and str(reply_id) != criterion_id:
@@ -145,8 +145,8 @@ class DecomposabilityMixin:
     # -- Stage A: decomposability and dependencies (#52, skippable steps) ---------------------
 
     def classify_decomposability(self, criterion_draft: Any) -> DecomposabilityVerdict:
-        """Classify one criterion against the five §5.3 questions (`FR-SETUP-06`,
-        `#52`) — the decision table applied where it belongs.
+        """Classify one criterion against the five decomposability questions, applying M-SETUP's
+        decision table to the model's answers (FR-SETUP-06, design §5.3).
 
         The model is asked for ANSWERS (one prompt per criterion, `NFR-SETUP-03`'s
         version-pinned template), never for a verdict; `_classify_answers` is the
@@ -240,13 +240,11 @@ class DecomposabilityMixin:
         return degraded
 
     def _request_confirmation(self, v: PackageVersionId | None) -> bool:
-        """Count one teacher confirmation against the cap, and say whether it was
-        REQUESTED — the cap's single accounting point (`FR-SETUP-07`, `NFR-SETUP-01`).
-        `SETUP_MAX_CONFIRMATIONS` confirmations are surfaced per draft version; a
-        criterion beyond the cap keeps its classification but is not requested. The
-        degraded path shares this counter, so a package whose provider fails cannot
-        exceed the cap either. Keyed by the draft version when there is one — the
-        rung-0 doubles carry none, and the counter still runs (keyed None)."""
+        """Count one teacher confirmation against the cap and say whether it was requested; this is
+        the only place the cap is counted (FR-SETUP-07, NFR-SETUP-01). At most
+        `SETUP_MAX_CONFIRMATIONS` are requested per draft version; a criterion beyond the cap keeps
+        its classification but is not requested. The fallback path uses the same counter, so a
+        failing provider cannot exceed the cap either."""
         requested = self._confirmations_requested.get(v, 0)
         if requested >= SETUP_MAX_CONFIRMATIONS:
             return False
@@ -257,10 +255,9 @@ class DecomposabilityMixin:
         self, criterion_id: str, answers: Mapping[str, str],
         warning_signs: Sequence[str], reply_reasoning: str,
     ) -> DecomposabilityVerdict:
-        """The table, the cap and the record, composed into one verdict — the shared
-        body of the classified path and the degraded one. The cap counts confirmations
-        REQUESTED per draft version (`FR-SETUP-07`): a criterion beyond
-        `SETUP_MAX_CONFIRMATIONS` keeps its classification but is not requested."""
+        """Combine the decision table, the confirmation cap and the record into one verdict; shared
+        by the normal and fallback paths. A criterion beyond `SETUP_MAX_CONFIRMATIONS` keeps its
+        classification but is not requested (FR-SETUP-07)."""
         classification, deciding = _classify_answers(answers)
         unclear = any(
             str(answers.get(question, "")).strip().lower() not in ("yes", "no")
@@ -311,11 +308,9 @@ class DecomposabilityMixin:
         self, v: PackageVersionId | None, criterion_id: str,
         verdict: DecomposabilityVerdict,
     ) -> None:
-        """Persist one verdict as the module's default through `M-PKG` (`R62`) — the
-        row a later `confirm_classifications` upserts to `source='teacher'`. Skipped
-        when there is no draft version or no recording surface (the rung-0 doubles):
-        the verdict itself is still returned, since the classification does not
-        depend on the record."""
+        """Save one verdict through M-PKG as M-SETUP's default (R62); `confirm_classifications`
+        later updates it to `source='teacher'`. Skipped when there is no draft version or the
+        catalog cannot record it; the verdict is still returned."""
         if v is None:
             return
         record = getattr(self._catalog, "record_classification", None)
@@ -328,13 +323,10 @@ class DecomposabilityMixin:
     def _record_decomposability_step(
         self, v: PackageVersionId, *, status: str, update: Mapping,
     ) -> None:
-        """Merge `update` into the decomposability step's ONE provenance row
-        (`FR-SETUP-14`) — merge, never replace: the step is one teacher step with
-        three sub-acts (confirmations, proposals, approvals), and a whole-payload
-        upsert would have each erase the others' record — the teacher confirms a
-        classification and then approves a proposal, and the approval must still
-        find the proposals it approves (`CT-SETUP-03`: state is the database).
-        Skipped when the catalog offers no recording surface (the rung-0 doubles)."""
+        """Merge `update` into the decomposability step's one provenance row (FR-SETUP-14). It
+        merges rather than replaces, because the step has three parts (confirmations, proposals,
+        approvals) and replacing the whole row would erase the others: an approval must still find
+        the proposals it approves (CT-SETUP-03). Skipped when the catalog cannot record it."""
         step = getattr(self._catalog, "record_step", None)
         if step is None:
             return
@@ -354,8 +346,8 @@ class DecomposabilityMixin:
              payload=json.dumps(payload, sort_keys=True), recorded_at=_now())
 
     def confirm_classifications(self, answers: Mapping[str, str]) -> None:
-        """The teacher's confirmations of the surfaced classifications — the
-        skippable step whose skip is itself recorded (`FR-SETUP-14`, `R62`).
+        """Record the teacher's confirmations of the surfaced classifications. The step may be
+        skipped, and a skip is recorded too (FR-SETUP-14, R62).
 
         Each entry names a criterion and the classification the teacher confirms; the
         rows already stored as `source='default'` (the module's table, written at

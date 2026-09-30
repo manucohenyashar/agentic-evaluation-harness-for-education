@@ -35,7 +35,7 @@ from .errors import ConfigurationProblem
 
 @dataclass(frozen=True)
 class StoreLimits:
-    """The environment-sensitive numbers, resolved once at `open_store`.
+    """The environment-sensitive numbers, read once when the store opens.
 
     Resolved at construction, not per call, and that is a decision `TC-STORE-24` depends on:
     seam 3 says "production value is the default; the knob exists so a slower test box can
@@ -57,7 +57,7 @@ class StoreLimits:
     retries: int = DEFAULT_BUSY_RETRIES
 
     def __post_init__(self) -> None:
-        """Refuse a knob whose value is meaningless, rather than hanging on it.
+        """Refuse a knob value that makes no sense, rather than hang on it.
 
         `_int_env` rejects a negative, which leaves zero -- and zero is not a small value here,
         it is a different program. `commit_batch=0` makes every batch empty, so the writer spins

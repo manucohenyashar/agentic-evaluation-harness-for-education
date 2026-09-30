@@ -43,8 +43,8 @@ class ExchangeMixin:
         self, v: PackageVersionId, outcome: str, *, actor: str | None = None,
         recorded_at: str | None = None,
     ) -> None:
-        """Record the provenance gate's outcome for version `v` (FR-CONSOLE-23, #528):
-        append-only, the latest row is the version's current outcome."""
+        """Record the provenance gate's outcome for version `v` (FR-CONSOLE-23). Append-only; the
+        latest row is the current outcome."""
         if not isinstance(outcome, str) or not outcome.strip():
             raise ValueError("an export gate outcome is a non-empty sentence")
         stamp = recorded_at or datetime.now(timezone.utc).isoformat()
@@ -53,17 +53,17 @@ class ExchangeMixin:
                        actor=actor, recorded_at=stamp)
 
     def export_gate_outcome(self, v: PackageVersionId) -> str | None:
-        """The latest recorded provenance-gate outcome for `v`, or None when the gate has
-        never run for it (FR-CONSOLE-23, #528)."""
+        """The latest provenance-gate outcome for `v`, or None when the gate has never run for it
+        (FR-CONSOLE-23)."""
         rows = self._handle.query(PKG_STATEMENTS["select_export_gate_outcome"], v=v)
         return str(rows[0]["outcome"]) if rows else None
 
     # -- export, import and the provenance gate (#31) -----------------------------------------
 
     def export_provenance_report(self, v: PackageVersionId) -> ProvenanceReport:
-        """`FR-PKG-12`: the gate state and every `real_verbatim` exemplar holding it —
-        the list the console's approval screen works from (`FR-CONSOLE-23`). The scope
-        is the whole Tier P file, because that is what an export ships."""
+        """The export gate's state and every worked example still marked `real_verbatim`: the list
+        the console's approval screen works from (FR-PKG-12, FR-CONSOLE-23). It covers the whole
+        Tier P file, because that is what an export ships."""
         self._refuse_unknown_version(v)
         entries = tuple(
             ProvenanceEntry(
@@ -84,9 +84,9 @@ class ExchangeMixin:
         )
 
     def export(self, v: PackageVersionId, dest: Path) -> ExportReport:
-        """`FR-PKG-10`: one self-contained archive — the Tier P database plus every
-        blob its exemplars reference (`CT-STORE-07`) — importable with no network and
-        no shared filesystem (`NFR-PKG-02`).
+        """Export the package as one self-contained archive: the Tier P database plus every blob
+        its worked examples use (FR-PKG-10, CT-STORE-07), importable with no network and no shared
+        filesystem (NFR-PKG-02).
 
         The gate first (`FR-PKG-11`): a 1 in the DERIVED
         `package.contains_real_student_text` column refuses with `ExportBlockedError`
@@ -189,8 +189,8 @@ class ExchangeMixin:
         )
 
     def import_file(self, src: Path) -> ImportReport:
-        """`FR-PKG-10`/`FR-PKG-13`/`NFR-PKG-02`/`NFR-PKG-04`: import one export
-        archive, all-or-nothing.
+        """Import one export archive, all or nothing (FR-PKG-10, FR-PKG-13, NFR-PKG-02,
+        NFR-PKG-04).
 
         Every check runs against bytes in memory BEFORE anything is written: format
         tag, content hash (the archive is intact), schema version (a package newer than

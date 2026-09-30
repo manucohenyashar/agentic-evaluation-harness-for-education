@@ -164,3 +164,66 @@ settled in `tests/support/console_vocabulary.py` and
 Store opens in this process require the full tier migration chain, so the ten contributor
 imports stand at the top of this file — the same convention `tests/conftest.py` records
 (`IncompleteMigrationChainError`, #234).
+
+## Details moved out of the code
+
+These notes were the longer parts of docstrings in `aeh.console`. Each section is named after the file and the function or class it describes.
+
+### driver.py: run_pipeline_for_test
+
+It never imports M-CALIB, which shows that calibration is not needed to deliver grades
+(CT-CALIB-01, RISK-11).
+
+Two fixture disclosures, both deliberate (see `docs/code-notes/console.md`): the rubric
+version is pinned by inserting the version row directly, in the column shape `M-PKG`'s
+own first-version insert uses, because `PackageCatalog.create_version` mints ids no
+caller can pin; and the orchestrator's package-id derivation is overridden for the
+same reason, because the default derives the package id from the version id and the
+pinned id carries no `@`.
+
+`cohort_id` (`#118`'s export seam) names the cohort the driver seeds, runs and reads
+back — the fixed `_DRIVER_COHORT` when omitted, as every pre-existing caller sees. A
+driver that could only ever run one cohort could not demonstrate the property the
+seam exists for: a statistics promotion of a *named* administration. The seeding is
+idempotent for that seam's differential (`CT-STATS-C17` times a run against a
+baseline run **on the same data directory**): a package version already seeded is
+seed-present, not a collision, and a run id the caller did not pin is derived from
+the cohort — two administrations are two runs, and the run table's primary key is
+the run id.
+
+`alongside` runs a callable **concurrently with the scoring run**, on a daemon thread
+started just before the deterministic pass and joined before the store closes; its
+first exception is re-raised on the caller's thread after the join, so a failed
+concurrent export cannot pass as a successful run. This is what makes the seam's
+claim checkable — that an analytical export running *during* scoring neither waits
+the pipeline on a lock (`PipelineOutcome.lock_waits` stays 0) nor moves its wall
+clock — instead of asserting it about an export that ran afterwards.
+
+### key_correction.py: KeyCorrectionMixin._correct_answer_key
+
+1. the run row names the cohort, package and version the grades were produced
+   against. The GRAIN pre-checks run before any write — a re-derivation is
+   cohort-grain (M-DET re-derives the criterion's scores for the whole cohort and
+   attributes its audit rows to the cohort's NEWEST run), so a cohort whose runs
+   name several packages, or a correction naming a run that is not that newest
+   one, refuses honestly and writes nothing, rather than minting a version and
+   then refusing (CT-CONSOLE-03's never-partially-applied rule) or filing the
+   trail under a run whose grades it did not supersede. A criterion the version
+   does not carry, a criterion that is not a multiple-choice one (its scores are
+   panel outputs, not key lookups), or a key already equal to the stored one also
+   refuses honestly and writes nothing;
+2. the correction is a NEW package version (`FR-PKG-18`): the parent is
+   copied verbatim, the corrected key lands on the unlocked child, and the
+   parent — and every audit record that resolves to it — stays exact;
+3. `M-DET` re-derives the affected deterministic scores BY LOOKUP against the
+   corrected key (`rederive_for_key_change`) — no panel work anywhere: the
+   report's `panel_units_enqueued` is a declared zero, and the detail below
+   prints it, because a correction that quietly asked a panel to re-judge
+   would be the exact violation the clause forbids;
+4. the run re-points to the corrected version and M-GRADE re-runs the grade
+   policy over the run (`compute_all`), so the settled grades are re-derived
+   from the corrected scores.
+
+The run re-point is TC-GRADE-12's disclosed stand-in: M-ORCH owns the run row
+and no landed API re-points it, so the console writes the one column the
+correction owes — and retires the site to M-ORCH's call when that lands.

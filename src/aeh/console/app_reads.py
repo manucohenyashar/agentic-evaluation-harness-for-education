@@ -19,10 +19,10 @@ class StoreReadsMixin:
     # -- the read path ---------------------------------------------------------------------------------
 
     def _tier(self, name: str) -> Any:
-        """The tier handle a render reads through. A real store's accessors *create* the
-        tier file when it is missing, and a render must never create one — so a real store
-        is consulted only for tiers that exist on disk; the audit double has no
-        filesystem, and its handles are virtual."""
+        """The handle for one store tier. Opening a real tier creates its file if it is missing,
+        and showing a screen must never create a file, so a real store is only asked for tiers that
+        already exist on disk. The audit test double has no files, so its handles are always
+        returned."""
         if self._store is None:
             return None
         data_dir = getattr(self._store, "data_dir", None)
@@ -41,11 +41,10 @@ class StoreReadsMixin:
         return self._store.cohort("c-mconsole")
 
     def _package_handle_for(self, package_version: str) -> Any:
-        """The package-tier handle for the package a version id names — `<package>@<rev>`
-        names its file `<package>.pkg.sqlite`. The same never-create rule `_tier` states:
-        on a real store a package whose file does not exist yields None rather than
-        minting one as a side effect of a read; on a store with no filesystem view (the
-        audit double) the pinned handle answers, because there is nothing to create."""
+        """The package-tier handle for the package a version id names (`<package>@<rev>` lives in
+        `<package>.pkg.sqlite`). Returns None when that file does not exist on a real store, rather
+        than creating it as a side effect of reading. The audit double has no files, so it returns
+        its fixed handle."""
         if self._store is None:
             return None
         data_dir = getattr(self._store, "data_dir", None)
@@ -59,8 +58,8 @@ class StoreReadsMixin:
         return self._store.package(package_id)
 
     def _gate_catalog(self, package_version: str) -> Any:
-        """The `PackageCatalog` of the package `package_version` names, when its file exists
-        on this console's store (the same never-create rule as `_package_handle_for`)."""
+        """The `PackageCatalog` for the package `package_version` names, if its file exists (same
+        no-create rule as `_package_handle_for`)."""
         handle = self._package_handle_for(package_version)
         package_id = str(package_version or "").rpartition("@")[0]
         if handle is None or not package_id or getattr(self._store, "data_dir", None) is None:
@@ -70,8 +69,8 @@ class StoreReadsMixin:
         return PackageCatalog(handle, package_id=package_id)
 
     def _read(self, query: str, log: list[str], **params: Any) -> list[Any]:
-        """One read-only query against the durable tier, recorded on the page's query
-        log. Reads are the whole of what a render does (§11.7: every view is a query)."""
+        """Run one read-only query on the durable tier and record it in the page's query log.
+        Screens only ever read (§11.7)."""
         handle = self._tier("durable")
         if handle is None:
             return []
@@ -82,7 +81,7 @@ class StoreReadsMixin:
             return []
 
     def _read_package(self, query: str, log: list[str], **params: Any) -> list[Any]:
-        """One read-only query against the package tier."""
+        """Run one read-only query on the package tier."""
         handle = self._tier("package")
         if handle is None:
             return []
@@ -93,17 +92,16 @@ class StoreReadsMixin:
             return []
 
     def _cohort_keys(self) -> tuple[str, ...]:
-        """The store's cohort tier keys, in sorted order — the same discovery surface the
-        grade, deterministic and orchestrator modules walk: the ledger's own files, one
-        per cohort under `<data_dir>/cohorts/`. A store with no filesystem view (the
-        audit double) exposes none."""
+        """The keys of the store's cohort files, sorted: one file per cohort under
+        `<data_dir>/cohorts/`, the same files M-GRADE, M-DET and M-ORCH read. A store with no files
+        (the audit double) has none."""
         data_dir = getattr(self._store, "data_dir", None)
         if data_dir is None:
             return ()
         return tuple(path.stem for path in Path(data_dir, "cohorts").glob("*.sqlite"))
 
     def _review_service(self, run_id: str) -> Any:
-        """`M-REVIEW`'s service over this console's run, or `None` on the storeless double.
+        """M-REVIEW's service for this run, or None when there is no store.
 
         The console holds no review state of its own (`CT-CONSOLE-01`): S9's figures are
         `build_queue`'s, and this is the one place the screen reaches for them. A store with
@@ -130,7 +128,7 @@ class StoreReadsMixin:
             return None
 
     def _run_catalog(self, run_id: str) -> Any:
-        """The run's own package catalog, primed at the run's version, or None (#598).
+        """The run's package catalog, set to the run's version, or None (#598).
 
         Without it M-REVIEW maps bands on its default scale and refuses every band name the
         run's package declares, so the console could neither accept a review item nor record
@@ -156,9 +154,8 @@ class StoreReadsMixin:
         return catalog
 
     def _read_cohort_files(self, query: str, log: list[str], **params: Any) -> list[Any]:
-        """Read across the cohort tier's files — the layout `M-GRADE` and `M-DET` walk.
-        A store with no filesystem view falls back to the durable handle, so the page's
-        read path stays observable on the double too."""
+        """Run a query across every cohort file, the way M-GRADE and M-DET read them. A store with
+        no files falls back to the durable handle, so the query is still logged on the double."""
         keys = self._cohort_keys()
         if not keys:
             return self._read(query, log, **params)
@@ -187,7 +184,7 @@ class StoreReadsMixin:
     # -- #398: every Phase-1 action reaches the module that owns its effect -------------------
 
     def _run_row(self, run_id: str) -> dict[str, Any] | None:
-        """The run row (cohort, package, version, status) from whichever cohort file holds it."""
+        """The run's row (cohort, package, version, status) from whichever cohort file holds it."""
         cohort_key = self._cohort_for_run(run_id)
         if cohort_key is None:
             return None
@@ -216,14 +213,14 @@ class StoreReadsMixin:
         return ""
 
     def _known_package(self, package_id: str) -> bool:
-        """Whether Tier P holds this package. Opening an unknown id would CREATE a file
-        (the never-create rule `_tier` states), so a form-supplied id is checked first."""
+        """Whether Tier P holds this package. Opening an unknown id would create a file, so an id
+        that came from a form is checked first."""
         data_dir = getattr(self._store, "data_dir", None)
         return bool(package_id) and data_dir is not None and Path(
             data_dir, "packages", f"{package_id}.pkg.sqlite").exists()
 
     def _cohort_for_run(self, run_id: str) -> str | None:
-        """Locate the cohort file a run row lives in, the way `M-GRADE` and `M-DET` do."""
+        """The cohort file that holds a run's row, found the same way M-GRADE and M-DET find it."""
         for key in self._cohort_keys():
             handle = self._store.cohort(key)
             try:

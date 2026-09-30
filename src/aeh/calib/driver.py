@@ -25,11 +25,10 @@ _DEFAULT_R0_VERSION = "pkg-v1-r0"
 
 @dataclass(frozen=True)
 class Assignment:
-    """One assignment's calibration situation: whether the rubric was published to
-    students in advance (`FR-CALIB-12` — the case where calibration must default to
-    R₀ and say why), whether the teacher skipped calibration (`FR-CALIB-13`'s lower-
-    confidence path), which version is R₀ for this assignment, and which criteria the
-    discovery round flagged as ambiguous (the ones a skip must mark lower-confidence)."""
+    """One assignment's calibration situation: whether the rubric was published to students in
+    advance (then calibration keeps R0 and says why, FR-CALIB-12), whether the teacher skipped
+    calibration (the lower-confidence path, FR-CALIB-13), which version is R0, and which criteria
+    discovery flagged as ambiguous."""
 
     rubric_published_in_advance: bool = False
     skip_elicitation: bool = False
@@ -44,7 +43,7 @@ def assignment(
     r0_version: str = _DEFAULT_R0_VERSION,
     ambiguous_criteria: Sequence[str] = (),
 ) -> Assignment:
-    """Build an `Assignment` — the driver's input value, with the R₀ default pinned."""
+    """Build an `Assignment`, with R0 defaulting to the pinned version."""
     return Assignment(
         rubric_published_in_advance=rubric_published_in_advance,
         skip_elicitation=skip_elicitation,
@@ -55,7 +54,7 @@ def assignment(
 
 @dataclass(frozen=True)
 class CalibrationRunOutcome:
-    """What one calibration run did, per stage (seam 4) — never a bare status.
+    """What one calibration run did, stage by stage.
 
     `active_rubric` is the rubric this run's grades use; `revised_version` is the
     version an edit landed on, when one did. The two are different fields on purpose:
@@ -75,22 +74,17 @@ class CalibrationRunOutcome:
 
     @property
     def ambiguous_criteria_lower_confidence(self) -> bool:
-        """Whether the ambiguous criteria were actually marked lower-confidence —
-        the second half of `FR-CALIB-10`'s terminal state ("grade with the rubric
-        as given, be more conservative on the ambiguous criteria"), which a run
-        that only reported its rubric would otherwise fail silently."""
+        """Whether the ambiguous criteria were actually marked lower-confidence: the second half of
+        the fallback outcome, "grade with the rubric as given, and be more cautious on the
+        ambiguous criteria" (FR-CALIB-10)."""
         return bool(self.lower_confidence_criteria)
 
     @property
     def shipped_with_warning(self) -> bool:
-        """Structurally False (`CT-CALIB-02`): no code path on this surface ships a
-        revision carrying a warning. A warned revision is a revision — it goes live,
-        scores the class, and carries construct drift into every accumulated
-        validation record (RISK-06) — so the clause forbids the path, not just the
-        silent version of it. The property is the checkable statement of that refusal,
-        in the same shape as `TriageVerdict`'s `fitted`: a caller asserts it, and a
-        code path that could set it True cannot be written without the assertion
-        failing."""
+        """Always False (CT-CALIB-02): no path ships a revision with a warning attached. A warned
+        revision still goes live, scores the class and carries its drift into every validation
+        record (RISK-06), so the path itself is forbidden. The property lets a test assert that
+        rule."""
         return False
 
 
@@ -102,7 +96,7 @@ def run_for_assignment(
     catalog: Any | None = None,
     environ: Mapping[str, str] | None = None,
 ) -> CalibrationRunOutcome:
-    """Run calibration for one assignment and return what it did, per stage.
+    """Run calibration for one assignment and report what each stage did.
 
     The published branch is the clause with teeth (`CT-CALIB-10`/`FR-CALIB-12`): where
     the rubric was published to students in advance, calibration defaults to R₀ and

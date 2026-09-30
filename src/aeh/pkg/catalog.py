@@ -20,7 +20,7 @@ from .setup_checks import SetupChecksMixin
 
 
 class PackageCatalog(DependencyGraphMixin, CriterionEditsMixin, PolicyAndKeysMixin, ValidationReadsMixin, VersionsMixin, ExchangeMixin, SetupRecordsMixin, SetupChecksMixin):
-    """Tier P's data-access layer, over `M-STORE`'s `package(id)` handle.
+    """Reads and writes one package's Tier P database, through M-STORE's `package(id)` handle.
 
     Every mutating method funnels through `_refuse_mutation` — the data-layer guard —
     and the database triggers installed by migration 002 backstop the same rule for
@@ -43,14 +43,12 @@ class PackageCatalog(DependencyGraphMixin, CriterionEditsMixin, PolicyAndKeysMix
 
     @property
     def package_id(self) -> str:
-        """The package's identity as the catalog knows it — the name `M-INGEST`'s V4
-        identifier signal compares a submission's printed 'Assessment:' line against
-        (`FR-INGEST-25`). `PackageDraft.title` is not persisted in this schema, so the
-        id is the declared identity until `M-SETUP` carries a human-readable one."""
+        """The package's id. M-INGEST's V4 check compares a paper's printed `Assessment:` line with
+        this (FR-INGEST-25); the schema stores no human-readable title yet."""
         return self._package_id
 
     def _guard(self, tx, v: PackageVersionId, field: str) -> None:
-        """The one lock check every mutation funnels through.
+        """The lock check every change goes through.
 
         A published version refuses EVERY in-place edit; a locked-field edit is named
         specifically (`SchemaLockViolation`), everything else as
@@ -83,15 +81,15 @@ class PackageCatalog(DependencyGraphMixin, CriterionEditsMixin, PolicyAndKeysMix
         )
 
     def criteria(self, v: PackageVersionId, question_id: str | None = None) -> tuple:
-        """The version's criteria, from the per-run cache (`NFR-PKG-05`: read on every
-        one of ~23,000 units)."""
+        """The version's criteria, from the per-run cache; this is read for every one of about
+        23,000 units (NFR-PKG-05)."""
         cached = self._cache_get(v)
         if question_id is None:
             return cached["criteria"]
         return tuple(c for c in cached["criteria"] if c["question_id"] == question_id)
 
     def bands(self, criterion_id: str) -> tuple:
-        """The criterion's bands, ordered by ordinal, from the per-run cache."""
+        """The criterion's bands in ordinal order, from the per-run cache."""
         cached = self._cache_current()
         return cached["bands"].get(criterion_id, ())
 
@@ -102,9 +100,8 @@ class PackageCatalog(DependencyGraphMixin, CriterionEditsMixin, PolicyAndKeysMix
         return self._cache
 
     def _cache_current(self) -> dict:
-        """The cache, loaded against the file's latest version when no version has been
-        read yet — `bands(criterion_id)` carries no version argument by contract
-        (`CT-PROV`'s sibling shape: bands belong to the file's current version)."""
+        """The cache, loaded for the file's latest version when no version has been read yet;
+        `bands(criterion_id)` takes no version argument, so bands come from the current version."""
         if self._cache is None:
             rows = self._handle.query(PKG_STATEMENTS["select_latest_version"])
             if not rows:
@@ -116,8 +113,8 @@ class PackageCatalog(DependencyGraphMixin, CriterionEditsMixin, PolicyAndKeysMix
         return self._cache
 
     def _invalidate(self) -> None:
-        """Invalidation on publish and on any edit: the cache must not become a second
-        source of truth (design §3.4, #28's own acceptance criterion)."""
+        """Clear the cache after a publish or any edit, so it never becomes a second source of
+        truth (design §3.4)."""
         self._cache = None
         self._cache_version = None
 
@@ -151,12 +148,12 @@ class PackageCatalog(DependencyGraphMixin, CriterionEditsMixin, PolicyAndKeysMix
             )
 
     def is_locked(self, v: PackageVersionId) -> bool:
-        """Whether `v` is published. Read surface for the tests and the console."""
+        """Whether version `v` is published."""
         return bool(self._handle.query(
             PKG_STATEMENTS["select_version"], v=v)[0]["locked"])
 
     def lineage(self, v: PackageVersionId) -> tuple[PackageVersionId, ...]:
-        """The version's ancestry, oldest first — the chain a grade resolves through."""
+        """The version's ancestry, oldest first: the chain a grade is traced through."""
         chain: list[PackageVersionId] = []
         current: str | None = v
         seen: set[str] = set()
@@ -170,8 +167,7 @@ class PackageCatalog(DependencyGraphMixin, CriterionEditsMixin, PolicyAndKeysMix
     # -- the guards ---------------------------------------------------------------------------
 
     def _refuse_mutation(self, v: PackageVersionId) -> None:
-        """The data-layer guard (`NFR-PKG-01`): raise before any statement touches a
-        published version's rows."""
+        """Raise before any statement touches a published version's rows (NFR-PKG-01)."""
         row = self._handle.query(PKG_STATEMENTS["select_version"], v=v)
         if not row:
             return  # an unknown version is the caller's next statement's problem

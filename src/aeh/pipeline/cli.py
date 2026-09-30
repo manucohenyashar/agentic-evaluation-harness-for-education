@@ -53,7 +53,8 @@ def _build_parser() -> Any:
 
 
 def main(argv: "Sequence[str] | None" = None) -> int:
-    """`python -m aeh` and the installed `aeh` command (`FR-PIPE-08`, `FR-PIPE-09`).
+    """The `aeh` command line (`python -m aeh` and the installed `aeh` command) (FR-PIPE-08,
+    FR-PIPE-09). Returns the exit code.
 
     Exit codes are the contract (`CT-PIPE-01`): **0** when the run completes, **3** when it
     pauses, **1** on any error. A paused run is not a failure — it is a run waiting for an
@@ -139,7 +140,7 @@ def main(argv: "Sequence[str] | None" = None) -> int:
 
 
 def _run_command(store: Any, args: Any, config: Mapping[str, Any]) -> RunResult:
-    """`aeh run`: look the run up or create it, then drive it (`FR-PIPE-08`)."""
+    """`aeh run`: find the run or create it, then drive it (FR-PIPE-08)."""
     from aeh.conf import resolve_run_config
 
     orchestrator = Orchestrator(store)
@@ -200,7 +201,7 @@ def _run_command(store: Any, args: Any, config: Mapping[str, Any]) -> RunResult:
 
 
 def _as_json(value: Any) -> Any:
-    """A `RunResult` or `RecoveryReport` as plain JSON — the shape stdout carries."""
+    """A `RunResult` or `RecoveryReport` as plain JSON, the shape printed to stdout."""
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
         return {
             field.name: _as_json(getattr(value, field.name))

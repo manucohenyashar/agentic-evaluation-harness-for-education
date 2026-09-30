@@ -27,61 +27,14 @@ from .reports import EnumerationReport
 
 
 class EnumerationMixin:
-    """Enumerates a run's work units and traces each unit's provenance."""
+    """Creates a run's work units and traces each unit back to its source."""
 
     # -- enumeration ----------------------------------------------------------------------------
 
     def enumerate_units(self, run_id: str) -> EnumerationReport:
-        """Compute and insert the run's base units; idempotent by construction.
+        """Compute and insert the run's base work units. Safe to call more than once.
 
-        The pass is a pure function of the ledger's run row, the package catalog and the
-        cohort roster, walked in sorted order — so the same (cohort, package version,
-        config) enumerates byte-identical `work_id` sets (NFR-ORCH-05). Each unit is
-        inserted `INSERT OR IGNORE` keyed on `work_id`: a row already present is left
-        exactly as the ledger holds it — `done` stays done, `quarantined` stays
-        quarantined — which is what makes re-running a completed run a no-op that
-        produces no duplicate rows (FR-ORCH-03) and what resume's skip is made of
-        (FR-ORCH-02). The work-ID scheme is the invalidation: a changed input computes a
-        new `work_id` and the prior result is simply unreachable from the new unit
-        (NFR-EXTRACT-02/03) — there is no cleanup step to forget.
-
-        **Base shapes** (§3.7's data flow): a judged criterion (the catalog's
-        `kind='open'`) gets one `stage='extract'` unit with a null judge — extraction is
-        judge-independent by §7.2 Rule 2 — plus one `stage='score'` unit per panel arm up
-        to the criterion's base depth (`FR-SETUP-08`: 1 for `atomic`/`atomic_with_gate`,
-        3 for `holistic`). A criterion the package declares
-        `evaluation_mode='deterministic'` gets exactly one `stage='deterministic'` unit
-        with a null judge and no extraction and no scoring unit.
-        **Reconciliation closed (#369, retiring #59's note):** that note recorded the
-        design's `evaluation_mode` column as existing in no shipped schema, and stood the
-        equivalence `kind='mcq'` IS `evaluation_mode='deterministic'` in its place.
-        `FR-PKG-22` ships the column, so the equivalence is retired here and everywhere
-        that read it (`FR-ORCH-35`): shape and evaluation are separate claims, and a
-        package may declare a multiple-choice criterion whose options a panel weighs.
-        The migration's backfill makes the switch lossless — `deterministic` exactly where
-        `kind='mcq'` held — so no existing package changes behaviour. Extract and score
-        units are enumerated for **admitted** submissions only (`FR-ORCH-22`); the
-        deterministic unit is enumerated for every submission.
-
-        **The random arm** (`FR-ORCH-11`, this story): after a judged pair's base score
-        units, the pair draws at `HARNESS_ORCH_RANDOM_ARM_RATE` (default 0.07) — the
-        seeded draw `random_arm_selection` runs over the pair's key with the run's own
-        seed (`run_random_arm_seed`, derived from the run id), so the byte-identical
-        enumeration guarantee (NFR-ORCH-05) survives: the same inputs draw the same
-        pairs every pass, and `INSERT OR IGNORE` keeps a drawn pair's units from
-        duplicating. A drawn pair gets the widened panel an escalation would build
-        (1→3, 3→5), marked `origin='random_arm'` — the origin is why the work exists,
-        deliberately NOT a `work_id` input, so a base panel and a random-arm panel for
-        the same (submission, criterion, judge) share rows rather than
-        double-scoring. The draw consults neither confidence, nor the escalation
-        budget, nor a breaker (`CT-ORCH-15`: suppression would make the routing
-        policy unfalsifiable). Explicit escalations stay with `enqueue_escalation`
-        below — enumeration does not create them.
-
-        Commit batches of `HARNESS_ORCH_ENUM_COMMIT_BATCH` inserts keep one pass from
-        holding a write lock across 23,000 inserts; the knob exists so a slower box can
-        shrink it without a code change (NFR-ORCH-01 keeps per-unit cost trivial; the
-        benchmark is S-ORCH-03's, not this module's).
+        More detail: `docs/code-notes/orch.md`, section `enumeration.py: EnumerationMixin.enumerate_units`.
         """
         # The claim pass's order caches hold rows read before this pass may insert new
         # ones — drop the run's entries, or a cached order would keep the new units
@@ -272,7 +225,7 @@ class EnumerationMixin:
         )
 
     def provenance(self, work_id: str) -> UnitProvenance:
-        """Follow one unit to its source document: work_unit -> submission -> document.
+        """Trace one unit back to its source document: work unit, then submission, then document.
 
         Raises `BrokenLineageError` naming the broken hop when the unit has no submission,
         its submission is absent from the cohort, the submission has no document, or the
@@ -337,7 +290,7 @@ class EnumerationMixin:
         )
 
     def _runs_missing_units(self) -> tuple[str, ...]:
-        """Open runs whose ledger holds no work_unit rows at all, in run-id order.
+        """Unfinished runs whose ledger has no work units at all, ordered by run id.
 
         The gate behind lease()'s enumerate-on-empty fallback: enumerating is a full
         pass over catalog, roster and computed ids, and a drained poll late in a large
@@ -383,7 +336,7 @@ class EnumerationMixin:
         return tuple(sorted(found))
 
     def _open_run_ids(self) -> tuple[str, ...]:
-        """Every not-yet-finished run, across every cohort ledger, in run-id order."""
+        """Every unfinished run in every cohort ledger, ordered by run id."""
         found: list[str] = []
         for key in self._cohort_keys():
             for row in self._store.cohort(key).query(ORCH_STATEMENTS["select_open_runs"]):

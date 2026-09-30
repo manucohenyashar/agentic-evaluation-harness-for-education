@@ -16,7 +16,7 @@ from .fixtures import RecordedFixtureProvider
 
 
 def provider_for(model_ref: ModelRef, **seams: Any) -> "InferenceProvider":
-    """The live transport a model ref's declared provider name selects (`FR-PROV-11`).
+    """The live completion provider that a model reference's provider name selects (FR-PROV-11).
 
     A consumer asks for the transport **by ref** and names no backend itself: the
     name → implementation mapping is M-PROV's, so a module outside `M-PROV` never carries
@@ -33,8 +33,8 @@ def provider_for(model_ref: ModelRef, **seams: Any) -> "InferenceProvider":
 
 
 def decision_provider_for(model_ref: ModelRef, **seams: Any) -> "DecisionProvider":
-    """The only construction path for a decision provider (FR-PROV-26), by `ModelRef.provider`.
-    Unknown names raise `ConfigurationError`; nothing is substituted."""
+    """Build the decision provider a model reference names (`ModelRef.provider`); the only way to
+    build one (FR-PROV-26). An unknown name raises `ConfigurationError`; nothing is substituted."""
     name = str(getattr(model_ref, "provider", "") or "")
     if name == "fixture":
         return RecordedFixtureProvider(**seams)

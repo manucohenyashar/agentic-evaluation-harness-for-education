@@ -7,13 +7,11 @@ from __future__ import annotations
 
 
 class CalibrationError(Exception):
-    """Base for every `M-CALIB` refusal. Nothing here is transient; no caller
-    should retry, so there is deliberately no retry taxonomy."""
+    """Base class for every M-CALIB refusal. None is transient, so none should be retried."""
 
 
 class TriageCategoryRequired(CalibrationError):
-    """A disagreement arrived at the triage boundary without its required
-    category (`FR-CALIB-02`, `CT-CALIB-04`).
+    """A disagreement reached triage without its required category (FR-CALIB-02, CT-CALIB-04).
 
     This is the required-field design's enforcement point: an uncategorized
     disagreement would default into *some* path, and the editable path is the
@@ -23,8 +21,7 @@ class TriageCategoryRequired(CalibrationError):
 
 
 class SideBySideRequired(CalibrationError):
-    """A `teacher_inconsistency` verdict was constructed without exactly two
-    examples (`FR-CALIB-03`).
+    """A `teacher_inconsistency` verdict was built without exactly two examples (FR-CALIB-03).
 
     Both examples side by side is the finding's whole shape: one example
     accuses the teacher, two let the teacher compare their own judgments and
@@ -34,8 +31,7 @@ class SideBySideRequired(CalibrationError):
 
 
 class EditNotEligible(CalibrationError):
-    """An edit was attached to a verdict whose category cannot carry one
-    (`FR-CALIB-02`, `CT-CALIB-04`).
+    """An edit was attached to a verdict whose category cannot have one (FR-CALIB-02, CT-CALIB-04).
 
     Only `rubric_ambiguity` is eligible to produce a proposed edit, and the
     rule is structural: the constructor refuses the violating shape, so no
@@ -57,8 +53,8 @@ class EditNotEligible(CalibrationError):
 
 
 class PhaseDependencyError(CalibrationError):
-    """An edit was attempted against a package version whose schema predates the §6.2
-    lock the edit's route depends on (`CT-CALIB-15`).
+    """An edit was attempted on a package version created before the schema lock that the edit
+    depends on (CT-CALIB-15).
 
     The lock is a Phase 1 fact about the schema a version was born under, and a version
     born before it cannot carry the guarantee that makes calibration's write route
@@ -68,8 +64,7 @@ class PhaseDependencyError(CalibrationError):
 
 
 class ThresholdNotDeclared(CalibrationError):
-    """The non-inferiority gate was asked to run with no threshold declared for it
-    (`FR-CALIB-08`, `CT-CALIB-13`).
+    """The non-inferiority gate was run with no threshold declared (FR-CALIB-08, CT-CALIB-13).
 
     The threshold is an **owned decision**: 0.10 is the HLD's *example*, not a validated
     value, and the design says it "must be declared per institution before use". A gate
@@ -80,8 +75,8 @@ class ThresholdNotDeclared(CalibrationError):
 
 
 class InsufficientPopulation(CalibrationError):
-    """The gate was asked to run on a population that cannot carry its verdict
-    (`NFR-CALIB-02`, `CT-CALIB-07`).
+    """The gate was run on a population too small to support its verdict (NFR-CALIB-02,
+    CT-CALIB-07).
 
     The gate operates on the **full class** and refuses the calibration set, which lacks
     the sample size to mean anything. A refusal rather than a warning, because a gate run
@@ -90,7 +85,7 @@ class InsufficientPopulation(CalibrationError):
 
 
 class OffPanelConfigurationError(CalibrationError):
-    """The off-panel model is **in the scoring panel** (`CT-CALIB-08`, `NFR-CALIB-04`).
+    """The off-panel checker model is also in the scoring panel (CT-CALIB-08, NFR-CALIB-04).
 
     Refused when the *build* matches, not merely the label — two entries naming the same
     served build are the same model, which is the identity `M-CONF`'s
@@ -102,8 +97,7 @@ class OffPanelConfigurationError(CalibrationError):
 
 
 class OffPanelUnavailable(CalibrationError):
-    """The off-panel build has no bound construction transport (`CT-CALIB-02`'s
-    "off_panel_model_unavailable" mode).
+    """The off-panel checker's build has no provider bound to it (CT-CALIB-02).
 
     The gate never invents a construction: the session for the off-panel build is bound
     at wiring time — the same recorded-transport form discovery's bands arrive in
