@@ -25,6 +25,7 @@ checks over F-JEV-DECISIONS / F-JEV-SYNTH, and the adversarial constructions.
 from __future__ import annotations
 
 import dataclasses
+import inspect
 import json
 import re
 import shutil
@@ -32,6 +33,7 @@ from pathlib import Path
 
 import pytest
 
+import aeh.judge
 from aeh.judge import (DECISION_ENGINE_INVENTORY, REPLY_FIELDS, Accepted, BelowGate, decision_engine_metrics,
                        gate_decision)
 from tests.support.conf_builders import edge_panel
@@ -394,11 +396,8 @@ def test_tc_judge_c29_one_decide_and_at_most_one_llm_call_per_seat(engine_on_run
 def test_tc_judge_c30_no_prompt_carries_the_inventory(engine_on_run) -> None:
     for module in ("extract.py", "synth.py", "ingest.py"):
         assert "evidence_assessment" not in module_source(module, SRC), module
-    judge_source = module_source("judge", SRC)
-    for fn in ("def prompt_fields", "def decision_fields"):
-        body = judge_source[judge_source.index(fn):]
-        body = body[:body.index("\ndef ", 1)]
-        assert "evidence_assessment" not in body, fn
+    for fn in (aeh.judge.prompt_fields, aeh.judge.decision_fields):
+        assert "evidence_assessment" not in inspect.getsource(fn), fn.__name__
     world, capture, _ = engine_on_run
     for payload, _ref in capture.payloads:
         assert all("band probabilities:" not in str(value) for _, value in payload.fields)

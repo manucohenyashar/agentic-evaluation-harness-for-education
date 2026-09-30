@@ -479,7 +479,7 @@ def test_tc_pipe_23_c_an_even_panel_without_quarantine_pauses_the_run(tmp_path, 
 _KILL_BEFORE_GRADING = r"""
 import sys, time
 from pathlib import Path
-import aeh.pipeline as pipeline
+import aeh.pipeline.driver as driver
 from tests.support import pipe_world
 
 world = pipe_world.replay_world(Path(sys.argv[1]))
@@ -490,7 +490,8 @@ def _grading_never_finishes(*args, **kwargs):
     print("GRADING", flush=True)
     time.sleep(600)
 
-pipeline._grade = _grading_never_finishes
+# `_grade` is private to the package: patch it where the driver calls it.
+driver._grade = _grading_never_finishes
 pipe_world.drive_composed(world)
 """
 

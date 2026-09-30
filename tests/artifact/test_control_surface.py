@@ -134,8 +134,12 @@ def _import_edges(source: str) -> ImportEdges:
         if isinstance(node, ast.Import):
             bare.extend(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom):
-            if node.level > 0:
+            if node.level > 1:
+                # `from ..judge import x` leaves the console package: an edge this scan must see.
+                # A single-dot import stays inside `aeh.console` (one file importing another).
                 relative.append(node.module or "")
+            elif node.level == 1:
+                continue
             elif node.module == "aeh":
                 # `from aeh import judge` binds the module object exactly as
                 # `from aeh.judge import assemble_prompt` binds a symbol — recorded at the

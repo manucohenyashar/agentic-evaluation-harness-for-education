@@ -37,6 +37,8 @@ only the purity contract that no other case owns.
 
 from __future__ import annotations
 
+import inspect
+
 import pytest
 
 from aeh.grade import apply_policy
@@ -133,7 +135,8 @@ def test_tc_grade_19_the_grade_module_carries_no_model_call_seam(network_guard):
     forbidden = ("transport", "provider", "model", "judge", "client", "llm")
     public = [
         name for name in dir(grade_module)
-        if not name.startswith("_")
+        # The package's own files (`aeh.grade.models`, ...) are attributes too; they are not surfaces.
+        if not name.startswith("_") and not inspect.ismodule(getattr(grade_module, name))
     ]
     offenders = [
         name for name in public

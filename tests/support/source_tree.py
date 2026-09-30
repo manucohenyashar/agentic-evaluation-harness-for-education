@@ -158,3 +158,17 @@ def class_members(cls: type) -> list[tuple[str, object]]:
         for name, member in vars(klass).items():
             seen.setdefault(name, member)
     return list(seen.items())
+
+
+def bindings(package: ModuleType, name: str) -> list[object]:
+    """What `name` is bound to in `package` and in each of its loaded files, where it is bound.
+
+    For checks about a name a module *imported*: after the split, `from aeh.ingest import X`
+    sits in the file of the package that uses `X`, not in the package namespace.
+    """
+    import sys
+
+    prefix = package.__name__ + "."
+    holders = [package] + [m for n, m in list(sys.modules.items())
+                           if n.startswith(prefix) and isinstance(m, ModuleType)]
+    return [vars(m)[name] for m in holders if name in vars(m)]

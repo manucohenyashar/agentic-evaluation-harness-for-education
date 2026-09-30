@@ -23,6 +23,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import re
 from decimal import Decimal
@@ -32,7 +33,6 @@ import pytest
 
 from tests.support import pipe_world
 from tests.support.conf_builders import edge_panel
-from tests.support.source_tree import package_source
 
 pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[3]
@@ -378,9 +378,7 @@ def test_tc_req_110_judge_signals_reads_the_mix_through_the_metrics(engine_on, m
     import aeh.judge as judge
     import aeh.stats as stats
 
-    source = package_source(stats)
-    body = source[source.index("def judge_signals"):]
-    body = body[:body.index("\ndef ", 1)]
+    body = inspect.getsource(stats.judge_signals)
     assert "FROM decision_prescreen" not in body and "decision_prescreen p" not in body
     calls = []
     original = judge.decision_engine_metrics
