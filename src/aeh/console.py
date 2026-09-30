@@ -1558,11 +1558,41 @@ class ConsoleApp:
         if not keys:
             return None
         try:
+            catalog = self._run_catalog(run_id)
+        except Exception:  # noqa: BLE001 — an unreadable package keeps the default scale, as before
+            catalog = None
+        try:
             return review_service_over(
-                self._store, cohort_ids=list(keys), run_id=run_id
+                self._store, cohort_ids=list(keys), run_id=run_id, catalog=catalog,
             )
         except Exception:  # noqa: BLE001 — a run the service cannot open renders as the double
             return None
+
+    def _run_catalog(self, run_id: str) -> Any:
+        """The run's own package catalog, primed at the run's version, or None (#598).
+
+        Without it M-REVIEW maps bands on its default scale and refuses every band name the
+        run's package declares, so the console could neither accept a review item nor record
+        a blind label for such a package (FR-CONSOLE-34, CT-PKG-01). Never-create: a package
+        whose file is not on disk yields None, and the service falls back as before."""
+        data_dir = getattr(self._store, "data_dir", None)
+        if data_dir is None or not run_id:
+            return None
+        rows = self._read_cohort_files(
+            "SELECT package_id, package_version_id FROM run WHERE run_id = :run_id",
+            [], run_id=str(run_id))
+        if not rows:
+            return None
+        package_id = _row_get(rows[-1], "package_id")
+        version = _row_get(rows[-1], "package_version_id")
+        if not package_id or not Path(data_dir, "packages", f"{package_id}.pkg.sqlite").exists():
+            return None
+        from aeh.pkg import PackageCatalog
+
+        catalog = PackageCatalog(self._store.package(str(package_id)), package_id=str(package_id))
+        if version:
+            catalog.criteria(str(version))  # primes the version the band reads resolve against
+        return catalog
 
     def _read_cohort_files(self, query: str, log: list[str], **params: Any) -> list[Any]:
         """Read across the cohort tier's files — the layout `M-GRADE` and `M-DET` walk.

@@ -1333,13 +1333,8 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # "unowned: S7 shows the pause reason (TS-97 TC-REQ-99)" left with #602's fix.
     # "unowned: S2 and S3 say they cannot read, never an absence (TS-96 TC-CONSOLE-C28)" left with #599/#600's fix.
     # "unowned: S3 shows the proposed inventory as editable rows (TS-91 TC-CONSOLE-45)" left with #599's fix.
-    # Found by TS-91/TS-96, owned by NO issue yet (needs one from /plan-to-issues): the console's review service binds no package catalog, so M-REVIEW refuses the run's own band names.
-    "unowned: a console review accept records a label (TS-91 TC-CONSOLE-44 row 8)": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider tests/integration/console/test_ts91_action_sweep.py::test_tc_console_44_row8_accepting_a_review_item_records_a_label tests/integration/console/test_ts91_action_sweep.py::test_tc_console_44_row9_a_blind_label_is_recorded",
-        ('tests/integration/console/test_ts91_action_sweep.py::test_tc_console_44_row8_accepting_a_review_item_records_a_label', 'tests/integration/console/test_ts91_action_sweep.py::test_tc_console_44_row9_a_blind_label_is_recorded'),
-    ),
     # "unowned: the blind-flow plan names no removed table (TS-91 TC-CONSOLE-45)" left with #601's fix.
+    # "unowned: a console review accept records a label (TS-91 TC-CONSOLE-44 row 8)" left with #598's fix.
     # Found by TS-99, owned by NO issue yet (needs one from /plan-to-issues): M-PIPE's hooks
     # cost 3.9 ms/unit at 10 submissions and 9.3 ms/unit at 40, against NFR-PIPE-02's 0.25 ms.
     "unowned: composition adds at most 0.25 ms per unit (TS-99 PERF-11)": (

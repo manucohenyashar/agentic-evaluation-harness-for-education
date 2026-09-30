@@ -283,9 +283,8 @@ def test_tc_console_44_row8_review_action(tmp_path, monkeypatch):
     assert labels_mid == labels_before, "a refused review wrote a label"
 
 
-@pytest.mark.writtenahead
 def test_tc_console_44_row8_accepting_a_review_item_records_a_label(tmp_path, monkeypatch):
-    """Written ahead, owned by no issue yet: the console's review service
+    """Written ahead; green since #598. The console's review service
     (`review_service_over`, via `_review_service`) binds no package catalog, so M-REVIEW maps
     bands on `REVIEW_DEFAULT_BANDS` and refuses a band the run's package declares
     ("the declared band set carries no band 'secure'"): no review of an F-DEV-PIPE item, whose
@@ -421,9 +420,8 @@ def test_tc_console_44_row3_rubric_read_back_without_a_setup_model_is_refused(ch
     assert after == before, "a refused read-back wrote criteria"
 
 
-@pytest.mark.writtenahead
 def test_tc_console_44_row9_a_blind_label_is_recorded(tmp_path, monkeypatch):
-    """Written ahead, owned by no issue yet (the row-8 cause): the console's review service binds
+    """Written ahead; green since #598 (the row-8 cause): the console's review service bound
     no package catalog, so every blind band the run's package declares is refused on the default
     scale."""
     from harness.corpora import dev_pipe
