@@ -55,6 +55,7 @@ from tests.support.integ_vocabulary import (
     seed_document,
 )
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
+from tests.support.source_tree import module_path
 
 pytestmark = pytest.mark.contract
 
@@ -78,7 +79,7 @@ _FORBIDDEN_WRITE_COLUMNS = frozenset({"band", "points"})
 
 def _module_path() -> Path:
     repo_root = Path(__file__).resolve().parents[3]
-    return repo_root / "src" / "aeh" / "integ.py"
+    return module_path("integ", repo_root / "src" / "aeh")
 
 
 def _string_literals(source: str) -> set[str]:

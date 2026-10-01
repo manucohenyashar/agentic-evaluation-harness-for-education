@@ -79,9 +79,9 @@ def _drive(store_dir, replies, patterns):
     same attribute the shipped check reads at call time), never on a copy."""
     import aeh.synth as synth
 
-    monkey_target = synth.SYNTH_SCORE_CLAIM_PATTERNS
-    try:
-        synth.SYNTH_SCORE_CLAIM_PATTERNS = patterns
+    # Through MonkeyPatch so the list is replaced in the file of `aeh.synth` that reads it too.
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(synth, "SYNTH_SCORE_CLAIM_PATTERNS", patterns)
         Worker = require(SYNTH_MODULE, WORKER, issue=SYNTH_ISSUE)
         store = open_store(store_dir)
         try:
@@ -106,8 +106,6 @@ def _drive(store_dir, replies, patterns):
             return report, rows
         finally:
             store.close()
-    finally:
-        synth.SYNTH_SCORE_CLAIM_PATTERNS = monkey_target
 
 
 def test_tc_synth_c11_the_template_version_is_pinned_and_in_every_prompt():

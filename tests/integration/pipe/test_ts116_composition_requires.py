@@ -23,6 +23,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import re
 from decimal import Decimal
@@ -377,9 +378,7 @@ def test_tc_req_110_judge_signals_reads_the_mix_through_the_metrics(engine_on, m
     import aeh.judge as judge
     import aeh.stats as stats
 
-    source = Path(stats.__file__).read_text(encoding="utf-8")
-    body = source[source.index("def judge_signals"):]
-    body = body[:body.index("\ndef ", 1)]
+    body = inspect.getsource(stats.judge_signals)
     assert "FROM decision_prescreen" not in body and "decision_prescreen p" not in body
     calls = []
     original = judge.decision_engine_metrics

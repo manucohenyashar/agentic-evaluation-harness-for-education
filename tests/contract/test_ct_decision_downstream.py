@@ -21,6 +21,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from tests.support.source_tree import module_source
 
 pytestmark = pytest.mark.contract
 ROOT = Path(__file__).resolve().parents[2]
@@ -118,7 +119,7 @@ if given is not None:
 # --- TC-GRADE-C21 ------------------------------------------------------------------------------
 
 def test_tc_grade_c21_grade_never_reads_the_engine() -> None:
-    source = (ROOT / "src" / "aeh" / "grade.py").read_text(encoding="utf-8")
+    source = module_source("grade", ROOT / "src" / "aeh")
     assert not [t for t in ("scoring_engine", "decision_prescreen", "decision_engine") if t in source]
 
 

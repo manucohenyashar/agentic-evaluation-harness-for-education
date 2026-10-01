@@ -29,12 +29,13 @@ from __future__ import annotations
 import ast
 import re
 from pathlib import Path
+from tests.support.source_tree import module_path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TEST_PLAN = REPO_ROOT / "docs" / "design" / "test-plan.md"
 PERF_DOCS = REPO_ROOT / "docs" / "perf"
 RES_18_TEST = "tests/resilience/test_res_18_restart_rpo_rto.py"
-ORCH_SOURCE = REPO_ROOT / "src" / "aeh" / "orch.py"
+ORCH_SOURCE = module_path("orch", REPO_ROOT / "src" / "aeh")
 
 
 def run_metric_names() -> set[str]:

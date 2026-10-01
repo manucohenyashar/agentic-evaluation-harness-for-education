@@ -28,6 +28,7 @@ from pathlib import Path
 
 from aeh.det import DETERMINISTIC_EXCLUSION, DET_STATEMENTS
 from aeh.store import STATEMENTS
+from tests.support.source_tree import aeh_module_paths
 
 ISSUE = "#88"
 
@@ -47,7 +48,7 @@ def _modules_with(predicate):
     refuses at the store boundary.
     """
     hits = []
-    for path in sorted(_SRC.glob("*.py")):
+    for path in aeh_module_paths(_SRC):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             if isinstance(node, ast.Constant) and isinstance(node.value, str):

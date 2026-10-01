@@ -75,6 +75,7 @@ from tests.support.extract_vocabulary import verdict_completion
 from tests.support.impl import JUDGE_MODULE, require
 from tests.support.judge_vocabulary import PROMPT_ISSUE, TEMPLATE_VERSION
 from tests.support.orch_run import ORCH_COHORT_ID, seed_documents, seed_run
+from tests.support.source_tree import package_source
 
 pytestmark = [pytest.mark.contract]
 
@@ -296,7 +297,7 @@ def test_tc_judge_c15_no_code_path_treats_temperature_zero_as_determinism():
     Positive controls prove both scans fire."""
     import aeh.judge
 
-    judge_text = Path(aeh.judge.__file__).read_text(encoding="utf-8")
+    judge_text = package_source(aeh.judge)
     parsed = ast.parse(judge_text)
 
     # Scan 1 — no caching decorator on anything the module defines. The bare form

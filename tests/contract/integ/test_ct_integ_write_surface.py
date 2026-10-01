@@ -49,6 +49,7 @@ from tests.support.integ_vocabulary import (
     seed_document,
     document_id_for,
 )
+from tests.support.source_tree import module_path
 
 pytestmark = pytest.mark.contract
 
@@ -98,7 +99,7 @@ _UPDATE_SETS = re.compile(r"UPDATE\s+\w+\s+SET\s+(.*?)(?:\bWHERE\b|$)",
 
 def _module_path() -> Path:
     repo_root = Path(__file__).resolve().parents[3]
-    return repo_root / "src" / "aeh" / "integ.py"
+    return module_path("integ", repo_root / "src" / "aeh")
 
 
 def _sql_write_columns(source: str) -> set[str]:

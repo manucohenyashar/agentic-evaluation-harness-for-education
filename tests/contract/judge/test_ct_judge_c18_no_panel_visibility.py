@@ -102,6 +102,7 @@ from tests.support.extract_vocabulary import verdict_completion
 from tests.support.impl import JUDGE_MODULE, require
 from tests.support.judge_vocabulary import fields_of, string_leaves
 from tests.support.orch_run import ORCH_COHORT_ID
+from tests.support.source_tree import package_source
 
 pytestmark = [pytest.mark.contract]
 
@@ -247,7 +248,7 @@ def test_tc_judge_c18_no_operation_exposes_panel_state_to_a_member():
 
     # Arm 2 — the module text (the completeness arm): a read assembled outside
     # the registry still trips.
-    module_text = Path(aeh.judge.__file__).read_text(encoding="utf-8")
+    module_text = package_source(aeh.judge)
     found = _verdict_reads(module_text)
     # The text carries exactly the reads of the one exempt statement and no others:
     # `select_cell_verdicts` is `verdicts_for`'s declared read (FR-JUDGE-18, CT-JUDGE-20,

@@ -54,6 +54,7 @@ from tests.support.synth_vocabulary import (
     RESULT_TYPE,
     SYNTH_ISSUE,
 )
+from tests.support.source_tree import module_path
 
 
 #: The score-shaped names FR-SYNTH-02 forbids on the result — `points`, `band`, `score`,
@@ -86,7 +87,7 @@ SCORE_OWNERS = frozenset({"aeh.agg", "aeh.grade"})
 def _synth_tree() -> tuple[Path, ast.AST]:
     """The parsed source of `aeh.synth` — the module file itself is the artifact."""
     require(SYNTH_MODULE, issue=SYNTH_ISSUE)
-    path = Path(__file__).resolve().parents[2] / "src" / "aeh" / "synth.py"
+    path = module_path("synth", Path(__file__).resolve().parents[2] / "src" / "aeh")
     assert path.exists(), f"expected the M-SYNTH module at {path} (reconcile at landing)"
     return path, ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
 

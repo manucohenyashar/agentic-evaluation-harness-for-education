@@ -20,13 +20,14 @@ from pathlib import Path
 import pytest
 
 from tests.support import pipe_world
+from tests.support.source_tree import module_source
 
 REPO = Path(__file__).resolve().parents[2]
 FORBIDDEN = {"http", "urllib", "socket", "litellm", "requests", "httpx", "aiohttp", "openai", "anthropic"}
 
 
 def test_sec_18_static_the_composition_layer_imports_no_network_client():
-    tree = ast.parse((REPO / "src" / "aeh" / "pipeline.py").read_text(encoding="utf-8"))
+    tree = ast.parse(module_source("pipeline", REPO / "src" / "aeh"))
     roots = {a.name.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
     roots |= {n.module.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
     assert not roots & FORBIDDEN, sorted(roots & FORBIDDEN)

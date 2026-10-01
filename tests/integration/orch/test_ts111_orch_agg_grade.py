@@ -27,6 +27,7 @@ from aeh.conf import CohortRef, resolve_run_config
 from aeh.orch import (JUDGE_DECISION_TEMPLATE_V, STAGE_SCORE, Orchestrator, _extension_arms,
                       compute_work_id, panel_config_json)
 from tests.support.conf_builders import edge_panel, hosted_cfg
+from tests.support.source_tree import module_source
 
 JEV_BUILD = "openrouter/typesafe/jev-1.13@2026-09-17"
 
@@ -138,7 +139,7 @@ def test_tc_agg_26_the_engine_label_changes_nothing_downstream() -> None:
 # --- TC-GRADE-26 -------------------------------------------------------------------------------
 
 def test_tc_grade_26_grade_never_reads_the_engine_statically() -> None:
-    source = (Path(__file__).resolve().parents[3] / "src" / "aeh" / "grade.py").read_text(encoding="utf-8")
+    source = module_source("grade", Path(__file__).resolve().parents[3] / "src" / "aeh")
     for token in ("scoring_engine", "decision_prescreen", "decision_engine"):
         assert token not in source, f"grade.py reads {token}"
 

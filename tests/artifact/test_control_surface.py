@@ -63,6 +63,7 @@ from tests.support.console_vocabulary import elements
 from tests.support.import_graph import FORBIDDEN_ROOTS, scan_module
 from tests.support.impl import CONSOLE_MODULE, require
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
+from tests.support.source_tree import module_source
 
 
 # --- the import-edge reader both static cases stand on -------------------------------------------
@@ -133,8 +134,12 @@ def _import_edges(source: str) -> ImportEdges:
         if isinstance(node, ast.Import):
             bare.extend(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom):
-            if node.level > 0:
+            if node.level > 1:
+                # `from ..judge import x` leaves the console package: an edge this scan must see.
+                # A single-dot import stays inside `aeh.console` (one file importing another).
                 relative.append(node.module or "")
+            elif node.level == 1:
+                continue
             elif node.module == "aeh":
                 # `from aeh import judge` binds the module object exactly as
                 # `from aeh.judge import assemble_prompt` binds a symbol — recorded at the
@@ -250,7 +255,7 @@ def test_tc_console_03_console_imports_no_surface_that_assembles_a_scoring_promp
     walker that never matched anything would score zero violations over a clean tree and be
     indistinguishable from a correct one (the `test_import_graph.py` lesson).
     """
-    console_source = (repo_root / "src" / "aeh" / "console.py").read_text(encoding="utf-8")
+    console_source = module_source("console", repo_root / "src" / "aeh")
     edges = _import_edges(console_source)
 
     # **Precondition anchors.** The scanner sees this file's imports (it is not scanning
@@ -267,8 +272,8 @@ def test_tc_console_03_console_imports_no_surface_that_assembles_a_scoring_promp
         "bare imports, so the exemption this assertion rests on is no longer exercised and "
         "its positive anchor below proves nothing"
     )
-    judge_source = (repo_root / "src" / "aeh" / "judge.py").read_text(encoding="utf-8")
-    extract_source = (repo_root / "src" / "aeh" / "extract.py").read_text(encoding="utf-8")
+    judge_source = module_source("judge", repo_root / "src" / "aeh")
+    extract_source = module_source("extract", repo_root / "src" / "aeh")
     assert "def assemble_prompt" in judge_source and "def assemble(" in judge_source, (
         "aeh.judge no longer defines the assembly surface this guard is anchored on — move "
         "_PROMPT_ASSEMBLY_MODULES to the module that now owns it, or the invariant-14 edge "
@@ -346,7 +351,7 @@ def test_tc_console_36_console_dependency_edges_are_frozen_and_egress_free(repo_
     the edge reader that silently stops matching is the failure this test reports, not a
     passing oracle nobody can trust.
     """
-    console_source = (repo_root / "src" / "aeh" / "console.py").read_text(encoding="utf-8")
+    console_source = module_source("console", repo_root / "src" / "aeh")
     edges = _import_edges(console_source)
 
     bare_aeh = {name for name in edges.bare_modules if _is_within(name, ("aeh",))}

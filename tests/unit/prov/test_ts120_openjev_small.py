@@ -38,6 +38,7 @@ from aeh.prov import (BuildChangedError, DecisionRequest, DecisionRequestRejecte
                       decision_provider_for)
 from tests.support.clock import FrozenClock
 from tests.support.conf_builders import edge_cfg, hosted_cfg
+from tests.support.source_tree import aeh_module_paths
 
 ROOT = Path(__file__).resolve().parents[3]
 HEX = "ab" * 32
@@ -299,7 +300,7 @@ def test_tc_prov_44_the_factory_and_the_profile_rule() -> None:
 # --- TC-PROV-46 --------------------------------------------------------------------------------
 
 def test_tc_prov_46_the_shim_stays_outside_the_harness() -> None:
-    for path in (ROOT / "src" / "aeh").glob("*.py"):
+    for path in aeh_module_paths(ROOT / "src" / "aeh"):
         text = path.read_text(encoding="utf-8")
         assert not re.search(r"^\s*(from|import)\s+tools\b", text, re.M), path.name
         assert not re.search(r"^\s*(from|import)\s+(torch|transformers)\b", text, re.M), path.name
@@ -335,7 +336,7 @@ def test_tc_conf_33_opt_in_never_substituted() -> None:
     four = resolve_run_config(_small(), cohort)
     two = resolve_run_config(_small(build=BUILD_2B), cohort)
     assert four.panel_build_ref != two.panel_build_ref
-    for path in (ROOT / "src" / "aeh").glob("*.py"):
+    for path in aeh_module_paths(ROOT / "src" / "aeh"):
         assert "2b-nli" not in path.read_text(encoding="utf-8"), f"{path.name} selects a build in code"
 
 

@@ -61,6 +61,7 @@ from tests.support.agg_vocabulary import (
 )
 from tests.support.impl import AGG_MODULE, REVIEW_MODULE, require
 from tests.support.orch_run import ORCH_COHORT_ID
+from tests.support.source_tree import aeh_module_paths
 
 pytestmark = [pytest.mark.contract]
 
@@ -214,7 +215,7 @@ def test_tc_agg_c09_no_consumer_special_cases_the_scoring_model_at_run_time():
     stats_sites: list[str] = []
     calib_sites: list[str] = []
     conform_sites: list[str] = []
-    for path in sorted(src.glob("*.py")):
+    for path in aeh_module_paths(src):
         name = path.stem
         if name in _PACKAGE_SIDE:
             continue

@@ -69,7 +69,8 @@ def _caller_module() -> str:
         if "/aeh/store" in path or "/_doubles.py" in path:
             frame = frame.f_back
             continue
-        match = re.search(r"/aeh/([a-z_]+)\.py", path)
+        # A file of a package (`/aeh/orch/ledger.py`) counts for its package (`aeh.orch`).
+        match = re.search(r"/aeh/([a-z_]+)(?:/[a-z_]+)*\.py", path)
         if match:
             return f"aeh.{match.group(1)}"
         match = re.search(r"/tests/([A-Za-z0-9_/]+)\.py", path)

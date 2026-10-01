@@ -38,6 +38,7 @@ import pytest
 
 import aeh.stats as stats_module
 from aeh.stats import ValidationStats, long_horizon_export
+from tests.support.source_tree import package_source
 
 pytestmark = pytest.mark.integration
 
@@ -241,7 +242,7 @@ def _top_level_imports(source: str) -> set[str]:
 
 def test_tc_stats_30_stats_imports_no_columnar_engine():
     """`stats.py` imports no Parquet or DuckDB reader."""
-    source = pathlib.Path(stats_module.__file__).read_text(encoding="utf-8")
+    source = package_source(stats_module)
 
     offenders = sorted(_top_level_imports(source) & set(FORBIDDEN_ENGINES))
     assert offenders == [], (

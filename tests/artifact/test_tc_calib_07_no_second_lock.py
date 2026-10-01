@@ -56,9 +56,10 @@ from pathlib import Path
 
 from aeh.calib import LOCKED_FIELD_NAMES
 from aeh.pkg import SCHEMA_LOCK_FIELDS, SchemaLockViolation, _LOCKED_FIELD_HLD_NAMES
+from tests.support.source_tree import aeh_module_paths, module_source
 
 _SRC = Path(__file__).resolve().parents[2] / "src" / "aeh"
-_CALIB_SOURCE = (_SRC / "calib.py").read_text(encoding="utf-8")
+_CALIB_SOURCE = module_source("calib", _SRC)
 
 
 def _exception_name(node: ast.expr | None) -> str | None:
@@ -169,7 +170,7 @@ def test_tc_calib_07_the_lock_is_defined_exactly_once_and_calib_does_not_copy_it
     same object."""
     carrying = [
         path.name
-        for path in sorted(_SRC.glob("*.py"))
+        for path in aeh_module_paths(_SRC)
         if _class_definitions_named(
             path.read_text(encoding="utf-8"), SchemaLockViolation.__name__
         )

@@ -44,6 +44,7 @@ import aeh.store as store_mod
 from aeh.orch import Orchestrator
 from aeh.prov import BuildChangedError, ProviderUnavailableError
 from tests.support import pipe_world
+from tests.support.source_tree import module_source, top_module
 
 REPO = Path(__file__).resolve().parents[3]
 S1_C1 = "I did not get to th"
@@ -183,7 +184,7 @@ def test_tc_pipe_c04_an_outage_pauses_and_quarantines_nothing(tmp_path, monkeypa
 
 
 def test_tc_pipe_c05_rung_0_no_sql_in_the_composition_layer():
-    source = (REPO / "src" / "aeh" / "pipeline.py").read_text(encoding="utf-8")
+    source = module_source("pipeline", REPO / "src" / "aeh")
     tree = ast.parse(source)
     calls = [n.func.attr for n in ast.walk(tree)
              if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
@@ -200,12 +201,12 @@ def test_tc_pipe_c05_rung_0_no_sql_in_the_composition_layer():
                 and _re.match(r"\s*(SELECT|INSERT|UPDATE|DELETE|CREATE|REPLACE)\s", n.value, _re.IGNORECASE)]
     assert not literals, literals
     from tests.artifact.test_store_query_surface import KNOWN_EXECUTE_SITES
-    assert not [s for s in KNOWN_EXECUTE_SITES if s.startswith("aeh.pipeline:")]
+    assert not [s for s in KNOWN_EXECUTE_SITES if top_module(s.split(":")[0]) == "aeh.pipeline"]
 
 
 def _innermost_aeh(stack) -> str | None:
     for frame in reversed(stack):
-        module = frame.f_globals.get("__name__", "") if hasattr(frame, "f_globals") else ""
+        module = top_module(frame.f_globals.get("__name__", "")) if hasattr(frame, "f_globals") else ""
         if module.startswith("aeh.") and module != "aeh.store":
             return module
     return None
@@ -248,7 +249,7 @@ def test_tc_pipe_c05_rung_3_every_statement_is_an_owning_modules(tmp_path, monke
 
 
 def test_tc_pipe_c06_rung_0_the_composition_layer_calls_no_model():
-    tree = ast.parse((REPO / "src" / "aeh" / "pipeline.py").read_text(encoding="utf-8"))
+    tree = ast.parse(module_source("pipeline", REPO / "src" / "aeh"))
     model_calls = [n.lineno for n in ast.walk(tree) if isinstance(n, ast.Call)
                    and isinstance(n.func, ast.Attribute) and n.func.attr in ("complete", "decide")]
     assert not model_calls, f"aeh/pipeline.py calls a model surface at lines {model_calls}"
@@ -267,7 +268,7 @@ def test_tc_pipe_c06_rung_3_every_model_call_comes_from_a_stage_worker(tmp_path,
     def complete(prompt, model_ref, params):
         f, chain = sys._getframe(1), []
         while f is not None:
-            chain.append(f.f_globals.get("__name__", ""))
+            chain.append(top_module(f.f_globals.get("__name__", "")))
             f = f.f_back
         callers.append(next((m for m in chain if m.startswith("aeh.") and m not in ("aeh.orch", "aeh.prov")),
                             None))

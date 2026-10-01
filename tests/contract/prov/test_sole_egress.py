@@ -85,6 +85,7 @@ from tests.support.prov_contract import (
     payload,
     completion,
 )
+from tests.support.source_tree import top_module
 
 pytestmark = pytest.mark.contract
 
@@ -197,7 +198,8 @@ def test_tc_prov_c15_the_set_of_modules_with_egress_has_cardinality_one(repo_roo
     provider module would leave `TC-PROV-05` green over a tree where the clause's audit
     promise ("read one module") points at nothing. The seam must exist, and be exactly one.
     """
-    holders = egress_capable_modules(repo_root)
+    # A file of M-PROV (`aeh.prov.transport`) counts as M-PROV: the seam is the package.
+    holders = {top_module(module) for module in egress_capable_modules(repo_root)}
 
     assert holders == {"aeh.prov"}, (
         "CT-PROV-15: the set of modules holding an egress-capable import must be exactly "

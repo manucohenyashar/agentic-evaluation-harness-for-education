@@ -36,6 +36,7 @@ import pytest
 from aeh.pkg import GradePolicy
 from tests.support.grade_vocabulary import GRADE_BLOCKER, score
 from tests.support.impl import GRADE_MODULE, require
+from tests.support.source_tree import package_source
 
 ISSUE = GRADE_BLOCKER
 
@@ -67,7 +68,7 @@ _SUBSTITUTION_IDENTIFIERS = frozenset(
 def _module_identifiers(module) -> set[str]:
     """Every NAME token in the module's source — the identifiers the implementation
     actually contains, with its prose stripped."""
-    source = inspect.getsource(module)
+    source = package_source(module)
     return {
         token.string
         for token in tokenize.generate_tokens(io.StringIO(source).readline)

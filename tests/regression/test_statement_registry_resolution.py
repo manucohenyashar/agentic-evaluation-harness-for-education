@@ -42,22 +42,25 @@ import aeh.extract
 import aeh.ingest
 import aeh.judge
 import aeh.store
+from tests.support.source_tree import bindings
 
 
 def test_tc_reg_07_consumers_of_ingest_statements_hold_ingests_own_dict() -> None:
     """The two modules that read `INGEST_STATEMENTS` hold M-INGEST's dict, not the registry."""
     for module in (aeh.extract, aeh.judge):
-        resolved = getattr(module, "INGEST_STATEMENTS", None)
-        assert resolved is not None, (
+        # The package's files that import the name (the file that reads it, after the split).
+        found = bindings(module, "INGEST_STATEMENTS")
+        assert found, (
             f"{module.__name__} no longer binds INGEST_STATEMENTS; if the read moved, move "
             "this case with it rather than deleting it")
-        assert resolved is aeh.ingest.INGEST_STATEMENTS, (
-            f"{module.__name__} binds something other than M-INGEST's own statement dict. If "
-            "it is the shared `aeh.store.STATEMENTS` registry, the statement it resolves "
-            "depends on which module was imported last — the defect this case exists for."
-        )
-        assert resolved is not aeh.store.STATEMENTS, (
-            f"{module.__name__} binds the SHARED registry under a module-scoped name")
+        for resolved in found:
+            assert resolved is aeh.ingest.INGEST_STATEMENTS, (
+                f"{module.__name__} binds something other than M-INGEST's own statement dict. If "
+                "it is the shared `aeh.store.STATEMENTS` registry, the statement it resolves "
+                "depends on which module was imported last — the defect this case exists for."
+            )
+            assert resolved is not aeh.store.STATEMENTS, (
+                f"{module.__name__} binds the SHARED registry under a module-scoped name")
 
 
 def test_tc_reg_07_the_document_head_read_still_carries_the_transcript() -> None:

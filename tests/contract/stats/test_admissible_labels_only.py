@@ -27,6 +27,7 @@ import pytest
 from tests.support import broken_stats_fixtures as broken
 from tests.support import stats_vocabulary as vocab
 from tests.support.impl import REVIEW_MODULE, STATS_MODULE, require, require_path
+from tests.support.source_tree import module_path
 
 pytestmark = pytest.mark.contract
 
@@ -127,7 +128,7 @@ def test_tc_stats_c01_no_function_in_the_module_computes_agreement_over_another_
     """
     stats = require(STATS_MODULE, issue="#115")
     source_path = require_path(
-        repo_root / "src" / "aeh" / "stats.py",
+        module_path("stats", repo_root / "src" / "aeh"),
         "the M-STATS implementation module",
         issue="#115",
     )
@@ -170,7 +171,7 @@ def test_tc_stats_c01_the_admissibility_filter_exists_once_in_the_source(repo_ro
     one" would pass it.
     """
     source_path = require_path(
-        repo_root / "src" / "aeh" / "stats.py",
+        module_path("stats", repo_root / "src" / "aeh"),
         "the M-STATS implementation module",
         issue="#115",
     )

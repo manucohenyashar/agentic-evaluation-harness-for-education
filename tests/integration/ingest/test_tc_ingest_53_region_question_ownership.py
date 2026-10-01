@@ -47,6 +47,7 @@ import aeh.pkg  # noqa: F401
 import aeh.review  # noqa: F401
 import aeh.synth  # noqa: F401
 from aeh.store import Statement, open_store
+from tests.support.source_tree import module_source
 
 pytestmark = pytest.mark.integration
 
@@ -186,10 +187,7 @@ def _positional_owner_inference(
     ownership from position order looks like.
     """
     if source_text is None:
-        source = pathlib.Path(aeh.ingest.__file__).parent / module_name
-        if not source.exists():
-            return []
-        source_text = source.read_text(encoding="utf-8")
+        source_text = module_source(module_name)
     tree = ast.parse(source_text)
 
     scope: dict[int, str] = {}

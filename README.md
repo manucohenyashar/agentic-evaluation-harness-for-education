@@ -319,6 +319,45 @@ through both backends and reports where they diverge.
 
 ---
 
+## Code layout
+
+The implementation lives in `src/aeh/`. Each design module is a Python package named by its
+short key, and each package is split into small files that each do one job.
+
+- **Start at `__init__.py`.** Its docstring explains what the package does and lists every
+  file with a one-line description. It also re-exports the package's public names, so import
+  from the package (`from aeh.orch import Orchestrator`), not from a file inside it.
+- **Design notes are in `docs/code-notes/<package>.md`.** That is the full original module
+  description: the design decisions, the requirement IDs they satisfy, and why things are the
+  way they are. Code comments point there instead of repeating it.
+- **Common file names mean the same thing wherever they appear:** `records.py` holds the data
+  classes a package returns, `errors.py` the exceptions it raises, `settings.py` its
+  environment-variable knobs, `schema.py` its database migrations, and `statements.py` the SQL
+  it runs.
+
+| Package | Module | What it does | Files |
+|---|---|---|---|
+| `aeh.agg` | `M-AGG` | Combines a panel of judge verdicts into one criterion score (design §3.12). | 12 |
+| `aeh.calib` | `M-CALIB` | Rubric calibration, finding and fixing ambiguity in a rubric (design §3.17). | 14 |
+| `aeh.conf` | `M-CONF` | The deployment profile and the frozen configuration of a run (design §3.1). | 15 |
+| `aeh.conform` | `M-CONFORM` | Checks that different model backends grade the same fixtures the same way (design §3.18). | 13 |
+| `aeh.console` | `M-CONSOLE` | The teacher and operator console (design §3.19, HLD §11). | 32 |
+| `aeh.det` | `M-DET` | Scores multiple-choice criteria by exact lookup against the answer key (design §3.11). | 11 |
+| `aeh.extract` | `M-EXTRACT` | Finds the evidence spans for one criterion in one submission (design §3.8). | 9 |
+| `aeh.grade` | `M-GRADE` | Turns criterion scores into grades, and keeps them (design §3.14). | 16 |
+| `aeh.ingest` | `M-INGEST` | The only way from a scanned PDF to text the rest of the system reads (design §3.5). | 21 |
+| `aeh.integ` | `M-INTEG` | The integrity gate between extraction and judging (design §3.9). | 7 |
+| `aeh.judge` | `M-JUDGE` | Scores one criterion of one submission with a model, in isolation (design §3.10). | 12 |
+| `aeh.orch` | `M-ORCH` | The run orchestrator and its work ledger (design §3.7). | 22 |
+| `aeh.pipeline` | `M-PIPE` | Drives a run from start to finish by composing the other modules (design §3.19). | 11 |
+| `aeh.pkg` | `M-PKG` | The assessment package catalog (design §3.4). | 20 |
+| `aeh.prov` | `M-PROV` | The only place the system talks to a model (design §3.2). | 17 |
+| `aeh.review` | `M-REVIEW` | The teacher's review queue, fitted to a time budget (design §3.15). | 13 |
+| `aeh.setup` | `M-SETUP` | Stage A, turning a teacher's assessment into a published package (design §3.6). | 12 |
+| `aeh.stats` | `M-STATS` | The statistics that say whether the system's grades can be trusted (design §3.16). | 16 |
+| `aeh.store` | `M-STORE` | The persistence layer, SQLite files plus a content-addressed blob store (design §3.3). | 18 |
+| `aeh.synth` | `M-SYNTH` | Writes the feedback narrative for each graded submission (design §3.12). | 7 |
+
 # Building it: the Claude Code harness
 
 A `.claude/` setup that turns the design document above into a detailed design, a test plan,

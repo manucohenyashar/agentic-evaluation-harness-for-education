@@ -50,6 +50,8 @@ import pytest
 import aeh.ingest as ingest_module
 from aeh.ingest import Ingestor
 from tests.contract.ingest._doubles import ISSUE
+from tests.support.source_tree import module_source
+from tests.support.source_tree import defined_in
 
 pytestmark = pytest.mark.contract
 
@@ -128,7 +130,8 @@ def test_tc_ingest_c01_pdf_decoding_imports_live_only_in_m_ingest():
         for dotted in _imports_of(tree):
             hits = _boundary_hits(dotted, PDF_IMAGE_ROOTS)
             if hits:
-                holders.setdefault(module, []).extend(hits)
+                # A file of a package counts for its top-level module: aeh.ingest.x is aeh.ingest.
+                holders.setdefault(".".join(module.split(".")[:2]), []).extend(hits)
     assert set(holders) == {"aeh.ingest"}, (
         f"TC-INGEST-C01: PDF/image decoding exists outside M-INGEST: {holders}. "
         "The gateway is the sole route from PDF to text (CT-INGEST-01) — a second "
@@ -164,7 +167,7 @@ def test_tc_ingest_c01_no_entry_point_takes_a_path_and_intake_is_content_address
         for attr, obj in vars(module).items():
             if attr.startswith("_") or not callable(obj) or inspect.isclass(obj):
                 continue
-            if getattr(obj, "__module__", "") != module.__name__:
+            if not defined_in(obj, module):
                 continue
             try:
                 parameters = inspect.signature(obj).parameters
@@ -199,8 +202,7 @@ def test_tc_ingest_c01_no_entry_point_takes_a_path_and_intake_is_content_address
     # The module body reads no binary path: no `open()` / `read_bytes()` call —
     # and every `read_text()` sits inside the pure assembly seam (transcript
     # files, already-decoded text), never elsewhere.
-    tree = ast.parse(
-        (_REPO_ROOT / "src" / "aeh" / "ingest.py").read_text(encoding="utf-8"))
+    tree = ast.parse(module_source("ingest", _REPO_ROOT / "src" / "aeh"))
     seam = None
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef) \

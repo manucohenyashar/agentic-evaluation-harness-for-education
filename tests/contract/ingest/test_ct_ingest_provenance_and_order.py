@@ -46,6 +46,7 @@ from tests.contract.ingest._doubles import (
     student_answer,
 )
 from tests.support.store_api import statement
+from tests.support.source_tree import module_source
 
 pytestmark = pytest.mark.contract
 
@@ -298,8 +299,7 @@ def test_tc_ingest_c07_no_directory_read_exists_in_the_module():
     directory: no `os.listdir` / `Path.iterdir` / `scandir` / `glob` call in
     `aeh.ingest`'s body. The behavioural differential above is the twin
     assertion; this one holds even where no fixture can reach."""
-    tree = ast.parse((_REPO_ROOT / "src" / "aeh" / "ingest.py").read_text(
-        encoding="utf-8"))
+    tree = ast.parse(module_source("ingest", _REPO_ROOT / "src" / "aeh"))
     directory_calls: list[str] = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):

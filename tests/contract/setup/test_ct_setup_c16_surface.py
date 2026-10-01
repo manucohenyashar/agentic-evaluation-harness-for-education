@@ -61,6 +61,7 @@ import pytest
 import aeh.setup as aeh_setup
 from aeh.setup import SetupOrderError, SetupService
 from tests.contract.setup._doubles import ingest_document, stage_chain
+from tests.support.source_tree import module_source
 
 pytestmark = pytest.mark.contract
 
@@ -112,7 +113,7 @@ def test_tc_setup_c16_no_downstream_import_in_the_module_graph(repo_root):
     `aeh.prov`), stdlib, and typing — no consumer of setup's OUTPUT appears in
     its own graph, so no post-publish consumer can route through setup by
     construction."""
-    source = (repo_root / "src" / "aeh" / "setup.py").read_text(encoding="utf-8")
+    source = module_source("setup", repo_root / "src" / "aeh")
     tree = ast.parse(source)
     imported = set()
     for node in ast.walk(tree):

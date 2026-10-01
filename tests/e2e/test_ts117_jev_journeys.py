@@ -29,6 +29,7 @@ from pathlib import Path
 import pytest
 
 from tests.support import pipe_world
+from tests.support.source_tree import module_source
 
 pytestmark = [pytest.mark.e2e, pytest.mark.integration]
 ROOT = Path(__file__).resolve().parents[2]
@@ -294,7 +295,7 @@ def test_sec_21_no_prompt_carries_the_inventory(tmp_path) -> None:
     try:
         _run(world, decision_provider=capture)
         for module in ("extract.py", "synth.py", "ingest.py"):
-            assert "evidence_assessment" not in (ROOT / "src" / "aeh" / module).read_text(encoding="utf-8"), module
+            assert "evidence_assessment" not in module_source(module, ROOT / "src" / "aeh"), module
         assert capture.payloads and capture.requests
         assert all("band probabilities:" not in str(v) for p, _ in capture.payloads for _, v in p.fields)
         assert all("band probabilities:" not in r.state for r in capture.requests)

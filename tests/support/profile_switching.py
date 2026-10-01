@@ -143,9 +143,18 @@ def spy_conf(monkeypatch: Any, name: str, *modules: Any) -> list[tuple[tuple, di
 
     monkeypatch.setattr(aeh.conf, name, spy)
     for module in modules:
-        if hasattr(module, name):
-            monkeypatch.setattr(module, name, spy)
+        # A consumer is a package now; the name sits in whichever of its files imported it.
+        for holder in (module, *_files_of(module)):
+            if name in vars(holder):
+                monkeypatch.setattr(holder, name, spy)
     return calls
+
+
+def _files_of(package: Any) -> list[Any]:
+    """The loaded modules inside `package` (empty for a one-file module)."""
+    import sys
+    prefix = getattr(package, "__name__", "") + "."
+    return [m for n, m in list(sys.modules.items()) if n.startswith(prefix) and m is not None]
 
 
 RA_PACKAGE = "pkg-profile-ra"

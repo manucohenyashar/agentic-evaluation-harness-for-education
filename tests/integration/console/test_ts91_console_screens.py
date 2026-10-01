@@ -27,6 +27,7 @@ from aeh.console import SCREENS, build_console
 from aeh.store import open_store
 from tests.support.grade_vocabulary import write_criterion_scores
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
+from tests.support.source_tree import package_source
 
 pytestmark = pytest.mark.integration
 
@@ -84,7 +85,7 @@ def test_tc_console_45_s9_header_is_build_queue_at_the_budget(tmp_data_dir):
 
     # The SQL the module can execute: its string literals, never the comments explaining the
     # removals (FR-CONSOLE-35).
-    literals = [n.value for n in ast.walk(ast.parse(Path(console.__file__).read_text(encoding="utf-8")))
+    literals = [n.value for n in ast.walk(ast.parse(package_source(console)))
                 if isinstance(n, ast.Constant) and isinstance(n.value, str)]
     for removed in (r"\brank_position\b", r"\bFROM\s+review_budget\b", r"\bFROM\s+package_file\b",
                     r"\bFROM\s+setup_skip\b", r"\bFROM\s+sample_selection\b"):
@@ -99,7 +100,7 @@ def test_tc_console_45_the_blind_flow_plan_names_no_removed_table():
     removed and no tier declares; M-REVIEW's `BlindSession` reads `submission` and `criterion`."""
     import ast
 
-    literals = [n.value for n in ast.walk(ast.parse(Path(console.__file__).read_text(encoding="utf-8")))
+    literals = [n.value for n in ast.walk(ast.parse(package_source(console)))
                 if isinstance(n, ast.Constant) and isinstance(n.value, str)]
     hits = [lit for lit in literals if re.search(r"\bFROM\s+blind_sample\b", lit, re.I)]
     assert not hits, hits

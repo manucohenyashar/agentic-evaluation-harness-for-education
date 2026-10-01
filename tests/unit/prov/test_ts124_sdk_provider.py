@@ -32,6 +32,7 @@ from harness.corpora.jev import STATE_SENTINEL
 from tests.support import jev_corpora
 from tests.support.clock import FrozenClock
 from tests.unit.prov.test_ts106_jev_openrouter import _request as _mixed_request
+from tests.support.source_tree import defined_in
 
 API_KEY = "sk-or-SENTINEL-0048"
 JEV_REF = ModelRef(role="decision", provider="openrouter-jev",
@@ -281,7 +282,7 @@ def test_tc_prov_51_every_sdk_failure_maps_to_a_harness_error(row, make, error, 
     assert len(transport.requests) == sends, f"row {row}"
     if row not in ("connection", "timeout"):
         _assert_sdk_path(transport)
-    assert type(caught.value).__module__ in ("aeh.prov", "aeh.conf"), type(caught.value)
+    assert defined_in(type(caught.value), "aeh.prov") or defined_in(type(caught.value), "aeh.conf"), type(caught.value)
     for link in _chain(caught.value):
         for text in (str(link), repr(link)):
             assert API_KEY not in text and STATE_SENTINEL not in text, f"row {row}: {type(link).__name__}"
@@ -302,7 +303,7 @@ def test_tc_prov_51_a_bare_sdk_error_is_unavailability_with_its_cause(monkeypatc
     with pytest.raises(ProviderUnavailableError) as caught:
         _provider(_Transport(_ok(_good_body()))).decide(jev_corpora.wire_request(), JEV_REF)
     assert any(isinstance(link, TypeSafeError) for link in _chain(caught.value)), "the SDK error is chained"
-    assert type(caught.value).__module__ == "aeh.prov"
+    assert defined_in(type(caught.value), "aeh.prov")
 
 
 # --- TC-PROV-54 ----------------------------------------------------------------------------------

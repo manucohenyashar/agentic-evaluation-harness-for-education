@@ -127,14 +127,13 @@ def test_tc_setup_c14_packages_under_different_versions_distinguishable(tmp_data
     # Package 2 under a NEW version string — what a template change is: a new
     # pin, never an in-place edit of the old one's meaning.
     original = aeh_setup.SETUP_PROMPT_TEMPLATE_V
-    aeh_setup.SETUP_PROMPT_TEMPLATE_V = "setup-inventory-v2"
-    try:
+    # Through MonkeyPatch so the pin is replaced in the file of `aeh.setup` that reads it too.
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(aeh_setup, "SETUP_PROMPT_TEMPLATE_V", "setup-inventory-v2")
         chain2 = stage_chain(shared, package_id="pkg-c14-v2")
         chain2.doc = ingest_document(chain2.store, kind="assessment")
         p2 = chain2.service.propose_inventory(chain2.doc)
         assert p2.template_version == "setup-inventory-v2"
-    finally:
-        aeh_setup.SETUP_PROMPT_TEMPLATE_V = original
 
     # The differential, over STORED DATA ALONE: both tier files read raw.
     rows_v1 = _stored_proposals(shared, "pkg-c14-v1")

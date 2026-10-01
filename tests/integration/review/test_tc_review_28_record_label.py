@@ -67,6 +67,7 @@ from aeh.review import open_review
 from aeh.store import Statement, open_store
 from tests.support.grade_vocabulary import write_criterion_scores
 from tests.support.orch_run import newest_run_id, ORCH_COHORT_ID, seed_run
+from tests.support.source_tree import package_source
 
 pytestmark = pytest.mark.integration
 
@@ -259,7 +260,7 @@ def test_tc_review_28_no_package_schema_can_declare_a_population_scope(label_wor
 
     import aeh.pkg as pkg
 
-    assert "assignment_type" not in inspect.getsource(pkg), (
+    assert "assignment_type" not in package_source(pkg), (
         "`aeh.pkg` now mentions `assignment_type`. If M-PKG has declared the population "
         "scope, TC-REVIEW-28's 'lab' arm is now expressible and belongs in this file — "
         "replace this case with it (#383 reported the gap)"

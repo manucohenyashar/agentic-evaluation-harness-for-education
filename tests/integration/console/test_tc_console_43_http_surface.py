@@ -76,6 +76,7 @@ from aeh.console import (
     serve_console,
 )
 from aeh.store import open_store
+from tests.support.source_tree import package_source
 
 pytestmark = pytest.mark.integration
 
@@ -369,7 +370,7 @@ def test_tc_console_43_console_py_spawns_no_child_script():
 
     import aeh.console as console_module
 
-    assert "_CHILD_SCRIPT" not in inspect.getsource(console_module), (
+    assert "_CHILD_SCRIPT" not in package_source(console_module), (
         "`_CHILD_SCRIPT` is back in console.py. The console serves in-process; a child script "
         "would bypass the profile and bind refusals that FR-CONSOLE-36 resolves at construction"
     )

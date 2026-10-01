@@ -58,6 +58,7 @@ from aeh.orch import ESCALATION_BUDGET_ENV, Orchestrator
 from harness.corpora import dev_pipe
 from tests.support import broken_stats_fixtures as broken
 from tests.support import pipe_world
+from tests.support.source_tree import module_source
 
 pytestmark = pytest.mark.integration
 
@@ -262,7 +263,7 @@ def test_tc_pipe_20_d_a_mid_run_baseline_waits_for_the_next_run(tmp_path, monkey
 
 
 def test_tc_pipe_20_e_pipeline_executes_no_sql():
-    code = (REPO / "src" / "aeh" / "pipeline.py").read_text(encoding="utf-8")
+    code = module_source("pipeline", REPO / "src" / "aeh")
     for pattern in (r"\bimport sqlite3\b", r"\.execute(?:many|script)?\(", r"\.query\(",
                     r"\bStatement\(", r"[\"'](?:SELECT|INSERT|UPDATE|DELETE|REPLACE)\s"):
         assert not re.search(pattern, code, re.IGNORECASE), (
@@ -478,7 +479,7 @@ def test_tc_pipe_23_c_an_even_panel_without_quarantine_pauses_the_run(tmp_path, 
 _KILL_BEFORE_GRADING = r"""
 import sys, time
 from pathlib import Path
-import aeh.pipeline as pipeline
+import aeh.pipeline.driver as driver
 from tests.support import pipe_world
 
 world = pipe_world.replay_world(Path(sys.argv[1]))
@@ -489,7 +490,8 @@ def _grading_never_finishes(*args, **kwargs):
     print("GRADING", flush=True)
     time.sleep(600)
 
-pipeline._grade = _grading_never_finishes
+# `_grade` is private to the package: patch it where the driver calls it.
+driver._grade = _grading_never_finishes
 pipe_world.drive_composed(world)
 """
 

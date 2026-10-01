@@ -40,6 +40,7 @@ import pytest
 import aeh.console as console
 from aeh.console import build_console
 from tests.support import pipe_world
+from tests.support.source_tree import package_source
 
 pytestmark = pytest.mark.integration
 
@@ -93,7 +94,7 @@ _DOORS = {"finalize_batch", "act", "purge_cohort", "confirm_inventory", "set_ans
 def test_tc_console_44_static_no_door_call_under_a_blanket_suppression():
     import ast
 
-    tree = ast.parse(Path(console.__file__).read_text(encoding="utf-8"))
+    tree = ast.parse(package_source(console))
     offenders = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.With):

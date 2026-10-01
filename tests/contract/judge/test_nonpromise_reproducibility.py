@@ -97,6 +97,7 @@ from tests.support.orch_run import (
     seed_documents,
     seed_package,
 )
+from tests.support.source_tree import package_source
 
 pytestmark = [pytest.mark.contract]
 
@@ -312,7 +313,7 @@ def test_tc_judge_c17_m_agg_reuses_by_work_id_and_merges_nothing_on_request_equa
         import aeh.agg
 
         parsed = ast.parse(
-            Path(aeh.agg.__file__).read_text(encoding="utf-8")
+            package_source(aeh.agg)
         )
 
         def _decorator_name(decorator: Any) -> str | None:

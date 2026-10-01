@@ -20,8 +20,9 @@ from pathlib import Path
 import pytest
 
 import aeh.conf
+from tests.support.source_tree import package_source
 
-CONF_SOURCE = Path(inspect.getsourcefile(aeh.conf)).read_text(encoding="utf-8")
+CONF_SOURCE = package_source(aeh.conf)
 CONF_TREE = ast.parse(CONF_SOURCE)
 
 

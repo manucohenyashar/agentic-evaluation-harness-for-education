@@ -61,6 +61,7 @@ from aeh.judge import prompt_fields as judge_prompt_fields
 from aeh.prov import Completion
 from aeh.store import open_store
 from tests.support.orch_run import PLAIN_TRANSCRIPT, seed_document, seed_run
+from tests.support.source_tree import module_source
 
 pytestmark = [pytest.mark.contract]
 
@@ -225,10 +226,9 @@ def test_tc_orch_c06_the_dispatch_surface_admits_no_batching_mechanism():
     import aeh.orch
     import aeh.synth
 
-    root = Path(aeh.orch.__file__).resolve().parent
     census: dict[str, list[str]] = {}
     for name in _CENSUS_MODULES:
-        text = (root / name).read_text(encoding="utf-8")
+        text = module_source(name)
         census[name] = sorted(set(_ENV_NAME.findall(text)))
     all_names = sorted({n for names in census.values() for n in names})
 
