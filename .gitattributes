@@ -12,3 +12,8 @@
 # checkout on Windows would change every one of those hashes, so `fixtures/` is pinned to LF
 # in the working tree on every platform.
 fixtures/** text eol=lf
+
+# The sample answer-sheet PDFs are byte-exact: their cross-reference tables hold byte offsets,
+# so a CRLF checkout on Windows would damage every file. They contain no NUL byte, so Git
+# would otherwise guess "text". (Same reason as the fixtures/ rule above.)
+docs/live-tests/sample-materials/pdf/** binary

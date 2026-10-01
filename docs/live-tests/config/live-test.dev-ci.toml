@@ -1,0 +1,62 @@
+# Configuration for the first live teacher test: the "dev-ci" profile, grading through OpenRouter.
+#
+# Why dev-ci and not cloud-hosted: the console refuses to start under cloud-hosted (it has no
+# login, so it may only run on one machine, for one person). dev-ci also sends student work to
+# OpenRouter, so it is gated by the same consent rule: only cohorts marked "synthetic" or
+# "consented" may be graded (the sample answer sheets are synthetic).
+#
+# Use it with the checker before anything else:
+#     python docs/live-tests/sample-materials/check_config.py docs/live-tests/config/live-test.dev-ci.toml
+#
+# The secret is NEVER written in this file. Put it in your terminal session instead:
+#     export OPENROUTER_API_KEY="sk-or-..."          (macOS / Linux)
+#     $env:OPENROUTER_API_KEY = "sk-or-..."          (Windows PowerShell)
+#
+# STATUS: the two model names below are copied from the repository's own example file
+# (config/harness.example.toml). They have NOT been checked against OpenRouter's live model list
+# (this guide was written where OpenRouter could not be reached). Open https://openrouter.ai/models
+# and confirm each one exists before the test. The date after "@" is the version you are pinning;
+# the system refuses names ending in :latest, @latest, @stable, @main, @head or @newest.
+
+# Which profile this file selects when HARNESS_PROFILE is not set in the terminal. (The terminal
+# wins if both are set.) Set here so that `aeh console` and `aeh run` work without extra typing.
+HARNESS_PROFILE = "dev-ci"
+
+prompt_template_v = "judge-prompt/2"
+
+[profiles.dev-ci]
+# Spending limit for the whole run, in the currency below. The run stops dispatching when it is
+# reached. 5 is plenty for the ten sample answer sheets.
+HARNESS_COST_CEILING = 5
+HARNESS_COST_CURRENCY = "USD"
+
+# "off" = the page-reading model and the judge panel do all the grading. "jev" turns on the extra
+# decision engine, which needs a separate package (typesafe-sdk) and a pinned Jev build. Keep it
+# off for a first test: fewer moving parts, and every score then has one clear source.
+HARNESS_DECISION_ENGINE = "off"
+
+# The model that reads the page images and turns them into text.
+[profiles.dev-ci.transcriber]
+role = "transcriber"
+provider = "openrouter"
+build_id = "openrouter/qwen/qwen3-vl-8b-instruct@2026-06-01"
+
+# The judge panel. The size must be 1, 3 or 5 (never 2 or 4: an even panel cannot break a tie).
+# One judge is the smallest working test, but with one judge the system has nobody to disagree
+# with, so it cannot show agreement figures. For a real accuracy test use three judges from
+# different model families: uncomment the two extra blocks and replace the names with models you
+# have confirmed on openrouter.ai/models (they are placeholders, not recommendations).
+[[profiles.dev-ci.panel]]
+role = "judge"
+provider = "openrouter"
+build_id = "openrouter/qwen/qwen3-30b-a3b@2026-06-01"
+
+# [[profiles.dev-ci.panel]]
+# role = "judge"
+# provider = "openrouter"
+# build_id = "openrouter/<vendor>/<second-model>@<date>"
+#
+# [[profiles.dev-ci.panel]]
+# role = "judge"
+# provider = "openrouter"
+# build_id = "openrouter/<vendor>/<third-model>@<date>"
