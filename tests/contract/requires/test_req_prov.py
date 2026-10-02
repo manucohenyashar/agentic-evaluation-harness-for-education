@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 import pytest
 
 from aeh.prov import HttpResponse, LocalServerProvider, SamplingParams
+from aeh.prov.live import _fields_from_wire
 from aeh.store import open_store
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 from tests.support.prov_contract import CountingClock, flat_ok
@@ -60,10 +61,10 @@ class WireTransport:
             return outcome
         body = json.loads(request.body.decode("utf-8")) if isinstance(request.body, bytes) else request.body
         self.bodies.append(body)
-        return flat_ok(text=self.reply([tuple(f) for f in body["prompt"]["fields"]]), build=self.build)
+        return flat_ok(text=self.reply([tuple(f) for f in _fields_from_wire(body)]), build=self.build)
 
     def fields(self):
-        return [[tuple(f) for f in body["prompt"]["fields"]] for body in self.bodies]
+        return [[tuple(f) for f in _fields_from_wire(body)] for body in self.bodies]
 
 
 def wire_provider(transport: WireTransport) -> LocalServerProvider:

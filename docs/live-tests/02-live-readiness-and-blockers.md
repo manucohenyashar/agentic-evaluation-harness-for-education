@@ -43,7 +43,7 @@ The design says the console may run under the `edge-local` and `dev-ci` profiles
   The first is the privacy gate doing its job: the command builds the run without a provider that can answer "does OpenRouter keep this data?". The second is the console's deliberate refusal. Neither is a bug to bypass.
 * **What is needed:** a launcher that builds the OpenRouter provider for `dev-ci` (with the consent gate still applying) and supplies the retention answer in a way the privacy owner approves. That is a design decision, not just code.
 
-### B2. The request the OpenRouter provider sends is not the usual chat format (unconfirmed, needs one real call)
+### B2. The request the OpenRouter provider sends is not the usual chat format (confirmed; fixed in code, not yet re-checked live)
 
 Captured by pointing the provider at a stand-in server on this machine (nothing left the machine):
 
@@ -56,6 +56,17 @@ POST /api/v1/chat/completions
 
 Two things stand out. The model name is sent whole, including the `openrouter/` prefix and the `@2026-06-01` pin, where OpenRouter's documented model names are plain slugs such as `qwen/qwen3-30b-a3b`. And the body has a `prompt.fields` list rather than the `messages` list that the chat-completions endpoint is documented to expect. (The Jev decision provider, which is a different class, does strip the prefix and date: `_jev_wire_model` in `src/aeh/prov/jev_openrouter.py`.)
 **Status: not confirmed.** This environment could not reach OpenRouter (the network policy blocked it), so this has never been tried against the real service. One real call with a throw-away prompt settles it. If OpenRouter rejects it, the provider needs a translation layer.
+
+**Update (2026-10-02): the problem was confirmed by a real call, and the code is changed.** With a real key, a hand-made request (`"model": "qwen/qwen3-30b-a3b"` and a `messages` list) succeeded, and the same call through `OpenRouterProvider` failed with *"the response carries neither a choices list nor a text field"*: OpenRouter refused the body, and the provider read every 4xx other than 429 as a reply to parse, so OpenRouter's explanation was lost. The provider (`src/aeh/prov/live.py`) now:
+
+* sends the standard chat shape: one `user` message per payload field, in order, the value verbatim and the field name in the message's `name`; the page image travels as an `image_url` part;
+* sends OpenRouter the plain slug (`openrouter/qwen/qwen3-30b-a3b@2026-06-01` → `qwen/qwen3-30b-a3b`);
+* names the status and OpenRouter's own message when a request is refused, with student text withheld. A refusal every paper would meet alike (401 bad key, 402 no credit, 404 unknown model) raises `ProviderUnavailableError` after one send, so a run pauses; during intake the page is quarantined instead, as before. Any other refusal (a paper too long for the model, a moderation flag) is that one paper's error: retried within the budget, then the paper quarantines and the run goes on;
+* says why an answer is empty when a reasoning model spends its output allowance thinking (`content: null`, `finish_reason: "length"`). The same real call showed this with `max_tokens: 20` on `qwen/qwen3-30b-a3b`.
+
+Regression cases `TC-PROV-60` to `TC-PROV-63`.
+
+**Not yet checked:** no real call has been made through the changed provider. The only real success so far was a hand-made request with a single message. Whether OpenRouter, and the host behind it, accept several `user` messages each carrying a `name`, and the image part, needs one real call (re-run `smoke.py`). Also not checked: many open models' chat templates drop `name`, so the model may see each field's value without its field name; the judge's and extractor's values carry their own labels (`criterion_id: …`), but some setup and synthesis values do not. Still open: the local server is sent the whole weights-path `build_id` as `model` (see the deployment tutorial, section 6.5).
 
 ### B3. Nothing creates a cohort, its consent class, or its roster
 
@@ -121,7 +132,7 @@ The right-test gate (V4) compares the words in a student's answers with the word
 These are descriptions for the issue backlog (this repository creates issues only through `/plan-to-issues`, so none were created here). Each is written as a goal that can be checked.
 
 1. **Decide the privacy answer (B1/B6).** *Goal:* a written decision on how zero-retention is confirmed for OpenRouter, and who approves it.
-2. **One real OpenRouter call (B2).** *Goal:* a recorded result showing the provider's request is accepted, or the translation needed.
+2. **One real OpenRouter call (B2).** *Goal:* a recorded result showing the provider's request is accepted, or the translation needed. *Code changed (see B2); one real call through the provider is still needed to confirm it.*
 3. **Operator cohort commands (B3).** *Goal:* create a cohort with a consent class and load a roster, from the command line or the console, with the change in the audit trail.
 4. **Intake worker (B4).** *Goal:* after an upload, the paper is read, checked, and appears in the preflight and quarantine pages, with no engineer involved.
 5. **Dev-ci launcher through OpenRouter (B1).** *Goal:* `aeh run` under `dev-ci` with a key calls OpenRouter, the consent gate still applies, and the summary says which provider ran.

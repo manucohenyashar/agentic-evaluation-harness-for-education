@@ -45,6 +45,7 @@ from aeh.prov import (
     PromptPayload,
     SamplingParams,
 )
+from aeh.prov.live import _fields_from_wire
 from tests.support.prov_contract import payload as contract_payload
 
 pytestmark = [pytest.mark.live, pytest.mark.slow, pytest.mark.integration]
@@ -199,7 +200,7 @@ def test_tc_prov_20_the_wire_carries_the_payload_byte_for_byte(tmp_path):
     )
     posts = [r for r in recording.requests if r.method == "POST"]
     assert len(posts) == 1
-    wire = json.loads(posts[0].body.decode("utf-8"))["prompt"]["fields"]
+    wire = _fields_from_wire(json.loads(posts[0].body.decode("utf-8")))
     assert wire == [list(p) for p in caller.fields], (
         "TC-PROV-20: the payload on the real wire is not the caller's. Byte identity "
         "survives the real backend or the fast tier's prefix guarantee means nothing "

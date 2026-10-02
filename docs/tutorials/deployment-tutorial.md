@@ -13,7 +13,7 @@ For how to *use* the system once it is running (the pages, the commands, grading
 > Everything below was **checked against the code** and, where it says "checked", **run** on a Linux machine with Python 3.11. Things that could not be checked are labelled **not checked**. Two facts decide what you can do today:
 >
 > 1. **Local computer mode is the only mode that can run the console and grade at the same time.** But the system has **not been tried against a real local model server**. The way it talks to the server may not match what common servers (Ollama, llama.cpp, vLLM) expect. See section 6.5.
-> 2. **OpenRouter mode can be set up and checked, but a live grading run cannot start yet.** `dev-ci` only replays recordings. `cloud-hosted` is the only profile that calls OpenRouter, but the console refuses it, and `aeh run` stops at the privacy check. Both refusals were reproduced and are shown in section 7.6. They are listed as blockers B1, B2 and B6 in [`02-live-readiness-and-blockers.md`](../live-tests/02-live-readiness-and-blockers.md).
+> 2. **OpenRouter mode can be set up and checked, but a live grading run cannot start yet.** `dev-ci` only replays recordings. `cloud-hosted` is the only profile that calls OpenRouter, but the console refuses it, and `aeh run` stops at the privacy check. Both refusals were reproduced and are shown in section 7.6. They are listed as blockers B1 and B6 in [`02-live-readiness-and-blockers.md`](../live-tests/02-live-readiness-and-blockers.md).
 >
 > So: you can follow every step here and get a correct setup. Whether a live run then works depends on the open blockers.
 
@@ -277,15 +277,16 @@ Set `LOCAL_INFERENCE_BASE_URL` in the terminal if your server is not at the defa
 The address must **end in `/v1`**. The system adds `/chat/completions` to it (checked). It sends **no** password or key to a local server (checked).
 
 > **Warning: not tried against a real server.**
-> A test against a stand-in server on this machine showed exactly what the system sends. It posts to `<address>/chat/completions` with a body like this:
+> A test against a stand-in server on this machine showed exactly what the system sends. It posts to `<address>/chat/completions` in the standard chat format, with one message per part of the prompt:
 >
 > ```json
 > {"model": "/models/x-q4.gguf@sha256:0000...0000",
->  "prompt": {"fields": [["instruction", "Pick a band"], ["submission", "student text"]]},
+>  "messages": [{"role": "user", "name": "instruction", "content": "Pick a band"},
+>               {"role": "user", "name": "submission", "content": "student text"}],
 >  "temperature": 0.0}
 > ```
 >
-> Two things in it are unusual. The `model` is the whole `build_id`, including the file path and the fingerprint. And the body has a `prompt` with `fields`, not the `messages` list that servers such as Ollama, llama.cpp and vLLM normally expect. The system's design says a translation layer (LiteLLM) sits in front of the model server on a real deployment. **Whether your server accepts this as it is has not been checked.** Before a real test, send one real request and see. If the server refuses it, you will need that translation layer; that is engineering work. This is the same open question as B2 in the readiness document.
+> A page picture is sent as an image part (`"type": "image_url"` with a `data:image/png;base64,...` address), which is what vision models expect. One thing is still unusual: the `model` is the whole `build_id`, including the file path and the fingerprint. Servers such as Ollama, llama.cpp and vLLM usually want the name they serve the model under. **Whether your server accepts this as it is has not been checked.** Before a real test, send one real request and see. If the server refuses the model name, you will need to fix that; it is engineering work.
 
 ### 6.6 Start it
 
@@ -310,7 +311,7 @@ Checked: with this file the console started and `/runs/run-dev-pipe/monitor` ret
 | Checked | Not checked |
 |---|---|
 | The file is accepted; wrong forms are refused with a clear reason | A run that really calls a local model |
-| The console starts under `edge-local` and serves pages | Whether a real server accepts the request format (6.5) |
+| The console starts under `edge-local` and serves pages | Whether a real server accepts the model name (6.5) |
 | The request the system sends, and the address it uses | How fast or accurate the models are on your computer |
 | `aeh run` under `edge-local` on a finished practice run succeeds (nothing needed a model) | Windows |
 
@@ -445,7 +446,7 @@ aeh run: ValueError: the dev-ci profile records and replays through a fixture di
 
 Note that the command prints the OpenRouter model names *first*, even though a replay is what would run. Do not read that as proof OpenRouter was called.
 
-Also not confirmed (blocker B2): the request to OpenRouter has the same unusual shape as in section 6.5, with the whole `openrouter/<vendor>/<model>@<date>` name as `model`. OpenRouter's documented names are plain, such as `qwen/qwen3-30b-a3b`. A stand-in server showed the system sends `Authorization: Bearer <key>` and the body above. One real call would settle whether OpenRouter accepts it.
+**The request format (blocker B2) is changed, but not yet re-checked live.** The first real call failed: the system sent the whole `openrouter/<vendor>/<model>@<date>` name and a non-standard body, and OpenRouter refused it. The system now sends the plain name OpenRouter knows (`qwen/qwen3-30b-a3b`) and the standard chat format from section 6.5, with `Authorization: Bearer <key>`. A real hand-made request with the same key and model succeeded; a real call through the changed system has **not been made yet** (not checked). A refused request now says why, in OpenRouter's words. A bad key, no credit or an unknown model (`HTTP 401`, `402`, `404`) stops the run, for example `HTTP 401 from the provider: the credentials were refused (for OpenRouter, check OPENROUTER_API_KEY)`. A refusal of one paper only (too long, flagged) sets that paper aside and the run goes on.
 
 ---
 
