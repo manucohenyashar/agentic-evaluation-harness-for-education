@@ -64,3 +64,24 @@ build_id = "openrouter/qwen/qwen3-30b-a3b@2026-06-01"
 # role = "judge"
 # provider = "openrouter"
 # build_id = "openrouter/<vendor>/<third-model>@<date>"
+
+# Escalation judges: the real models used when the system adds judges to an answer (two when
+# the judges are unsure or disagree, one more if a judge call is lost). Each must be a different
+# model from the panel and from each other, pinned with a date, and answer under zero retention
+# (check it first; see the deployment tutorial 7.6). Without them, such answers keep their score
+# as provisional and go to teacher review, and HARNESS_ORCH_RANDOM_ARM_RATE must be set to 0.
+# Three cover every seat for a one-judge panel. Placeholders, not recommendations:
+# [[profiles.dev-ci.escalation_judge]]
+# role = "judge"
+# provider = "openrouter"
+# build_id = "openrouter/<vendor>/<model-a>@<date>"
+#
+# [[profiles.dev-ci.escalation_judge]]
+# role = "judge"
+# provider = "openrouter"
+# build_id = "openrouter/<vendor>/<model-b>@<date>"
+#
+# [[profiles.dev-ci.escalation_judge]]
+# role = "judge"
+# provider = "openrouter"
+# build_id = "openrouter/<vendor>/<model-c>@<date>"

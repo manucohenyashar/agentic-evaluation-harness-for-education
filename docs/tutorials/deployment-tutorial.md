@@ -586,6 +586,12 @@ This grades the sample physics test's six typed answer sheets through OpenRouter
 $env:OPENROUTER_API_KEY = "sk-or-..."
 $D = "$HOME\aeh-live-1"
 $S = "docs\live-tests\sample-materials\pdf\PS9-FORCES-01"
+# A class of six is small: let every disagreement get more judges (the 0.30 default is a share
+# of all answers, and with six papers it stops the run with "no progress").
+$env:HARNESS_ORCH_ESCALATION_BUDGET = "1.0"
+# The shipped file has ONE judge. Turn off the random extra-judge sample (7% of answers get
+# three judges, to measure the system), or add escalation judges to the file (see below).
+$env:HARNESS_ORCH_RANDOM_ARM_RATE = "0"
 
 # 1. The class: synthetic practice work, six students (8.1)
 python -m aeh cohort create --data-dir $D --cohort ps9-class --consent synthetic --roster docs\live-tests\config\ps9-roster.txt
@@ -614,6 +620,7 @@ What to expect, and what to record:
 
 * **Step 4.** If the model writes the page markup the checks expect, the outcome is three `ok`, two `incomplete` (S9-004: a doubled mark; S9-006: no name) and one `unmatched_assessment` (S9-005: the wrong test), as the live-test guide says. If good papers are parked instead, that is the most important finding of the test: note each paper's status, and keep the folder.
 * **Step 5.** Exit code 0 means every paper was graded. Exit code 3 means the run paused: read `pause_reason` in what it printed (for example the cost ceiling, 7.3, or an OpenRouter refusal, 7.6), fix it, and run the same command again; it continues where it stopped.
+* **Extra judges.** When judges are unsure or disagree, the system adds two more judges to that answer, and one more if a judge call is lost. With one judge in the file and no extra models, it cannot: the answer keeps its score, marked provisional, and goes to teacher review (the run's output says `no real judge for seats 2-3: provisional`). To let it add judges, add `[[profiles.dev-ci.escalation_judge]]` tables to the configuration file, each a **different** model from the panel and from each other, checked on a zero-retention host first (7.6). Three cover every seat for a one-judge panel, and then you can leave the random sample on (drop the `HARNESS_ORCH_RANDOM_ARM_RATE` line). If the sample is on and there are too few, `aeh run` refuses before starting and says how many to add.
 * **Step 6.** Open `/runs/<run id>/rollup` and `/quarantine` (the operating tutorial, section 4). The parked papers can be released or closed there (section 5); the no-name paper can only be closed.
 
 ## 9. Practice first: the rehearsal folder
