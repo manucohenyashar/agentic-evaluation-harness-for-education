@@ -168,7 +168,8 @@ def run_to_completion(
         try:
             report = orch.progress(run_id)
             pre = _integrity_pre_hook(orch, handle, gate)
-            agg = _aggregate_hook(orch, handle, gate, catalog, view, store)
+            agg = _aggregate_hook(orch, handle, gate, catalog, view, store,
+                                  seats=executor.seat_count())
         except (ProviderUnavailableError, BuildChangedError):
             # Defensive only. `FR-ORCH-30` absorbs both per future inside `_run_model_batch`
             # and pauses the run there, so neither normally reaches this frame; if one ever

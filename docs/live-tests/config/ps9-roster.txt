@@ -1,0 +1,8 @@
+# The class list for the sample physics test (PS9-FORCES-01): the IDs written on the six sample
+# answer sheets. S9-006 is the student whose sheet has no name on it.
+S9-001
+S9-002
+S9-003
+S9-004
+S9-005
+S9-006

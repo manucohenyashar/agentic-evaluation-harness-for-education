@@ -87,6 +87,19 @@ ROUTING_PROHIBITED_KINDS: frozenset[str] = frozenset({"scoring", "extraction"})
 # neutrally — `FR-PROV-15`.
 
 
+#: OpenRouter's routing preferences that keep student work off any host that retains it:
+#: `zdr` restricts routing to zero-data-retention endpoints and `data_collection: "deny"` to
+#: hosts that do not store or train on requests. OpenRouter refuses a request no such host
+#: can serve, rather than routing it elsewhere. The same preferences the Jev decision provider
+#: sends (`jev_openrouter.py`).
+ZERO_RETENTION_ROUTING: dict[str, Any] = {"zdr": True, "data_collection": "deny"}
+
+
+#: The answer `OpenRouterProvider.enforcing_zero_retention`'s retention seam gives: one of
+#: `RETENTION_CONFIRMED_ANSWERS`, because every request it sends enforces zero retention.
+ZERO_RETENTION_ENFORCED_ANSWER = "zero-retention"
+
+
 #: The one payload field carried as an image rather than text: the page or crop the vision
 #: model must SEE. Sent as text, a base64 PNG is a long string of letters to the model.
 IMAGE_FIELD = "image_png_base64"
@@ -121,7 +134,8 @@ def _fields_from_wire(body: Any) -> list[list[str]]:
 
 
 def _openai_body(prompt: PromptPayload, model_ref: ModelRef, params: SamplingParams,
-                 wire_model: str | None = None) -> bytes:
+                 wire_model: str | None = None,
+                 routing: dict[str, Any] | None = None) -> bytes:
     """The request body sent to the model, in the chat-completions shape: one `user` message
     per payload field, in order.
 
@@ -137,7 +151,8 @@ def _openai_body(prompt: PromptPayload, model_ref: ModelRef, params: SamplingPar
     accepts: OpenRouter refused it, and the refusal surfaced only as an unreadable response.
 
     `wire_model` is the model name the backend knows, when that differs from the pinned
-    `build_id` (OpenRouter's plain slug). Students appear only as the caller's `student_ref`
+    `build_id` (OpenRouter's plain slug). `routing` is the backend's routing preferences
+    (OpenRouter's `provider` object), sent beside the messages and never inside them. Students appear only as the caller's `student_ref`
     values; no name is in the payload (NFR-PROV-04)."""
     import json
 
@@ -146,6 +161,8 @@ def _openai_body(prompt: PromptPayload, model_ref: ModelRef, params: SamplingPar
         "messages": [_field_message(name, value) for name, value in prompt.fields],
         "temperature": params.temperature,
     }
+    if routing:
+        body["provider"] = dict(routing)
     if params.seed is not None:
         body["seed"] = params.seed
     if params.max_tokens is not None:
@@ -351,7 +368,7 @@ class _BaseLiveProvider:
 
     def _dispatch(self, model_ref: ModelRef, prompt: PromptPayload,
                   params: SamplingParams) -> "Completion":
-        body = _openai_body(prompt, model_ref, params, self._wire_model(model_ref))
+        body = _openai_body(prompt, model_ref, params, self._wire_model(model_ref), self._routing())
         # The payload's text, so a refusal's message can be checked for an echo of it.
         state = "\n".join(value for _, value in prompt.fields)
         headers = {"Content-Type": "application/json"}
@@ -429,6 +446,10 @@ class _BaseLiveProvider:
         """The model name the backend knows, or None to send the pinned `build_id` as it is."""
         return None
 
+    def _routing(self) -> dict[str, Any] | None:
+        """The backend's routing preferences for every request, or None for none."""
+        return None
+
 
 class LocalServerProvider(_BaseLiveProvider):
     """An on-premise, OpenAI-compatible model server (FR-PROV-11).
@@ -500,9 +521,11 @@ class OpenRouterProvider(_BaseLiveProvider):
         base_url: str | None = None, api_key: str | None = None,
         retention_answers: Callable[[str], str] | None = None,
         on_dispatch: Callable[[HttpRequest], None] | None = None,
+        zero_data_retention: bool = True,
         **seams: Any,
     ) -> None:
         super().__init__(**seams)
+        self._zero_data_retention = zero_data_retention
         self._base_url = (
             base_url if base_url is not None
             else os.environ.get(OPENROUTER_BASE_URL_ENV, DEFAULT_OPENROUTER_BASE_URL))
@@ -522,6 +545,44 @@ class OpenRouterProvider(_BaseLiveProvider):
 
     def _url_for(self, model_ref: ModelRef) -> str:
         return f"{self._base_url}/chat/completions"
+
+    @classmethod
+    def enforcing_zero_retention(cls, **seams: Any) -> "OpenRouterProvider":
+        """An OpenRouter provider whose zero-retention gate is answered by its own routing.
+
+        Every request this provider sends carries `ZERO_RETENTION_ROUTING`, so OpenRouter
+        routes it only to a host that keeps no copy and does not train on it, and refuses the
+        request when no such host serves the model. A refusal is a 404 *"No endpoints found
+        matching your data policy"*, which `_status_error` raises as `ProviderUnavailableError`
+        after one send: the run pauses and nothing reached a host that retains data.
+
+        So zero retention is not an answer this provider has to look up (the open TBD of
+        `FR-PROV-15`, which `verify_retention`'s default `GET /retention/<build>` waits on and
+        OpenRouter does not serve); it is a condition every dispatch enforces. The retention
+        seam therefore answers `zero-retention` for every model, and the answer is true for
+        exactly as long as `zero_data_retention` stays on, which this constructor fixes.
+
+        This is what the `aeh` launcher builds for `dev-ci` and `cloud-hosted`. Checked against
+        the real service on 2026-10-03: `qwen/qwen3-30b-a3b` (served by DeepInfra) and
+        `qwen/qwen3-vl-8b-instruct` (Parasail) both answered under these preferences."""
+        seams.pop("zero_data_retention", None)
+        seams.pop("retention_answers", None)
+        provider = cls(zero_data_retention=True, **seams)
+        provider._retention_answers = provider._answer_from_routing
+        return provider
+
+    def _answer_from_routing(self, build: str) -> str:
+        """The retention answer `enforcing_zero_retention` gives: confirmed while, and only
+        while, this provider's own requests carry `ZERO_RETENTION_ROUTING`.
+
+        It speaks for the models THIS provider dispatches. A decision model is answered by its
+        own provider: the launcher binds that provider before the run is created, so the
+        orchestrator never falls back to this one for it (`_verify_retention_at_start`)."""
+        return ZERO_RETENTION_ENFORCED_ANSWER if self._routing() else "unconfirmed"
+
+    def _routing(self) -> dict[str, Any] | None:
+        """`ZERO_RETENTION_ROUTING` on every request while `zero_data_retention` is on."""
+        return dict(ZERO_RETENTION_ROUTING) if self._zero_data_retention else None
 
     def _wire_model(self, model_ref: ModelRef) -> str:
         """OpenRouter's name for a pinned build: `openrouter/qwen/qwen3-30b-a3b@2026-06-01` is
@@ -552,7 +613,7 @@ class OpenRouterProvider(_BaseLiveProvider):
             "POST", self._url_for(model_ref),
             {"Authorization": f"Bearer {self._api_key}",
              "Content-Type": "application/json"},
-            _openai_body(prompt, model_ref, params, self._wire_model(model_ref)))
+            _openai_body(prompt, model_ref, params, self._wire_model(model_ref), self._routing()))
         if self._on_dispatch is not None:
             self._on_dispatch(request)
         return self._dispatch(model_ref, prompt, params)

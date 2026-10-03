@@ -13,7 +13,7 @@ For how to *use* the system once it is running (the pages, the commands, grading
 > Everything below was **checked against the code** and, where it says "checked", **run** on a Linux machine with Python 3.11. Things that could not be checked are labelled **not checked**. Two facts decide what you can do today:
 >
 > 1. **Local computer mode is the only mode that can run the console and grade at the same time.** But the system has **not been tried against a real local model server**. The way it talks to the server may not match what common servers (Ollama, llama.cpp, vLLM) expect. See section 6.5.
-> 2. **OpenRouter mode can be set up and checked, but a live grading run cannot start yet.** `dev-ci` only replays recordings. `cloud-hosted` is the only profile that calls OpenRouter, but the console refuses it, and `aeh run` stops at the privacy check. Both refusals were reproduced and are shown in section 7.6. They are listed as blockers B1 and B6 in [`02-live-readiness-and-blockers.md`](../live-tests/02-live-readiness-and-blockers.md).
+> 2. **OpenRouter mode grades through OpenRouter, with zero data retention enforced on every request** (section 7.6). Use `dev-ci`: the console refuses `cloud-hosted` on purpose. What still stops a full live test is getting a class, a package and the papers into the system: no command does that yet (blockers B3, B4, B5 in [`02-live-readiness-and-blockers.md`](../live-tests/02-live-readiness-and-blockers.md)).
 >
 > So: you can follow every step here and get a correct setup. Whether a live run then works depends on the open blockers.
 
@@ -48,18 +48,18 @@ Three facts shape every choice:
 
 A **profile** tells the system where its models run. You pick exactly one for each run. There is **no default**: if you forget, the system stops and says so.
 
-| | Local computer mode | OpenRouter mode (live) | OpenRouter mode (practice) |
+| | Local computer mode | OpenRouter mode (hosted) | OpenRouter mode (console) |
 |---|---|---|---|
 | Profile name | `edge-local` | `cloud-hosted` | `dev-ci` |
-| Where models run | A model server on this computer | OpenRouter | **Recordings only today** (no network) |
+| Where models run | A model server on this computer | OpenRouter | OpenRouter (recordings instead when `HARNESS_FIXTURE_DIR` is set) |
 | Console allowed? | Yes | **No** (refused) | Yes |
-| Sends student work off the machine? | No | Yes | Intended yes; today no |
-| Costs money? | No | Yes | No today |
-| Needs | Model files, enough memory | OpenRouter key, internet | A folder of recordings (`HARNESS_FIXTURE_DIR`) |
+| Sends student work off the machine? | No | Yes, to zero-retention hosts only | Yes, to zero-retention hosts only |
+| Costs money? | No | Yes | Yes |
+| Needs | Model files, enough memory | OpenRouter key, internet | OpenRouter key, internet |
 | Needs a cost limit in the file? | No | Yes | Yes |
 | Needs `retention_setting` in the file? | No | Yes | No |
 | Model names look like | A file path | A service name | A service name |
-| Use it for | A school with no internet | A hosted service (not built yet) | Practice and development |
+| Use it for | A school with no internet | A hosted service (not built yet) | The live test, with the console |
 
 All of the above was read from the code and checked with the configuration checker (section 5.4).
 
@@ -321,10 +321,10 @@ Checked: with this file the console started and `/runs/run-dev-pipe/monitor` ret
 
 ### 7.1 Which profile do I use?
 
-* **`cloud-hosted`** is the only profile that is wired to call OpenRouter. But the console **refuses to start** under it (it has no login, so it must never be a hosted service), and a run stops at the privacy check (section 7.6). It is meant for a future hosted service with its own login.
-* **`dev-ci`** is the profile the design intends for development and for the first live test with the console. It sends work to OpenRouter in the design. **In the code today it replays recordings and never calls OpenRouter.**
+* **`dev-ci`** is the profile for the live test: it grades through OpenRouter and the console runs under it. With `HARNESS_FIXTURE_DIR` set it replays recordings instead (the test tier).
+* **`cloud-hosted`** also grades through OpenRouter, and `aeh run` works under it, but the console **refuses to start** under it (it has no login, so it must never be a hosted service). It is meant for a future hosted service with its own login.
 
-So, for development, use `dev-ci`. For the day the blockers are closed, the `cloud-hosted` example below is ready. The two files are almost the same; the differences are in the table in section 2. Today neither one can run a live grading pass (7.6).
+So use `dev-ci`. The two files are almost the same; the differences are in the table in section 2.
 
 ### 7.2 Get an OpenRouter key
 
@@ -387,7 +387,7 @@ build_id = "openrouter/qwen/qwen3-30b-a3b@2026-06-01"
 
 What each part means, and the rules (all checked unless said):
 
-* **`HARNESS_COST_CEILING`** is required for both profiles. Without it: *"HARNESS_COST_CEILING is required for backend_profile 'cloud-hosted'"*. It must be a whole or decimal number, not negative. `5` is plenty for ten sample answer sheets. The environment can override it.
+* **`HARNESS_COST_CEILING`** is required for both profiles. **It counts estimates, not the bill.** Each model call is counted at the system's fixed price sheet before it is sent: about $0.007 a call with the default settings, while the real calls in 7.6 cost about $0.0001. So a ceiling of `5` stops a run after roughly 700 model calls, whatever OpenRouter actually charges; raise it if a run pauses on the ceiling, and keep OpenRouter's own spending limit (7.2) as the real stop. Without it: *"HARNESS_COST_CEILING is required for backend_profile 'cloud-hosted'"*. It must be a whole or decimal number, not negative. `5` is plenty for ten sample answer sheets. The environment can override it.
 * **`retention_setting`** is required for `cloud-hosted` only. It must be `provider-default` or `zero-retention`. It *records* your choice. It does **not** make the privacy check pass (see 7.6). Leaving it out is refused: *"retention_setting is required for backend_profile 'cloud-hosted'"*.
 * **Model names** are written `openrouter/<vendor>/<model>@<date or version>`. The `@...` part is required: it pins the exact version. A moving tag such as `@latest` is refused. Do **not** give these a `quantization` line (the provider owns it).
 * **Do the models exist?** Yes, for the two names in the shipped files: both answered real calls on 2026-10-03 (checked). If you choose other models, confirm each one on openrouter.ai/models first.
@@ -418,33 +418,36 @@ HARNESS_JEV_BUILD = "openrouter/typesafe/jev-1.13@20260917"
 
 Its default address is `https://openrouter.ai/api/v1/systemone` (change with `HARNESS_JEV_OPENROUTER_URL`). It sends student work off the machine too, so the consent rule covers it. **Not checked against the real service.** Keep it `off` for a first test.
 
-### 7.6 What stops a live run today (reproduced)
+### 7.6 What a run through OpenRouter does now (reproduced)
 
-Both of these were run for this tutorial, on a throw-away copy of the practice data, with a dummy key and no network. The messages are the system's own words.
-
-**`cloud-hosted`, `aeh run`: stops at the privacy check.**
+`aeh run` and the console's start-run, under `dev-ci`, now grade through OpenRouter. Reproduced on a throw-away copy of the practice data, with a dummy key and the address pointed at a dead port on this machine, so nothing left it:
 
 ```
-OPENROUTER_API_KEY=sk-or-DUMMY python -m aeh run --data-dir <folder> --cohort coh-dev-pipe \
-    --package-version PKG-DEV-PIPE@64e2dd023c2e --config cloud-hosted.toml
-aeh run: RetentionPolicyError: a cloud-hosted run cannot start: the orchestrator was given no provider able to verify zero-retention routing (FR-PROV-14), so retention for the 1 panel members is unconfirmed and nothing was created.
+OPENROUTER_API_KEY=sk-or-DUMMY OPENROUTER_BASE_URL=http://127.0.0.1:9/api/v1 \
+  python -m aeh run --data-dir <folder> --cohort coh-dev-pipe \
+  --package-version PKG-DEV-PIPE@64e2dd023c2e --config docs/live-tests/config/live-test.dev-ci.toml
+HARNESS_PROFILE source: config file
+provider: OpenRouter at http://127.0.0.1:9/api/v1 (zero data retention enforced)
+...
+"pause_reason": "ProviderUnavailableError: the provider did not answer within the retry budget ...",
+"status": "paused"
 ```
 
-The system will not send student work to a service unless it can confirm that the service keeps no copy. The command today gives the run no way to ask. Even if it did, the check asks OpenRouter at `GET <address>/retention/<model>` and treats anything other than a clear *yes*, *true*, *confirmed* or *zero-retention* as *no*. The code's own comment calls the answer format an open question. This is blocker B6.
+The `provider:` line says what will really answer: OpenRouter, a local model server, or recordings. (Before, the command printed OpenRouter model names even when a replay was what ran.) A provider that does not answer pauses the run (exit code 3) rather than failing it; start it again once the cause is fixed.
 
-**`cloud-hosted`, `aeh console`: refused on purpose.**
+**Privacy (zero data retention).** Every request to OpenRouter carries `"provider": {"zdr": true, "data_collection": "deny"}`. OpenRouter then sends the work only to a host that keeps no copy and does not train on it, or refuses the request (`HTTP 404 ... No endpoints found matching your data policy`), which pauses the run. Checked on 2026-10-03: both models in the shipped file have such hosts (`qwen/qwen3-30b-a3b` via DeepInfra, `qwen/qwen3-vl-8b-instruct` via Parasail). The `cloud-hosted` privacy check at run start is answered by this rule, so a `cloud-hosted` `aeh run` now starts. The consent rule (7.4) still decides first whether a class's work may leave the machine at all.
+
+**Recordings.** Set `HARNESS_FIXTURE_DIR` and `dev-ci` replays recordings from that folder instead, with no network. That is the test tier; leave it unset for a real run.
+
+**Still refused, on purpose.** The console will not start under `cloud-hosted` (it has no login):
 
 ```
 aeh console: ConsoleBindRefused: the console refuses to start under the cloud-hosted profile: authN/authZ is none by design ...
 ```
 
-**`dev-ci`, `aeh run`: needs recordings, does not call OpenRouter.**
+Use `dev-ci` for the console.
 
-```
-aeh run: ValueError: the dev-ci profile records and replays through a fixture directory; set HARNESS_FIXTURE_DIR so the provider has somewhere to read
-```
-
-Note that the command prints the OpenRouter model names *first*, even though a replay is what would run. Do not read that as proof OpenRouter was called.
+**What still blocks a full live test.** No command yet creates a class and its student list (B3), builds a package from your test (B5), or reads uploaded scans into papers (B4). See the readiness document.
 
 **The request format (blocker B2) is changed, but not yet re-checked live.** The first real call failed: the system sent the whole `openrouter/<vendor>/<model>@<date>` name and a non-standard body, and OpenRouter refused it. The system now sends the plain name OpenRouter knows (`qwen/qwen3-30b-a3b`) and the standard chat format from section 6.5, with `Authorization: Bearer <key>`. A real call through the changed system succeeded (checked, 2026-10-03): it answered `ready`, reported `qwen/qwen3-30b-a3b` as the model that served it, and OpenRouter's cost of $0.00011245. Two more real calls also succeeded (checked): a judge-style request with three parts answered `{"band": "met"}`, and a page picture sent to `qwen/qwen3-vl-8b-instruct` was read back exactly ("The answer is 42"). So both model names in the shipped `dev-ci` file exist at OpenRouter. The model spent 213 output tokens to say one word, because it reasons first: leave the output cap generous for such models. A refused request now says why, in OpenRouter's words. A bad key, no credit or an unknown model (`HTTP 401`, `402`, `404`) stops the run, for example `HTTP 401 from the provider: the credentials were refused (for OpenRouter, check OPENROUTER_API_KEY)`. A refusal of one paper only (too long, flagged) sets that paper aside and the run goes on.
 
@@ -477,6 +480,148 @@ Note that the command prints the OpenRouter model names *first*, even though a r
 | Profile is `cloud-hosted` | `ConsoleBindRefused: ... refuses to start under the cloud-hosted profile` | Use `edge-local` or `dev-ci` |
 
 If a teacher at another desk must see the console, they connect to *your* computer over a secure tunnel (for example `ssh -L 8765:127.0.0.1:8765 you@the-machine`) and open `http://127.0.0.1:8765` on their own screen. Never try to open the console to the network.
+
+### 8.1 Create a class (a "cohort") and its student list
+
+Every class you grade is a **cohort** with two things fixed when it is created:
+
+* its **consent class**: `synthetic` (made-up practice papers), `consented` (the students or guardians agreed), or `real` (everything else). In OpenRouter mode only `synthetic` and `consented` classes may be graded (section 7.4). There is no default, and it can never be changed later.
+* its **student list** (the roster): the IDs students write on their papers. The intake check V3 compares what the page reader transcribes after `Student:` with this list **exactly**: no change of case, punctuation or hyphen is forgiven, and a paper that does not match waits in quarantine for the operator. So choose short IDs that are easy to write and read (such as `S9-001`), not names: an ID may not contain spaces.
+
+Write the IDs in a file, in one of two shapes:
+
+* one ID per line (blank lines and lines starting with `#` are skipped), or
+* a CSV whose first row names a `student_ref` column. Other columns, such as names, are ignored, so a sheet exported from Excel works once that header is there.
+
+```
+student_ref,name
+S9-001,Ann
+S9-002,Bo
+S9-003,Cy
+```
+
+The reader never guesses. These are refused, naming the line, and nothing is created: a file with several columns but no `student_ref` header (otherwise the names could become the list), a first line that looks like a header such as `id` or `name` (it would become a student), and a row with an empty `student_ref` cell (otherwise that student would silently drop out).
+
+Then (checked):
+
+```bash
+python -m aeh cohort create --data-dir ~/aeh-data --cohort class-9a --consent synthetic --roster roster.csv
+```
+
+```json
+{
+  "cohort_id": "class-9a",
+  "consent_class": "synthetic",
+  "created_at": "2026-10-03T16:45:40.293426+00:00",
+  "roster_size": 3
+}
+```
+
+* `aeh cohort add-students --data-dir ... --cohort class-9a --roster more.csv` adds late students. An ID already on the list is refused, by name, and nothing is added.
+* `aeh cohort show --data-dir ... --cohort class-9a` prints the class as above.
+* The class ID becomes a file name, so it may hold only **lower-case** letters, digits, `.`, `_` and `-` (on Windows and macOS `Class-9A` and `class-9a` would be the same file), and may not be a Windows device name such as `con` or `nul`.
+* Running `create` again for the same class is refused (*"already exists; it is never overwritten"*), and so is a repeated ID, or one holding a space or an invisible character. Every refusal writes nothing, and a mistyped ID or a bad file is refused before the data folder is touched.
+* Creating a `real` class prints a reminder that OpenRouter mode will refuse it.
+
+Not yet recorded: who created the class. Only the time is stored.
+
+### 8.2 Build a package (the test, its rubric and keys)
+
+A **package** is everything about one test: its questions, the rubric lines and their bands, the multiple-choice keys and the grade boundaries. Once built it is published and can never be changed. Write it as a TOML file; [`docs/live-tests/config/ps9-forces-01.package.toml`](../live-tests/config/ps9-forces-01.package.toml) is a complete example, the sample physics test. In short:
+
+* `package`: the test's name **exactly as printed on the paper** (`Assessment: PS9-FORCES-01`). Intake's right-test check compares the two, ignoring case.
+* `approved_by`: who approved the questions, keys and rubric.
+* one `[[question]]` per question, in paper order: `id`, `type` (`mcq` or `open`), `points`, `text`, `options` for multiple choice, and `model_answer`. The judges are shown the text and the model answer, so write them in full.
+* one `[[criterion]]` per rubric line: `id`, `question`, and either `key = "C"` (multiple choice; it must be one of the question's options) or `bands`, listed **worst to best**, an even number from 2 to 6, each with `name`, `points` and `descriptor`. The band names are the words a teacher later uses to change a mark. Every question needs at least one line, and a multiple-choice question needs a key, not bands.
+* `[grades]`: the lowest total that earns each grade.
+
+Then (checked):
+
+```bash
+python -m aeh package build --data-dir ~/aeh-data --spec docs/live-tests/config/ps9-forces-01.package.toml
+```
+
+```json
+{
+  "answer_keys": 4,
+  "approved_by": "Sample-materials teacher",
+  "criteria": 6,
+  "grades": ["A", "B", "C", "D", "F"],
+  "package_id": "PS9-FORCES-01",
+  "package_version": "PS9-FORCES-01@8828fa5b16da",
+  "questions": 6
+}
+```
+
+Keep the `package_version` value: `aeh run` and the console's start-run need it. Building the same `package` again is refused (*"already exists. A built package is never changed"*); to correct a test, give the corrected spec a new `package` id. Because a built package can never be changed, the command checks the whole file before writing anything, and refuses with the reason (and nothing created, not even the data folder) when, for example: a key is not one of its question's options, a question has no rubric line, a band has no `points`, a judged line sits on a multiple-choice question, or a field has the wrong type. A rule the package itself enforces (for example an odd number of bands) also leaves nothing behind.
+
+Checked: this package and a class created with `aeh cohort create` carry the six physics sample answer sheets through the real intake checks exactly as the live-test guide's table says.
+
+### 8.3 Read the papers in (`aeh ingest`)
+
+With the class created (8.1) and the package built (8.2), read the scans. You need the test paper once per class, and the answer sheets as **one PDF per student** (a folder of them is fine). Every sheet needs the test name and the student's ID written at the top, because the checks read both.
+
+```bash
+python -m aeh ingest --data-dir ~/aeh-data --cohort class-9a \
+  --package-version PS9-FORCES-01@8828fa5b16da --config docs/live-tests/config/live-test.dev-ci.toml \
+  --assessment 01-test-paper.pdf answer-sheets/
+```
+
+It prints the provider (`provider: OpenRouter at ... (zero data retention enforced)` under `dev-ci`), one line per sheet, then the whole result. Each sheet is read by the page-reading model in the configuration and goes through the five checks; a sheet that fails one waits in quarantine for the operator (the operating tutorial, Phase 2). Checked with a stand-in for OpenRouter over the six physics sample sheets: three `ok`, two `incomplete` (a doubled mark; no name), one `unmatched_assessment` (the wrong test). **Not checked: a real model reading real pages**; that is what the first live run shows.
+
+* Running it again over the same folder skips every sheet already read (`skipped ... already read into this cohort`), so a paper is never graded twice. Add new sheets to the folder and run it again. A sheet that could not be read at all (status `unreadable`) *is* read again on a re-run, and each failed try leaves one more quarantined record in S8 to close as `unresolvable`; none of those is ever graded.
+* Stopping it with Ctrl-C is safe. The next `aeh ingest` parks the paper that was being read when you stopped (`parked 1 paper(s) an earlier, cut-off read left behind`) in quarantine, where you close it, and reads that sheet again.
+* If **no** sheet could be read, the command exits 1 with `no answer sheet could be read`. That is almost always the model, not the scans: a wrong or revoked `OPENROUTER_API_KEY`, no credit left, or a model name OpenRouter does not know. The warnings above that line say which. Fix it, close the quarantined records in S8, and run the command again.
+* A `real` class is refused before any page is sent (the consent rule, 7.4).
+* These page-reading calls cost money but are not counted against a run's cost ceiling: no run exists yet. OpenRouter's own limit (7.2) is the stop.
+* The console's upload page still only stores files; it does not read them. Use this command.
+
+### 8.4 A first live test, start to finish (Windows PowerShell)
+
+This grades the sample physics test's six typed answer sheets through OpenRouter, using the files the repository ships. It costs well under a dollar. Run it in a new, empty data folder. Steps 1 to 4 were checked here with a stand-in for OpenRouter; **steps 4 and 5 against real OpenRouter have not been run yet**: they are the live test.
+
+```powershell
+# 0. Once per terminal window (section 4 and 7.2)
+.venv\Scripts\Activate.ps1
+$env:OPENROUTER_API_KEY = "sk-or-..."
+$D = "$HOME\aeh-live-1"
+$S = "docs\live-tests\sample-materials\pdf\PS9-FORCES-01"
+# A class of six is small: let every disagreement get more judges (the 0.30 default is a share
+# of all answers, and with six papers it stops the run with "no progress").
+$env:HARNESS_ORCH_ESCALATION_BUDGET = "1.0"
+# The shipped file has ONE judge. Turn off the random extra-judge sample (7% of answers get
+# three judges, to measure the system), or add escalation judges to the file (see below).
+$env:HARNESS_ORCH_RANDOM_ARM_RATE = "0"
+
+# 1. The class: synthetic practice work, six students (8.1)
+python -m aeh cohort create --data-dir $D --cohort ps9-class --consent synthetic --roster docs\live-tests\config\ps9-roster.txt
+
+# 2. The package: questions, rubric, keys, grade boundaries (8.2). Copy package_version from the output.
+python -m aeh package build --data-dir $D --spec docs\live-tests\config\ps9-forces-01.package.toml
+$V = "PS9-FORCES-01@<the 12 characters it printed>"
+
+# 3. Check the configuration (5.4)
+python docs\live-tests\sample-materials\check_config.py docs\live-tests\config\live-test.dev-ci.toml
+
+# 4. Read the papers in with the real page-reading model (8.3)
+python -m aeh ingest --data-dir $D --cohort ps9-class --package-version $V `
+  --config docs\live-tests\config\live-test.dev-ci.toml `
+  --assessment "$S\01-test-paper.pdf" "$S\answer-sheets"
+
+# 5. Grade them (section 8)
+python -m aeh run --data-dir $D --cohort ps9-class --package-version $V `
+  --config docs\live-tests\config\live-test.dev-ci.toml
+
+# 6. Look at the results (the operating tutorial)
+python -m aeh console --data-dir $D --config docs\live-tests\config\live-test.dev-ci.toml
+```
+
+What to expect, and what to record:
+
+* **Step 4.** If the model writes the page markup the checks expect, the outcome is three `ok`, two `incomplete` (S9-004: a doubled mark; S9-006: no name) and one `unmatched_assessment` (S9-005: the wrong test), as the live-test guide says. If good papers are parked instead, that is the most important finding of the test: note each paper's status, and keep the folder.
+* **Step 5.** Exit code 0 means every paper was graded. Exit code 3 means the run paused: read `pause_reason` in what it printed (for example the cost ceiling, 7.3, or an OpenRouter refusal, 7.6), fix it, and run the same command again; it continues where it stopped.
+* **Extra judges.** When judges are unsure or disagree, the system adds two more judges to that answer, and one more if a judge call is lost. With one judge in the file and no extra models, it cannot: the answer keeps its score, marked provisional, and goes to teacher review (the run's output says `no real judge for seats 2-3`, and the score's state is `provisional_unreviewed`). To let it add judges, add `[[profiles.dev-ci.escalation_judge]]` tables to the configuration file, each a **different** model from the panel and from each other, checked on a zero-retention host first (7.6). For a one-judge panel, **two** are enough to leave the random sample on (drop the `HARNESS_ORCH_RANDOM_ARM_RATE` line); if the sample is on and there are fewer, `aeh run` refuses before starting and says how many to add. Each one more lets one more step happen instead of leaving the answer provisional; **five** cover every seat a one-judge run can ever need (a sampled answer starts with three judges, can widen to five, and can get one replacement).
+* **Step 6.** Open `/runs/<run id>/rollup` and `/quarantine` (the operating tutorial, section 4). The parked papers can be released or closed there (section 5); the no-name paper can only be closed.
 
 ## 9. Practice first: the rehearsal folder
 
@@ -521,7 +666,8 @@ All are optional. The default is the production value. They exist so a slower co
 | `LOCAL_INFERENCE_BASE_URL` | Local model server address | `http://127.0.0.1:8080/v1` |
 | `OPENROUTER_API_KEY` | Your key (never in a file) | none |
 | `OPENROUTER_BASE_URL` | OpenRouter address | `https://openrouter.ai/api/v1` |
-| `HARNESS_FIXTURE_DIR` | Folder of recordings for `dev-ci` | none (required for `dev-ci`) |
+| `HARNESS_FIXTURE_DIR` | Set it and `dev-ci` replays recordings from this folder instead of calling OpenRouter | not set |
+| `HARNESS_PIPE_UNIT_TOKENS_IN` / `HARNESS_PIPE_UNIT_TOKENS_OUT` | Tokens one model call is priced at, before it is sent, against the cost ceiling. The run's spend is the sum of these estimates, not OpenRouter's bill (see 7.3) | 4000 / 1500 |
 | `HARNESS_RETRY_MAX` | Tries per call (first try plus retries) | 3 |
 | `HARNESS_BACKOFF_BASE_MS` | Wait before the first retry; doubles after | 250 |
 | `HARNESS_RETRY_AFTER_CEILING_S` | A "come back in N seconds" above this counts as unusable | 120 |
@@ -572,8 +718,7 @@ Every message is the system's real wording (checked unless said).
 | `HARNESS_COST_CEILING is required for backend_profile ...` | OpenRouter profiles need a limit | Add the ceiling and the currency |
 | `retention_setting is required for backend_profile 'cloud-hosted'` | Privacy choice not recorded | Add `retention_setting` |
 | `ConsentGateError: cohort ... has consent_class 'real'` | Real work may not go to OpenRouter | Use a synthetic or consented class |
-| `RetentionPolicyError: a cloud-hosted run cannot start ...` | Privacy check cannot be answered | Blocker B6 (7.6) |
-| `ValueError: the dev-ci profile records and replays ...; set HARNESS_FIXTURE_DIR` | `dev-ci` replays recordings | Set the folder, or see 7.6 |
+| `HTTP 404 ... No endpoints found matching your data policy` | No zero-retention host serves that model | Choose another model (7.6) |
 | `OpenRouterProvider needs an API key` | Key not in this terminal | Set `OPENROUTER_API_KEY` (7.2) |
 | `... froze backend profile 'X' and this process resolved 'Y'` | You tried to resume a run under another profile | Set `HARNESS_PROFILE` to the one it names |
 | `InsecureLocationError` | Folder under `/tmp` | Use a folder in your home |

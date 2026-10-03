@@ -57,6 +57,21 @@ ORCH_STATEMENTS: dict[str, Statement] = {
     "select_cohort_row": Statement(
         "SELECT cohort_id, consent_class FROM cohort WHERE cohort_id = :cohort_id"
     ),
+    # -- creating a cohort and its roster (live-test blocker B3, `cohorts.py`) ------------------------
+    "select_cohort_ids": Statement("SELECT cohort_id FROM cohort ORDER BY cohort_id"),
+    "select_cohort_created": Statement(
+        "SELECT consent_class, created_at FROM cohort WHERE cohort_id = :cohort_id"
+    ),
+    "insert_cohort": Statement(
+        "INSERT INTO cohort (cohort_id, consent_class, created_at) "
+        "VALUES (:cohort_id, :consent_class, :created_at)"
+    ),
+    "insert_roster_entry": Statement(
+        "INSERT INTO roster (cohort_id, student_ref) VALUES (:cohort_id, :student_ref)"
+    ),
+    "select_roster_refs": Statement(
+        "SELECT student_ref FROM roster WHERE cohort_id = :cohort_id ORDER BY student_ref"
+    ),
     "select_all_runs": Statement(
         "SELECT run_id, cohort_id, package_version_id, package_id, panel_config, "
         "backend_profile, provider_config, prompt_template_v, status, started_at, "

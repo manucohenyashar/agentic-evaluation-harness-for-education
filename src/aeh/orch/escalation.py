@@ -34,6 +34,7 @@ from .reports import (
     _CONTENT_ID_KIND_REQUEST,
     DECISION_ADMITTED,
     DECISION_HALTED_BY_BREAKER,
+    DECISION_NO_REAL_SEAT,
     EscalationBudgetState,
     EscalationReport,
     REPLACEMENT_ALREADY_REQUESTED,
@@ -57,6 +58,7 @@ class EscalationMixin:
         judges: Sequence[str] | None = None,
         *,
         expected_value: float | None = None,
+        seats: int | None = None,
     ) -> tuple[EscalationReport, ...]:
         """Add judges to one (submission, criterion) panel: the escalation M-AGG requests when a
         verdict falls outside its band (FR-ORCH-09/10, §7.1, CT-ORCH-08).
@@ -118,6 +120,7 @@ class EscalationMixin:
                 criterion_id=criterion_id,
                 judges=judges,
                 expected_value=expected_value,
+                seats=seats,
             ),
         )
 
@@ -205,6 +208,7 @@ class EscalationMixin:
         criterion_id: str,
         judges: Sequence[str] | None,
         expected_value: float | None,
+        seats: int | None = None,
     ) -> EscalationReport:
         """The escalation decision, made inside the caller's transaction.
 
@@ -352,6 +356,23 @@ class EscalationMixin:
             f"not tripped ({escalated_in_window}/{len(window_ids)} in the window "
             f"of {breaker_min_n})"
         )
+
+        # 3b. Real seats (`seats`, the caller's count of judge models it can serve; None is
+        #     unlimited). Checked only here, where units WOULD be written: a widened panel
+        #     needs a model for each seat it adds, and a seat's ledger name is not one.
+        if seats is not None and len(target) > seats:
+            gates["seats"] = (
+                f"{len(target)} judges need seats 1-{len(target)}; only {seats} have a real "
+                "model: not widened")
+            processed, escalated, rate = self._escalation_rate(tx.execute, run_id)
+            return self._escalation_report(
+                tx, row, submission_id, criterion_id, DECISION_NO_REAL_SEAT,
+                prior_judges=prior, added_judges=(), judge_count=len(prior),
+                units_inserted=0, expected_value=expected_value,
+                escalation_rate=rate, processed_results=processed,
+                escalated_results=escalated, budget=budget,
+                breaker_tripped=False, gates=gates,
+            )
 
         # 4. The request row (the record the dispatch-time admission reads its EV
         #    from) and the units — written UNCONDITIONALLY: the budget rations

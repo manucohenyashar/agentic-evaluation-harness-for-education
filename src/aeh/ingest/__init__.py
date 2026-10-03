@@ -128,6 +128,7 @@ from .sanitizer import PdfSanitizer, PypdfSanitizer, SanitizeResult
 from .residency import ResidencySlot
 from .schema import INGEST_STATEMENTS
 from .uploads import record_upload_part, upload_parts_in_order
+from .sources import has_assessment_document, park_interrupted_submissions, submitted_sources
 from .assembly import assemble_canonical_markdown, AssembledDocument
 from .records import (
     ClusterResolution,

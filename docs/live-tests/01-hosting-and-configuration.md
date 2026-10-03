@@ -217,5 +217,5 @@ Tick each before the test.
 | Console under `cloud-hosted` | `ConsoleBindRefused: … refuses to start under the cloud-hosted profile` | Use `dev-ci` or `edge-local` |
 | Run with no profile | `ConfigurationError: HARNESS_PROFILE must be one of ('edge-local', 'cloud-hosted', 'dev-ci'), got None` | Set it |
 | `cloud-hosted` run | `RetentionPolicyError: a cloud-hosted run cannot start …` | Blocker B1 / B6 |
-| `dev-ci` run, no fixtures | `ValueError: the dev-ci profile records and replays through a fixture directory; set HARNESS_FIXTURE_DIR` | Blocker B1 |
+| (resolved) `dev-ci` run, no fixtures | Before the B1 fix: `ValueError: the dev-ci profile records and replays through a fixture directory; set HARNESS_FIXTURE_DIR`. Now `dev-ci` calls OpenRouter, with zero retention enforced | See the deployment tutorial, section 7.6 |
 | Real cohort on a remote profile | `ConsentGateError: … may not be sent to a 'dev-ci' provider` | Use a synthetic cohort |

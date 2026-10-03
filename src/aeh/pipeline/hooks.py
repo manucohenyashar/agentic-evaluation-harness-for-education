@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any
 
@@ -15,8 +16,10 @@ from aeh.agg import (
 from aeh.judge import verdicts_for
 from aeh.orch import (
     DECISION_HALTED_BY_BREAKER,
+    DECISION_NO_REAL_SEAT,
     REPLACEMENT_INSERTED,
     REPLACEMENT_NOT_APPLICABLE,
+    REPLACEMENT_REFUSED,
     STAGE_EXTRACT,
     STAGE_SCORE,
 )
@@ -144,7 +147,7 @@ def _escalation_inputs(store: Any, handle: Any, catalog: Any, criterion: Any) ->
 
 
 def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any,
-                    store: Any = None) -> StageTrace:
+                    store: Any = None, seats: int | None = None) -> StageTrace:
     """For each ready cell: verify it, read its verdicts, aggregate them, and write the rest in one
     transaction (FR-PIPE-04).
 
@@ -224,8 +227,15 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any,
                 # arm is refused, the cell is `ungradeable_by_panel` and goes to review. The run
                 # does not pause. (An even panel reached any other way still raises below.)
                 with handle.cohort.transaction() as tx:
-                    replacement = orch.enqueue_replacement_arm(
-                        tx, (handle.run_id, cell.submission_id, cell.criterion_id))
+                    if seats is not None and terminal_units + 1 > seats:
+                        # No real model for the replacement's seat (see `seats` below): the
+                        # arm is refused here, exactly as a refused arm is.
+                        replacement = SimpleNamespace(
+                            decision=REPLACEMENT_REFUSED, arm=None,
+                            reason=f"no real judge for seat {terminal_units + 1}")
+                    else:
+                        replacement = orch.enqueue_replacement_arm(
+                            tx, (handle.run_id, cell.submission_id, cell.criterion_id))
                     if replacement.decision == REPLACEMENT_NOT_APPLICABLE:
                         # By the ledger's own count nothing was quarantined: an even panel
                         # reached another way is a defect, and it pauses the run.
@@ -266,14 +276,20 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any,
                 fallback=len(verdicts) == 2 and quarantined > 0,
                 breaker_tripped=cell.criterion_id in latched,
             )
+            # `should_escalate` is pure (FR-AGG-08); the decision is the unmodified score's.
+            decision = should_escalate(
+                score=score, criterion=criterion, history=history, baseline=baseline)
+            escalates = bool(getattr(decision, "escalate", False))
+            seatless = False
             with handle.cohort.transaction() as tx:
                 write_score(tx, handle.run_id, cell.submission_id, score, signals)
-                decision = should_escalate(
-                    score=score, criterion=criterion, history=history, baseline=baseline)
-                escalates = bool(getattr(decision, "escalate", False))
                 if escalates:
+                    # `seats`: how many judge models the run can really serve (panel, then the
+                    # configured escalation judges); None when any seat can be (a recording).
+                    # M-ORCH checks it only where it would write units, so a pair already
+                    # widened stays the no-op it is.
                     reports = orch.enqueue_escalation(
-                        tx, (handle.run_id, cell.submission_id, cell.criterion_id))
+                        tx, (handle.run_id, cell.submission_id, cell.criterion_id), seats=seats)
                     # A widening the breaker halted did not escalate anything; counting it would
                     # make the trace claim work that was refused (`FR-ORCH-13`).
                     if any(int(getattr(r, "units_inserted", 0) or 0) for r in reports):
@@ -283,13 +299,27 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any,
                         # The breaker latched inside this transaction; every later cell of the
                         # same criterion in this pass must see it.
                         latched.add(cell.criterion_id)
+                    seatless = any(getattr(r, "decision", None) == DECISION_NO_REAL_SEAT
+                                   for r in reports)
+                    if seatless and score.state == "final":
+                        # The panel's figure stands, but a wider panel was wanted and could
+                        # not be seated: it goes to the teacher rather than being settled.
+                        score = replace(
+                            score, routing="provisional", state="provisional_unreviewed",
+                            notes=score.notes + (
+                                "escalation wanted, no real judge model for the next seats: "
+                                "provisional, routed to review",))
+                        write_score(tx, handle.run_id, cell.submission_id, score, signals)
                 orch.mark_cell_phase(
                     tx, handle.run_id, cell.submission_id, cell.criterion_id,
                     "aggregated", units_consumed=terminal_units,
                 )
             detail.append(
                 f"{cell.submission_id}/{cell.criterion_id}: {score.band} over "
-                f"{len(verdicts)} verdicts" + (" -> escalated" if escalates else "")
+                f"{len(verdicts)} verdicts" + (
+                    f" -> escalation wanted, no real judge for seats {terminal_units + 1}-"
+                    f"{terminal_units + 2}: {score.state}" if seatless
+                    else " -> escalated" if escalates else "")
             )
     except (ProviderUnavailableError, BuildChangedError):
         # Not faults: `run_to_completion` lets these two through to the stored status by type.

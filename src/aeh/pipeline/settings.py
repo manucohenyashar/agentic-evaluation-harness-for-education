@@ -42,3 +42,23 @@ def _int_knob(name: str, default: int | None, *, minimum: int) -> int | None:
     if value < minimum:
         raise ValueError(f"{name}={value} is below the minimum of {minimum}.")
     return value
+
+
+#: Seam 3: the token budget one model call is priced at before it is dispatched, so a run with a
+#: cost ceiling (`dev-ci`, `cloud-hosted`) can check a unit against it (`FR-ORCH-15`). The
+#: defaults lean high on purpose: a judge on a reasoning model spends a few hundred output
+#: tokens thinking before it answers, and an optimistic estimate is a ceiling that trips late.
+#: What a claim adds to the run's spend IS this estimate, priced at the provider's declared
+#: per-token rates (`M-ORCH` charges at claim time; only synthesis is charged its measured cost,
+#: #596). So the ceiling bounds estimated spend: at OpenRouter's placeholder rates one unit is
+#: 0.007, well above what a small model really costs, and the ceiling trips early, never late.
+UNIT_TOKENS_IN_ENV = "HARNESS_PIPE_UNIT_TOKENS_IN"
+
+
+UNIT_TOKENS_IN_DEFAULT = 4000
+
+
+UNIT_TOKENS_OUT_ENV = "HARNESS_PIPE_UNIT_TOKENS_OUT"
+
+
+UNIT_TOKENS_OUT_DEFAULT = 1500

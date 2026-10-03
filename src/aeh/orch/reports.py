@@ -282,6 +282,12 @@ DECISION_ADMITTED = "admitted"
 DECISION_HALTED_BY_BREAKER = "halted_by_breaker"
 
 
+#: The widening would need a judge seat the caller has no real model for (`seats=`): nothing
+#: is written, and the caller's score stands for review. Only reached when units WOULD be
+#: inserted — a pair already widened is `admitted` as the no-op it is, whatever `seats` says.
+DECISION_NO_REAL_SEAT = "no_real_seat"
+
+
 #: The content-address space of escalation bookkeeping: request and breaker rows are
 #: keyed on a sha256 over what they are ABOUT — never on the wall clock or a uuid — so a
 #: retried enqueue or a second trip evaluation addresses the SAME row (`INSERT OR

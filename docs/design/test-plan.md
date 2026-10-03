@@ -911,6 +911,21 @@ returned exactly once and no code path exists to ask for another.
 | TC-PROV-61 | FR-PROV-11, FR-PROV-04 | Unit / 1 | Regression. `openrouter/qwen/qwen3-30b-a3b@2026-06-01` through `OpenRouterProvider`; a weights-path ref through `LocalServerProvider` | OpenRouter's wire `model` is `qwen/qwen3-30b-a3b`; `resolved_build` is the reply's `model`; the reported `usage.cost` is the cost. The local server is still sent the pinned `build_id` | Exact | P0 |
 | TC-PROV-62 | FR-PROV-06, NFR-PROV-04 | Unit / 1 | Regression. OpenRouter answers 401, 402, 404 (refusals every unit meets alike) and 400, 403, 413, 422 (refusals of one request: too long, flagged) with an `error.message`; a 401 whose message quotes the submission; a 408 then 200; a 200 carrying only an `error` object | 401/402/404 raise `ProviderUnavailableError` after **1** send (so the run pauses), naming the status, an operator hint and the provider's message. 400/403/413/422 raise `MalformedResponseError` (never `ProviderUnavailableError`) after the retry budget (3 sends), naming the status and message, so one unit quarantines and the run goes on. The quoting message is replaced by `(body withheld)`. The 408 is retried (2 sends, then success). The 200-with-error raises `MalformedResponseError` naming the provider's message | Exact type + count + text | P0 |
 | TC-PROV-63 | FR-PROV-06 | Unit / 1 | Regression. A reply with `content: null`, `finish_reason: "length"` and a `reasoning` field (a reasoning model out of output allowance) | `MalformedResponseError` naming `finish_reason='length'`, the reasoning, and the output cap; the reasoning text is not in the message and is never taken as the answer | Type + text | P1 |
+| TC-PROV-64 | FR-PROV-14 | Unit / 1 | Regression (live-test blocker B6). `OpenRouterProvider.enforcing_zero_retention()` over a recording transport and over one that fails on any request; a plain `OpenRouterProvider(zero_data_retention=False)`; a 404 *"No endpoints found matching your data policy"* | Every request body carries `provider == {"zdr": true, "data_collection": "deny"}`; `verify_retention` confirms every model with **0** requests; the plain provider sends no `provider` key; the 404 raises `ProviderUnavailableError` naming the data policy after 1 send | Exact + count | P0 |
+| TC-PIPE-24 | FR-PROV-10, FR-PROV-11 | Unit / 1 | Regression (blocker B1). `_provider_for` over resolved `dev-ci` (with and without `HARNESS_FIXTURE_DIR`), `cloud-hosted` and `edge-local` configs | `dev-ci` without the variable → `OpenRouterProvider` enforcing zero retention; with it → `RecordedFixtureProvider`; `cloud-hosted` → OpenRouter enforcing zero retention; `edge-local` → `LocalServerProvider`. `_describe_provider` names which | Type + text | P0 |
+| TC-PIPE-25 | FR-ORCH-15, FR-PROV-09 | Integration / 1 | Regression. A seeded `dev-ci` run (cost ceiling) on the launcher's provider: create, enumerate, start, lease every unit of every stage; then `HARNESS_PIPE_UNIT_TOKENS_IN=1000`, `_OUT=0` | No `AttributeError` on any claim (before: `'WorkUnit' object has no attribute 'tokens_in_per_call'`). `cost_estimate` and `cost_spend` each equal (extract + score units) × (4000 × 0.000001 + 1500 × 0.000002); a deterministic unit is priced None; the knobs give 0.001 per unit | Exact | P0 |
+| TC-PIPE-26 | FR-PROV-14 | Integration / 1 | Regression (blocker B1). A seeded cohort and package; `create_run` under `cloud-hosted` on the launcher's provider; then `aeh run` with a `cloud-hosted` config file, the drive stubbed | The run is created with `provider_config.retention_verified` = the panel's build ids and no network request; `aeh run` exits 0 and drives with an `OpenRouterProvider` (before: `RetentionPolicyError ... given no provider able to verify zero-retention routing`). With `HARNESS_DECISION_ENGINE = "jev"` the decision model is answered by its own provider: `aeh run` exits 1 and **no** run row exists (before the fix the completion provider "confirmed" the Jev build, and a `running` run was left behind). The console's `start_run_in_background` drives with the same OpenRouter provider and passes a `decision_provider` | Exact + census | P0 |
+| TC-ORCH-59 | FR-CONF-08, FR-INGEST-24 | Unit / 1 | Live-test blocker B3. `aeh.orch.cohorts.create_cohort` with a consent class and roster; refusals: an unknown consent class, ids `../evil`, `a/b`, `class.`, `Class-9A` (upper case), `nul`, `com1.x`; an empty roster; references with a space and with a zero-width space; a repeated reference; a second `create_cohort` for the same id with `real`; a cohort file that already holds another cohort (a case-insensitive file system); a roster insert that fails after the cohort insert; a second create that loses inside the write; `add_to_roster` with a repeat, then new ids, then for a missing cohort; `cohort_summary` for a missing id; a `dev-ci` config resolved against a `real` and a `synthetic` created cohort | The cohort row and roster are written in one transaction and `Orchestrator.cohort_ref` reads the stored class. Every refusal raises `CohortSetupError` saying *Nothing was written*, and no cohort file exists afterwards (nor `evil.sqlite`). The existing cohort keeps its class and roster; the shared file keeps only its own cohort; the failed roster insert leaves no cohort row; the losing create says *already exists … same moment*. A repeat in `add_to_roster` adds nothing; the missing-id summary creates no file. `real` raises `ConsentGateError`, `synthetic` resolves | Exact + census | P0 |
+| TC-ORCH-60 | FR-CONF-08 | Unit / 1 | Live-test blocker B3. `aeh.pipeline.rosters.read_roster_file` over: one ID per line (LF and CRLF), a CSV with BOM and `student_ref` first, `student_ref` not first with a blank name cell, a quoted name with a comma, comments and spaces, an empty file; and over `name,id` (no `student_ref`), `S1,Ann`, a single column starting `id`, a `student_ref` row with the cell empty. Then `aeh cohort create`, `add-students`, `show`, a second `create`, a `create` with id `Class-9A` and with a bad roster into a data folder that does not exist, a `create` without `--consent`, and a `create` with `--consent real` | Readable files give exactly the listed IDs (none dropped, none invented). The four ambiguous files raise `CohortSetupError` naming the problem and line. The commands exit 0 with the cohort as JSON (roster sizes 2, 3, 3); the second `create` exits 1 naming *already exists*; the bad id and bad file exit 1 and the data folder is never created; no `--consent` is an argument error; `real` prints the `HARNESS_ALLOW_REMOTE_REAL_WORK` reminder | Exact | P1 |
+| TC-PIPE-27 | FR-PKG-01, FR-PKG-17, FR-PKG-16 | Unit / 1 | Live-test blocker B5. `aeh.pipeline.packages.build_package` over `docs/live-tests/config/ps9-forces-01.package.toml`, then the same through `aeh package build`, twice | Version `PS9-FORCES-01@…`; 6 questions in paper order with their text, options (labels) and model answer; C4 judged, holistic, `max_points` 3, bands `none/limited/adequate/full` at ordinals 0–3 with points 0–3 and their descriptors; keys C1–C3 `C/B/C`, C5 `B`; boundaries give A at 8, B at 7.9, D at 2, F at 0; a further `add_criterion` on the version is refused (published). The command prints the version as JSON and exits 0; the second build exits 1 naming *already exists* | Exact | P0 |
+| TC-PIPE-28 | FR-PKG-01, FR-PKG-06 | Unit / 1 | Live-test blocker B5. Specs with package id `../evil` and `NUL`, no `approved_by`, no questions, a criterion naming an unknown question, a key on a question without options, a criterion with neither key nor bands; then each case the review found would publish an uncorrectable package: a key not among the options, bands on an mcq question, both key and bands, a question with no criterion, bands without `points`, `depends_on` as a string and naming no criterion, a mistyped `scoring`, `review_window_hours = 1.5`, `key = 2`, `bands = "x"`, a non-table criterion, a non-numeric grade; `review_window_hours = 0`; `aeh package build` with a refused spec into a data folder that does not exist; the sample built, then `ps9-forces-01`; a judged line with three bands, then the corrected spec under the same id | Each refused spec raises `PackageSpecError` naming the problem and leaves no package file (the CLI leaves no data folder); a 0-hour window is stored as 0; the lower-case twin is refused naming *ignoring case*; the odd band set raises M-PKG's error, leaves no package file, and the corrected spec then builds | Exact + census | P0 |
+| TC-PIPE-29 | FR-INGEST-24, FR-INGEST-25 | Integration / 2 | Live-test blockers B3 + B5 together. The sample physics package built from its spec; a `synthetic` cohort created with the six sheets' student IDs; the test paper ingested as the assessment; the six physics answer sheets ingested through the real `Ingestor` (V0–V4), the page reader stood in by the sample script's scripted transcripts; then a `dev-ci` run created and enumerated | Each sheet's intake status equals `verify_sample_materials.EXPECTED_STATUS` (three `ok`, two `incomplete`, one `unmatched_assessment`); the run is created and enumerates units | Exact | P0 |
+| TC-PIPE-30 | FR-INGEST-24, FR-INGEST-25 | Integration / 2 | Live-test blocker B4. The sample physics package built with `aeh package build`, a `synthetic` class created with `aeh cohort create`, the test paper and the six answer sheets on disk; `aeh ingest` under the shipped `dev-ci` config, its pages sent through `OpenRouterProvider.enforcing_zero_retention()` to a stand-in OpenRouter that answers each page with the sample script's transcript; then `aeh ingest` again over the same folder without `--assessment` | Exit 0; each sheet's status equals `EXPECTED_STATUS`; read 6, quarantined 3, skipped 0; the test paper read. Each of the 7 page requests carries the page as an `image_url` part (`data:image/png;base64,`), `provider == {zdr: true, data_collection: deny}` and model `qwen/qwen3-vl-8b-instruct`. The re-run reports the paper *already read*, skips all six sheets, sends no request, and the cohort still holds 6 submissions | Exact + census | P0 |
+| TC-PIPE-31 | FR-CONF-08 | Integration / 2 | Live-test blocker B4. `aeh ingest` for a `real` class, and for a class with no test paper read and no `--assessment` | The `real` class exits 1 with `ConsentGateError`; the missing paper exits 1 asking for `--assessment`; neither sends any request | Exact + count | P0 |
+| TC-PIPE-32 | FR-INGEST-24 | Integration / 2 | Live-test blocker B4, review findings. The TC-PIPE-30 setup; (a) the stand-in OpenRouter raises `KeyboardInterrupt` on the third request (the first answer sheet read, the second cut off), then `aeh ingest` is run again without it; (b) after a clean read, the stand-in answers 401 to every request and one new sheet is added to the folder; (c) the second sheet's read is cut by `KeyboardInterrupt` inside its final gate transaction (after its document is stored), then `aeh ingest` is run again | (a) The cut-off read leaves one submission with no status; the re-run exits 0, reports it under `interrupted`, says *cut-off read*, and parks it (`incomplete`, quarantined); afterwards no submission has a NULL status and the unquarantined submissions equal the sheets expected `ok`. (b) Exit 1; stderr says *no answer sheet could be read* and names the API key; the new sheet is `unreadable` with its finding as its detail, and its line is printed. (c) One submission is left with a document and no status; the re-run parks it (`incomplete`, quarantined), reports it under `interrupted`, reads that sheet again rather than skipping it, and afterwards no submission has a NULL status and the unquarantined submissions equal the sheets expected `ok` | Exact + census | P0 |
+| TC-PIPE-33 | FR-ORCH-10 | Integration / 2 | Live-test finding: escalation seats past the panel. The whole operator path over the sample physics test (`aeh package build`, `aeh cohort create`, `aeh ingest`, `aeh run`) under the shipped `dev-ci` config with the real `_provider_for` and `OpenRouterProvider`; only the transport is a stand-in, answering 400 to any model it was not given, and its judges disagree with low confidence. (a) one judge, no `escalation_judge`, random arm 0; (b) three `escalation_judge` tables; (c) one table with the random arm on; (d) a table naming the panel's model, or two naming one model; (e) a table pinned `@latest` | No request is ever refused for its model. (a) exit 0, `complete`, a trace line *no real judge for seats 2-3*, only the transcriber and panel judge called, and every judged score single-judge `provisional_unreviewed`; (b) exit 0, `complete`, the first two escalation judges called, some judged score has 3 judges, none is `ungradeable_by_panel`, and any *no real judge* line names seats 4-5 (a random-arm cell) — an already widened cell is never reported short; (c)-(e) exit 1 before any run exists, naming `HARNESS_ORCH_RANDOM_ARM_RATE` and *Add 1*, *already has a seat*, and `escalation_judge[0]` | Exact + census | P0 |
+| TC-CONSOLE-51 | FR-CONSOLE-32 | Integration / 2 | Live-test blocker B8. The six physics sample sheets after the real intake checks (three parked); `resolve quarantine item` on the doubled-mark paper with `resolution` `matchd`, `close`, and none | Each is refused (`dispatched` false), the reply names `'matched'` and `'unresolvable'`, the reply names the submission it was given, and the paper's row is unchanged (still quarantined) | Exact + census | P0 |
+| TC-CONSOLE-52 | FR-INGEST-24 | Integration / 2 | Live-test blocker B8. The same folder; `matched` on the no-name paper (V3 unmatched, `student_ref` `unknown`); then `matched` on the doubled-mark paper (V3 pass) and `unresolvable` on the no-name paper | The no-name release is refused, naming *graded under nobody* and `aeh ingest`, with the row unchanged; the doubled-mark paper is released (`ok`, not quarantined); the no-name paper is closed (`incomplete`, not quarantined) | Exact + census | P0 |
 
 ### 5.3 Module: Persistence Substrate (`M-STORE`)
 
@@ -4469,7 +4484,7 @@ python .claude/skills/create-test-plan/scripts/check_traceability.py --design do
 | FR-CONF-05 | TC-CONF-05 | Unit | P0 |
 | FR-CONF-06 | TC-CONF-06, TC-CONF-15 | Unit, Property | P1 |
 | FR-CONF-07 | TC-CONF-07 | Unit | P1 |
-| FR-CONF-08 | TC-CONF-08, SEC-02 | Unit, Security | P0 |
+| FR-CONF-08 | TC-CONF-08, SEC-02, TC-ORCH-59, TC-ORCH-60, TC-PIPE-31 | Unit, Security | P0 |
 | FR-CONF-09 | TC-CONF-09, TC-CONF-17, OBS-10 | Unit, Integration, Observability | P1 |
 | FR-CONF-10 | TC-CONF-10 | Unit | P2 |
 | FR-CONF-11 | TC-CONF-11, SEC-01 | Art, Security | P0 |
@@ -4487,11 +4502,11 @@ python .claude/skills/create-test-plan/scripts/check_traceability.py --design do
 | FR-PROV-07 | TC-PROV-11, RES-11 | Unit, Resilience | P1 |
 | FR-PROV-08 | TC-PROV-09, TC-PROV-C08, RES-09 | Unit, Contract, Resilience | P0 |
 | FR-PROV-09 | TC-PROV-12, TC-PROV-C09 | Unit, Contract | P1 |
-| FR-PROV-10 | TC-PROV-13, TC-PROV-14 | Unit | P0 |
-| FR-PROV-11 | TC-PROV-15, TC-PROV-20, TC-PROV-61 | Unit, Integration(live) | P1 |
+| FR-PROV-10 | TC-PROV-13, TC-PROV-14, TC-PIPE-24 | Unit | P0 |
+| FR-PROV-11 | TC-PROV-15, TC-PROV-20, TC-PROV-61, TC-PIPE-24 | Unit, Integration(live) | P1 |
 | FR-PROV-12 | TC-PROV-18, TC-PROV-C14, OBS-04 | Observability, Contract | P1 |
 | FR-PROV-13 | TC-PROV-03, TC-PROV-C05, TC-PROV-60 | Art, Contract, Unit | P0 |
-| FR-PROV-14 | TC-PROV-16, TC-PROV-17, SEC-03, TC-SMOKE-06 | Unit, Security, Smoke | P0 |
+| FR-PROV-14 | TC-PROV-16, TC-PROV-17, SEC-03, TC-SMOKE-06, TC-PROV-64, TC-PIPE-26 | Unit, Security, Smoke, Integration | P0 |
 | NFR-PROV-01 | TC-PROV-06, TC-PROV-19, TC-PROV-20, TC-PROV-C02 | Contract, Integration(live) | P0 |
 | NFR-PROV-02 | TC-PROV-22, PERF-04 | Performance | P1 |
 | NFR-PROV-03 | TC-PROV-10 | Unit | P0 |
@@ -4517,12 +4532,12 @@ python .claude/skills/create-test-plan/scripts/check_traceability.py --design do
 | NFR-STORE-04 | TC-STORE-04, TC-STORE-06 | Migration, Art | P1 |
 | NFR-STORE-05 | TC-STORE-23 — **known gap**, see §7.4 (Q-08) | n/a | — |
 | NFR-STORE-06 | TC-STORE-20, PERF-09 | Performance | P2 |
-| FR-PKG-01 | TC-PKG-01, TC-PKG-28, TC-PKG-29, TC-E2E-01 | Integration, Observability, E2E | P0 |
+| FR-PKG-01 | TC-PKG-01, TC-PKG-28, TC-PKG-29, TC-E2E-01, TC-PIPE-27, TC-PIPE-28 | Integration, Observability, E2E | P0 |
 | FR-PKG-02 | TC-PKG-02, TC-PKG-28, TC-PKG-30 | Integration, Observability | P0 |
 | FR-PKG-03 | TC-PKG-03, TC-PKG-09, TC-PKG-27 | Integration, Art | P0 |
 | FR-PKG-04 | TC-PKG-04 | Integration | P1 |
 | FR-PKG-05 | TC-PKG-05, TC-PKG-06, FUZZ-06 | Unit, Property | P0 |
-| FR-PKG-06 | TC-PKG-07, TC-PKG-08, TC-PKG-27 | Unit, Art | P0 |
+| FR-PKG-06 | TC-PKG-07, TC-PKG-08, TC-PKG-27, TC-PIPE-28 | Unit, Art | P0 |
 | FR-PKG-07 | TC-PKG-11 | Unit | P1 |
 | FR-PKG-08 | TC-PKG-10 | Unit, Integration | P0 |
 | FR-PKG-09 | TC-PKG-10, TC-STATS-05 | Unit, Integration | P0 |
@@ -4532,8 +4547,8 @@ python .claude/skills/create-test-plan/scripts/check_traceability.py --design do
 | FR-PKG-13 | TC-PKG-22 | Integration | P0 |
 | FR-PKG-14 | TC-PKG-14 | Unit | P0 |
 | FR-PKG-15 | TC-PKG-15 | Unit | P1 |
-| FR-PKG-16 | TC-PKG-16 | Unit | P0 |
-| FR-PKG-17 | TC-PKG-17 | Integration | P0 |
+| FR-PKG-16 | TC-PKG-16, TC-PIPE-27 | Unit | P0 |
+| FR-PKG-17 | TC-PKG-17, TC-PIPE-27 | Integration | P0 |
 | FR-PKG-18 | TC-PKG-18 | Integration | P0 |
 | FR-PKG-19 | TC-PKG-19 | Integration | P1 |
 | FR-PKG-20 | TC-PKG-20 | Integration | P1 |
@@ -4566,8 +4581,8 @@ python .claude/skills/create-test-plan/scripts/check_traceability.py --design do
 | FR-INGEST-21 | TC-INGEST-23, SEC-08 | Integration, Security | P0 |
 | FR-INGEST-22 | TC-INGEST-24 | Integration | P0 |
 | FR-INGEST-23 | TC-INGEST-26 | Integration | P0 |
-| FR-INGEST-24 | TC-INGEST-27 | Integration | P0 |
-| FR-INGEST-25 | TC-INGEST-25, ADV-07 | Integration, Adversarial | P0 |
+| FR-INGEST-24 | TC-INGEST-27, TC-ORCH-59, TC-PIPE-30, TC-PIPE-32, TC-CONSOLE-52 | Integration, Unit | P0 |
+| FR-INGEST-25 | TC-INGEST-25, ADV-07, TC-PIPE-29, TC-PIPE-30 | Integration, Adversarial | P0 |
 | FR-INGEST-26 | TC-INGEST-25, TC-INGEST-39 | Integration | P0 |
 | FR-INGEST-27 | TC-INGEST-25 | Integration | P0 |
 | FR-INGEST-28 | TC-INGEST-28, TC-CONSOLE-28 | Integration | P0 |
@@ -4615,12 +4630,12 @@ python .claude/skills/create-test-plan/scripts/check_traceability.py --design do
 | FR-ORCH-07 | TC-ORCH-08 | Integration | P0 |
 | FR-ORCH-08 | TC-ORCH-10 | Integration | P0 |
 | FR-ORCH-09 | TC-ORCH-11, RES-06 | Integration, Resilience | P0 |
-| FR-ORCH-10 | TC-ORCH-20 | Unit | P0 |
+| FR-ORCH-10 | TC-ORCH-20, TC-PIPE-33 | Unit | P0 |
 | FR-ORCH-11 | TC-ORCH-12, ADV-12 | Unit, Adversarial | P0 |
 | FR-ORCH-12 | TC-ORCH-22 | Integration | P0 |
 | FR-ORCH-13 | TC-ORCH-13, TC-ORCH-35 | Unit, Observability | P0 |
 | FR-ORCH-14 | TC-ORCH-14, OBS-05 | Unit, Observability | P0 |
-| FR-ORCH-15 | TC-ORCH-15, TC-ORCH-36, OBS-05 | Integration, Observability | P0 |
+| FR-ORCH-15 | TC-ORCH-15, TC-ORCH-36, OBS-05, TC-PIPE-25 | Integration, Observability | P0 |
 | FR-ORCH-16 | TC-ORCH-16, RES-09 | Integration, Resilience | P0 |
 | FR-ORCH-17 | TC-ORCH-17, TC-ORCH-36, RES-10 | Integration, Resilience | P0 |
 | FR-ORCH-18 | TC-ORCH-18, TC-ORCH-35, RES-12 | Integration, Resilience | P0 |
@@ -4856,7 +4871,7 @@ python .claude/skills/create-test-plan/scripts/check_traceability.py --design do
 | FR-CONSOLE-29 | TC-CONSOLE-29 | Integration | P0 |
 | FR-CONSOLE-30 | TC-CONSOLE-30 | Integration | P0 |
 | FR-CONSOLE-31 | TC-CONSOLE-31 | Integration | P1 |
-| FR-CONSOLE-32 | TC-CONSOLE-32 | Art | P0 |
+| FR-CONSOLE-32 | TC-CONSOLE-32, TC-CONSOLE-51 | Art, Integration | P0 |
 | NFR-CONSOLE-01 | TC-CONSOLE-33, PERF-08 | Performance | P1 |
 | NFR-CONSOLE-02 | TC-CONSOLE-34 | Smoke | P1 |
 | NFR-CONSOLE-03 | TC-CONSOLE-35, RES-16 | Resilience | P0 |

@@ -138,6 +138,7 @@ from .reports import (
     BreakerTrip,
     DECISION_ADMITTED,
     DECISION_HALTED_BY_BREAKER,
+    DECISION_NO_REAL_SEAT,
     EnumerationReport,
     EscalationBudgetState,
     EscalationReport,

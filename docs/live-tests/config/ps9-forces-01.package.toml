@@ -1,0 +1,115 @@
+# Package spec for the sample physics test (docs/live-tests/sample-materials, PS9-FORCES-01).
+#
+# Build and publish it with:
+#     python -m aeh package build --data-dir ~/aeh-data --spec docs/live-tests/config/ps9-forces-01.package.toml
+#
+# The command prints the package version id (PS9-FORCES-01@<12 hex>) that `aeh run` needs.
+# A built package can never be changed: to correct it, give the corrected spec a new `package`
+# id. Everything here is copied from build_sample_materials.py, so the sample answer sheets match.
+
+# The package id must be the test name printed on every answer sheet ("Assessment: PS9-FORCES-01"):
+# intake's right-test check (V4) compares the two, ignoring case.
+package = "PS9-FORCES-01"
+
+# Who approved the questions, keys and rubric. Recorded on the published package.
+approved_by = "Sample-materials teacher"
+
+# --- the questions, in paper order. A judge is shown each question's text and model answer. ---
+
+[[question]]
+id = "Q1"
+type = "mcq"
+points = 1
+text = "An object is moving at a steady speed in a straight line. The net force on it is zero. What will the object do next?"
+options = { A = "Stop immediately", B = "Slow down gradually", C = "Keep moving at the same steady speed", D = "Speed up" }
+model_answer = "C. With zero net force an object keeps its velocity (Newton's first law)."
+
+[[question]]
+id = "Q2"
+type = "mcq"
+points = 1
+text = "Which unit is used to measure force?"
+options = { A = "joule", B = "newton", C = "watt", D = "pascal" }
+model_answer = "B. The newton (N) is the unit of force."
+
+[[question]]
+id = "Q3"
+type = "mcq"
+points = 1
+text = "A 2 kg trolley accelerates at 3 m/s squared. What is the net force on it?"
+options = { A = "1.5 N", B = "5 N", C = "6 N", D = "9 N" }
+model_answer = "C. F = m x a = 2 kg x 3 m/s squared = 6 N."
+
+[[question]]
+id = "Q4"
+type = "open"
+points = 3
+text = "A book rests on a table. Using forces, explain why the book is not accelerating."
+model_answer = "Two forces act on the book: its weight (gravity), downward, and the normal force from the table, upward. They are equal in size and opposite in direction, so the net force on the book is zero. With zero net force there is no acceleration."
+
+[[question]]
+id = "Q5a"
+type = "mcq"
+points = 1
+text = "A cyclist rides at a steady speed along a flat, straight road. (a) The forward force from the pedals is ... the total resistive force. Mark one letter."
+options = { A = "greater than", B = "equal to", C = "less than" }
+model_answer = "B. At a steady speed the forward force equals the total resistive force."
+
+[[question]]
+id = "Q5b"
+type = "open"
+points = 3
+text = "A cyclist rides at a steady speed along a flat, straight road. (b) Explain your choice in (a)."
+model_answer = "The cyclist's speed is not changing, so the acceleration is zero and the net force is zero. The forward force from the pedals therefore balances the resistive forces (air resistance and friction)."
+
+# --- the rubric lines. A multiple-choice line has a `key` (one of its question's options); a judged
+# --- line has `bands`, listed from worst to best (an even number, 2 to 6), each with its `points`.
+# --- Every question needs at least one line, and a multiple-choice question needs a key.
+
+[[criterion]]
+id = "C1"
+question = "Q1"
+key = "C"
+
+[[criterion]]
+id = "C2"
+question = "Q2"
+key = "B"
+
+[[criterion]]
+id = "C3"
+question = "Q3"
+key = "C"
+
+[[criterion]]
+id = "C4"
+question = "Q4"
+bands = [
+  { name = "none", points = 0, descriptor = "No relevant force named, or a claim that contradicts the answer." },
+  { name = "limited", points = 1, descriptor = "Names only one force, or says the table or ground 'stops' the book without naming forces." },
+  { name = "adequate", points = 2, descriptor = "Names both forces, but does not say they are equal or that the net force is zero." },
+  { name = "full", points = 3, descriptor = "Names the weight (gravity) pulling down AND the normal (support) force pushing up, AND says they are equal so the net force is zero." },
+]
+
+[[criterion]]
+id = "C5"
+question = "Q5a"
+key = "B"
+
+[[criterion]]
+id = "C6"
+question = "Q5b"
+bands = [
+  { name = "none", points = 0, descriptor = "No relevant reason, or a reason that contradicts the answer." },
+  { name = "limited", points = 1, descriptor = "Mentions friction or the pedals, but gives no reason about balance or steady speed." },
+  { name = "adequate", points = 2, descriptor = "Says the forces balance or cancel, but does not link this to steady speed." },
+  { name = "full", points = 3, descriptor = "States that the net force is zero AND links this to the steady (constant) speed, for example by Newton's first law." },
+]
+
+# --- grade boundaries: the lowest total that earns each grade (10 points in all). ---
+[grades]
+A = 8
+B = 6
+C = 4
+D = 2
+F = 0
