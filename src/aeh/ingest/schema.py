@@ -462,20 +462,6 @@ INGEST_STATEMENTS: dict[str, Statement] = {
     "select_roster": Statement(
         "SELECT student_ref FROM roster WHERE cohort_id = :cohort_id"
     ),
-    # -- creating a cohort and its roster (live-test blocker B3) ---------------------------------------
-    "select_cohort": Statement(
-        "SELECT cohort_id, consent_class, created_at FROM cohort WHERE cohort_id = :cohort_id"
-    ),
-    "insert_cohort": Statement(
-        "INSERT INTO cohort (cohort_id, consent_class, created_at) "
-        "VALUES (:cohort_id, :consent_class, :created_at)"
-    ),
-    "insert_roster_entry": Statement(
-        "INSERT INTO roster (cohort_id, student_ref) VALUES (:cohort_id, :student_ref)"
-    ),
-    "count_roster": Statement(
-        "SELECT COUNT(*) AS n FROM roster WHERE cohort_id = :cohort_id"
-    ),
     # -- V4 (FR-INGEST-25..28) -------------------------------------------------------------------------
     "select_assessment_documents": Statement(
         "SELECT document_id, parent_doc_id, markdown FROM document "

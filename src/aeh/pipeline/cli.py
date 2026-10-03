@@ -53,10 +53,10 @@ def _build_parser() -> Any:
 
     # Live-test blocker B3: the operator's way to create a cohort and load its roster.
     cohort_parser = sub.add_parser(
-        "cohort", help="create a cohort (class) with its consent class and roster, or show one")
+        "cohort", help="make a cohort (class) with its consent class and roster, or show one")
     cohort_sub = cohort_parser.add_subparsers(dest="cohort_command", required=True)
     create = cohort_sub.add_parser(
-        "create", help="create a cohort; its consent class can never be changed afterwards")
+        "create", help="make a cohort; its consent class can never be changed afterwards")
     create.add_argument("--data-dir", required=True)
     create.add_argument("--cohort", required=True)
     create.add_argument("--consent", required=True, choices=_consent_classes(),
@@ -75,7 +75,7 @@ def _build_parser() -> Any:
 
 
 def _consent_classes() -> tuple[str, ...]:
-    from aeh.ingest import CONSENT_CLASSES
+    from aeh.orch.cohorts import CONSENT_CLASSES
 
     return CONSENT_CLASSES
 
@@ -83,15 +83,20 @@ def _consent_classes() -> tuple[str, ...]:
 def _cohort_command(args: Any) -> int:
     """`aeh cohort create | add-students | show`. Prints the cohort as JSON; a refusal is raised
     and reported by `main` like every other error, and writes nothing."""
-    from aeh.ingest import add_to_roster, cohort_summary, create_cohort, read_roster_file
+    from aeh.orch.cohorts import add_to_roster, check_cohort_id, cohort_summary, create_cohort
 
+    from .rosters import read_roster_file
+
+    # Checked and read BEFORE the store is opened, so a typo'd id or a bad roster file leaves no
+    # data-folder skeleton behind.
+    check_cohort_id(args.cohort)
+    refs = read_roster_file(args.roster) if args.cohort_command != "show" else ()
     store = _open_store(args.data_dir)
     try:
         if args.cohort_command == "create":
-            summary = create_cohort(store, args.cohort, args.consent,
-                                    read_roster_file(args.roster))
+            summary = create_cohort(store, args.cohort, args.consent, refs)
         elif args.cohort_command == "add-students":
-            summary = add_to_roster(store, args.cohort, read_roster_file(args.roster))
+            summary = add_to_roster(store, args.cohort, refs)
         else:
             summary = cohort_summary(store, args.cohort)
             if summary is None:

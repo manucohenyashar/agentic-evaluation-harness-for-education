@@ -348,6 +348,7 @@ Every message below is the system's real wording.
 | `ConfigurationError: HARNESS_PROFILE must be one of ('edge-local', 'cloud-hosted', 'dev-ci'), got None` | A run was started with no profile | Set `HARNESS_PROFILE`, or choose one in the config file |
 | `ConsentGateError: cohort … has consent_class 'real' … may not be sent to a 'dev-ci' provider` | Real student work is not allowed to leave the machine without recorded authority | Use a `synthetic` or `consented` cohort, or supply the override with a named person |
 | `HTTP 404 … No endpoints found matching your data policy` | No host that keeps zero data serves that model on OpenRouter | Choose another model (deployment tutorial, 7.6) |
+| `RetentionPolicyError: … zero-retention routing unconfirmed …` | A run was started on a provider that cannot confirm zero retention for every model (for example the Jev decision model) | Use the shipped `dev-ci` setup; leave the decision engine `off` |
 | `404 not found` from a command | The name is not one of the 15 | Check the spelling against 5.2 |
 | `"refused": true … refresh_required` | The screen was out of date | Press F5 and send the command again |
 | `…is already complete; nothing was started` | You tried to start a run twice | Nothing to do |

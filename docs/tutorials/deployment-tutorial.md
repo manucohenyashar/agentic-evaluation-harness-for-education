@@ -486,16 +486,21 @@ If a teacher at another desk must see the console, they connect to *your* comput
 Every class you grade is a **cohort** with two things fixed when it is created:
 
 * its **consent class**: `synthetic` (made-up practice papers), `consented` (the students or guardians agreed), or `real` (everything else). In OpenRouter mode only `synthetic` and `consented` classes may be graded (section 7.4). There is no default, and it can never be changed later.
-* its **student list** (the roster): the IDs students write on their papers. The intake check V3 matches the `Student:` line on each paper against this list, exactly, so use the same spelling the students will write.
+* its **student list** (the roster): the IDs students write on their papers. The intake check V3 compares what the page reader transcribes after `Student:` with this list **exactly**: no change of case, punctuation or hyphen is forgiven, and a paper that does not match waits in quarantine for the operator. So choose short IDs that are easy to write and read (such as `S9-001`), not names: an ID may not contain spaces.
 
-Write the student IDs in a file, one per line, or as a CSV with a `student_ref` column (other columns are ignored, so a spreadsheet exported from Excel works):
+Write the IDs in a file, in one of two shapes:
+
+* one ID per line (blank lines and lines starting with `#` are skipped), or
+* a CSV whose first row names a `student_ref` column. Other columns, such as names, are ignored, so a sheet exported from Excel works once that header is there.
 
 ```
-student_ref
-S9-001
-S9-002
-S9-003
+student_ref,name
+S9-001,Ann
+S9-002,Bo
+S9-003,Cy
 ```
+
+The reader never guesses. These are refused, naming the line, and nothing is created: a file with several columns but no `student_ref` header (otherwise the names could become the list), a first line that looks like a header such as `id` or `name` (it would become a student), and a row with an empty `student_ref` cell (otherwise that student would silently drop out).
 
 Then (checked):
 
@@ -514,8 +519,8 @@ python -m aeh cohort create --data-dir ~/aeh-data --cohort class-9a --consent sy
 
 * `aeh cohort add-students --data-dir ... --cohort class-9a --roster more.csv` adds late students. An ID already on the list is refused, by name, and nothing is added.
 * `aeh cohort show --data-dir ... --cohort class-9a` prints the class as above.
-* The class ID becomes a file name, so it may hold only letters, digits, `.`, `_` and `-`.
-* Running `create` again for the same class is refused (*"already exists; it is never overwritten"*). A duplicate or empty ID in the file is refused too. Every refusal writes nothing.
+* The class ID becomes a file name, so it may hold only **lower-case** letters, digits, `.`, `_` and `-` (on Windows and macOS `Class-9A` and `class-9a` would be the same file), and may not be a Windows device name such as `con` or `nul`.
+* Running `create` again for the same class is refused (*"already exists; it is never overwritten"*), and so is a repeated ID, or one holding a space or an invisible character. Every refusal writes nothing, and a mistyped ID or a bad file is refused before the data folder is touched.
 * Creating a `real` class prints a reminder that OpenRouter mode will refuse it.
 
 Not yet recorded: who created the class. Only the time is stored.
