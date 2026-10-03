@@ -43,7 +43,7 @@ The design says the console may run under the `edge-local` and `dev-ci` profiles
   The first is the privacy gate doing its job: the command builds the run without a provider that can answer "does OpenRouter keep this data?". The second is the console's deliberate refusal. Neither is a bug to bypass.
 * **What is needed:** a launcher that builds the OpenRouter provider for `dev-ci` (with the consent gate still applying) and supplies the retention answer in a way the privacy owner approves. That is a design decision, not just code.
 
-### B2. The request the OpenRouter provider sends is not the usual chat format (confirmed; fixed in code, not yet re-checked live)
+### B2. The request the OpenRouter provider sends is not the usual chat format (confirmed, fixed, and checked with one real call)
 
 Captured by pointing the provider at a stand-in server on this machine (nothing left the machine):
 
@@ -66,7 +66,9 @@ Two things stand out. The model name is sent whole, including the `openrouter/` 
 
 Regression cases `TC-PROV-60` to `TC-PROV-63`.
 
-**Not yet checked:** no real call has been made through the changed provider. The only real success so far was a hand-made request with a single message. Whether OpenRouter, and the host behind it, accept several `user` messages each carrying a `name`, and the image part, needs one real call (re-run `smoke.py`). Also not checked: many open models' chat templates drop `name`, so the model may see each field's value without its field name; the judge's and extractor's values carry their own labels (`criterion_id: …`), but some setup and synthesis values do not. Still open: the local server is sent the whole weights-path `build_id` as `model` (see the deployment tutorial, section 6.5).
+**Checked with a real call (2026-10-03).** `OpenRouterProvider().complete(...)` with `build_id="openrouter/qwen/qwen3-30b-a3b@2026-06-01"`, a one-field payload and `max_tokens=500` returned `Completion(text='ready', tokens_in=13, tokens_out=213, latency_ms=3230, resolved_build='qwen/qwen3-30b-a3b', cost=Decimal('0.00011245'))`. So the chat body with a `name`, the plain slug, the served build and OpenRouter's reported cost all work. `tokens_out=213` for a one-word answer is the model's reasoning: budget output generously for a reasoning model.
+
+**Still not checked:** a request with several `user` messages (every real prompt has 4 to 8 fields), and the image part the page reader sends. Also not checked: many open models' chat templates drop `name`, so the model may see each field's value without its field name; the judge's and extractor's values carry their own labels (`criterion_id: …`), but some setup and synthesis values do not. Still open: the local server is sent the whole weights-path `build_id` as `model` (see the deployment tutorial, section 6.5).
 
 ### B3. Nothing creates a cohort, its consent class, or its roster
 
@@ -132,7 +134,7 @@ The right-test gate (V4) compares the words in a student's answers with the word
 These are descriptions for the issue backlog (this repository creates issues only through `/plan-to-issues`, so none were created here). Each is written as a goal that can be checked.
 
 1. **Decide the privacy answer (B1/B6).** *Goal:* a written decision on how zero-retention is confirmed for OpenRouter, and who approves it.
-2. **One real OpenRouter call (B2).** *Goal:* a recorded result showing the provider's request is accepted, or the translation needed. *Code changed (see B2); one real call through the provider is still needed to confirm it.*
+2. **One real OpenRouter call (B2).** *Goal:* a recorded result showing the provider's request is accepted, or the translation needed. *Done for a text call (see B2): one real call through the provider succeeded. Several fields in one request, and the image part, still need a real call.*
 3. **Operator cohort commands (B3).** *Goal:* create a cohort with a consent class and load a roster, from the command line or the console, with the change in the audit trail.
 4. **Intake worker (B4).** *Goal:* after an upload, the paper is read, checked, and appears in the preflight and quarantine pages, with no engineer involved.
 5. **Dev-ci launcher through OpenRouter (B1).** *Goal:* `aeh run` under `dev-ci` with a key calls OpenRouter, the consent gate still applies, and the summary says which provider ran.
