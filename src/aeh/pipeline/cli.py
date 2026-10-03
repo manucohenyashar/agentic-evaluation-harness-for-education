@@ -17,7 +17,7 @@ from .settings import _int_knob, MAX_PASSES_ENV, PASS_SLEEP_MS_ENV
 from .results import RunResult
 from .hooks import _FAULT_PREFIX
 from .driver import recover, run_to_completion
-from .runtime import _load_config_file, _open_store, _provider_for
+from .runtime import _describe_provider, _load_config_file, _open_store, _provider_for
 from .background import resume_runs_in_background
 
 
@@ -143,16 +143,22 @@ def _run_command(store: Any, args: Any, config: Mapping[str, Any]) -> RunResult:
     """`aeh run`: find the run or create it, then drive it (FR-PIPE-08)."""
     from aeh.conf import resolve_run_config
 
-    orchestrator = Orchestrator(store)
     existing = [
-        handle for handle in orchestrator.runs()
+        handle for handle in Orchestrator(store).runs()
         if handle.cohort_id == args.cohort
         and handle.package_version_id == args.package_version
     ]
     # The cohort's DECLARED consent class, read from the store. `CohortRef`'s default is
     # `'real'` and fail-closed, so passing the bare id would refuse every synthetic cohort
     # against a remote backend — the gate firing on an answer nobody looked up.
-    run_config = resolve_run_config(dict(config), orchestrator.cohort_ref(args.cohort))
+    run_config = resolve_run_config(dict(config), Orchestrator(store).cohort_ref(args.cohort))
+    # The provider is built BEFORE the run exists and bound to the orchestrator that creates
+    # and starts it. A `cloud-hosted` run's retention gate runs inside `create_run` and asks
+    # this provider (`FR-PROV-14`); without one it refused every hosted run as "given no
+    # provider able to verify zero-retention routing" (live-test blocker B1). `start` prices
+    # the run's estimate through it too (`FR-ORCH-15`).
+    provider = _provider_for(run_config)
+    orchestrator = Orchestrator(store, provider=provider)
     if existing:
         # Latest by start time. `run_id` is `run-<uuid4 hex>` and `select_all_runs` orders by
         # it, so "the last row" is an arbitrary run among several for the same cohort and
@@ -195,7 +201,7 @@ def _run_command(store: Any, args: Any, config: Mapping[str, Any]) -> RunResult:
     summary = getattr(run_config, "profile_summary", None)
     if callable(summary):
         print(summary())
-    provider = _provider_for(run_config)
+    print(f"provider: {_describe_provider(provider)}")
     return run_to_completion(
         store, run_id, provider=provider, run_config=run_config)
 

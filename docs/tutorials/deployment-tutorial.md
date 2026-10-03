@@ -13,7 +13,7 @@ For how to *use* the system once it is running (the pages, the commands, grading
 > Everything below was **checked against the code** and, where it says "checked", **run** on a Linux machine with Python 3.11. Things that could not be checked are labelled **not checked**. Two facts decide what you can do today:
 >
 > 1. **Local computer mode is the only mode that can run the console and grade at the same time.** But the system has **not been tried against a real local model server**. The way it talks to the server may not match what common servers (Ollama, llama.cpp, vLLM) expect. See section 6.5.
-> 2. **OpenRouter mode can be set up and checked, but a live grading run cannot start yet.** `dev-ci` only replays recordings. `cloud-hosted` is the only profile that calls OpenRouter, but the console refuses it, and `aeh run` stops at the privacy check. Both refusals were reproduced and are shown in section 7.6. They are listed as blockers B1 and B6 in [`02-live-readiness-and-blockers.md`](../live-tests/02-live-readiness-and-blockers.md).
+> 2. **OpenRouter mode grades through OpenRouter, with zero data retention enforced on every request** (section 7.6). Use `dev-ci`: the console refuses `cloud-hosted` on purpose. What still stops a full live test is getting a class, a package and the papers into the system: no command does that yet (blockers B3, B4, B5 in [`02-live-readiness-and-blockers.md`](../live-tests/02-live-readiness-and-blockers.md)).
 >
 > So: you can follow every step here and get a correct setup. Whether a live run then works depends on the open blockers.
 
@@ -48,18 +48,18 @@ Three facts shape every choice:
 
 A **profile** tells the system where its models run. You pick exactly one for each run. There is **no default**: if you forget, the system stops and says so.
 
-| | Local computer mode | OpenRouter mode (live) | OpenRouter mode (practice) |
+| | Local computer mode | OpenRouter mode (hosted) | OpenRouter mode (console) |
 |---|---|---|---|
 | Profile name | `edge-local` | `cloud-hosted` | `dev-ci` |
-| Where models run | A model server on this computer | OpenRouter | **Recordings only today** (no network) |
+| Where models run | A model server on this computer | OpenRouter | OpenRouter (recordings instead when `HARNESS_FIXTURE_DIR` is set) |
 | Console allowed? | Yes | **No** (refused) | Yes |
-| Sends student work off the machine? | No | Yes | Intended yes; today no |
-| Costs money? | No | Yes | No today |
-| Needs | Model files, enough memory | OpenRouter key, internet | A folder of recordings (`HARNESS_FIXTURE_DIR`) |
+| Sends student work off the machine? | No | Yes, to zero-retention hosts only | Yes, to zero-retention hosts only |
+| Costs money? | No | Yes | Yes |
+| Needs | Model files, enough memory | OpenRouter key, internet | OpenRouter key, internet |
 | Needs a cost limit in the file? | No | Yes | Yes |
 | Needs `retention_setting` in the file? | No | Yes | No |
 | Model names look like | A file path | A service name | A service name |
-| Use it for | A school with no internet | A hosted service (not built yet) | Practice and development |
+| Use it for | A school with no internet | A hosted service (not built yet) | The live test, with the console |
 
 All of the above was read from the code and checked with the configuration checker (section 5.4).
 
@@ -321,10 +321,10 @@ Checked: with this file the console started and `/runs/run-dev-pipe/monitor` ret
 
 ### 7.1 Which profile do I use?
 
-* **`cloud-hosted`** is the only profile that is wired to call OpenRouter. But the console **refuses to start** under it (it has no login, so it must never be a hosted service), and a run stops at the privacy check (section 7.6). It is meant for a future hosted service with its own login.
-* **`dev-ci`** is the profile the design intends for development and for the first live test with the console. It sends work to OpenRouter in the design. **In the code today it replays recordings and never calls OpenRouter.**
+* **`dev-ci`** is the profile for the live test: it grades through OpenRouter and the console runs under it. With `HARNESS_FIXTURE_DIR` set it replays recordings instead (the test tier).
+* **`cloud-hosted`** also grades through OpenRouter, and `aeh run` works under it, but the console **refuses to start** under it (it has no login, so it must never be a hosted service). It is meant for a future hosted service with its own login.
 
-So, for development, use `dev-ci`. For the day the blockers are closed, the `cloud-hosted` example below is ready. The two files are almost the same; the differences are in the table in section 2. Today neither one can run a live grading pass (7.6).
+So use `dev-ci`. The two files are almost the same; the differences are in the table in section 2.
 
 ### 7.2 Get an OpenRouter key
 
@@ -418,33 +418,36 @@ HARNESS_JEV_BUILD = "openrouter/typesafe/jev-1.13@20260917"
 
 Its default address is `https://openrouter.ai/api/v1/systemone` (change with `HARNESS_JEV_OPENROUTER_URL`). It sends student work off the machine too, so the consent rule covers it. **Not checked against the real service.** Keep it `off` for a first test.
 
-### 7.6 What stops a live run today (reproduced)
+### 7.6 What a run through OpenRouter does now (reproduced)
 
-Both of these were run for this tutorial, on a throw-away copy of the practice data, with a dummy key and no network. The messages are the system's own words.
-
-**`cloud-hosted`, `aeh run`: stops at the privacy check.**
+`aeh run` and the console's start-run, under `dev-ci`, now grade through OpenRouter. Reproduced on a throw-away copy of the practice data, with a dummy key and the address pointed at a dead port on this machine, so nothing left it:
 
 ```
-OPENROUTER_API_KEY=sk-or-DUMMY python -m aeh run --data-dir <folder> --cohort coh-dev-pipe \
-    --package-version PKG-DEV-PIPE@64e2dd023c2e --config cloud-hosted.toml
-aeh run: RetentionPolicyError: a cloud-hosted run cannot start: the orchestrator was given no provider able to verify zero-retention routing (FR-PROV-14), so retention for the 1 panel members is unconfirmed and nothing was created.
+OPENROUTER_API_KEY=sk-or-DUMMY OPENROUTER_BASE_URL=http://127.0.0.1:9/api/v1 \
+  python -m aeh run --data-dir <folder> --cohort coh-dev-pipe \
+  --package-version PKG-DEV-PIPE@64e2dd023c2e --config docs/live-tests/config/live-test.dev-ci.toml
+HARNESS_PROFILE source: config file
+provider: OpenRouter at http://127.0.0.1:9/api/v1 (zero data retention enforced)
+...
+"pause_reason": "ProviderUnavailableError: the provider did not answer within the retry budget ...",
+"status": "paused"
 ```
 
-The system will not send student work to a service unless it can confirm that the service keeps no copy. The command today gives the run no way to ask. Even if it did, the check asks OpenRouter at `GET <address>/retention/<model>` and treats anything other than a clear *yes*, *true*, *confirmed* or *zero-retention* as *no*. The code's own comment calls the answer format an open question. This is blocker B6.
+The `provider:` line says what will really answer: OpenRouter, a local model server, or recordings. (Before, the command printed OpenRouter model names even when a replay was what ran.) A provider that does not answer pauses the run (exit code 3) rather than failing it; start it again once the cause is fixed.
 
-**`cloud-hosted`, `aeh console`: refused on purpose.**
+**Privacy (zero data retention).** Every request to OpenRouter carries `"provider": {"zdr": true, "data_collection": "deny"}`. OpenRouter then sends the work only to a host that keeps no copy and does not train on it, or refuses the request (`HTTP 404 ... No endpoints found matching your data policy`), which pauses the run. Checked on 2026-10-03: both models in the shipped file have such hosts (`qwen/qwen3-30b-a3b` via DeepInfra, `qwen/qwen3-vl-8b-instruct` via Parasail). The `cloud-hosted` privacy check at run start is answered by this rule, so a `cloud-hosted` `aeh run` now starts. The consent rule (7.4) still decides first whether a class's work may leave the machine at all.
+
+**Recordings.** Set `HARNESS_FIXTURE_DIR` and `dev-ci` replays recordings from that folder instead, with no network. That is the test tier; leave it unset for a real run.
+
+**Still refused, on purpose.** The console will not start under `cloud-hosted` (it has no login):
 
 ```
 aeh console: ConsoleBindRefused: the console refuses to start under the cloud-hosted profile: authN/authZ is none by design ...
 ```
 
-**`dev-ci`, `aeh run`: needs recordings, does not call OpenRouter.**
+Use `dev-ci` for the console.
 
-```
-aeh run: ValueError: the dev-ci profile records and replays through a fixture directory; set HARNESS_FIXTURE_DIR so the provider has somewhere to read
-```
-
-Note that the command prints the OpenRouter model names *first*, even though a replay is what would run. Do not read that as proof OpenRouter was called.
+**What still blocks a full live test.** No command yet creates a class and its student list (B3), builds a package from your test (B5), or reads uploaded scans into papers (B4). See the readiness document.
 
 **The request format (blocker B2) is changed, but not yet re-checked live.** The first real call failed: the system sent the whole `openrouter/<vendor>/<model>@<date>` name and a non-standard body, and OpenRouter refused it. The system now sends the plain name OpenRouter knows (`qwen/qwen3-30b-a3b`) and the standard chat format from section 6.5, with `Authorization: Bearer <key>`. A real call through the changed system succeeded (checked, 2026-10-03): it answered `ready`, reported `qwen/qwen3-30b-a3b` as the model that served it, and OpenRouter's cost of $0.00011245. Two more real calls also succeeded (checked): a judge-style request with three parts answered `{"band": "met"}`, and a page picture sent to `qwen/qwen3-vl-8b-instruct` was read back exactly ("The answer is 42"). So both model names in the shipped `dev-ci` file exist at OpenRouter. The model spent 213 output tokens to say one word, because it reasons first: leave the output cap generous for such models. A refused request now says why, in OpenRouter's words. A bad key, no credit or an unknown model (`HTTP 401`, `402`, `404`) stops the run, for example `HTTP 401 from the provider: the credentials were refused (for OpenRouter, check OPENROUTER_API_KEY)`. A refusal of one paper only (too long, flagged) sets that paper aside and the run goes on.
 
@@ -521,7 +524,8 @@ All are optional. The default is the production value. They exist so a slower co
 | `LOCAL_INFERENCE_BASE_URL` | Local model server address | `http://127.0.0.1:8080/v1` |
 | `OPENROUTER_API_KEY` | Your key (never in a file) | none |
 | `OPENROUTER_BASE_URL` | OpenRouter address | `https://openrouter.ai/api/v1` |
-| `HARNESS_FIXTURE_DIR` | Folder of recordings for `dev-ci` | none (required for `dev-ci`) |
+| `HARNESS_FIXTURE_DIR` | Set it and `dev-ci` replays recordings from this folder instead of calling OpenRouter | not set |
+| `HARNESS_PIPE_UNIT_TOKENS_IN` / `HARNESS_PIPE_UNIT_TOKENS_OUT` | Tokens one model call is priced at, before it is sent, against the cost ceiling. The real cost is what OpenRouter reports | 4000 / 1500 |
 | `HARNESS_RETRY_MAX` | Tries per call (first try plus retries) | 3 |
 | `HARNESS_BACKOFF_BASE_MS` | Wait before the first retry; doubles after | 250 |
 | `HARNESS_RETRY_AFTER_CEILING_S` | A "come back in N seconds" above this counts as unusable | 120 |
@@ -572,8 +576,7 @@ Every message is the system's real wording (checked unless said).
 | `HARNESS_COST_CEILING is required for backend_profile ...` | OpenRouter profiles need a limit | Add the ceiling and the currency |
 | `retention_setting is required for backend_profile 'cloud-hosted'` | Privacy choice not recorded | Add `retention_setting` |
 | `ConsentGateError: cohort ... has consent_class 'real'` | Real work may not go to OpenRouter | Use a synthetic or consented class |
-| `RetentionPolicyError: a cloud-hosted run cannot start ...` | Privacy check cannot be answered | Blocker B6 (7.6) |
-| `ValueError: the dev-ci profile records and replays ...; set HARNESS_FIXTURE_DIR` | `dev-ci` replays recordings | Set the folder, or see 7.6 |
+| `HTTP 404 ... No endpoints found matching your data policy` | No zero-retention host serves that model | Choose another model (7.6) |
 | `OpenRouterProvider needs an API key` | Key not in this terminal | Set `OPENROUTER_API_KEY` (7.2) |
 | `... froze backend profile 'X' and this process resolved 'Y'` | You tried to resume a run under another profile | Set `HARNESS_PROFILE` to the one it names |
 | `InsecureLocationError` | Folder under `/tmp` | Use a folder in your home |

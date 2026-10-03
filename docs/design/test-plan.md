@@ -911,6 +911,10 @@ returned exactly once and no code path exists to ask for another.
 | TC-PROV-61 | FR-PROV-11, FR-PROV-04 | Unit / 1 | Regression. `openrouter/qwen/qwen3-30b-a3b@2026-06-01` through `OpenRouterProvider`; a weights-path ref through `LocalServerProvider` | OpenRouter's wire `model` is `qwen/qwen3-30b-a3b`; `resolved_build` is the reply's `model`; the reported `usage.cost` is the cost. The local server is still sent the pinned `build_id` | Exact | P0 |
 | TC-PROV-62 | FR-PROV-06, NFR-PROV-04 | Unit / 1 | Regression. OpenRouter answers 401, 402, 404 (refusals every unit meets alike) and 400, 403, 413, 422 (refusals of one request: too long, flagged) with an `error.message`; a 401 whose message quotes the submission; a 408 then 200; a 200 carrying only an `error` object | 401/402/404 raise `ProviderUnavailableError` after **1** send (so the run pauses), naming the status, an operator hint and the provider's message. 400/403/413/422 raise `MalformedResponseError` (never `ProviderUnavailableError`) after the retry budget (3 sends), naming the status and message, so one unit quarantines and the run goes on. The quoting message is replaced by `(body withheld)`. The 408 is retried (2 sends, then success). The 200-with-error raises `MalformedResponseError` naming the provider's message | Exact type + count + text | P0 |
 | TC-PROV-63 | FR-PROV-06 | Unit / 1 | Regression. A reply with `content: null`, `finish_reason: "length"` and a `reasoning` field (a reasoning model out of output allowance) | `MalformedResponseError` naming `finish_reason='length'`, the reasoning, and the output cap; the reasoning text is not in the message and is never taken as the answer | Type + text | P1 |
+| TC-PROV-64 | FR-PROV-14 | Unit / 1 | Regression (live-test blocker B6). `OpenRouterProvider.enforcing_zero_retention()` over a recording transport and over one that fails on any request; a plain `OpenRouterProvider(zero_data_retention=False)`; a 404 *"No endpoints found matching your data policy"* | Every request body carries `provider == {"zdr": true, "data_collection": "deny"}`; `verify_retention` confirms every model with **0** requests; the plain provider sends no `provider` key; the 404 raises `ProviderUnavailableError` naming the data policy after 1 send | Exact + count | P0 |
+| TC-PIPE-24 | FR-PROV-10, FR-PROV-11 | Unit / 1 | Regression (blocker B1). `_provider_for` over resolved `dev-ci` (with and without `HARNESS_FIXTURE_DIR`), `cloud-hosted` and `edge-local` configs | `dev-ci` without the variable → `OpenRouterProvider` enforcing zero retention; with it → `RecordedFixtureProvider`; `cloud-hosted` → OpenRouter enforcing zero retention; `edge-local` → `LocalServerProvider`. `_describe_provider` names which | Type + text | P0 |
+| TC-PIPE-25 | FR-ORCH-15, FR-PROV-09 | Integration / 1 | Regression. A seeded `dev-ci` run (cost ceiling) on the launcher's provider: create, enumerate, start, lease every unit of every stage; then `HARNESS_PIPE_UNIT_TOKENS_IN=1000`, `_OUT=0` | No `AttributeError` on any claim (before: `'WorkUnit' object has no attribute 'tokens_in_per_call'`). `cost_estimate` and `cost_spend` each equal (extract + score units) × (4000 × 0.000001 + 1500 × 0.000002); a deterministic unit is priced None; the knobs give 0.001 per unit | Exact | P0 |
+| TC-PIPE-26 | FR-PROV-14 | Integration / 1 | Regression (blocker B1). A seeded cohort and package; `create_run` under `cloud-hosted` on the launcher's provider; then `aeh run` with a `cloud-hosted` config file, the drive stubbed | The run is created with `provider_config.retention_verified` = the panel's build ids and no network request; `aeh run` exits 0 and drives with an `OpenRouterProvider` (before: `RetentionPolicyError ... given no provider able to verify zero-retention routing`) | Exact + census | P0 |
 
 ### 5.3 Module: Persistence Substrate (`M-STORE`)
 
@@ -4487,11 +4491,11 @@ python .claude/skills/create-test-plan/scripts/check_traceability.py --design do
 | FR-PROV-07 | TC-PROV-11, RES-11 | Unit, Resilience | P1 |
 | FR-PROV-08 | TC-PROV-09, TC-PROV-C08, RES-09 | Unit, Contract, Resilience | P0 |
 | FR-PROV-09 | TC-PROV-12, TC-PROV-C09 | Unit, Contract | P1 |
-| FR-PROV-10 | TC-PROV-13, TC-PROV-14 | Unit | P0 |
-| FR-PROV-11 | TC-PROV-15, TC-PROV-20, TC-PROV-61 | Unit, Integration(live) | P1 |
+| FR-PROV-10 | TC-PROV-13, TC-PROV-14, TC-PIPE-24 | Unit | P0 |
+| FR-PROV-11 | TC-PROV-15, TC-PROV-20, TC-PROV-61, TC-PIPE-24 | Unit, Integration(live) | P1 |
 | FR-PROV-12 | TC-PROV-18, TC-PROV-C14, OBS-04 | Observability, Contract | P1 |
 | FR-PROV-13 | TC-PROV-03, TC-PROV-C05, TC-PROV-60 | Art, Contract, Unit | P0 |
-| FR-PROV-14 | TC-PROV-16, TC-PROV-17, SEC-03, TC-SMOKE-06 | Unit, Security, Smoke | P0 |
+| FR-PROV-14 | TC-PROV-16, TC-PROV-17, SEC-03, TC-SMOKE-06, TC-PROV-64, TC-PIPE-26 | Unit, Security, Smoke, Integration | P0 |
 | NFR-PROV-01 | TC-PROV-06, TC-PROV-19, TC-PROV-20, TC-PROV-C02 | Contract, Integration(live) | P0 |
 | NFR-PROV-02 | TC-PROV-22, PERF-04 | Performance | P1 |
 | NFR-PROV-03 | TC-PROV-10 | Unit | P0 |
@@ -4620,7 +4624,7 @@ python .claude/skills/create-test-plan/scripts/check_traceability.py --design do
 | FR-ORCH-12 | TC-ORCH-22 | Integration | P0 |
 | FR-ORCH-13 | TC-ORCH-13, TC-ORCH-35 | Unit, Observability | P0 |
 | FR-ORCH-14 | TC-ORCH-14, OBS-05 | Unit, Observability | P0 |
-| FR-ORCH-15 | TC-ORCH-15, TC-ORCH-36, OBS-05 | Integration, Observability | P0 |
+| FR-ORCH-15 | TC-ORCH-15, TC-ORCH-36, OBS-05, TC-PIPE-25 | Integration, Observability | P0 |
 | FR-ORCH-16 | TC-ORCH-16, RES-09 | Integration, Resilience | P0 |
 | FR-ORCH-17 | TC-ORCH-17, TC-ORCH-36, RES-10 | Integration, Resilience | P0 |
 | FR-ORCH-18 | TC-ORCH-18, TC-ORCH-35, RES-12 | Integration, Resilience | P0 |

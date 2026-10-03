@@ -5,6 +5,11 @@
 # OpenRouter, so it is gated by the same consent rule: only cohorts marked "synthetic" or
 # "consented" may be graded (the sample answer sheets are synthetic).
 #
+# Every request to OpenRouter carries zdr=true and data_collection="deny": OpenRouter sends the
+# work only to a host that keeps no copy, or refuses it and the run pauses. Set
+# HARNESS_FIXTURE_DIR and dev-ci replays recordings from that folder instead (the test tier);
+# leave it unset for a real run. `aeh run` prints a "provider:" line saying which one answers.
+#
 # Use it with the checker before anything else:
 #     python docs/live-tests/sample-materials/check_config.py docs/live-tests/config/live-test.dev-ci.toml
 #
@@ -12,11 +17,10 @@
 #     export OPENROUTER_API_KEY="sk-or-..."          (macOS / Linux)
 #     $env:OPENROUTER_API_KEY = "sk-or-..."          (Windows PowerShell)
 #
-# STATUS: the two model names below are copied from the repository's own example file
-# (config/harness.example.toml). They have NOT been checked against OpenRouter's live model list
-# (this guide was written where OpenRouter could not be reached). Open https://openrouter.ai/models
-# and confirm each one exists before the test. The date after "@" is the version you are pinning;
-# the system refuses names ending in :latest, @latest, @stable, @main, @head or @newest.
+# STATUS: both model names below answered real calls on 2026-10-03, through zero-retention hosts
+# (qwen3-30b-a3b via DeepInfra, qwen3-vl-8b-instruct via Parasail). If you change them, confirm
+# the new ones on https://openrouter.ai/models first. The date after "@" is the version you are
+# pinning; the system refuses names ending in :latest, @latest, @stable, @main, @head or @newest.
 
 # Which profile this file selects when HARNESS_PROFILE is not set in the terminal. (The terminal
 # wins if both are set.) Set here so that `aeh console` and `aeh run` work without extra typing.

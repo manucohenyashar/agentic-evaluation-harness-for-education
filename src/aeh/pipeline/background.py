@@ -72,8 +72,11 @@ def start_run_in_background(
 
     from aeh.conf import resolve_run_config
 
-    orchestrator = Orchestrator(store)
-    run_config = resolve_run_config(dict(config), orchestrator.cohort_ref(cohort_id))
+    run_config = resolve_run_config(dict(config), Orchestrator(store).cohort_ref(cohort_id))
+    # Built before the run exists and bound to every orchestrator that touches it, exactly as
+    # `aeh run` does: `create_run`'s retention gate and `start`'s estimate both ask it.
+    bound = provider if provider is not None else _provider_for(run_config)
+    orchestrator = Orchestrator(store, provider=bound)
     if run_id is None:
         existing = [
             handle for handle in orchestrator.runs()
@@ -103,13 +106,13 @@ def start_run_in_background(
     def _drive() -> None:
         worker_store = _open_store(data_dir)
         try:
-            worker = Orchestrator(worker_store)
+            worker = Orchestrator(worker_store, provider=bound)
             try:
                 if worker.run_handle(started).status == "pending":
                     worker.start(started)
                 run_to_completion(
                     worker_store, started,
-                    provider=provider if provider is not None else _provider_for(run_config),
+                    provider=bound,
                     run_config=run_config, **drive_keywords)
             except Exception as error:  # noqa: BLE001 - recorded on the run, not swallowed
                 # Pause naming the cause; a run `pause` will not move (still pending, say)

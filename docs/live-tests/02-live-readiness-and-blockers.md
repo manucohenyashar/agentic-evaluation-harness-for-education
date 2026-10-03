@@ -43,6 +43,10 @@ The design says the console may run under the `edge-local` and `dev-ci` profiles
   The first is the privacy gate doing its job: the command builds the run without a provider that can answer "does OpenRouter keep this data?". The second is the console's deliberate refusal. Neither is a bug to bypass.
 * **What is needed:** a launcher that builds the OpenRouter provider for `dev-ci` (with the consent gate still applying) and supplies the retention answer in a way the privacy owner approves. That is a design decision, not just code.
 
+**Update (2026-10-03): resolved.** `aeh run` and the console's start-run, under `dev-ci`, now grade through OpenRouter (`_provider_for` in `src/aeh/pipeline/runtime.py`); `HARNESS_FIXTURE_DIR` set selects the recordings instead, as the test tier. `aeh run` binds the provider to the orchestrator before the run exists, so a `cloud-hosted` run passes its retention gate (see B6). The command now prints a `provider:` line naming what will answer, so the profile summary's model names can no longer be mistaken for proof that OpenRouter was called. The console still refuses `cloud-hosted`, on purpose: use `dev-ci`.
+
+Found and fixed on the way: every run with a cost ceiling (all `dev-ci` and `cloud-hosted` runs) crashed on its first unit with `AttributeError: 'WorkUnit' object has no attribute 'tokens_in_per_call'`, because the orchestrator priced a work unit on a provider that prices a call plan. The launcher's provider now prices a unit as one call at `HARNESS_PIPE_UNIT_TOKENS_IN` / `_OUT` tokens (4000 / 1500). Cases `TC-PIPE-24` to `TC-PIPE-26`.
+
 ### B2. The request the OpenRouter provider sends is not the usual chat format (confirmed, fixed, and checked with real calls)
 
 Captured by pointing the provider at a stand-in server on this machine (nothing left the machine):
@@ -94,6 +98,8 @@ The design has the teacher upload the test, model answer and rubric and confirm 
 
 `OpenRouterProvider.verify_retention` asks `GET {base}/retention/{model}` and treats anything other than an explicit yes as *no*. The code's own comment calls the answer format *"the open TBD"* (`FR-PROV-15`). Unless the provider is given a source of answers, a hosted run cannot start. This is part of B1 but needs its own decision.
 
+**Update (2026-10-03): resolved by enforcement.** Every request to OpenRouter now carries `"provider": {"zdr": true, "data_collection": "deny"}`, so OpenRouter routes it only to a host that keeps no copy and does not train on it, or refuses it (`HTTP 404 ... No endpoints found matching your data policy`, which pauses the run). The launcher builds `OpenRouterProvider.enforcing_zero_retention()`, whose retention gate is answered by that rule rather than by the `GET /retention/<model>` lookup OpenRouter does not serve. Checked with real calls: both models in the shipped config have zero-retention hosts (`qwen/qwen3-30b-a3b` via DeepInfra, `qwen/qwen3-vl-8b-instruct` via Parasail). Case `TC-PROV-64`. Still not covered: the run-start gate itself sends no request, so a model with no zero-retention host is found at its first call (the run pauses there, having sent nothing to a retaining host), not before the run is created.
+
 ### B7. The console shows less than the guides promise
 
 All 14 pages are read-only reports with no form, button, link or script (checked on all 14). Everything that changes something is a `curl` command, as the tutorial shows. Beyond that, on a real data folder:
@@ -138,11 +144,11 @@ The right-test gate (V4) compares the words in a student's answers with the word
 
 These are descriptions for the issue backlog (this repository creates issues only through `/plan-to-issues`, so none were created here). Each is written as a goal that can be checked.
 
-1. **Decide the privacy answer (B1/B6).** *Goal:* a written decision on how zero-retention is confirmed for OpenRouter, and who approves it.
+1. **Decide the privacy answer (B1/B6).** *Goal:* a written decision on how zero-retention is confirmed for OpenRouter, and who approves it. *Done: enforced per request (see B6).*
 2. **One real OpenRouter call (B2).** *Goal:* a recorded result showing the provider's request is accepted, or the translation needed. *Done (see B2): real calls through the provider succeeded for a one-field call, a three-field judge-style call, and a page image to the vision model.*
 3. **Operator cohort commands (B3).** *Goal:* create a cohort with a consent class and load a roster, from the command line or the console, with the change in the audit trail.
 4. **Intake worker (B4).** *Goal:* after an upload, the paper is read, checked, and appears in the preflight and quarantine pages, with no engineer involved.
-5. **Dev-ci launcher through OpenRouter (B1).** *Goal:* `aeh run` under `dev-ci` with a key calls OpenRouter, the consent gate still applies, and the summary says which provider ran.
+5. **Dev-ci launcher through OpenRouter (B1).** *Goal:* `aeh run` under `dev-ci` with a key calls OpenRouter, the consent gate still applies, and the summary says which provider ran. *Done (see B1).*
 6. **Setup flow behind the console (B5).** *Goal:* a teacher can confirm questions and keys from the pages S3 and S4 without code.
 7. **Console pages that show what the guides say (B7).** *Goal:* S1, S3 and S4 show the real package; S10 and S11 list the drawn papers; S8 shows why a paper was parked; S12 and S7 show cost and the finalizing name; the band drop-downs hold the rubric's own band names and submit.
 8. **Record the operator's decision (B8).** *Goal:* resolving a parked paper stores the student, the mark or the test chosen, in the audit trail, and refuses an unknown word.
