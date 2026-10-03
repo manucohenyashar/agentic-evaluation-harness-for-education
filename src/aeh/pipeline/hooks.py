@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any
 
@@ -15,6 +16,7 @@ from aeh.agg import (
 from aeh.judge import verdicts_for
 from aeh.orch import (
     DECISION_HALTED_BY_BREAKER,
+    DECISION_NO_REAL_SEAT,
     REPLACEMENT_INSERTED,
     REPLACEMENT_NOT_APPLICABLE,
     REPLACEMENT_REFUSED,
@@ -274,26 +276,20 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any,
                 fallback=len(verdicts) == 2 and quarantined > 0,
                 breaker_tripped=cell.criterion_id in latched,
             )
-            # `should_escalate` is pure (FR-AGG-08), so the decision is taken before the write:
-            # when it cannot be carried out, the score written is the one that says so.
+            # `should_escalate` is pure (FR-AGG-08); the decision is the unmodified score's.
             decision = should_escalate(
                 score=score, criterion=criterion, history=history, baseline=baseline)
             escalates = bool(getattr(decision, "escalate", False))
-            # `seats` is how many real judge models the run has (panel plus escalation judges),
-            # None when every seat can be served (a recording). Units take seats in order, so a
-            # cell holding `terminal_units` widens by two only if two more seats exist. When
-            # they do not, the panel's figure stands, scored as a halted escalation is
-            # (provisional, to review), rather than sending a seat's name as a model.
-            seatless = escalates and seats is not None and terminal_units + 2 > seats
-            if seatless:
-                score = aggregate(
-                    verdicts, criterion, signals,
-                    fallback=len(verdicts) == 2 and quarantined > 0, breaker_tripped=True)
+            seatless = False
             with handle.cohort.transaction() as tx:
                 write_score(tx, handle.run_id, cell.submission_id, score, signals)
-                if escalates and not seatless:
+                if escalates:
+                    # `seats`: how many judge models the run can really serve (panel, then the
+                    # configured escalation judges); None when any seat can be (a recording).
+                    # M-ORCH checks it only where it would write units, so a pair already
+                    # widened stays the no-op it is.
                     reports = orch.enqueue_escalation(
-                        tx, (handle.run_id, cell.submission_id, cell.criterion_id))
+                        tx, (handle.run_id, cell.submission_id, cell.criterion_id), seats=seats)
                     # A widening the breaker halted did not escalate anything; counting it would
                     # make the trace claim work that was refused (`FR-ORCH-13`).
                     if any(int(getattr(r, "units_inserted", 0) or 0) for r in reports):
@@ -303,6 +299,17 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any,
                         # The breaker latched inside this transaction; every later cell of the
                         # same criterion in this pass must see it.
                         latched.add(cell.criterion_id)
+                    seatless = any(getattr(r, "decision", None) == DECISION_NO_REAL_SEAT
+                                   for r in reports)
+                    if seatless and score.state == "final":
+                        # The panel's figure stands, but a wider panel was wanted and could
+                        # not be seated: it goes to the teacher rather than being settled.
+                        score = replace(
+                            score, routing="provisional", state="provisional_unreviewed",
+                            notes=score.notes + (
+                                "escalation wanted, no real judge model for the next seats: "
+                                "provisional, routed to review",))
+                        write_score(tx, handle.run_id, cell.submission_id, score, signals)
                 orch.mark_cell_phase(
                     tx, handle.run_id, cell.submission_id, cell.criterion_id,
                     "aggregated", units_consumed=terminal_units,
@@ -311,7 +318,7 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any,
                 f"{cell.submission_id}/{cell.criterion_id}: {score.band} over "
                 f"{len(verdicts)} verdicts" + (
                     f" -> escalation wanted, no real judge for seats {terminal_units + 1}-"
-                    f"{terminal_units + 2}: provisional" if seatless
+                    f"{terminal_units + 2}: {score.state}" if seatless
                     else " -> escalated" if escalates else "")
             )
     except (ProviderUnavailableError, BuildChangedError):

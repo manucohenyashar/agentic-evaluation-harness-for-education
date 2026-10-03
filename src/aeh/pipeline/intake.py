@@ -135,7 +135,7 @@ def ingest_files(store: Any, run_config: Any, cohort_id: str, package_version: s
         assessment_note = f"read from {Path(assessment).name}"
 
     interrupted = park_interrupted_submissions(handle)
-    done = submitted_sources(handle)
+    done = submitted_sources(handle, excluding=interrupted)
     outcomes: list[SheetOutcome] = []
 
     def record(outcome: SheetOutcome) -> None:

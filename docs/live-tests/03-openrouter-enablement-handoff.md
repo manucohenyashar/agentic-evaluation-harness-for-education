@@ -13,7 +13,7 @@ exactly what is left, so a new session can finish without the old conversation.
 | B5 | `aeh package build --spec <toml>` (sample: `docs/live-tests/config/ps9-forces-01.package.toml`) | TC-PIPE-27..29 |
 | B4 | `aeh ingest`: reads test paper + answer sheets; skips scans already read; parks a read cut off by Ctrl-C; exits 1 when no sheet could be read (key/credit/model) | TC-PIPE-30..32 |
 | B8 | `resolve quarantine item` accepts only `matched` / `unresolvable`; refuses releasing a paper with no matched student or never read | TC-CONSOLE-51/52 |
-| Escalation seats | A live run never sends `escalation-arm-<k>` as a model. Extra judges come from `[[profiles.<name>.escalation_judge]]` tables; when seats run out the score stays provisional (to review) and the trace says *no real judge for seats …*. A live run with the random-arm sample on but fewer than `min(3, panel) + 2` real judge models is refused before it starts | TC-PIPE-33 |
+| Escalation seats | A live run never sends `escalation-arm-<k>` as a model. Extra judges come from `[[profiles.<name>.escalation_judge]]` tables; `enqueue_escalation(seats=)` refuses (`no_real_seat`) only where it would really write units, and the hook then routes a `final` score to review as `provisional_unreviewed` (not a breaker refusal); the trace says *no real judge for seats …*. A live run with the random-arm sample on but fewer than `min(3, panel) + 2` real judge models is refused before it starts | TC-PIPE-33 |
 
 Comparison runs against `main` (same suites, same order) showed no new failures; `main` itself
 has ~100 pre-existing failures in these suites.
@@ -33,7 +33,7 @@ has ~100 pre-existing failures in these suites.
    * `$env:HARNESS_ORCH_ESCALATION_BUDGET = "1.0"` for a small class (the 0.30 default stalls a
      6-paper class: exit 3, "no progress after 4 passes").
    * Either `$env:HARNESS_ORCH_RANDOM_ARM_RATE = "0"` with the one-judge shipped config, **or**
-     add `escalation_judge` tables (one-judge panel: 2 for the random arm, 3 for every seat).
+     add `escalation_judge` tables (one-judge panel: 2 for the random arm, 5 for every seat).
    * Add commented `escalation_judge` examples to `docs/live-tests/config/live-test.dev-ci.toml`.
 3. **Pick real judge models (the user's step).** Each extra judge must be a different model and
    must answer under zero retention. Check each one before adding it:
@@ -56,6 +56,16 @@ has ~100 pre-existing failures in these suites.
      parse is untested.
    * Cost: the ceiling counts claim-time estimates (`HARNESS_PIPE_UNIT_TOKENS_IN/OUT`, 4000/1500),
      far above real spend; raise `HARNESS_COST_CEILING` if a run stops early.
+
+## Known limits of the seat check (review of b9dfa09, low)
+
+* The run-start check assumes three-judge (holistic) base panels, so a panel-3 run whose judged
+  criteria are all atomic is refused with "Add 2" though it would need none. Conservative.
+* `escalation_judge` tables are read from the current config on every resume, not frozen with
+  the run (FR-CONF-15): changing or reordering them between start and resume serves a seat with
+  a different model; removing them pauses the run (`CompositionFault`) when a pending seat runs.
+  Don't edit the tables while a run is paused.
+* `check_config.py` does not check `escalation_judge` entries; `aeh run` does.
 
 ## Still open (not for this PR)
 

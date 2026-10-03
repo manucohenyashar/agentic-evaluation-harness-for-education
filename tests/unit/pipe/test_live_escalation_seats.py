@@ -154,6 +154,17 @@ def physics(tmp_data_dir, tmp_path, monkeypatch):
         sys.modules.pop(name, None)
 
 
+def _states(data_dir):
+    """Every judged criterion score's (judge_count, state, routing); multiple-choice scores
+    have no judges."""
+    store = open_store(data_dir)
+    try:
+        return [tuple(row) for row in store.cohort("class-ps9").query(
+            "SELECT judge_count, state, routing FROM criterion_score WHERE judge_count > 0")]
+    finally:
+        store.close()
+
+
 def _runs(data_dir):
     store = open_store(data_dir)
     try:
@@ -172,8 +183,12 @@ def test_tc_pipe_33_one_judge_and_no_extra_judges_completes_without_widening(
     assert fake.refused == [], f"a seat's name went out as a model: {fake.refused}"
     assert code == 0 and result["status"] == "complete", (result, err)
     lines = [line for stage in result["stages"] for line in stage["detail"]]
-    assert any("no real judge for seats 2-3: provisional" in line for line in lines), lines
+    assert any("no real judge for seats 2-3" in line for line in lines), lines
     assert set(fake.sent) == {TRANSCRIBER, PANEL_JUDGE}
+    # Never settled, never reported as a breaker refusal: provisional, to the teacher.
+    states = _states(tmp_data_dir)
+    assert states and all(jc == 1 for jc, _state, _route in states), states
+    assert {state for _jc, state, _route in states} == {"provisional_unreviewed"}, states
 
 
 def test_tc_pipe_33_escalation_judges_take_the_seats_past_the_panel(
@@ -185,6 +200,16 @@ def test_tc_pipe_33_escalation_judges_take_the_seats_past_the_panel(
     assert code == 0 and result["status"] == "complete", (result, err)
     # The disagreeing panel escalated onto the configured judges, in order.
     assert {EXTRA_JUDGES[0], EXTRA_JUDGES[1]} <= set(fake.sent), set(fake.sent)
+    # Review finding: a widened cell that still wants more judges is the no-op an already
+    # escalated pair is, not a seat shortage, so it is not downgraded.
+    states = _states(tmp_data_dir)
+    assert any(jc == 3 for jc, _state, _route in states), states
+    assert all(state != "ungradeable_by_panel" for _jc, state, _route in states), states
+    lines = [line for stage in result["stages"] for line in stage["detail"]]
+    # The first widening always has its seats; only a random-arm cell (three judges from the
+    # start) can want seats 4-5, past the four this run has, and then it says so.
+    short = [line for line in lines if "no real judge" in line]
+    assert all("seats 4-5" in line for line in short), short
 
 
 def test_tc_pipe_33_the_random_arm_without_its_seats_is_refused_before_the_run(

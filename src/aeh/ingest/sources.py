@@ -15,13 +15,17 @@ from .schema import INGEST_STATEMENTS
 from .settings import GATE_NOT_REACHED
 
 
-def submitted_sources(handle: Any) -> frozenset[str]:
-    """The content hashes of every scan already read into a submission document in this cohort.
+def submitted_sources(handle: Any, *, excluding: Any = ()) -> frozenset[str]:
+    """The content hashes of every scan already read into a submission document in this cohort,
+    leaving out the documents of the submissions in `excluding` (parked reads to do again).
 
     A scan that never became a document (V0 found it unreadable, or transcription failed) is not
     here: reading it again creates another quarantined record, which is never graded."""
+    skip = set(excluding)
     sources: set[str] = set()
     for row in handle.query(INGEST_STATEMENTS["select_submission_sources"]):
+        if row["submission_id"] in skip:
+            continue
         # `source_blobs` is the document's provenance: its `pages`, each naming the scan
         # (`blob_hash`) the page was rasterized from (`documents.py`).
         try:
@@ -43,11 +47,13 @@ def has_assessment_document(handle: Any) -> bool:
 def park_interrupted_submissions(handle: Any) -> tuple[str, ...]:
     """Quarantine every submission whose read was cut off, and return their ids.
 
-    `ingest_submission` commits the submission row before it reads the pages, so a read stopped
-    by Ctrl-C or a killed process leaves a row with no status and no document. Left alone, a run
-    would admit it as a paper not yet judged, and the re-read of the same scan would make a
-    second one. Parked as `incomplete` and quarantined, it waits in S8 to be closed and is never
-    graded; the scan itself is read again. Call it only while no other intake writes the cohort."""
+    `ingest_submission` commits the submission row before it reads the pages and writes its
+    status only after every gate, so a read stopped by Ctrl-C or a killed process leaves a row
+    with no status (with or without its document). Left alone, a run would admit it as a paper
+    not yet judged, its checks never recorded. Parked as `incomplete` and quarantined, it waits
+    in S8 to be closed and is never graded; pass the returned ids to `submitted_sources` as
+    `excluding` so the scan itself is read again. A concurrent intake's row parked mid-read is
+    overwritten by that intake's own gate write when it finishes."""
     rows = [dict(row) for row in handle.query(
         INGEST_STATEMENTS["select_interrupted_submissions"])]
     if rows:

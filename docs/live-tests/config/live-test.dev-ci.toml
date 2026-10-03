@@ -70,7 +70,9 @@ build_id = "openrouter/qwen/qwen3-30b-a3b@2026-06-01"
 # model from the panel and from each other, pinned with a date, and answer under zero retention
 # (check it first; see the deployment tutorial 7.6). Without them, such answers keep their score
 # as provisional and go to teacher review, and HARNESS_ORCH_RANDOM_ARM_RATE must be set to 0.
-# Three cover every seat for a one-judge panel. Placeholders, not recommendations:
+# For a one-judge panel: two let the random sample stay on; five cover every seat a run can
+# ever need (a sampled answer has three judges, can widen to five, plus one replacement).
+# Placeholders, not recommendations:
 # [[profiles.dev-ci.escalation_judge]]
 # role = "judge"
 # provider = "openrouter"

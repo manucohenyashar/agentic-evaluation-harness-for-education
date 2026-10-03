@@ -221,3 +221,48 @@ def test_tc_pipe_32_a_reader_that_reads_nothing_exits_1_and_says_why(tmp_data_di
     late = next(s for s in result["sheets"] if s["file"] == "late.pdf")
     assert late["status"] == "unreadable" and late["detail"], late
     assert "late.pdf: unreadable" in err
+
+
+def test_tc_pipe_32_a_read_cut_off_after_its_document_is_parked_and_read_again(
+        tmp_data_dir, physics, capsys, monkeypatch):
+    """Review finding: the gates are written after the document, so a cut there leaves a row
+    with a document and no status, which a run would grade with no checks recorded."""
+    from aeh.ingest import Ingestor
+
+    assert cli.main(["cohort", "create", "--data-dir", str(tmp_data_dir), "--cohort", "class-ps9",
+                     "--consent", "synthetic", "--roster", str(physics["roster"])]) == 0
+    real = Ingestor._v4_evaluate_breaker
+    calls = []
+
+    def cut(self, tx, cohort_id):  # inside the final gate transaction: it rolls back
+        calls.append(cohort_id)
+        if len(calls) == 2:
+            raise KeyboardInterrupt
+        return real(self, tx, cohort_id)
+
+    monkeypatch.setattr(Ingestor, "_v4_evaluate_breaker", cut)
+    with pytest.raises(KeyboardInterrupt):
+        _ingest(tmp_data_dir, physics, capsys)
+    store = open_store(tmp_data_dir)
+    try:
+        left = [dict(r) for r in store.cohort("class-ps9").query(
+            "SELECT s.submission_id FROM submission s JOIN document d "
+            "ON d.submission_id = s.submission_id WHERE s.ingest_status IS NULL")]
+    finally:
+        store.close()
+    assert len(left) == 1, "the cut left no documented, statusless submission to test against"
+    monkeypatch.setattr(Ingestor, "_v4_evaluate_breaker", real)
+    code, result, err = _ingest(tmp_data_dir, physics, capsys, with_paper=False)
+    assert code == 0, err
+    assert result["interrupted"] == [left[0]["submission_id"]]
+    # Its scan is read again rather than skipped as already read.
+    statuses = {Path(s["file"]).stem: s["status"] for s in result["sheets"]}
+    first, cut_sheet = sorted(p.stem for p in physics["sheets"].iterdir())[:2]
+    assert statuses[first] == "skipped" and statuses[cut_sheet] != "skipped", statuses
+    rows = {r["submission_id"]: r for r in _submissions(tmp_data_dir)}
+    assert (rows[left[0]["submission_id"]]["ingest_status"],
+            rows[left[0]["submission_id"]]["quarantined"]) == ("incomplete", 1)
+    assert all(r["ingest_status"] is not None for r in rows.values())
+    stems = {p.stem for p in physics["sheets"].iterdir()}
+    graded = [r for r in rows.values() if not r["quarantined"]]
+    assert len(graded) == sum(1 for stem in stems if physics["expected"][stem] == "ok")

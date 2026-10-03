@@ -465,16 +465,16 @@ INGEST_STATEMENTS: dict[str, Statement] = {
     # -- V4 (FR-INGEST-25..28) -------------------------------------------------------------------------
     # The scans already read into a document, for the intake command's re-run guard (B4).
     "select_submission_sources": Statement(
-        "SELECT source_blobs FROM document WHERE kind = 'submission'"
+        "SELECT submission_id, source_blobs FROM document WHERE kind = 'submission'"
     ),
     # Blocker B4 review: a submission whose read was cut off (Ctrl-C, a killed process) keeps
-    # the row `insert_submission` committed and nothing else: no status, no document. Run
-    # enumeration admits a NULL status as "not yet judged", so it is parked as quarantined,
-    # through `update_submission_gates` (the one writer of `ingest_status`, TC-INGEST-29).
+    # the row `insert_submission` committed and no status (its document may or may not have
+    # been written: the gates run after it). Run enumeration admits a NULL status as "not yet
+    # judged", so it is parked as quarantined, through `update_submission_gates` (the one
+    # writer of `ingest_status`, TC-INGEST-29).
     "select_interrupted_submissions": Statement(
-        "SELECT submission_id, student_ref FROM submission s WHERE s.ingest_status IS NULL "
-        "AND NOT EXISTS (SELECT 1 FROM document d WHERE d.submission_id = s.submission_id) "
-        "ORDER BY s.submission_id"
+        "SELECT submission_id, student_ref FROM submission WHERE ingest_status IS NULL "
+        "ORDER BY submission_id"
     ),
     "select_assessment_documents": Statement(
         "SELECT document_id, parent_doc_id, markdown FROM document "
