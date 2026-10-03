@@ -43,7 +43,7 @@ The design says the console may run under the `edge-local` and `dev-ci` profiles
   The first is the privacy gate doing its job: the command builds the run without a provider that can answer "does OpenRouter keep this data?". The second is the console's deliberate refusal. Neither is a bug to bypass.
 * **What is needed:** a launcher that builds the OpenRouter provider for `dev-ci` (with the consent gate still applying) and supplies the retention answer in a way the privacy owner approves. That is a design decision, not just code.
 
-### B2. The request the OpenRouter provider sends is not the usual chat format (confirmed, fixed, and checked with one real call)
+### B2. The request the OpenRouter provider sends is not the usual chat format (confirmed, fixed, and checked with real calls)
 
 Captured by pointing the provider at a stand-in server on this machine (nothing left the machine):
 
@@ -68,7 +68,12 @@ Regression cases `TC-PROV-60` to `TC-PROV-63`.
 
 **Checked with a real call (2026-10-03).** `OpenRouterProvider().complete(...)` with `build_id="openrouter/qwen/qwen3-30b-a3b@2026-06-01"`, a one-field payload and `max_tokens=500` returned `Completion(text='ready', tokens_in=13, tokens_out=213, latency_ms=3230, resolved_build='qwen/qwen3-30b-a3b', cost=Decimal('0.00011245'))`. So the chat body with a `name`, the plain slug, the served build and OpenRouter's reported cost all work. `tokens_out=213` for a one-word answer is the model's reasoning: budget output generously for a reasoning model.
 
-**Still not checked:** a request with several `user` messages (every real prompt has 4 to 8 fields), and the image part the page reader sends. Also not checked: many open models' chat templates drop `name`, so the model may see each field's value without its field name; the judge's and extractor's values carry their own labels (`criterion_id: …`), but some setup and synthesis values do not. Still open: the local server is sent the whole weights-path `build_id` as `model` (see the deployment tutorial, section 6.5).
+**Also checked with real calls (2026-10-03):**
+
+* A three-field judge-style payload (`directive`, `criterion`, `submission`) to `qwen/qwen3-30b-a3b` returned `text='{"band": "met"}'`, `tokens_in=61`, `tokens_out=207`, cost `0.00011557`. Several `user` messages, each with a `name`, are accepted.
+* An `instruction` plus an `image_png_base64` field (a generated PNG reading "The answer is 42") to `openrouter/qwen/qwen3-vl-8b-instruct@2026-06-01` returned `text='The answer is 42'`, `resolved_build='qwen/qwen3-vl-8b-instruct'`, cost `0.000015353`. The image part reaches a vision model, and that model name exists at OpenRouter.
+
+B2 is closed. Still not checked: real handwriting, and whether the model ignores or uses each field's `name`. Also not checked: many open models' chat templates drop `name`, so the model may see each field's value without its field name; the judge's and extractor's values carry their own labels (`criterion_id: …`), but some setup and synthesis values do not. Still open: the local server is sent the whole weights-path `build_id` as `model` (see the deployment tutorial, section 6.5).
 
 ### B3. Nothing creates a cohort, its consent class, or its roster
 
@@ -120,9 +125,9 @@ The right-test gate (V4) compares the words in a student's answers with the word
 
 | Not checked | Why | How to close it |
 |---|---|---|
-| That the two model names in the config exist at OpenRouter | OpenRouter could not be reached from here | Look each up at openrouter.ai/models |
-| That your key works and your account has credit | Same | One small real call |
-| B2 (the request shape) against the real service | Same | One real call with a throw-away prompt |
+| That the two model names in the config exist at OpenRouter | **Closed (2026-10-03):** both answered real calls (`qwen/qwen3-30b-a3b`, `qwen/qwen3-vl-8b-instruct`) | — |
+| That your key works and your account has credit | **Closed (2026-10-03):** real calls succeeded and were billed | — |
+| B2 (the request shape) against the real service | **Closed (2026-10-03):** see B2 | — |
 | How well a page-reading model reads handwriting | The sample sheets are typed | Add two or three hand-written, scanned sheets |
 | Real cost and real run time | No live run was possible | Read them off the first run, using the cost ceiling as the guard |
 | The Jev decision engine | Left off on purpose | Needs `pip install ".[jev-cloud]"` and a pinned Jev build; try it on a second test |
@@ -134,7 +139,7 @@ The right-test gate (V4) compares the words in a student's answers with the word
 These are descriptions for the issue backlog (this repository creates issues only through `/plan-to-issues`, so none were created here). Each is written as a goal that can be checked.
 
 1. **Decide the privacy answer (B1/B6).** *Goal:* a written decision on how zero-retention is confirmed for OpenRouter, and who approves it.
-2. **One real OpenRouter call (B2).** *Goal:* a recorded result showing the provider's request is accepted, or the translation needed. *Done for a text call (see B2): one real call through the provider succeeded. Several fields in one request, and the image part, still need a real call.*
+2. **One real OpenRouter call (B2).** *Goal:* a recorded result showing the provider's request is accepted, or the translation needed. *Done (see B2): real calls through the provider succeeded for a one-field call, a three-field judge-style call, and a page image to the vision model.*
 3. **Operator cohort commands (B3).** *Goal:* create a cohort with a consent class and load a roster, from the command line or the console, with the change in the audit trail.
 4. **Intake worker (B4).** *Goal:* after an upload, the paper is read, checked, and appears in the preflight and quarantine pages, with no engineer involved.
 5. **Dev-ci launcher through OpenRouter (B1).** *Goal:* `aeh run` under `dev-ci` with a key calls OpenRouter, the consent gate still applies, and the summary says which provider ran.
