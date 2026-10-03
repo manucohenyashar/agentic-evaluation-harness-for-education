@@ -922,6 +922,8 @@ returned exactly once and no code path exists to ask for another.
 | TC-PIPE-29 | FR-INGEST-24, FR-INGEST-25 | Integration / 2 | Live-test blockers B3 + B5 together. The sample physics package built from its spec; a `synthetic` cohort created with the six sheets' student IDs; the test paper ingested as the assessment; the six physics answer sheets ingested through the real `Ingestor` (V0–V4), the page reader stood in by the sample script's scripted transcripts; then a `dev-ci` run created and enumerated | Each sheet's intake status equals `verify_sample_materials.EXPECTED_STATUS` (three `ok`, two `incomplete`, one `unmatched_assessment`); the run is created and enumerates units | Exact | P0 |
 | TC-PIPE-30 | FR-INGEST-24, FR-INGEST-25 | Integration / 2 | Live-test blocker B4. The sample physics package built with `aeh package build`, a `synthetic` class created with `aeh cohort create`, the test paper and the six answer sheets on disk; `aeh ingest` under the shipped `dev-ci` config, its pages sent through `OpenRouterProvider.enforcing_zero_retention()` to a stand-in OpenRouter that answers each page with the sample script's transcript; then `aeh ingest` again over the same folder without `--assessment` | Exit 0; each sheet's status equals `EXPECTED_STATUS`; read 6, quarantined 3, skipped 0; the test paper read. Each of the 7 page requests carries the page as an `image_url` part (`data:image/png;base64,`), `provider == {zdr: true, data_collection: deny}` and model `qwen/qwen3-vl-8b-instruct`. The re-run reports the paper *already read*, skips all six sheets, sends no request, and the cohort still holds 6 submissions | Exact + census | P0 |
 | TC-PIPE-31 | FR-CONF-08 | Integration / 2 | Live-test blocker B4. `aeh ingest` for a `real` class, and for a class with no test paper read and no `--assessment` | The `real` class exits 1 with `ConsentGateError`; the missing paper exits 1 asking for `--assessment`; neither sends any request | Exact + count | P0 |
+| TC-CONSOLE-51 | FR-CONSOLE-32 | Integration / 2 | Live-test blocker B8. The six physics sample sheets after the real intake checks (three parked); `resolve quarantine item` on the doubled-mark paper with `resolution` `matchd`, `close`, and none | Each is refused (`dispatched` false), the reply names `'matched'` and `'unresolvable'`, and the paper's row is unchanged (still quarantined) | Exact + census | P0 |
+| TC-CONSOLE-52 | FR-INGEST-24 | Integration / 2 | Live-test blocker B8. The same folder; `matched` on the no-name paper (V3 unmatched, `student_ref` `unknown`); then `matched` on the doubled-mark paper (V3 pass) and `unresolvable` on the no-name paper | The no-name release is refused, naming *graded under nobody* and `aeh ingest`, with the row unchanged; the doubled-mark paper is released (`ok`, not quarantined); the no-name paper is closed (`incomplete`, not quarantined) | Exact + census | P0 |
 
 ### 5.3 Module: Persistence Substrate (`M-STORE`)
 
@@ -4577,7 +4579,7 @@ python .claude/skills/create-test-plan/scripts/check_traceability.py --design do
 | FR-INGEST-21 | TC-INGEST-23, SEC-08 | Integration, Security | P0 |
 | FR-INGEST-22 | TC-INGEST-24 | Integration | P0 |
 | FR-INGEST-23 | TC-INGEST-26 | Integration | P0 |
-| FR-INGEST-24 | TC-INGEST-27, TC-ORCH-59, TC-PIPE-30 | Integration, Unit | P0 |
+| FR-INGEST-24 | TC-INGEST-27, TC-ORCH-59, TC-PIPE-30, TC-CONSOLE-52 | Integration, Unit | P0 |
 | FR-INGEST-25 | TC-INGEST-25, ADV-07, TC-PIPE-29, TC-PIPE-30 | Integration, Adversarial | P0 |
 | FR-INGEST-26 | TC-INGEST-25, TC-INGEST-39 | Integration | P0 |
 | FR-INGEST-27 | TC-INGEST-25 | Integration | P0 |
@@ -4867,7 +4869,7 @@ python .claude/skills/create-test-plan/scripts/check_traceability.py --design do
 | FR-CONSOLE-29 | TC-CONSOLE-29 | Integration | P0 |
 | FR-CONSOLE-30 | TC-CONSOLE-30 | Integration | P0 |
 | FR-CONSOLE-31 | TC-CONSOLE-31 | Integration | P1 |
-| FR-CONSOLE-32 | TC-CONSOLE-32 | Art | P0 |
+| FR-CONSOLE-32 | TC-CONSOLE-32, TC-CONSOLE-51 | Art, Integration | P0 |
 | NFR-CONSOLE-01 | TC-CONSOLE-33, PERF-08 | Performance | P1 |
 | NFR-CONSOLE-02 | TC-CONSOLE-34 | Smoke | P1 |
 | NFR-CONSOLE-03 | TC-CONSOLE-35, RES-16 | Resilience | P0 |

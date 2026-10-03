@@ -197,3 +197,10 @@ _UPDATE_QUARANTINE_RESOLUTION = (
 _SELECT_SUBMISSION_EXISTS = (
     "SELECT submission_id FROM submission WHERE submission_id = :submission_id"
 )
+
+
+#: Whose paper a quarantined submission is: V3's outcome and the student it matched. A release
+#: (`matched`) is refused unless V3 passed, because the paper would be graded under `unknown`.
+_SELECT_SUBMISSION_IDENTITY = (
+    "SELECT v3_identity, student_ref FROM submission WHERE submission_id = :submission_id"
+)

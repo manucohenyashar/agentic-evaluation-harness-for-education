@@ -15,7 +15,14 @@ from aeh.pkg import PackageCatalog
 from aeh.review import StaleReviewItemError
 
 from .vocabulary import PRE_LOCK_ACTIONS
-from .queries import _SELECT_SUBMISSION_EXISTS, _UPDATE_QUARANTINE_RESOLUTION
+from .queries import (
+    _SELECT_SUBMISSION_EXISTS,
+    _SELECT_SUBMISSION_IDENTITY,
+    _UPDATE_QUARANTINE_RESOLUTION,
+)
+
+#: The two decisions an operator can make about a parked paper (live-test blocker B8).
+QUARANTINE_RESOLUTIONS: tuple[str, ...] = ("matched", "unresolvable")
 from .errors import _RefreshRequired
 from .html import _row_get
 
@@ -79,9 +86,24 @@ class DomainEffectsMixin:
             return "finalize batch names no run or actor; nothing was finalized", False
         if action == "resolve quarantine item":
             submission_id = params.get("submission_id")
-            resolution = str(params.get("resolution") or "unresolvable")
+            resolution = str(params.get("resolution") or "")
             status = "ok" if resolution == "matched" else "incomplete"
             if submission_id and getattr(self._store, "data_dir", None) is not None:
+                # Live-test blocker B8: the decision is one of two words, said out loud. Any
+                # other value — a typo, or none — used to close the paper as unresolvable and
+                # still answer `dispatched: true`, so a misspelt release silently failed a
+                # student's paper.
+                if resolution not in QUARANTINE_RESOLUTIONS:
+                    return (
+                        f"resolution {resolution!r} is not one of "
+                        f"{', '.join(QUARANTINE_RESOLUTIONS)}: 'matched' releases the paper "
+                        "to scoring, 'unresolvable' closes it (criteria MISSING, grade "
+                        "INCOMPLETE, never zero). Nothing was written.",
+                        False,
+                    )
+                refusal = self._release_refusal(submission_id) if resolution == "matched" else None
+                if refusal is not None:
+                    return refusal, False
                 found = False
                 for key in self._cohort_keys():
                     handle = self._store.cohort(key)
@@ -517,3 +539,27 @@ class DomainEffectsMixin:
         except Exception as exc:  # noqa: BLE001 — a refusal is the honest outcome
             return f"M-SETUP refused {action}: {exc} — nothing was written", False
         return detail, True
+
+
+    def _release_refusal(self, submission_id: str) -> str | None:
+        """Why `matched` may not release this paper, or None. A paper whose student V3 did not
+        match carries `student_ref = 'unknown'`: released, it would be scored and graded under
+        nobody. The console records no student (its write surface is the two status columns,
+        FR-CONSOLE-32), so such a paper is closed, or rescanned with the ID written on it and
+        read in again with `aeh ingest`."""
+        for key in self._cohort_keys():
+            try:
+                rows = list(self._store.cohort(key).query(
+                    _SELECT_SUBMISSION_IDENTITY, submission_id=submission_id))
+            except Exception:  # noqa: BLE001 — one unreadable ledger is skipped
+                continue
+            if rows and str(rows[0]["v3_identity"] or "") != "pass":
+                return (
+                    f"submission {submission_id} cannot be released: its student was not "
+                    f"matched to the class list (identity check {rows[0]['v3_identity']!r}), "
+                    "so it would be graded under nobody. Close it as 'unresolvable', or rescan "
+                    "it with the student's ID written at the top and read it in again with "
+                    "'aeh ingest'. Nothing was written."
+                )
+        return None
+
