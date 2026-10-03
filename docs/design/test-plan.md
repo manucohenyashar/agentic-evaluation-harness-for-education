@@ -907,6 +907,10 @@ returned exactly once and no code path exists to ask for another.
 | TC-PROV-20 | NFR-PROV-01, FR-PROV-11 | Integration, live / 2 | The same against live OpenRouter on E2, synthetic corpora only | As above, and observes real 429 behaviour | Differential | P1, nightly |
 | TC-PROV-21 | NFR-PROV-04 | Artifact assertion / 0 | Assembled payloads across a 350-submission run | Every payload carries `student_ref` and no field carrying a student name; asserted by scanning assembled payloads against the roster's name list | Pattern scan over assembled artifacts | P0 |
 | TC-PROV-22 | NFR-PROV-02 | Performance / 2 | 32 concurrent requests against a live local server | No per-call reallocation of the invariant prefix: `cached_prefix_tokens` is non-zero and stable across the batch, so measured `cache_hit_rate` reflects prompt ordering rather than client behaviour | Metric threshold, see `PERF-04` | P1, nightly |
+| TC-PROV-60 | FR-PROV-13, CT-PROV-05 | Unit / 1 | Regression (first real OpenRouter call). A `PromptPayload` through `OpenRouterProvider` and `LocalServerProvider`, once with an `image_png_base64` field | The body has no `prompt` key; `messages` holds one `user` message per field, in order, `name` = the field name, `content` = the value verbatim; the image field is an `image_url` part whose `data:image/png;base64,` URL carries the same base64; `_fields_from_wire(body)` equals the caller's fields | Exact + round trip | P0 |
+| TC-PROV-61 | FR-PROV-11, FR-PROV-04 | Unit / 1 | Regression. `openrouter/qwen/qwen3-30b-a3b@2026-06-01` through `OpenRouterProvider`; a weights-path ref through `LocalServerProvider` | OpenRouter's wire `model` is `qwen/qwen3-30b-a3b`; `resolved_build` is the reply's `model`; the reported `usage.cost` is the cost. The local server is still sent the pinned `build_id` | Exact | P0 |
+| TC-PROV-62 | FR-PROV-06, NFR-PROV-04 | Unit / 1 | Regression. OpenRouter answers 401, 402, 404 (refusals every unit meets alike) and 400, 403, 413, 422 (refusals of one request: too long, flagged) with an `error.message`; a 401 whose message quotes the submission; a 408 then 200; a 200 carrying only an `error` object | 401/402/404 raise `ProviderUnavailableError` after **1** send (so the run pauses), naming the status, an operator hint and the provider's message. 400/403/413/422 raise `MalformedResponseError` (never `ProviderUnavailableError`) after the retry budget (3 sends), naming the status and message, so one unit quarantines and the run goes on. The quoting message is replaced by `(body withheld)`. The 408 is retried (2 sends, then success). The 200-with-error raises `MalformedResponseError` naming the provider's message | Exact type + count + text | P0 |
+| TC-PROV-63 | FR-PROV-06 | Unit / 1 | Regression. A reply with `content: null`, `finish_reason: "length"` and a `reasoning` field (a reasoning model out of output allowance) | `MalformedResponseError` naming `finish_reason='length'`, the reasoning, and the output cap; the reasoning text is not in the message and is never taken as the answer | Type + text | P1 |
 
 ### 5.3 Module: Persistence Substrate (`M-STORE`)
 
@@ -4477,21 +4481,21 @@ python .claude/skills/create-test-plan/scripts/check_traceability.py --design do
 | FR-PROV-01 | TC-PROV-01, TC-PROV-19, TC-PROV-C01, TC-PROV-C02, TC-SMOKE-05 | Contract, Integration(live), Smoke | P0 |
 | FR-PROV-02 | TC-PROV-02, TC-PROV-C04, TC-SMOKE-05 | Unit, Contract, Smoke | P1 |
 | FR-PROV-03 | TC-PROV-05 | Art | P0 |
-| FR-PROV-04 | TC-PROV-04, TC-PROV-C03 | Unit, Contract | P0 |
+| FR-PROV-04 | TC-PROV-04, TC-PROV-C03, TC-PROV-61 | Unit, Contract | P0 |
 | FR-PROV-05 | TC-PROV-07, TC-PROV-08, TC-PROV-C07, RES-10 | Unit, Contract, Resilience | P0 |
-| FR-PROV-06 | TC-PROV-10, TC-PROV-C06 | Unit, Art, Contract | P0 |
+| FR-PROV-06 | TC-PROV-10, TC-PROV-C06, TC-PROV-62, TC-PROV-63 | Unit, Art, Contract | P0 |
 | FR-PROV-07 | TC-PROV-11, RES-11 | Unit, Resilience | P1 |
 | FR-PROV-08 | TC-PROV-09, TC-PROV-C08, RES-09 | Unit, Contract, Resilience | P0 |
 | FR-PROV-09 | TC-PROV-12, TC-PROV-C09 | Unit, Contract | P1 |
 | FR-PROV-10 | TC-PROV-13, TC-PROV-14 | Unit | P0 |
-| FR-PROV-11 | TC-PROV-15, TC-PROV-20 | Unit, Integration(live) | P1 |
+| FR-PROV-11 | TC-PROV-15, TC-PROV-20, TC-PROV-61 | Unit, Integration(live) | P1 |
 | FR-PROV-12 | TC-PROV-18, TC-PROV-C14, OBS-04 | Observability, Contract | P1 |
-| FR-PROV-13 | TC-PROV-03, TC-PROV-C05 | Art, Contract | P0 |
+| FR-PROV-13 | TC-PROV-03, TC-PROV-C05, TC-PROV-60 | Art, Contract, Unit | P0 |
 | FR-PROV-14 | TC-PROV-16, TC-PROV-17, SEC-03, TC-SMOKE-06 | Unit, Security, Smoke | P0 |
 | NFR-PROV-01 | TC-PROV-06, TC-PROV-19, TC-PROV-20, TC-PROV-C02 | Contract, Integration(live) | P0 |
 | NFR-PROV-02 | TC-PROV-22, PERF-04 | Performance | P1 |
 | NFR-PROV-03 | TC-PROV-10 | Unit | P0 |
-| NFR-PROV-04 | TC-PROV-21, SEC-04 | Art, Security | P0 |
+| NFR-PROV-04 | TC-PROV-21, SEC-04, TC-PROV-62 | Art, Security | P0 |
 | NFR-PROV-05 | TC-PROV-05 | Art | P0 |
 | FR-STORE-01 | TC-STORE-01, TC-STORE-24, TC-STORE-C01, TC-SMOKE-03 | Integration, Contract, Smoke | P0 |
 | FR-STORE-02 | TC-STORE-04, TC-STORE-05, TC-STORE-25, TC-SMOKE-03 | Migration, Contract, Smoke | P0 |
@@ -5288,7 +5292,7 @@ pairwise cases that exercise this clause from a consumer's side, or `—` where 
 | CT-PROV-02 | behaviour | TC-PROV-C02 | all callers, `M-CONFORM` | TC-REQ-71 |
 | CT-PROV-03 | data | TC-PROV-C03 | `M-JUDGE`, `M-EXTRACT`, `M-ORCH` | TC-REQ-04 |
 | CT-PROV-04 | data | TC-PROV-C04 | `M-ORCH`, `M-STATS` | — |
-| CT-PROV-05 | behaviour | TC-PROV-C05 | `M-JUDGE`, `M-EXTRACT` | TC-REQ-10, TC-REQ-19, TC-REQ-30, TC-REQ-44 |
+| CT-PROV-05 | behaviour | TC-PROV-C05, TC-PROV-60 | `M-JUDGE`, `M-EXTRACT` | TC-REQ-10, TC-REQ-19, TC-REQ-30, TC-REQ-44 |
 | CT-PROV-06 | behaviour | TC-PROV-C06 | `M-JUDGE`, `M-ORCH` | TC-REQ-04, TC-REQ-19, TC-REQ-30, TC-REQ-44 |
 | CT-PROV-07 | error | TC-PROV-C07 | `M-ORCH`, all callers | TC-REQ-04, TC-REQ-10, TC-REQ-14 |
 | CT-PROV-08 | behaviour | TC-PROV-C08 | `M-ORCH`, `M-CONF` | TC-REQ-14, TC-REQ-67 |

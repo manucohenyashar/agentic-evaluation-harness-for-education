@@ -84,6 +84,7 @@ from aeh.prov import (
     TransportError,
     request_key,
 )
+from aeh.prov.live import _fields_from_wire
 from tests.support.guards import recording_write_audit
 from tests.support.prov_contract import (
     CONSTRUCTIONS,
@@ -426,7 +427,7 @@ def test_tc_prov_c04_capabilities_answer_with_the_transport_blocked_and_stay_sta
 def _wire_fields(transport, index: int):
     """The payload as it reached the wire, decoded back out of the dispatched body."""
     body = json.loads(transport.requests[index].body.decode("utf-8"))
-    return body["prompt"]["fields"]
+    return _fields_from_wire(body)
 
 
 def test_tc_prov_c05_the_payload_on_the_wire_is_the_callers_byte_for_byte(
@@ -755,8 +756,11 @@ def test_tc_prov_c08_an_unavailable_panel_member_is_never_substituted(
     with pytest.raises(ProviderUnavailableError):
         provider.complete(payload(PromptPayload), ref, params())
 
+    # The name on the wire for this one panel member: its pinned `build_id`, or the plain slug
+    # OpenRouter knows it by. Either way exactly one model may appear.
+    wire_name = provider._wire_model(ref) or ref.build_id
     requested_builds = {json.loads(r.body.decode("utf-8"))["model"] for r in transport.requests}
-    assert requested_builds == {ref.build_id}, (
+    assert requested_builds == {wire_name}, (
         f"TC-PROV-C08 ({live_impl}/{construction}): requests reached other builds "
         f"({sorted(requested_builds)}) while the panel member was unavailable. A fallback "
         "that answers with a different instrument silently re-grades the work (HLD R1)."
@@ -770,7 +774,7 @@ def test_tc_prov_c08_an_unavailable_panel_member_is_never_substituted(
         with pytest.raises(ProviderUnavailableError):
             provider.complete(payload(PromptPayload), ref, params())
     requested_builds = {json.loads(r.body.decode("utf-8"))["model"] for r in transport.requests}
-    assert requested_builds == {ref.build_id}
+    assert requested_builds == {wire_name}
 
 
 # --- TC-PROV-C09 — behaviour: estimate_cost is pure; actuals monotonic and always readable (P1) -----

@@ -20,7 +20,13 @@ from .settings import (
     OPENROUTER_API_KEY_ENV,
     OPENROUTER_BASE_URL_ENV,
 )
-from .errors import MalformedResponseError, RetentionPolicyError, TransportError
+from .errors import (
+    MalformedResponseError,
+    ProviderUnavailableError,
+    RetentionPolicyError,
+    TransportError,
+)
+from .decision_base import _safe_excerpt
 from .records import (
     CallPlan,
     Capabilities,
@@ -81,16 +87,63 @@ ROUTING_PROHIBITED_KINDS: frozenset[str] = frozenset({"scoring", "extraction"})
 # neutrally — `FR-PROV-15`.
 
 
-def _openai_body(prompt: PromptPayload, model_ref: ModelRef, params: SamplingParams) -> bytes:
-    """The request body sent to the model. The caller's payload goes in unchanged: every `(name,
-    value)` field, in order, with nothing added, reordered or templated (FR-PROV-13, TC-PROV-03).
-    Students appear only as the caller's `student_ref` values; no name is in the payload
-    (NFR-PROV-04)."""
+#: The one payload field carried as an image rather than text: the page or crop the vision
+#: model must SEE. Sent as text, a base64 PNG is a long string of letters to the model.
+IMAGE_FIELD = "image_png_base64"
+
+
+_IMAGE_DATA_URL_PREFIX = "data:image/png;base64,"
+
+
+def _field_message(name: str, value: str) -> dict[str, Any]:
+    """One payload field as one chat message. The value is carried verbatim; the field's name
+    rides in the message's `name`, so nothing is added to, or templated into, the value."""
+    if name == IMAGE_FIELD:
+        content: Any = [{"type": "image_url",
+                         "image_url": {"url": _IMAGE_DATA_URL_PREFIX + value}}]
+    else:
+        content = value
+    return {"role": "user", "name": name, "content": content}
+
+
+def _fields_from_wire(body: Any) -> list[list[str]]:
+    """The payload fields read back out of a dispatched body: the exact inverse of the messages
+    `_openai_body` writes. It lives beside the encoder so the two cannot drift, and it is what
+    the byte-identity cases (`TC-PROV-03`, `TC-PROV-C05`) compare against the caller's payload."""
+    fields: list[list[str]] = []
+    for message in body["messages"]:
+        content = message["content"]
+        if isinstance(content, list):
+            url = content[0]["image_url"]["url"]
+            content = url[len(_IMAGE_DATA_URL_PREFIX):]
+        fields.append([message["name"], content])
+    return fields
+
+
+def _openai_body(prompt: PromptPayload, model_ref: ModelRef, params: SamplingParams,
+                 wire_model: str | None = None) -> bytes:
+    """The request body sent to the model, in the chat-completions shape: one `user` message
+    per payload field, in order.
+
+    The caller's payload goes in unchanged (FR-PROV-13, CT-PROV-05): every field value is
+    carried verbatim, in order, with nothing added, reordered or templated, and the field's name
+    rides beside it in the message's `name`, so `_fields_from_wire` recovers the payload exactly.
+    The one change of form is `IMAGE_FIELD`, whose value becomes an image part (the same base64,
+    behind a `data:` URL prefix) because a vision model cannot read a picture sent as text.
+    A byte-identical prefix of fields at the caller is a byte-identical prefix of messages on
+    the wire, which is what prefix caching rests on.
+
+    The body used to be `{"prompt": {"fields": [...]}}`, a shape no chat-completions server
+    accepts: OpenRouter refused it, and the refusal surfaced only as an unreadable response.
+
+    `wire_model` is the model name the backend knows, when that differs from the pinned
+    `build_id` (OpenRouter's plain slug). Students appear only as the caller's `student_ref`
+    values; no name is in the payload (NFR-PROV-04)."""
     import json
 
     body = {
-        "model": model_ref.build_id,
-        "prompt": {"fields": [[name, value] for name, value in prompt.fields]},
+        "model": wire_model if wire_model is not None else model_ref.build_id,
+        "messages": [_field_message(name, value) for name, value in prompt.fields],
         "temperature": params.temperature,
     }
     if params.seed is not None:
@@ -104,13 +157,94 @@ def _openai_body(prompt: PromptPayload, model_ref: ModelRef, params: SamplingPar
     return json.dumps(body, ensure_ascii=False, sort_keys=False).encode("utf-8")
 
 
-def _parse_completion(response: HttpResponse, model_ref: ModelRef) -> "Completion":
-    """Turn an OpenAI-style response into a `Completion`, or raise `MalformedResponseError`.
+#: The refusals every unit of the run would meet alike: a refused key, an empty account, a model
+#: the backend does not serve. These pause the run; every other refusal belongs to one request.
+_RUN_WIDE_REFUSALS: dict[int, str] = {
+    401: "the credentials were refused (for OpenRouter, check OPENROUTER_API_KEY)",
+    402: "the account has insufficient credit",
+    404: "the model or endpoint was not found; check the model name and the base URL",
+}
 
-    The resolved build is what the response *reported* (the body's `model` field, falling
-    back to the `x-served-build` header) — never the requested ref (`FR-PROV-04`)."""
+
+def _status_error(response: HttpResponse, state: str) -> Exception | None:
+    """The error for a response the backend refused, or None for a 2xx.
+
+    The retry loop handles 429 and 5xx before this is reached. Every other non-2xx used to fall
+    through to parsing and surface as *"the response carries neither a choices list nor a text
+    field"*, which hid the backend's own explanation. The outcome is now split by whose problem
+    the refusal is:
+
+    * **401, 402, 404 (`_RUN_WIDE_REFUSALS`)** raise `ProviderUnavailableError` after one send:
+      a bad key, an empty account or an unknown model refuses every unit alike. Dispatch
+      requeues the unit and pauses the run (`FR-ORCH-30`); the operator reads why, fixes it and
+      resumes. During intake the ingestor quarantines the page instead, as it does any failure.
+    * **Every other refusal** (400 such as a request too long for the model's context, 403
+      moderation, 408, 413, 422, ...) raises `MalformedResponseError`, exactly the path these
+      responses took before, so the outcome stays bounded: retried within the budget, then the
+      one unit is struck and quarantines while the run goes on. Pausing here would requeue the
+      same unit with its attempts untouched, meet the same refusal on resume, and block the
+      whole cohort behind one paper.
+
+    Either way the message names the status and the backend's words. They come through
+    `_safe_excerpt`, the guard the decision providers use: only the body's `error.message`,
+    `error.code` and `message` are read, and any text sharing a run of characters with the
+    request's payload is withheld, so student work never reaches an exception, a pause reason
+    or a quarantine record (NFR-PROV-04)."""
+    status = response.status
+    if 200 <= status <= 299:
+        return None
+    excerpt = _safe_excerpt(response.body, state)
+    if status in _RUN_WIDE_REFUSALS:
+        return ProviderUnavailableError(
+            f"HTTP {status} from the provider: {_RUN_WIDE_REFUSALS[status]}. The provider said: "
+            f"{excerpt}. Not retried: every request would be refused alike, so the run pauses.")
+    return MalformedResponseError(
+        f"HTTP {status} from the provider: this request was refused. The provider said: "
+        f"{excerpt}.")
+
+
+def _openrouter_slug(build_id: str) -> str:
+    """A pinned OpenRouter build id without its `openrouter/` prefix and its `@<pin>` suffix.
+    Floating tags never get here: `M-CONF` refuses them when the configuration is resolved
+    (`CT-CONF-03`)."""
+    slug = build_id[len("openrouter/"):] if build_id.startswith("openrouter/") else build_id
+    return slug.split("@", 1)[0]
+
+
+def _no_content_reason(choice: Any, message: Any) -> str:
+    """Why the first choice has no answer text, in words an operator can act on.
+
+    A reasoning model (Qwen3, for one) can spend its whole output allowance thinking and answer
+    nothing: `content` is null, `finish_reason` is `length`, and the thinking sits in a separate
+    `reasoning` field. That thinking is never taken as the answer (it is not what was asked
+    for, and it is not echoed here either, since it may quote the student). The message names
+    the finish reason, so the cure (a larger output cap, or a non-reasoning model) is visible."""
+    finish = choice.get("finish_reason") if isinstance(choice, dict) else None
+    reasoned = isinstance(message, dict) and bool(message.get("reasoning"))
+    reason = "the first choice carries no message content string"
+    if finish is not None:
+        reason += f" (finish_reason={finish!r})"
+    if reasoned:
+        reason += "; the model spent its output on reasoning and gave no answer"
+    if finish == "length":
+        reason += ("; the output cap was reached: raise the stage's max-output-tokens knob "
+                   "or choose a model that does not reason first")
+    return reason
+
+
+def _parse_completion(response: HttpResponse, model_ref: ModelRef,
+                      state: str = "") -> "Completion":
+    """Turn an OpenAI-style response into a `Completion`, or raise.
+
+    A refused request raises `_status_error`'s error first. The resolved build is what the
+    response *reported* (the body's `model` field, falling back to the `x-served-build` header),
+    never the requested ref (`FR-PROV-04`). `state` is the request's payload text, used only to
+    keep it out of error messages."""
     import json
 
+    refused = _status_error(response, state)
+    if refused is not None:
+        raise refused
     body = response.body
     if isinstance(body, dict):
         document = body  # a programmed transport may hand the parsed document straight over
@@ -146,11 +280,11 @@ def _parse_completion(response: HttpResponse, model_ref: ModelRef) -> "Completio
         choices = document["choices"]
         if not isinstance(choices, list) or not choices:
             raise MalformedResponseError("the response carries no choices")
-        message = choices[0].get("message", {}) if isinstance(choices[0], dict) else {}
+        choice = choices[0] if isinstance(choices[0], dict) else {}
+        message = choice.get("message", {}) if isinstance(choice.get("message"), dict) else {}
         text = message.get("content")
         if not isinstance(text, str):
-            raise MalformedResponseError(
-                "the first choice carries no message content string")
+            raise MalformedResponseError(_no_content_reason(choice, message))
     elif "text" in document:
         # The module's own flat shape — the one `TC-PROV-18`'s programmed transport speaks:
         # text verbatim, usage beside it, the served build in `model`.
@@ -158,8 +292,12 @@ def _parse_completion(response: HttpResponse, model_ref: ModelRef) -> "Completio
         if not isinstance(text, str):
             raise MalformedResponseError("the response 'text' is not a string")
     else:
+        # A 200 can still carry an `error` object (OpenRouter reports some upstream failures
+        # this way). Its message is the useful part, so it is named, through the same guard.
+        said = (f" The provider said: {_safe_excerpt(document, state)}."
+                if "error" in document else "")
         raise MalformedResponseError(
-            "the response carries neither a choices list nor a text field"
+            f"the response carries neither a choices list nor a text field.{said}"
         )
     served = document.get("model")
     if not isinstance(served, str) or not served:
@@ -213,7 +351,9 @@ class _BaseLiveProvider:
 
     def _dispatch(self, model_ref: ModelRef, prompt: PromptPayload,
                   params: SamplingParams) -> "Completion":
-        body = _openai_body(prompt, model_ref, params)
+        body = _openai_body(prompt, model_ref, params, self._wire_model(model_ref))
+        # The payload's text, so a refusal's message can be checked for an echo of it.
+        state = "\n".join(value for _, value in prompt.fields)
         headers = {"Content-Type": "application/json"}
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
@@ -223,7 +363,7 @@ class _BaseLiveProvider:
         completion = dispatch_with_retries(
             self._transport,
             lambda: HttpRequest("POST", self._url_for(model_ref), headers, body),
-            lambda response: _parse_completion(response, model_ref),
+            lambda response: _parse_completion(response, model_ref, state),
             policy=self._policy, clock=self._clock, rng=self._rng,
             governor=self._governor, counters=self._counters,
             build_watch=self._build_watch, model_key=model_key,
@@ -284,6 +424,10 @@ class _BaseLiveProvider:
 
     def _url_for(self, model_ref: ModelRef) -> str:
         raise NotImplementedError
+
+    def _wire_model(self, model_ref: ModelRef) -> str | None:
+        """The model name the backend knows, or None to send the pinned `build_id` as it is."""
+        return None
 
 
 class LocalServerProvider(_BaseLiveProvider):
@@ -379,6 +523,14 @@ class OpenRouterProvider(_BaseLiveProvider):
     def _url_for(self, model_ref: ModelRef) -> str:
         return f"{self._base_url}/chat/completions"
 
+    def _wire_model(self, model_ref: ModelRef) -> str:
+        """OpenRouter's name for a pinned build: `openrouter/qwen/qwen3-30b-a3b@2026-06-01` is
+        sent as `qwen/qwen3-30b-a3b`. OpenRouter knows models by that plain slug and has no
+        date pin, so the full `build_id` was refused. The pin stays the run's record of what
+        was asked for, and `Completion.resolved_build` records what OpenRouter reports serving
+        (`FR-PROV-04`)."""
+        return _openrouter_slug(model_ref.build_id)
+
     def complete(
         self, prompt: PromptPayload, model_ref: ModelRef, params: SamplingParams
     ) -> Completion:
@@ -400,7 +552,7 @@ class OpenRouterProvider(_BaseLiveProvider):
             "POST", self._url_for(model_ref),
             {"Authorization": f"Bearer {self._api_key}",
              "Content-Type": "application/json"},
-            _openai_body(prompt, model_ref, params))
+            _openai_body(prompt, model_ref, params, self._wire_model(model_ref)))
         if self._on_dispatch is not None:
             self._on_dispatch(request)
         return self._dispatch(model_ref, prompt, params)

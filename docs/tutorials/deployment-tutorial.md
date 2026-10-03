@@ -13,7 +13,7 @@ For how to *use* the system once it is running (the pages, the commands, grading
 > Everything below was **checked against the code** and, where it says "checked", **run** on a Linux machine with Python 3.11. Things that could not be checked are labelled **not checked**. Two facts decide what you can do today:
 >
 > 1. **Local computer mode is the only mode that can run the console and grade at the same time.** But the system has **not been tried against a real local model server**. The way it talks to the server may not match what common servers (Ollama, llama.cpp, vLLM) expect. See section 6.5.
-> 2. **OpenRouter mode can be set up and checked, but a live grading run cannot start yet.** `dev-ci` only replays recordings. `cloud-hosted` is the only profile that calls OpenRouter, but the console refuses it, and `aeh run` stops at the privacy check. Both refusals were reproduced and are shown in section 7.6. They are listed as blockers B1, B2 and B6 in [`02-live-readiness-and-blockers.md`](../live-tests/02-live-readiness-and-blockers.md).
+> 2. **OpenRouter mode can be set up and checked, but a live grading run cannot start yet.** `dev-ci` only replays recordings. `cloud-hosted` is the only profile that calls OpenRouter, but the console refuses it, and `aeh run` stops at the privacy check. Both refusals were reproduced and are shown in section 7.6. They are listed as blockers B1 and B6 in [`02-live-readiness-and-blockers.md`](../live-tests/02-live-readiness-and-blockers.md).
 >
 > So: you can follow every step here and get a correct setup. Whether a live run then works depends on the open blockers.
 
@@ -277,15 +277,16 @@ Set `LOCAL_INFERENCE_BASE_URL` in the terminal if your server is not at the defa
 The address must **end in `/v1`**. The system adds `/chat/completions` to it (checked). It sends **no** password or key to a local server (checked).
 
 > **Warning: not tried against a real server.**
-> A test against a stand-in server on this machine showed exactly what the system sends. It posts to `<address>/chat/completions` with a body like this:
+> A test against a stand-in server on this machine showed exactly what the system sends. It posts to `<address>/chat/completions` in the standard chat format, with one message per part of the prompt:
 >
 > ```json
 > {"model": "/models/x-q4.gguf@sha256:0000...0000",
->  "prompt": {"fields": [["instruction", "Pick a band"], ["submission", "student text"]]},
+>  "messages": [{"role": "user", "name": "instruction", "content": "Pick a band"},
+>               {"role": "user", "name": "submission", "content": "student text"}],
 >  "temperature": 0.0}
 > ```
 >
-> Two things in it are unusual. The `model` is the whole `build_id`, including the file path and the fingerprint. And the body has a `prompt` with `fields`, not the `messages` list that servers such as Ollama, llama.cpp and vLLM normally expect. The system's design says a translation layer (LiteLLM) sits in front of the model server on a real deployment. **Whether your server accepts this as it is has not been checked.** Before a real test, send one real request and see. If the server refuses it, you will need that translation layer; that is engineering work. This is the same open question as B2 in the readiness document.
+> A page picture is sent as an image part (`"type": "image_url"` with a `data:image/png;base64,...` address), which is what vision models expect. One thing is still unusual: the `model` is the whole `build_id`, including the file path and the fingerprint. Servers such as Ollama, llama.cpp and vLLM usually want the name they serve the model under. **Whether your server accepts this as it is has not been checked.** Before a real test, send one real request and see. If the server refuses the model name, you will need to fix that; it is engineering work.
 
 ### 6.6 Start it
 
@@ -310,7 +311,7 @@ Checked: with this file the console started and `/runs/run-dev-pipe/monitor` ret
 | Checked | Not checked |
 |---|---|
 | The file is accepted; wrong forms are refused with a clear reason | A run that really calls a local model |
-| The console starts under `edge-local` and serves pages | Whether a real server accepts the request format (6.5) |
+| The console starts under `edge-local` and serves pages | Whether a real server accepts the model name (6.5) |
 | The request the system sends, and the address it uses | How fast or accurate the models are on your computer |
 | `aeh run` under `edge-local` on a finished practice run succeeds (nothing needed a model) | Windows |
 
@@ -389,7 +390,7 @@ What each part means, and the rules (all checked unless said):
 * **`HARNESS_COST_CEILING`** is required for both profiles. Without it: *"HARNESS_COST_CEILING is required for backend_profile 'cloud-hosted'"*. It must be a whole or decimal number, not negative. `5` is plenty for ten sample answer sheets. The environment can override it.
 * **`retention_setting`** is required for `cloud-hosted` only. It must be `provider-default` or `zero-retention`. It *records* your choice. It does **not** make the privacy check pass (see 7.6). Leaving it out is refused: *"retention_setting is required for backend_profile 'cloud-hosted'"*.
 * **Model names** are written `openrouter/<vendor>/<model>@<date or version>`. The `@...` part is required: it pins the exact version. A moving tag such as `@latest` is refused. Do **not** give these a `quantization` line (the provider owns it).
-* **Do the models exist?** The two names are copied from the project's example file. **They have not been checked against OpenRouter's list.** Open openrouter.ai/models and confirm each one before the test.
+* **Do the models exist?** Yes, for the two names in the shipped files: both answered real calls on 2026-10-03 (checked). If you choose other models, confirm each one on openrouter.ai/models first.
 * **Judges:** one judge is the smallest test, but with one judge nobody can disagree, so the system cannot show agreement figures. For a real accuracy test, use **three** judges from different model families (add two more `[[profiles....panel]]` blocks). An even number such as two is refused: *"panel must hold [1, 3, 5] judges, got 2"*.
 * **`HARNESS_CONCURRENCY`** sets how many calls run at once. The default is 8. Here it *sets* the number (it does not just lower it): `20` is accepted. OpenRouter's own rate limits may refuse a high number.
 
@@ -445,7 +446,7 @@ aeh run: ValueError: the dev-ci profile records and replays through a fixture di
 
 Note that the command prints the OpenRouter model names *first*, even though a replay is what would run. Do not read that as proof OpenRouter was called.
 
-Also not confirmed (blocker B2): the request to OpenRouter has the same unusual shape as in section 6.5, with the whole `openrouter/<vendor>/<model>@<date>` name as `model`. OpenRouter's documented names are plain, such as `qwen/qwen3-30b-a3b`. A stand-in server showed the system sends `Authorization: Bearer <key>` and the body above. One real call would settle whether OpenRouter accepts it.
+**The request format (blocker B2) is changed, but not yet re-checked live.** The first real call failed: the system sent the whole `openrouter/<vendor>/<model>@<date>` name and a non-standard body, and OpenRouter refused it. The system now sends the plain name OpenRouter knows (`qwen/qwen3-30b-a3b`) and the standard chat format from section 6.5, with `Authorization: Bearer <key>`. A real call through the changed system succeeded (checked, 2026-10-03): it answered `ready`, reported `qwen/qwen3-30b-a3b` as the model that served it, and OpenRouter's cost of $0.00011245. Two more real calls also succeeded (checked): a judge-style request with three parts answered `{"band": "met"}`, and a page picture sent to `qwen/qwen3-vl-8b-instruct` was read back exactly ("The answer is 42"). So both model names in the shipped `dev-ci` file exist at OpenRouter. The model spent 213 output tokens to say one word, because it reasons first: leave the output cap generous for such models. A refused request now says why, in OpenRouter's words. A bad key, no credit or an unknown model (`HTTP 401`, `402`, `404`) stops the run, for example `HTTP 401 from the provider: the credentials were refused (for OpenRouter, check OPENROUTER_API_KEY)`. A refusal of one paper only (too long, flagged) sets that paper aside and the run goes on.
 
 ---
 
