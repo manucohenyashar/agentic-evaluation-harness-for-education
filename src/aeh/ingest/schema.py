@@ -463,6 +463,10 @@ INGEST_STATEMENTS: dict[str, Statement] = {
         "SELECT student_ref FROM roster WHERE cohort_id = :cohort_id"
     ),
     # -- V4 (FR-INGEST-25..28) -------------------------------------------------------------------------
+    # The scans already read into a document, for the intake command's re-run guard (B4).
+    "select_submission_sources": Statement(
+        "SELECT source_blobs FROM document WHERE kind = 'submission'"
+    ),
     "select_assessment_documents": Statement(
         "SELECT document_id, parent_doc_id, markdown FROM document "
         "WHERE kind = 'assessment' ORDER BY document_id"

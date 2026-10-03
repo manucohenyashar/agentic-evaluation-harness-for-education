@@ -5,7 +5,7 @@
 This tutorial walks through the whole life of one test in the grading system: set it up, load the student papers, let the system grade them, review the result, hand out the grades, and tidy up. It is written for the first live teacher test, so every step says **who** does it, **what you will see**, and **what to type**.
 
 > ### Read this box first
-> Everything in this tutorial was **run and checked against the code** on a practice copy of the system. But the system, in the form it is in today, has gaps that stop a *live* run from starting by itself: no command yet builds a package from your test's PDFs or reads uploaded scans. (Creating a class with its student list, `aeh cohort create`, and grading through OpenRouter under `dev-ci` now work: see the [deployment tutorial](deployment-tutorial.md), sections 7.6 and 8.1.) Those gaps are listed, with proof, in [`docs/live-tests/02-live-readiness-and-blockers.md`](../live-tests/02-live-readiness-and-blockers.md). Where a step below depends on one, it carries a **⚠ Engineer step** label.
+> Everything in this tutorial was **run and checked against the code** on a practice copy of the system. But the system, in the form it is in today, still has gaps a teacher would meet alone: nothing on screen reads your PDFs or the scans you upload. An engineer does those steps with three commands, `aeh cohort create`, `aeh package build` and `aeh ingest` (see the [deployment tutorial](deployment-tutorial.md), sections 8.1 to 8.3), and runs then grade through OpenRouter under `dev-ci` (section 7.6). Those gaps are listed, with proof, in [`docs/live-tests/02-live-readiness-and-blockers.md`](../live-tests/02-live-readiness-and-blockers.md). Where a step below depends on one, it carries a **⚠ Engineer step** label.
 >
 > What you *can* do today, with no gaps, is: start the console, read the screens that have content, review items, finalize, amend a grade, export a package, and restart after a crash. The **practice data** in section 2 lets you rehearse all of that. Be aware that the console shows less than the teacher guide describes: it does not display the package's question list or keys (S3, S4), it lists no papers for the blind sample (S10, S11), it does not say why a paper was parked (S8), and it shows no cost or finalizing name. Section 4 says exactly which pages work.
 
@@ -224,7 +224,7 @@ The name goes after `/actions/`. "Checked" means it was run against a real data 
 | `export-import-package` | `package_version` | Works: *"exported … to PKG-DEV-PIPE@….aehpkg"*, a file in the data folder's `exports/` | Teacher |
 | `purge-cohort` | `cohort_id` | Refuses until the cohort's evidence is saved for validation: *"is not promoted to Tier D … Unmet gates: audit records, labels, per-criterion statistics"*. Nothing is deleted. | Operator, last |
 
-> **About `start-run`.** `aeh console` starts a run on a background worker that calls the model service named by the profile. Under `dev-ci` that is OpenRouter, with zero data retention enforced on every request; with `HARNESS_FIXTURE_DIR` set it replays recordings instead. On start-up the console prints which (`provider for runs started here: …`). The console refuses `cloud-hosted` on purpose. A *live* run still needs a package built from your test and the papers read in (blockers B4, B5 in the readiness document). Practice runs and replays are unaffected.
+> **About `start-run`.** `aeh console` starts a run on a background worker that calls the model service named by the profile. Under `dev-ci` that is OpenRouter, with zero data retention enforced on every request; with `HARNESS_FIXTURE_DIR` set it replays recordings instead. On start-up the console prints which (`provider for runs started here: …`). The console refuses `cloud-hosted` on purpose. Before a *live* run the engineer creates the class, builds the package and reads the papers in (deployment tutorial, sections 8.1 to 8.3). Practice runs and replays are unaffected.
 
 ### 5.3 Finding the real band names
 
@@ -263,7 +263,7 @@ curl -X POST "http://127.0.0.1:<PORT>/upload?cohort_id=<cohort>&filename=S9-001-
 
 Checked on the practice cohort: the reply was `{"dispatched": true, "blob_refs": ["sha256:…"], "detail": "dispatched to the orchestrator's schedule; the handler awaited nothing"}`, and a file that is not a PDF gives HTTP 400 *"the console accepts PDF scans only … nothing was staged"*. Then open `/packages/new?cohort_id=<cohort>` and you will see `Page 1: S9-001-strong.pdf` in the list.
 
-**What happens next, today.** The upload is stored and listed. **Nothing reads it yet**: no code in the system turns an uploaded file into a graded paper (blocker B4). A checked test: eight seconds after an upload, the cohort held the uploaded part and no new submission. The reading step is the engineer's, and `verify_sample_materials.py` shows exactly what it does and what each gate decides for the sample sheets.
+**What happens next, today.** A file uploaded on this page is stored and listed, but **nothing reads it**. Instead, the engineer reads the scans in with one command, `aeh ingest` (deployment tutorial, section 8.3): it reads the test paper and a folder of answer sheets, one PDF per student, through the five checks, and parks every paper that fails one. Running it again skips papers already read. Then open S6 and S8 as below.
 
 **Preflight (S6).** Once papers are read, open `/cohorts/{cohort}/preflight`. The five checks must pass for the cohort as a whole (a "cohort breaker" holds the run back if the right-test check fails for too large a share of papers). Papers with problems do **not** hold the run back: they wait in quarantine (S8) while the rest are graded.
 
@@ -281,7 +281,7 @@ Closing as **unresolvable** never gives zero: the unscored lines are marked MISS
 
 ### Phase 3: Start the run, and watch it (operator)
 
-* **Start**: `start-run` with `cohort_id` and `package_version`. ⚠ A live start still needs a package built from your test and the papers read in (blockers B4, B5).
+* **Start**: `start-run` with `cohort_id` and `package_version`. Before a live start, the engineer builds the package (`aeh package build`) and reads the papers in (`aeh ingest`); see the deployment tutorial, sections 8.1 to 8.3.
 * **Watch** S7 (press F5). Statuses are `pending`, `running`, `paused`, `complete`.
 * **Pause / resume.** These commands queue a request; they are meant to work at any time:
 

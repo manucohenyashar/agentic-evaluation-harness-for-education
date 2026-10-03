@@ -80,7 +80,44 @@ def _build_parser() -> Any:
         "build", help="build and publish a package from a TOML spec; it can never be changed")
     build.add_argument("--data-dir", required=True)
     build.add_argument("--spec", required=True, help="the package spec (TOML)")
+
+    # Live-test blocker B4: read scanned papers through the intake checks.
+    ingest_parser = sub.add_parser(
+        "ingest", help="read the test paper and answer sheets (PDFs) through the intake checks")
+    ingest_parser.add_argument("--data-dir", required=True)
+    ingest_parser.add_argument("--cohort", required=True)
+    ingest_parser.add_argument("--package-version", required=True)
+    ingest_parser.add_argument("--config", default=None)
+    ingest_parser.add_argument("--assessment", default=None,
+                               help="the test paper PDF (needed once per cohort)")
+    ingest_parser.add_argument("sheets", nargs="+",
+                               help="answer sheet PDFs, one per student, or folders of them")
     return parser
+
+
+def _ingest_command(args: Any) -> int:
+    """`aeh ingest`. One line per sheet on stderr as it goes, then the whole result as JSON."""
+    from aeh.conf import resolve_run_config
+
+    from .intake import answer_sheet_files, ingest_files
+
+    sheets = answer_sheet_files(args.sheets)  # checked before the store opens
+    config = effective_config(_load_config_file(args.config))
+    store = _open_store(args.data_dir)
+    try:
+        # The consent gate runs here, before a page is read: a cohort whose work may not leave
+        # the machine is refused on a remote profile (FR-CONF-08).
+        run_config = resolve_run_config(dict(config), Orchestrator(store).cohort_ref(args.cohort))
+        provider = _provider_for(run_config)
+        print(f"provider: {_describe_provider(provider)}", file=sys.stderr)
+        result = ingest_files(store, run_config, args.cohort, args.package_version,
+                              assessment=args.assessment, sheets=sheets, provider=provider)
+    finally:
+        store.close()
+    for sheet in result.sheets:
+        print(f"{sheet.file}: {sheet.status} {sheet.detail}".rstrip(), file=sys.stderr)
+    print(json.dumps(_as_json(result), indent=2, sort_keys=True))
+    return EXIT_ERROR if any(s.status in ("stopped", "error") for s in result.sheets) else EXIT_OK
 
 
 def _package_command(args: Any) -> int:
@@ -154,6 +191,8 @@ def main(argv: "Sequence[str] | None" = None) -> int:
             return _cohort_command(args)
         if args.command == "package":
             return _package_command(args)
+        if args.command == "ingest":
+            return _ingest_command(args)
         if args.command == "recover":
             store = _open_store(args.data_dir)
             try:

@@ -557,6 +557,23 @@ Keep the `package_version` value: `aeh run` and the console's start-run need it.
 
 Checked: this package and a class created with `aeh cohort create` carry the six physics sample answer sheets through the real intake checks exactly as the live-test guide's table says.
 
+### 8.3 Read the papers in (`aeh ingest`)
+
+With the class created (8.1) and the package built (8.2), read the scans. You need the test paper once per class, and the answer sheets as **one PDF per student** (a folder of them is fine). Every sheet needs the test name and the student's ID written at the top, because the checks read both.
+
+```bash
+python -m aeh ingest --data-dir ~/aeh-data --cohort class-9a \
+  --package-version PS9-FORCES-01@8828fa5b16da --config docs/live-tests/config/live-test.dev-ci.toml \
+  --assessment 01-test-paper.pdf answer-sheets/
+```
+
+It prints the provider (`provider: OpenRouter at ... (zero data retention enforced)` under `dev-ci`), one line per sheet, then the whole result. Each sheet is read by the page-reading model in the configuration and goes through the five checks; a sheet that fails one waits in quarantine for the operator (the operating tutorial, Phase 2). Checked with a stand-in for OpenRouter over the six physics sample sheets: three `ok`, two `incomplete` (a doubled mark; no name), one `unmatched_assessment` (the wrong test). **Not checked: a real model reading real pages**; that is what the first live run shows.
+
+* Running it again over the same folder skips every sheet already read (`skipped ... already read into this cohort`), so a paper is never counted twice. Add new sheets to the folder and run it again.
+* A `real` class is refused before any page is sent (the consent rule, 7.4).
+* These page-reading calls cost money but are not counted against a run's cost ceiling: no run exists yet. OpenRouter's own limit (7.2) is the stop.
+* The console's upload page still only stores files; it does not read them. Use this command.
+
 ## 9. Practice first: the rehearsal folder
 
 The practice data lets you start the console and see every page with no money spent and nothing sent anywhere. Run it once:

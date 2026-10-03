@@ -920,6 +920,8 @@ returned exactly once and no code path exists to ask for another.
 | TC-PIPE-27 | FR-PKG-01, FR-PKG-17, FR-PKG-16 | Unit / 1 | Live-test blocker B5. `aeh.pipeline.packages.build_package` over `docs/live-tests/config/ps9-forces-01.package.toml`, then the same through `aeh package build`, twice | Version `PS9-FORCES-01@…`; 6 questions in paper order with their text, options and model answer (`reference_solution`); 6 criteria (C4 judged with an evidence type, C1 mcq); key for C5 is `B`; grades A–F; a further `add_criterion` on the version is refused (published). The command prints the version as JSON and exits 0; the second build exits 1 naming *already exists* | Exact | P0 |
 | TC-PIPE-28 | FR-PKG-01, FR-PKG-06 | Unit / 1 | Live-test blocker B5. Specs with package id `../evil` and `NUL`, no `approved_by`, no questions, a criterion naming an unknown question, a key on a question without options, a criterion with neither key nor bands; the sample built, then `ps9-forces-01`; a judged line with three bands (M-PKG refuses an odd count), then the corrected spec under the same id | Each untranslatable spec raises `PackageSpecError` and leaves no package file; the lower-case twin is refused naming *ignoring case*; the odd band set raises M-PKG's error, leaves no package file, and the corrected spec then builds | Exact + census | P0 |
 | TC-PIPE-29 | FR-INGEST-24, FR-INGEST-25 | Integration / 2 | Live-test blockers B3 + B5 together. The sample physics package built from its spec; a `synthetic` cohort created with the six sheets' student IDs; the test paper ingested as the assessment; the six physics answer sheets ingested through the real `Ingestor` (V0–V4), the page reader stood in by the sample script's scripted transcripts; then a `dev-ci` run created and enumerated | Each sheet's intake status equals `verify_sample_materials.EXPECTED_STATUS` (three `ok`, two `incomplete`, one `unmatched_assessment`); the run is created and enumerates units | Exact | P0 |
+| TC-PIPE-30 | FR-INGEST-24, FR-INGEST-25 | Integration / 2 | Live-test blocker B4. The sample physics package built with `aeh package build`, a `synthetic` class created with `aeh cohort create`, the test paper and the six answer sheets on disk; `aeh ingest` under the shipped `dev-ci` config, its pages sent through `OpenRouterProvider.enforcing_zero_retention()` to a stand-in OpenRouter that answers each page with the sample script's transcript; then `aeh ingest` again over the same folder without `--assessment` | Exit 0; each sheet's status equals `EXPECTED_STATUS`; read 6, quarantined 3, skipped 0; the test paper read. Each of the 7 page requests carries the page as an `image_url` part (`data:image/png;base64,`), `provider == {zdr: true, data_collection: deny}` and model `qwen/qwen3-vl-8b-instruct`. The re-run reports the paper *already read*, skips all six sheets, sends no request, and the cohort still holds 6 submissions | Exact + census | P0 |
+| TC-PIPE-31 | FR-CONF-08 | Integration / 2 | Live-test blocker B4. `aeh ingest` for a `real` class, and for a class with no test paper read and no `--assessment` | The `real` class exits 1 with `ConsentGateError`; the missing paper exits 1 asking for `--assessment`; neither sends any request | Exact + count | P0 |
 
 ### 5.3 Module: Persistence Substrate (`M-STORE`)
 
@@ -4478,7 +4480,7 @@ python .claude/skills/create-test-plan/scripts/check_traceability.py --design do
 | FR-CONF-05 | TC-CONF-05 | Unit | P0 |
 | FR-CONF-06 | TC-CONF-06, TC-CONF-15 | Unit, Property | P1 |
 | FR-CONF-07 | TC-CONF-07 | Unit | P1 |
-| FR-CONF-08 | TC-CONF-08, SEC-02, TC-ORCH-59, TC-ORCH-60 | Unit, Security | P0 |
+| FR-CONF-08 | TC-CONF-08, SEC-02, TC-ORCH-59, TC-ORCH-60, TC-PIPE-31 | Unit, Security | P0 |
 | FR-CONF-09 | TC-CONF-09, TC-CONF-17, OBS-10 | Unit, Integration, Observability | P1 |
 | FR-CONF-10 | TC-CONF-10 | Unit | P2 |
 | FR-CONF-11 | TC-CONF-11, SEC-01 | Art, Security | P0 |
@@ -4575,8 +4577,8 @@ python .claude/skills/create-test-plan/scripts/check_traceability.py --design do
 | FR-INGEST-21 | TC-INGEST-23, SEC-08 | Integration, Security | P0 |
 | FR-INGEST-22 | TC-INGEST-24 | Integration | P0 |
 | FR-INGEST-23 | TC-INGEST-26 | Integration | P0 |
-| FR-INGEST-24 | TC-INGEST-27, TC-ORCH-59 | Integration, Unit | P0 |
-| FR-INGEST-25 | TC-INGEST-25, ADV-07, TC-PIPE-29 | Integration, Adversarial | P0 |
+| FR-INGEST-24 | TC-INGEST-27, TC-ORCH-59, TC-PIPE-30 | Integration, Unit | P0 |
+| FR-INGEST-25 | TC-INGEST-25, ADV-07, TC-PIPE-29, TC-PIPE-30 | Integration, Adversarial | P0 |
 | FR-INGEST-26 | TC-INGEST-25, TC-INGEST-39 | Integration | P0 |
 | FR-INGEST-27 | TC-INGEST-25 | Integration | P0 |
 | FR-INGEST-28 | TC-INGEST-28, TC-CONSOLE-28 | Integration | P0 |
