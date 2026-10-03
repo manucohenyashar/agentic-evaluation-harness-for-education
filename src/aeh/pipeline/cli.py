@@ -50,7 +50,60 @@ def _build_parser() -> Any:
     console_parser = sub.add_parser("console", help="recover, then serve the operator console")
     console_parser.add_argument("--data-dir", required=True)
     console_parser.add_argument("--config", default=None)
+
+    # Live-test blocker B3: the operator's way to create a cohort and load its roster.
+    cohort_parser = sub.add_parser(
+        "cohort", help="create a cohort (class) with its consent class and roster, or show one")
+    cohort_sub = cohort_parser.add_subparsers(dest="cohort_command", required=True)
+    create = cohort_sub.add_parser(
+        "create", help="create a cohort; its consent class can never be changed afterwards")
+    create.add_argument("--data-dir", required=True)
+    create.add_argument("--cohort", required=True)
+    create.add_argument("--consent", required=True, choices=_consent_classes(),
+                        help="synthetic (made-up practice work), consented, or real")
+    create.add_argument("--roster", required=True,
+                        help="a file of student IDs: one per line, or a CSV with a student_ref "
+                             "column. Each ID must match the 'Student:' line on the paper")
+    add = cohort_sub.add_parser("add-students", help="add students to an existing cohort")
+    add.add_argument("--data-dir", required=True)
+    add.add_argument("--cohort", required=True)
+    add.add_argument("--roster", required=True)
+    show = cohort_sub.add_parser("show", help="print a cohort's consent class and roster size")
+    show.add_argument("--data-dir", required=True)
+    show.add_argument("--cohort", required=True)
     return parser
+
+
+def _consent_classes() -> tuple[str, ...]:
+    from aeh.ingest import CONSENT_CLASSES
+
+    return CONSENT_CLASSES
+
+
+def _cohort_command(args: Any) -> int:
+    """`aeh cohort create | add-students | show`. Prints the cohort as JSON; a refusal is raised
+    and reported by `main` like every other error, and writes nothing."""
+    from aeh.ingest import add_to_roster, cohort_summary, create_cohort, read_roster_file
+
+    store = _open_store(args.data_dir)
+    try:
+        if args.cohort_command == "create":
+            summary = create_cohort(store, args.cohort, args.consent,
+                                    read_roster_file(args.roster))
+        elif args.cohort_command == "add-students":
+            summary = add_to_roster(store, args.cohort, read_roster_file(args.roster))
+        else:
+            summary = cohort_summary(store, args.cohort)
+            if summary is None:
+                raise ValueError(f"no cohort {args.cohort!r} exists in {args.data_dir}")
+    finally:
+        store.close()
+    print(json.dumps(_as_json(summary), indent=2, sort_keys=True))
+    if summary.consent_class == "real":
+        print("note: consent class 'real' - the dev-ci and cloud-hosted profiles will refuse to "
+              "send this cohort's work to OpenRouter unless HARNESS_ALLOW_REMOTE_REAL_WORK and "
+              "allow_remote_real_work_supplied_by are both set.", file=sys.stderr)
+    return EXIT_OK
 
 
 def main(argv: "Sequence[str] | None" = None) -> int:
@@ -68,6 +121,8 @@ def main(argv: "Sequence[str] | None" = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
     try:
+        if args.command == "cohort":
+            return _cohort_command(args)
         if args.command == "recover":
             store = _open_store(args.data_dir)
             try:

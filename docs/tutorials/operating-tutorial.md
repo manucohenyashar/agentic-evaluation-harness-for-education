@@ -5,7 +5,7 @@
 This tutorial walks through the whole life of one test in the grading system: set it up, load the student papers, let the system grade them, review the result, hand out the grades, and tidy up. It is written for the first live teacher test, so every step says **who** does it, **what you will see**, and **what to type**.
 
 > ### Read this box first
-> Everything in this tutorial was **run and checked against the code** on a practice copy of the system. But the system, in the form it is in today, has gaps that stop a *live* run from starting by itself: no command yet creates a class list, reads uploaded scans, or sends work to OpenRouter. Those gaps are listed, with proof, in [`docs/live-tests/02-live-readiness-and-blockers.md`](../live-tests/02-live-readiness-and-blockers.md). Where a step below depends on one, it carries a **⚠ Engineer step** label.
+> Everything in this tutorial was **run and checked against the code** on a practice copy of the system. But the system, in the form it is in today, has gaps that stop a *live* run from starting by itself: no command yet builds a package from your test's PDFs or reads uploaded scans. (Creating a class with its student list, `aeh cohort create`, and grading through OpenRouter under `dev-ci` now work: see the [deployment tutorial](deployment-tutorial.md), sections 7.6 and 8.1.) Those gaps are listed, with proof, in [`docs/live-tests/02-live-readiness-and-blockers.md`](../live-tests/02-live-readiness-and-blockers.md). Where a step below depends on one, it carries a **⚠ Engineer step** label.
 >
 > What you *can* do today, with no gaps, is: start the console, read the screens that have content, review items, finalize, amend a grade, export a package, and restart after a crash. The **practice data** in section 2 lets you rehearse all of that. Be aware that the console shows less than the teacher guide describes: it does not display the package's question list or keys (S3, S4), it lists no papers for the blind sample (S10, S11), it does not say why a paper was parked (S8), and it shows no cost or finalizing name. Section 4 says exactly which pages work.
 
@@ -224,7 +224,7 @@ The name goes after `/actions/`. "Checked" means it was run against a real data 
 | `export-import-package` | `package_version` | Works: *"exported … to PKG-DEV-PIPE@….aehpkg"*, a file in the data folder's `exports/` | Teacher |
 | `purge-cohort` | `cohort_id` | Refuses until the cohort's evidence is saved for validation: *"is not promoted to Tier D … Unmet gates: audit records, labels, per-criterion statistics"*. Nothing is deleted. | Operator, last |
 
-> **About `start-run`.** In the form the system is in today, `aeh console` starts a run on a background worker that calls the model service named by the profile. The profile used for tests that go through OpenRouter (`dev-ci`) is wired to **replay recordings**, not to call OpenRouter, and the profile that does call OpenRouter (`cloud-hosted`) is refused by the console. So a *live* run cannot be started from the console yet. See blockers B1 and B2 in the readiness document. Practice runs and replays are unaffected.
+> **About `start-run`.** `aeh console` starts a run on a background worker that calls the model service named by the profile. Under `dev-ci` that is OpenRouter, with zero data retention enforced on every request; with `HARNESS_FIXTURE_DIR` set it replays recordings instead. On start-up the console prints which (`provider for runs started here: …`). The console refuses `cloud-hosted` on purpose. A *live* run still needs a package built from your test and the papers read in (blockers B4, B5 in the readiness document). Practice runs and replays are unaffected.
 
 ### 5.3 Finding the real band names
 
@@ -281,7 +281,7 @@ Closing as **unresolvable** never gives zero: the unscored lines are marked MISS
 
 ### Phase 3: Start the run, and watch it (operator)
 
-* **Start**: `start-run` with `cohort_id` and `package_version`. ⚠ A live start needs the engineering fixes (blockers B1 to B3).
+* **Start**: `start-run` with `cohort_id` and `package_version`. ⚠ A live start still needs a package built from your test and the papers read in (blockers B4, B5).
 * **Watch** S7 (press F5). Statuses are `pending`, `running`, `paused`, `complete`.
 * **Pause / resume.** These commands queue a request; they are meant to work at any time:
 
@@ -347,7 +347,7 @@ Every message below is the system's real wording.
 | `ConsoleBindRefused: … refuses to start under the cloud-hosted profile` | `HARNESS_PROFILE` is `cloud-hosted` | Use another profile for the console |
 | `ConfigurationError: HARNESS_PROFILE must be one of ('edge-local', 'cloud-hosted', 'dev-ci'), got None` | A run was started with no profile | Set `HARNESS_PROFILE`, or choose one in the config file |
 | `ConsentGateError: cohort … has consent_class 'real' … may not be sent to a 'dev-ci' provider` | Real student work is not allowed to leave the machine without recorded authority | Use a `synthetic` or `consented` cohort, or supply the override with a named person |
-| `RetentionPolicyError: a cloud-hosted run cannot start …` | The privacy check for the hosted service could not be done | See blocker B1 |
+| `HTTP 404 … No endpoints found matching your data policy` | No host that keeps zero data serves that model on OpenRouter | Choose another model (deployment tutorial, 7.6) |
 | `404 not found` from a command | The name is not one of the 15 | Check the spelling against 5.2 |
 | `"refused": true … refresh_required` | The screen was out of date | Press F5 and send the command again |
 | `…is already complete; nothing was started` | You tried to start a run twice | Nothing to do |

@@ -128,6 +128,15 @@ from .sanitizer import PdfSanitizer, PypdfSanitizer, SanitizeResult
 from .residency import ResidencySlot
 from .schema import INGEST_STATEMENTS
 from .uploads import record_upload_part, upload_parts_in_order
+from .cohorts import (
+    CONSENT_CLASSES,
+    CohortSetupError,
+    CohortSummary,
+    add_to_roster,
+    cohort_summary,
+    create_cohort,
+    read_roster_file,
+)
 from .assembly import assemble_canonical_markdown, AssembledDocument
 from .records import (
     ClusterResolution,

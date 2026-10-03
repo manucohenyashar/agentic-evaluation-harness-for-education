@@ -1310,6 +1310,8 @@ escalation into a model call; assert the escalation happens only in the `uncerta
 | TC-INGEST-47 | NFR-INGEST-01 | Performance / 4 | 350 submissions at about four pages each | Ingestion wall clock is **measured and recorded**, and is within the same order of magnitude as the scoring pass. See `PERF-02` | Metric, measured not estimated | P1 |
 | TC-INGEST-48 | FR-INGEST-04, FR-INGEST-06 | Regression / 2 | The `F-SYNTH` and `F-GRAPHIC` corpora | Canonical assembled Markdown per fixture document matches its committed golden file byte for byte; any diff is reviewed deliberately per §6.9 | Golden file | P0 |
 | TC-INGEST-49 | FR-INGEST-13, FR-STORE-06 | Regression / 2 | A one-page PDF ingested through the LIVE `PdfiumRasterizer` (pypdfium2), its transcript carrying a `described_graphic` region | The live `crop(pdf_bytes, page_no, box, dpi)` matches the test doubles' contract; `crop_ref` and the persisted full-page rasters resolve in the blob store at the requested geometry; an out-of-bounds crop is refused, never clamped; the retention knob off skips rasters while crops still flow | Blob resolution plus exact PNG dimensions | P0 |
+| TC-INGEST-56 | FR-CONF-08, FR-INGEST-24 | Unit / 1 | Live-test blocker B3. `create_cohort` with a consent class and roster; refusals: an unknown consent class, ids `../evil`, `a/b`, `class.`, an empty roster, a reference with a space, a repeated reference; a second `create_cohort` for the same id with `real`; `add_to_roster` with a repeat, then with new ids, then for a missing cohort; `cohort_summary` for a missing id; a `dev-ci` config resolved against a `real` and a `synthetic` created cohort; roster files (plain, CSV with BOM and `student_ref` column, column not first, comments and spaces, empty) | The cohort row and roster are written in one transaction and `Orchestrator.cohort_ref` reads the stored class. Every refusal raises `CohortSetupError` saying *Nothing was written*, and no cohort file exists afterwards (nor `evil.sqlite` in the data directory). The existing cohort keeps its class and roster. A repeat in `add_to_roster` adds nothing. The missing-id summary creates no file. `real` raises `ConsentGateError`, `synthetic` resolves. Roster files read as listed | Exact + census | P0 |
+| TC-INGEST-57 | FR-CONF-08 | Unit / 1 | Live-test blocker B3. `aeh cohort create`, `add-students`, `show`, a second `create`, a `create` without `--consent`, and a `create` with `--consent real` | Exit 0 with the cohort as JSON (roster sizes 2, 3, 3); the second `create` exits 1 naming *already exists*; no `--consent` is an argument error (no default); `real` prints the `HARNESS_ALLOW_REMOTE_REAL_WORK` reminder on stderr | Exact | P1 |
 
 ### 5.6 Module: Assessment Setup — Stage A (`M-SETUP`)
 
@@ -4473,7 +4475,7 @@ python .claude/skills/create-test-plan/scripts/check_traceability.py --design do
 | FR-CONF-05 | TC-CONF-05 | Unit | P0 |
 | FR-CONF-06 | TC-CONF-06, TC-CONF-15 | Unit, Property | P1 |
 | FR-CONF-07 | TC-CONF-07 | Unit | P1 |
-| FR-CONF-08 | TC-CONF-08, SEC-02 | Unit, Security | P0 |
+| FR-CONF-08 | TC-CONF-08, SEC-02, TC-INGEST-56, TC-INGEST-57 | Unit, Security | P0 |
 | FR-CONF-09 | TC-CONF-09, TC-CONF-17, OBS-10 | Unit, Integration, Observability | P1 |
 | FR-CONF-10 | TC-CONF-10 | Unit | P2 |
 | FR-CONF-11 | TC-CONF-11, SEC-01 | Art, Security | P0 |
@@ -4570,7 +4572,7 @@ python .claude/skills/create-test-plan/scripts/check_traceability.py --design do
 | FR-INGEST-21 | TC-INGEST-23, SEC-08 | Integration, Security | P0 |
 | FR-INGEST-22 | TC-INGEST-24 | Integration | P0 |
 | FR-INGEST-23 | TC-INGEST-26 | Integration | P0 |
-| FR-INGEST-24 | TC-INGEST-27 | Integration | P0 |
+| FR-INGEST-24 | TC-INGEST-27, TC-INGEST-56 | Integration, Unit | P0 |
 | FR-INGEST-25 | TC-INGEST-25, ADV-07 | Integration, Adversarial | P0 |
 | FR-INGEST-26 | TC-INGEST-25, TC-INGEST-39 | Integration | P0 |
 | FR-INGEST-27 | TC-INGEST-25 | Integration | P0 |

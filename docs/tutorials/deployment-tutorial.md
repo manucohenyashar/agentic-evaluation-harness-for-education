@@ -481,6 +481,45 @@ Use `dev-ci` for the console.
 
 If a teacher at another desk must see the console, they connect to *your* computer over a secure tunnel (for example `ssh -L 8765:127.0.0.1:8765 you@the-machine`) and open `http://127.0.0.1:8765` on their own screen. Never try to open the console to the network.
 
+### 8.1 Create a class (a "cohort") and its student list
+
+Every class you grade is a **cohort** with two things fixed when it is created:
+
+* its **consent class**: `synthetic` (made-up practice papers), `consented` (the students or guardians agreed), or `real` (everything else). In OpenRouter mode only `synthetic` and `consented` classes may be graded (section 7.4). There is no default, and it can never be changed later.
+* its **student list** (the roster): the IDs students write on their papers. The intake check V3 matches the `Student:` line on each paper against this list, exactly, so use the same spelling the students will write.
+
+Write the student IDs in a file, one per line, or as a CSV with a `student_ref` column (other columns are ignored, so a spreadsheet exported from Excel works):
+
+```
+student_ref
+S9-001
+S9-002
+S9-003
+```
+
+Then (checked):
+
+```bash
+python -m aeh cohort create --data-dir ~/aeh-data --cohort class-9a --consent synthetic --roster roster.csv
+```
+
+```json
+{
+  "cohort_id": "class-9a",
+  "consent_class": "synthetic",
+  "created_at": "2026-10-03T16:45:40.293426+00:00",
+  "roster_size": 3
+}
+```
+
+* `aeh cohort add-students --data-dir ... --cohort class-9a --roster more.csv` adds late students. An ID already on the list is refused, by name, and nothing is added.
+* `aeh cohort show --data-dir ... --cohort class-9a` prints the class as above.
+* The class ID becomes a file name, so it may hold only letters, digits, `.`, `_` and `-`.
+* Running `create` again for the same class is refused (*"already exists; it is never overwritten"*). A duplicate or empty ID in the file is refused too. Every refusal writes nothing.
+* Creating a `real` class prints a reminder that OpenRouter mode will refuse it.
+
+Not yet recorded: who created the class. Only the time is stored.
+
 ## 9. Practice first: the rehearsal folder
 
 The practice data lets you start the console and see every page with no money spent and nothing sent anywhere. Run it once:
