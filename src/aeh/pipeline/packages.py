@@ -284,6 +284,7 @@ def build_package(store: Any, spec: Mapping[str, Any]) -> BuiltPackage:
     closed alone), which is right for `aeh package build`, the one-shot command that owns it.
     """
     from aeh.pkg import PackageCatalog
+    from aeh.pkg.spec_criteria import write_spec_criteria
 
     plan = plan_package(spec, packages_folder(store))
     path = Path(store.package_path(plan.package_id))
@@ -309,23 +310,7 @@ def build_package(store: Any, spec: Mapping[str, Any]) -> BuiltPackage:
             if q["model_answer"]:
                 catalog.update_question_field(version, q["question_id"], "reference_solution",
                                               q["model_answer"])
-        for c in plan.criteria:
-            if c["kind"] == "mcq":
-                catalog.add_criterion(version, c["id"], question_id=c["question"], kind="mcq",
-                                      max_points=c["max_points"], scoring_model="atomic",
-                                      band_count=2)
-                catalog.add_band(version, c["id"], 0, "incorrect", 0.0)
-                catalog.add_band(version, c["id"], 1, "correct", c["max_points"])
-                catalog.set_mcq_options(version, c["id"], c["options"])
-                catalog.set_answer_key(version, c["id"], c["key"])
-                continue
-            catalog.add_criterion(
-                version, c["id"], question_id=c["question"], kind="open",
-                max_points=c["max_points"], scoring_model=c["scoring"],
-                dependencies=c["depends_on"], band_count=len(c["bands"]),
-                evidence_type=c["evidence_type"])
-            for ordinal, name, points, descriptor in c["bands"]:
-                catalog.add_band(version, c["id"], ordinal, name, points, descriptor)
+        write_spec_criteria(catalog, version, plan.criteria)
         if plan.grades:
             catalog.set_boundaries(version, list(plan.grades))
         if plan.review_window_hours is not None:
