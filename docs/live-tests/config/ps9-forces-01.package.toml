@@ -62,8 +62,9 @@ points = 3
 text = "A cyclist rides at a steady speed along a flat, straight road. (b) Explain your choice in (a)."
 model_answer = "The cyclist's speed is not changing, so the acceleration is zero and the net force is zero. The forward force from the pedals therefore balances the resistive forces (air resistance and friction)."
 
-# --- the rubric lines. A multiple-choice line has a `key`; a judged line has `bands`, listed from
-# --- worst to best (an even number, 2 to 6). Points default to the band's position (0, 1, 2...).
+# --- the rubric lines. A multiple-choice line has a `key` (one of its question's options); a judged
+# --- line has `bands`, listed from worst to best (an even number, 2 to 6), each with its `points`.
+# --- Every question needs at least one line, and a multiple-choice question needs a key.
 
 [[criterion]]
 id = "C1"

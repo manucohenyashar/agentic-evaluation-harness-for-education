@@ -55,6 +55,16 @@ def test_tc_pipe_27_the_sample_spec_builds_and_publishes(tmp_data_dir):
         assert criteria["C1"]["kind"] == "mcq"
         assert catalog.answer_key("C5") == ("B",)
         assert built.grades == ("A", "B", "C", "D", "F")
+        assert criteria["C4"]["max_points"] == 3.0 and criteria["C4"]["scoring_model"] == "holistic"
+        bands = [(b["ordinal"], b["band"], b["points"]) for b in catalog.bands("C4")]
+        assert bands == [(0, "none", 0.0), (1, "limited", 1.0), (2, "adequate", 2.0),
+                         (3, "full", 3.0)], bands
+        assert catalog.bands("C4")[3]["descriptor"].startswith("Names the weight")
+        assert [catalog.answer_key(c) for c in ("C1", "C2", "C3")] == [("C",), ("B",), ("C",)]
+        labels = {o["option_id"]: o["label"] for o in catalog.question_options(version, "Q2")}
+        assert labels["B"] == "newton"
+        assert [catalog.boundary_for(version, score) for score in (10, 8, 7.9, 6, 2, 0)] == [
+            "A", "A", "B", "B", "D", "F"]
         # Published: the version refuses any further change.
         with pytest.raises(Exception):
             catalog.add_criterion(version, "C9", question_id="Q1")
@@ -72,6 +82,73 @@ def test_tc_pipe_27_aeh_package_build_prints_the_version(tmp_data_dir, capsys):
 
 
 # --- TC-PIPE-28: refusals write nothing, and a corrected spec builds under the same id ---------
+
+
+def _with_criterion(index, **fields):
+    spec = _spec()
+    spec["criterion"] = [dict(c) for c in spec["criterion"]]
+    spec["criterion"][index].update(fields)
+    for key, value in list(fields.items()):
+        if value is None:
+            del spec["criterion"][index][key]
+    return spec
+
+
+def _without_points(spec):
+    spec["criterion"] = [dict(c) for c in spec["criterion"]]
+    spec["criterion"][3]["bands"] = [{k: v for k, v in b.items() if k != "points"}
+                                     for b in spec["criterion"][3]["bands"]]
+    return spec
+
+
+@pytest.mark.parametrize("make, words", [
+    # Review findings: each of these used to build and publish a package that could not be fixed.
+    (lambda: _with_criterion(4, key="Z"), "not among question 'Q5a'"),
+    (lambda: _with_criterion(4, key=None, bands=[{"name": "wrong", "points": 0},
+                                                 {"name": "right", "points": 1}]),
+     "is multiple choice"),
+    (lambda: _with_criterion(3, key="A"), "both a 'key' and 'bands'"),
+    (lambda: {**_spec(), "criterion": [c for c in _spec()["criterion"] if c["id"] != "C6"]},
+     "have no rubric line"),
+    (lambda: _without_points(_spec()), "'points' is required"),
+    (lambda: _with_criterion(5, depends_on="C4"), "list of criterion ids"),
+    (lambda: _with_criterion(5, depends_on=["CX"]), "names no other criterion"),
+    (lambda: _with_criterion(5, scoring="holstic"), "is not one of"),
+    (lambda: _spec(review_window_hours=1.5), "whole number of hours"),
+    (lambda: _with_criterion(0, key=2), "'key' is an option id"),
+    (lambda: _with_criterion(3, bands="x"), "list of tables"),
+    (lambda: _spec(criterion=["C1"]), "must be a table"),
+    (lambda: _spec(grades={"A": "eight"}), "must be a number"),
+])
+def test_tc_pipe_28_a_spec_a_published_package_could_not_correct_is_refused(
+        tmp_data_dir, make, words):
+    store = open_store(tmp_data_dir)
+    try:
+        with pytest.raises(PackageSpecError, match=words):
+            build_package(store, make())
+    finally:
+        store.close()
+    packages = Path(tmp_data_dir) / "packages"
+    assert not packages.exists() or list(packages.iterdir()) == []
+
+
+def test_tc_pipe_28_a_zero_hour_review_window_is_kept(tmp_data_dir):
+    store = open_store(tmp_data_dir)
+    try:
+        built = build_package(store, _spec(review_window_hours=0))
+        assert _catalog(store, built).grade_policy(built.package_version).review_window_hours == 0
+    finally:
+        store.close()
+
+
+def test_tc_pipe_28_a_refused_spec_leaves_no_data_folder(tmp_path, capsys):
+    bad = tmp_path / "bad.toml"
+    bad.write_text(SAMPLE_SPEC.read_text(encoding="utf-8").replace(
+        'package = "PS9-FORCES-01"', 'package = "../evil"'), encoding="utf-8")
+    data_dir = tmp_path / "never-made"
+    assert cli.main(["package", "build", "--data-dir", str(data_dir), "--spec", str(bad)]) == 1
+    assert not data_dir.exists()
+    capsys.readouterr()
 
 
 @pytest.mark.parametrize("changes, words", [

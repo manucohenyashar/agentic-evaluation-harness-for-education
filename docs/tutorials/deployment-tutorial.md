@@ -532,7 +532,7 @@ A **package** is everything about one test: its questions, the rubric lines and 
 * `package`: the test's name **exactly as printed on the paper** (`Assessment: PS9-FORCES-01`). Intake's right-test check compares the two, ignoring case.
 * `approved_by`: who approved the questions, keys and rubric.
 * one `[[question]]` per question, in paper order: `id`, `type` (`mcq` or `open`), `points`, `text`, `options` for multiple choice, and `model_answer`. The judges are shown the text and the model answer, so write them in full.
-* one `[[criterion]]` per rubric line: `id`, `question`, and either `key = "C"` (multiple choice) or `bands`, listed **worst to best**, an even number from 2 to 6, each with `name`, `points` and `descriptor`. The band names are the words a teacher later uses to change a mark.
+* one `[[criterion]]` per rubric line: `id`, `question`, and either `key = "C"` (multiple choice; it must be one of the question's options) or `bands`, listed **worst to best**, an even number from 2 to 6, each with `name`, `points` and `descriptor`. The band names are the words a teacher later uses to change a mark. Every question needs at least one line, and a multiple-choice question needs a key, not bands.
 * `[grades]`: the lowest total that earns each grade.
 
 Then (checked):
@@ -553,7 +553,7 @@ python -m aeh package build --data-dir ~/aeh-data --spec docs/live-tests/config/
 }
 ```
 
-Keep the `package_version` value: `aeh run` and the console's start-run need it. Building the same `package` again is refused (*"already exists. A built package is never changed"*); to correct a test, give the corrected spec a new `package` id. A spec the command cannot translate, or one the package rules refuse (for example an odd number of bands), leaves nothing behind.
+Keep the `package_version` value: `aeh run` and the console's start-run need it. Building the same `package` again is refused (*"already exists. A built package is never changed"*); to correct a test, give the corrected spec a new `package` id. Because a built package can never be changed, the command checks the whole file before writing anything, and refuses with the reason (and nothing created, not even the data folder) when, for example: a key is not one of its question's options, a question has no rubric line, a band has no `points`, a judged line sits on a multiple-choice question, or a field has the wrong type. A rule the package itself enforces (for example an odd number of bands) also leaves nothing behind.
 
 Checked: this package and a class created with `aeh cohort create` carry the six physics sample answer sheets through the real intake checks exactly as the live-test guide's table says.
 

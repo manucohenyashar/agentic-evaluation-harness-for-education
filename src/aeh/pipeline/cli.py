@@ -123,9 +123,14 @@ def _ingest_command(args: Any) -> int:
 def _package_command(args: Any) -> int:
     """`aeh package build`. Prints the built package as JSON, including the package version id
     `aeh run` and `aeh ingest` need."""
-    from .packages import build_package, read_package_spec
+    from pathlib import Path
 
-    spec = read_package_spec(args.spec)  # read before the store opens: a bad file touches nothing
+    from .packages import build_package, plan_package, read_package_spec
+
+    # Read and checked in full before the store opens, so a refused spec touches nothing, not
+    # even the data folder's skeleton.
+    spec = read_package_spec(args.spec)
+    plan_package(spec, Path(args.data_dir) / "packages")
     store = _open_store(args.data_dir)
     try:
         built = build_package(store, spec)
