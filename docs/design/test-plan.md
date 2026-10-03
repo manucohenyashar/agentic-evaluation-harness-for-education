@@ -917,6 +917,9 @@ returned exactly once and no code path exists to ask for another.
 | TC-PIPE-26 | FR-PROV-14 | Integration / 1 | Regression (blocker B1). A seeded cohort and package; `create_run` under `cloud-hosted` on the launcher's provider; then `aeh run` with a `cloud-hosted` config file, the drive stubbed | The run is created with `provider_config.retention_verified` = the panel's build ids and no network request; `aeh run` exits 0 and drives with an `OpenRouterProvider` (before: `RetentionPolicyError ... given no provider able to verify zero-retention routing`). With `HARNESS_DECISION_ENGINE = "jev"` the decision model is answered by its own provider: `aeh run` exits 1 and **no** run row exists (before the fix the completion provider "confirmed" the Jev build, and a `running` run was left behind). The console's `start_run_in_background` drives with the same OpenRouter provider and passes a `decision_provider` | Exact + census | P0 |
 | TC-ORCH-59 | FR-CONF-08, FR-INGEST-24 | Unit / 1 | Live-test blocker B3. `aeh.orch.cohorts.create_cohort` with a consent class and roster; refusals: an unknown consent class, ids `../evil`, `a/b`, `class.`, `Class-9A` (upper case), `nul`, `com1.x`; an empty roster; references with a space and with a zero-width space; a repeated reference; a second `create_cohort` for the same id with `real`; a cohort file that already holds another cohort (a case-insensitive file system); a roster insert that fails after the cohort insert; a second create that loses inside the write; `add_to_roster` with a repeat, then new ids, then for a missing cohort; `cohort_summary` for a missing id; a `dev-ci` config resolved against a `real` and a `synthetic` created cohort | The cohort row and roster are written in one transaction and `Orchestrator.cohort_ref` reads the stored class. Every refusal raises `CohortSetupError` saying *Nothing was written*, and no cohort file exists afterwards (nor `evil.sqlite`). The existing cohort keeps its class and roster; the shared file keeps only its own cohort; the failed roster insert leaves no cohort row; the losing create says *already exists … same moment*. A repeat in `add_to_roster` adds nothing; the missing-id summary creates no file. `real` raises `ConsentGateError`, `synthetic` resolves | Exact + census | P0 |
 | TC-ORCH-60 | FR-CONF-08 | Unit / 1 | Live-test blocker B3. `aeh.pipeline.rosters.read_roster_file` over: one ID per line (LF and CRLF), a CSV with BOM and `student_ref` first, `student_ref` not first with a blank name cell, a quoted name with a comma, comments and spaces, an empty file; and over `name,id` (no `student_ref`), `S1,Ann`, a single column starting `id`, a `student_ref` row with the cell empty. Then `aeh cohort create`, `add-students`, `show`, a second `create`, a `create` with id `Class-9A` and with a bad roster into a data folder that does not exist, a `create` without `--consent`, and a `create` with `--consent real` | Readable files give exactly the listed IDs (none dropped, none invented). The four ambiguous files raise `CohortSetupError` naming the problem and line. The commands exit 0 with the cohort as JSON (roster sizes 2, 3, 3); the second `create` exits 1 naming *already exists*; the bad id and bad file exit 1 and the data folder is never created; no `--consent` is an argument error; `real` prints the `HARNESS_ALLOW_REMOTE_REAL_WORK` reminder | Exact | P1 |
+| TC-PIPE-27 | FR-PKG-01, FR-PKG-17, FR-PKG-16 | Unit / 1 | Live-test blocker B5. `aeh.pipeline.packages.build_package` over `docs/live-tests/config/ps9-forces-01.package.toml`, then the same through `aeh package build`, twice | Version `PS9-FORCES-01@…`; 6 questions in paper order with their text, options and model answer (`reference_solution`); 6 criteria (C4 judged with an evidence type, C1 mcq); key for C5 is `B`; grades A–F; a further `add_criterion` on the version is refused (published). The command prints the version as JSON and exits 0; the second build exits 1 naming *already exists* | Exact | P0 |
+| TC-PIPE-28 | FR-PKG-01, FR-PKG-06 | Unit / 1 | Live-test blocker B5. Specs with package id `../evil` and `NUL`, no `approved_by`, no questions, a criterion naming an unknown question, a key on a question without options, a criterion with neither key nor bands; the sample built, then `ps9-forces-01`; a judged line with three bands (M-PKG refuses an odd count), then the corrected spec under the same id | Each untranslatable spec raises `PackageSpecError` and leaves no package file; the lower-case twin is refused naming *ignoring case*; the odd band set raises M-PKG's error, leaves no package file, and the corrected spec then builds | Exact + census | P0 |
+| TC-PIPE-29 | FR-INGEST-24, FR-INGEST-25 | Integration / 2 | Live-test blockers B3 + B5 together. The sample physics package built from its spec; a `synthetic` cohort created with the six sheets' student IDs; the test paper ingested as the assessment; the six physics answer sheets ingested through the real `Ingestor` (V0–V4), the page reader stood in by the sample script's scripted transcripts; then a `dev-ci` run created and enumerated | Each sheet's intake status equals `verify_sample_materials.EXPECTED_STATUS` (three `ok`, two `incomplete`, one `unmatched_assessment`); the run is created and enumerates units | Exact | P0 |
 
 ### 5.3 Module: Persistence Substrate (`M-STORE`)
 
@@ -4523,12 +4526,12 @@ python .claude/skills/create-test-plan/scripts/check_traceability.py --design do
 | NFR-STORE-04 | TC-STORE-04, TC-STORE-06 | Migration, Art | P1 |
 | NFR-STORE-05 | TC-STORE-23 — **known gap**, see §7.4 (Q-08) | n/a | — |
 | NFR-STORE-06 | TC-STORE-20, PERF-09 | Performance | P2 |
-| FR-PKG-01 | TC-PKG-01, TC-PKG-28, TC-PKG-29, TC-E2E-01 | Integration, Observability, E2E | P0 |
+| FR-PKG-01 | TC-PKG-01, TC-PKG-28, TC-PKG-29, TC-E2E-01, TC-PIPE-27, TC-PIPE-28 | Integration, Observability, E2E | P0 |
 | FR-PKG-02 | TC-PKG-02, TC-PKG-28, TC-PKG-30 | Integration, Observability | P0 |
 | FR-PKG-03 | TC-PKG-03, TC-PKG-09, TC-PKG-27 | Integration, Art | P0 |
 | FR-PKG-04 | TC-PKG-04 | Integration | P1 |
 | FR-PKG-05 | TC-PKG-05, TC-PKG-06, FUZZ-06 | Unit, Property | P0 |
-| FR-PKG-06 | TC-PKG-07, TC-PKG-08, TC-PKG-27 | Unit, Art | P0 |
+| FR-PKG-06 | TC-PKG-07, TC-PKG-08, TC-PKG-27, TC-PIPE-28 | Unit, Art | P0 |
 | FR-PKG-07 | TC-PKG-11 | Unit | P1 |
 | FR-PKG-08 | TC-PKG-10 | Unit, Integration | P0 |
 | FR-PKG-09 | TC-PKG-10, TC-STATS-05 | Unit, Integration | P0 |
@@ -4538,8 +4541,8 @@ python .claude/skills/create-test-plan/scripts/check_traceability.py --design do
 | FR-PKG-13 | TC-PKG-22 | Integration | P0 |
 | FR-PKG-14 | TC-PKG-14 | Unit | P0 |
 | FR-PKG-15 | TC-PKG-15 | Unit | P1 |
-| FR-PKG-16 | TC-PKG-16 | Unit | P0 |
-| FR-PKG-17 | TC-PKG-17 | Integration | P0 |
+| FR-PKG-16 | TC-PKG-16, TC-PIPE-27 | Unit | P0 |
+| FR-PKG-17 | TC-PKG-17, TC-PIPE-27 | Integration | P0 |
 | FR-PKG-18 | TC-PKG-18 | Integration | P0 |
 | FR-PKG-19 | TC-PKG-19 | Integration | P1 |
 | FR-PKG-20 | TC-PKG-20 | Integration | P1 |
@@ -4573,7 +4576,7 @@ python .claude/skills/create-test-plan/scripts/check_traceability.py --design do
 | FR-INGEST-22 | TC-INGEST-24 | Integration | P0 |
 | FR-INGEST-23 | TC-INGEST-26 | Integration | P0 |
 | FR-INGEST-24 | TC-INGEST-27, TC-ORCH-59 | Integration, Unit | P0 |
-| FR-INGEST-25 | TC-INGEST-25, ADV-07 | Integration, Adversarial | P0 |
+| FR-INGEST-25 | TC-INGEST-25, ADV-07, TC-PIPE-29 | Integration, Adversarial | P0 |
 | FR-INGEST-26 | TC-INGEST-25, TC-INGEST-39 | Integration | P0 |
 | FR-INGEST-27 | TC-INGEST-25 | Integration | P0 |
 | FR-INGEST-28 | TC-INGEST-28, TC-CONSOLE-28 | Integration | P0 |

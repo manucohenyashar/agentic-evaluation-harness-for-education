@@ -525,6 +525,38 @@ python -m aeh cohort create --data-dir ~/aeh-data --cohort class-9a --consent sy
 
 Not yet recorded: who created the class. Only the time is stored.
 
+### 8.2 Build a package (the test, its rubric and keys)
+
+A **package** is everything about one test: its questions, the rubric lines and their bands, the multiple-choice keys and the grade boundaries. Once built it is published and can never be changed. Write it as a TOML file; [`docs/live-tests/config/ps9-forces-01.package.toml`](../live-tests/config/ps9-forces-01.package.toml) is a complete example, the sample physics test. In short:
+
+* `package`: the test's name **exactly as printed on the paper** (`Assessment: PS9-FORCES-01`). Intake's right-test check compares the two, ignoring case.
+* `approved_by`: who approved the questions, keys and rubric.
+* one `[[question]]` per question, in paper order: `id`, `type` (`mcq` or `open`), `points`, `text`, `options` for multiple choice, and `model_answer`. The judges are shown the text and the model answer, so write them in full.
+* one `[[criterion]]` per rubric line: `id`, `question`, and either `key = "C"` (multiple choice) or `bands`, listed **worst to best**, an even number from 2 to 6, each with `name`, `points` and `descriptor`. The band names are the words a teacher later uses to change a mark.
+* `[grades]`: the lowest total that earns each grade.
+
+Then (checked):
+
+```bash
+python -m aeh package build --data-dir ~/aeh-data --spec docs/live-tests/config/ps9-forces-01.package.toml
+```
+
+```json
+{
+  "answer_keys": 4,
+  "approved_by": "Sample-materials teacher",
+  "criteria": 6,
+  "grades": ["A", "B", "C", "D", "F"],
+  "package_id": "PS9-FORCES-01",
+  "package_version": "PS9-FORCES-01@8828fa5b16da",
+  "questions": 6
+}
+```
+
+Keep the `package_version` value: `aeh run` and the console's start-run need it. Building the same `package` again is refused (*"already exists. A built package is never changed"*); to correct a test, give the corrected spec a new `package` id. A spec the command cannot translate, or one the package rules refuse (for example an odd number of bands), leaves nothing behind.
+
+Checked: this package and a class created with `aeh cohort create` carry the six physics sample answer sheets through the real intake checks exactly as the live-test guide's table says.
+
 ## 9. Practice first: the rehearsal folder
 
 The practice data lets you start the console and see every page with no money spent and nothing sent anywhere. Run it once:

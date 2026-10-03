@@ -71,7 +71,31 @@ def _build_parser() -> Any:
     show = cohort_sub.add_parser("show", help="print a cohort's consent class and roster size")
     show.add_argument("--data-dir", required=True)
     show.add_argument("--cohort", required=True)
+
+    # Live-test blocker B5: the operator's way to build and publish a package from a spec.
+    package_parser = sub.add_parser(
+        "package", help="build and publish a package (a test's questions, rubric and keys)")
+    package_sub = package_parser.add_subparsers(dest="package_command", required=True)
+    build = package_sub.add_parser(
+        "build", help="build and publish a package from a TOML spec; it can never be changed")
+    build.add_argument("--data-dir", required=True)
+    build.add_argument("--spec", required=True, help="the package spec (TOML)")
     return parser
+
+
+def _package_command(args: Any) -> int:
+    """`aeh package build`. Prints the built package as JSON, including the package version id
+    `aeh run` and `aeh ingest` need."""
+    from .packages import build_package, read_package_spec
+
+    spec = read_package_spec(args.spec)  # read before the store opens: a bad file touches nothing
+    store = _open_store(args.data_dir)
+    try:
+        built = build_package(store, spec)
+    finally:
+        store.close()
+    print(json.dumps(_as_json(built), indent=2, sort_keys=True))
+    return EXIT_OK
 
 
 def _consent_classes() -> tuple[str, ...]:
@@ -128,6 +152,8 @@ def main(argv: "Sequence[str] | None" = None) -> int:
     try:
         if args.command == "cohort":
             return _cohort_command(args)
+        if args.command == "package":
+            return _package_command(args)
         if args.command == "recover":
             store = _open_store(args.data_dir)
             try:
