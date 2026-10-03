@@ -216,6 +216,65 @@ def test_tc_pipe_26_aeh_run_binds_the_provider_before_the_run_exists(
     assert isinstance(driven["provider"]._inner, OpenRouterProvider)
 
 
+def test_tc_pipe_26_a_decision_model_is_answered_by_its_own_provider(tmp_data_dir, tmp_path,
+                                                                   monkeypatch):
+    """With the Jev engine on, the run-start gate must ask the decision provider about the
+    decision model. Before the decision provider was bound, the gate fell back to the
+    completion provider, whose enforcement answer "confirmed" a model it never dispatches to:
+    the run was created and started, then failed, left `running`, with a retention record
+    naming the Jev build. Now the refusal comes at `create_run` and nothing is created."""
+    pytest.importorskip("typesafe_sdk")
+    from aeh.pipeline import cli
+
+    for key in ("HARNESS_FIXTURE_DIR", "HARNESS_PROFILE"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-dummy")
+    store = open_store(tmp_data_dir)
+    try:
+        seed_cohort(store, ("S001",))
+        version = seed_package(store, _CRITERIA)
+    finally:
+        store.close()
+    config = tmp_path / "cloud-jev.toml"
+    config.write_text(_CLOUD_TOML.replace(
+        'HARNESS_DECISION_ENGINE = "off"',
+        'HARNESS_DECISION_ENGINE = "jev"\nHARNESS_JEV_BUILD = "openrouter/typesafe/jev-1.13@20260917"'),
+        encoding="utf-8")
+    code = cli.main(["run", "--data-dir", str(tmp_data_dir), "--cohort", ORCH_COHORT_ID,
+                     "--package-version", version, "--config", str(config)])
+    assert code == 1
+    store = open_store(tmp_data_dir)
+    try:
+        assert list(Orchestrator(store).runs()) == [], (
+            "TC-PIPE-26: a refused run must leave nothing behind")
+    finally:
+        store.close()
+
+
+def test_tc_pipe_26_the_console_start_binds_the_launchers_provider(tmp_data_dir, monkeypatch):
+    """The console's start-run builds the same provider `aeh run` does and hands it to the
+    worker's drive."""
+    from aeh.pipeline import background
+
+    monkeypatch.delenv("HARNESS_FIXTURE_DIR", raising=False)
+    store = open_store(tmp_data_dir)
+    try:
+        seed_cohort(store, ("S001",))
+        version = seed_package(store, _CRITERIA)
+        driven = {}
+        monkeypatch.setattr(background, "run_to_completion",
+                            lambda store, run_id, **kw: driven.update(kw))
+        _run_id, thread = background.start_run_in_background(
+            store, cohort_id=ORCH_COHORT_ID, package_version_id=version,
+            config=hosted_cfg("dev-ci", panel=HOSTED_PANEL_3))
+        thread.join(timeout=30)
+    finally:
+        store.close()
+    assert isinstance(driven["provider"]._inner, OpenRouterProvider)
+    assert driven["provider"]._inner._routing() == ZERO_RETENTION_ROUTING
+    assert "decision_provider" in driven
+
+
 _CLOUD_TOML = """
 HARNESS_PROFILE = "cloud-hosted"
 prompt_template_v = "judge-prompt/2"

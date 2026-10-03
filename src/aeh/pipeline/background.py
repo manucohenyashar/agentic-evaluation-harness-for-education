@@ -8,6 +8,7 @@ from aeh.orch import Orchestrator
 
 from .driver import run_to_completion
 from .runtime import _open_store, _provider_for
+from .decision_engine import _decision_provider_for_run
 
 
 # --- completion hooks -----------------------------------------------------------------------
@@ -74,9 +75,14 @@ def start_run_in_background(
 
     run_config = resolve_run_config(dict(config), Orchestrator(store).cohort_ref(cohort_id))
     # Built before the run exists and bound to every orchestrator that touches it, exactly as
-    # `aeh run` does: `create_run`'s retention gate and `start`'s estimate both ask it.
+    # `aeh run` does: `create_run`'s retention gate asks it.
     bound = provider if provider is not None else _provider_for(run_config)
-    orchestrator = Orchestrator(store, provider=bound)
+    # The decision provider too, so the retention gate asks it about the decision model rather
+    # than falling back to the completion provider (see `cli._run_command`).
+    if "decision_provider" not in drive_keywords:
+        drive_keywords["decision_provider"] = _decision_provider_for_run(run_config, bound, None)
+    orchestrator = Orchestrator(store, provider=bound,
+                                decision_provider=drive_keywords["decision_provider"])
     if run_id is None:
         existing = [
             handle for handle in orchestrator.runs()
@@ -106,7 +112,8 @@ def start_run_in_background(
     def _drive() -> None:
         worker_store = _open_store(data_dir)
         try:
-            worker = Orchestrator(worker_store, provider=bound)
+            worker = Orchestrator(worker_store, provider=bound,
+                                  decision_provider=drive_keywords["decision_provider"])
             try:
                 if worker.run_handle(started).status == "pending":
                     worker.start(started)
@@ -153,8 +160,18 @@ def resume_runs_in_background(
             continue
         if handle.backend_profile and resolved.backend_profile != handle.backend_profile:
             continue
-        started.append(start_run_in_background(
-            store, cohort_id=handle.cohort_id, package_version_id=handle.package_version_id,
-            config=config, run_id=handle.run_id, provider=provider, allow_running=True,
-            **drive_keywords))
+        try:
+            started.append(start_run_in_background(
+                store, cohort_id=handle.cohort_id, package_version_id=handle.package_version_id,
+                config=config, run_id=handle.run_id, provider=provider, allow_running=True,
+                **drive_keywords))
+        except Exception as error:  # noqa: BLE001 - recorded on the run; the console still starts
+            # Building a run's providers now happens here, before its worker exists (a
+            # malformed retry knob raises in `RetryPolicy.from_environment`). That failure
+            # belongs to the run, as it did when it was raised inside the worker, and must not
+            # stop the console from serving every other run.
+            try:
+                orchestrator.record_pause_reason(handle.run_id, error)
+            except Exception:  # noqa: BLE001 - a run that cannot record stays for recover
+                pass
     return started

@@ -18,6 +18,7 @@ from .results import RunResult
 from .hooks import _FAULT_PREFIX
 from .driver import recover, run_to_completion
 from .runtime import _describe_provider, _load_config_file, _open_store, _provider_for
+from .decision_engine import _decision_provider_for_run
 from .background import resume_runs_in_background
 
 
@@ -88,6 +89,11 @@ def main(argv: "Sequence[str] | None" = None) -> int:
             # worker this server owns, once `recover` has reclaimed its leases.
             resume_runs_in_background(store, config=config)
             server = serve_console(store, cfg=config)
+            if config.get("HARNESS_PROFILE"):
+                # Which backend a run started from this console will call (seam 4): the same
+                # line `aeh run` prints, so an operator can see a stray HARNESS_FIXTURE_DIR.
+                print("provider for runs started here: " + _describe_provider(
+                    _provider_for({"backend_profile": config["HARNESS_PROFILE"]})))
             # `serve_console` BINDS and returns: the accept loop runs on a daemon thread
             # (`console.py`), so returning here would end the process and take the thread with
             # it — the socket would close before anything could connect, and #365's "the
@@ -152,13 +158,15 @@ def _run_command(store: Any, args: Any, config: Mapping[str, Any]) -> RunResult:
     # `'real'` and fail-closed, so passing the bare id would refuse every synthetic cohort
     # against a remote backend — the gate firing on an answer nobody looked up.
     run_config = resolve_run_config(dict(config), Orchestrator(store).cohort_ref(args.cohort))
-    # The provider is built BEFORE the run exists and bound to the orchestrator that creates
-    # and starts it. A `cloud-hosted` run's retention gate runs inside `create_run` and asks
-    # this provider (`FR-PROV-14`); without one it refused every hosted run as "given no
-    # provider able to verify zero-retention routing" (live-test blocker B1). `start` prices
-    # the run's estimate through it too (`FR-ORCH-15`).
+    # The providers are built BEFORE the run exists and bound to the orchestrator that creates
+    # it. A `cloud-hosted` run's retention gate runs inside `create_run` and asks them
+    # (`FR-PROV-14`); without one it refused every hosted run as "given no provider able to
+    # verify zero-retention routing" (live-test blocker B1). The decision provider is bound
+    # too, so the gate asks IT about the decision model: left unbound, the gate falls back to
+    # the completion provider, which would answer for a model it never dispatches to.
     provider = _provider_for(run_config)
-    orchestrator = Orchestrator(store, provider=provider)
+    decision_provider = _decision_provider_for_run(run_config, provider, None)
+    orchestrator = Orchestrator(store, provider=provider, decision_provider=decision_provider)
     if existing:
         # Latest by start time. `run_id` is `run-<uuid4 hex>` and `select_all_runs` orders by
         # it, so "the last row" is an arbitrary run among several for the same cohort and
@@ -203,7 +211,8 @@ def _run_command(store: Any, args: Any, config: Mapping[str, Any]) -> RunResult:
         print(summary())
     print(f"provider: {_describe_provider(provider)}")
     return run_to_completion(
-        store, run_id, provider=provider, run_config=run_config)
+        store, run_id, provider=provider, run_config=run_config,
+        decision_provider=decision_provider)
 
 
 def _as_json(value: Any) -> Any:

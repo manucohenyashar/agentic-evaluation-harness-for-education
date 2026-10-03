@@ -387,7 +387,7 @@ build_id = "openrouter/qwen/qwen3-30b-a3b@2026-06-01"
 
 What each part means, and the rules (all checked unless said):
 
-* **`HARNESS_COST_CEILING`** is required for both profiles. Without it: *"HARNESS_COST_CEILING is required for backend_profile 'cloud-hosted'"*. It must be a whole or decimal number, not negative. `5` is plenty for ten sample answer sheets. The environment can override it.
+* **`HARNESS_COST_CEILING`** is required for both profiles. **It counts estimates, not the bill.** Each model call is counted at the system's fixed price sheet before it is sent: about $0.007 a call with the default settings, while the real calls in 7.6 cost about $0.0001. So a ceiling of `5` stops a run after roughly 700 model calls, whatever OpenRouter actually charges; raise it if a run pauses on the ceiling, and keep OpenRouter's own spending limit (7.2) as the real stop. Without it: *"HARNESS_COST_CEILING is required for backend_profile 'cloud-hosted'"*. It must be a whole or decimal number, not negative. `5` is plenty for ten sample answer sheets. The environment can override it.
 * **`retention_setting`** is required for `cloud-hosted` only. It must be `provider-default` or `zero-retention`. It *records* your choice. It does **not** make the privacy check pass (see 7.6). Leaving it out is refused: *"retention_setting is required for backend_profile 'cloud-hosted'"*.
 * **Model names** are written `openrouter/<vendor>/<model>@<date or version>`. The `@...` part is required: it pins the exact version. A moving tag such as `@latest` is refused. Do **not** give these a `quantization` line (the provider owns it).
 * **Do the models exist?** Yes, for the two names in the shipped files: both answered real calls on 2026-10-03 (checked). If you choose other models, confirm each one on openrouter.ai/models first.
@@ -525,7 +525,7 @@ All are optional. The default is the production value. They exist so a slower co
 | `OPENROUTER_API_KEY` | Your key (never in a file) | none |
 | `OPENROUTER_BASE_URL` | OpenRouter address | `https://openrouter.ai/api/v1` |
 | `HARNESS_FIXTURE_DIR` | Set it and `dev-ci` replays recordings from this folder instead of calling OpenRouter | not set |
-| `HARNESS_PIPE_UNIT_TOKENS_IN` / `HARNESS_PIPE_UNIT_TOKENS_OUT` | Tokens one model call is priced at, before it is sent, against the cost ceiling. The real cost is what OpenRouter reports | 4000 / 1500 |
+| `HARNESS_PIPE_UNIT_TOKENS_IN` / `HARNESS_PIPE_UNIT_TOKENS_OUT` | Tokens one model call is priced at, before it is sent, against the cost ceiling. The run's spend is the sum of these estimates, not OpenRouter's bill (see 7.3) | 4000 / 1500 |
 | `HARNESS_RETRY_MAX` | Tries per call (first try plus retries) | 3 |
 | `HARNESS_BACKOFF_BASE_MS` | Wait before the first retry; doubles after | 250 |
 | `HARNESS_RETRY_AFTER_CEILING_S` | A "come back in N seconds" above this counts as unusable | 120 |

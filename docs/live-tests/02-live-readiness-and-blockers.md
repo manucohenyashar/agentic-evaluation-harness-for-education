@@ -144,7 +144,7 @@ The right-test gate (V4) compares the words in a student's answers with the word
 
 These are descriptions for the issue backlog (this repository creates issues only through `/plan-to-issues`, so none were created here). Each is written as a goal that can be checked.
 
-1. **Decide the privacy answer (B1/B6).** *Goal:* a written decision on how zero-retention is confirmed for OpenRouter, and who approves it. *Done: enforced per request (see B6).*
+1. **Decide the privacy answer (B1/B6).** *Goal:* a written decision on how zero-retention is confirmed for OpenRouter, and who approves it. *The code now enforces zero retention per request (see B6). The written decision, and who approves it, is still for the privacy owner: the code cannot make that call.*
 2. **One real OpenRouter call (B2).** *Goal:* a recorded result showing the provider's request is accepted, or the translation needed. *Done (see B2): real calls through the provider succeeded for a one-field call, a three-field judge-style call, and a page image to the vision model.*
 3. **Operator cohort commands (B3).** *Goal:* create a cohort with a consent class and load a roster, from the command line or the console, with the change in the audit trail.
 4. **Intake worker (B4).** *Goal:* after an upload, the paper is read, checked, and appears in the preflight and quarantine pages, with no engineer involved.

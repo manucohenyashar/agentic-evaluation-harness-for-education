@@ -567,8 +567,18 @@ class OpenRouterProvider(_BaseLiveProvider):
         `qwen/qwen3-vl-8b-instruct` (Parasail) both answered under these preferences."""
         seams.pop("zero_data_retention", None)
         seams.pop("retention_answers", None)
-        return cls(zero_data_retention=True,
-                   retention_answers=lambda build: ZERO_RETENTION_ENFORCED_ANSWER, **seams)
+        provider = cls(zero_data_retention=True, **seams)
+        provider._retention_answers = provider._answer_from_routing
+        return provider
+
+    def _answer_from_routing(self, build: str) -> str:
+        """The retention answer `enforcing_zero_retention` gives: confirmed while, and only
+        while, this provider's own requests carry `ZERO_RETENTION_ROUTING`.
+
+        It speaks for the models THIS provider dispatches. A decision model is answered by its
+        own provider: the launcher binds that provider before the run is created, so the
+        orchestrator never falls back to this one for it (`_verify_retention_at_start`)."""
+        return ZERO_RETENTION_ENFORCED_ANSWER if self._routing() else "unconfirmed"
 
     def _routing(self) -> dict[str, Any] | None:
         """`ZERO_RETENTION_ROUTING` on every request while `zero_data_retention` is on."""
