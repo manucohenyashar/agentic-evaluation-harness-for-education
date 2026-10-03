@@ -7,7 +7,7 @@ from typing import Any, Mapping
 from aeh.orch import Orchestrator
 
 from .driver import run_to_completion
-from .runtime import _open_store, _provider_for
+from .runtime import _escalation_judge_refs, _open_store, _provider_for
 from .decision_engine import _decision_provider_for_run
 
 
@@ -81,6 +81,10 @@ def start_run_in_background(
     # than falling back to the completion provider (see `cli._run_command`).
     if "decision_provider" not in drive_keywords:
         drive_keywords["decision_provider"] = _decision_provider_for_run(run_config, bound, None)
+    # The escalation seats' real models, checked before the run exists (see `cli._run_command`).
+    if "judge_refs" not in drive_keywords:
+        drive_keywords["judge_refs"] = _escalation_judge_refs(
+            config, run_config, Orchestrator(store).cohort_ref(cohort_id), bound)
     orchestrator = Orchestrator(store, provider=bound,
                                 decision_provider=drive_keywords["decision_provider"])
     if run_id is None:

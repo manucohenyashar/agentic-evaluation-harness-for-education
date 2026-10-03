@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 
 @dataclass(frozen=True)
@@ -42,6 +42,15 @@ class IntakeResult:
     read: int
     quarantined: int
     skipped: int
+    # Submissions an earlier, cut-off read left behind, parked in quarantine before this read.
+    interrupted: tuple[str, ...] = ()
+
+    @property
+    def nothing_readable(self) -> bool:
+        """Every sheet read this time stopped before its student was looked for. One unreadable
+        scan is a scan; all of them is the page reader (a key, credit, or model problem)."""
+        attempted = [o for o in self.sheets if o.submission_id]
+        return bool(attempted) and all(o.gates.get("v3") == "not_reached" for o in attempted)
 
 
 def answer_sheet_files(paths: Sequence[str | Path]) -> tuple[Path, ...]:
@@ -66,14 +75,16 @@ def answer_sheet_files(paths: Sequence[str | Path]) -> tuple[Path, ...]:
 
 def ingest_files(store: Any, run_config: Any, cohort_id: str, package_version: str, *,
                  assessment: str | Path | None, sheets: Sequence[Path],
-                 provider: Any = None) -> IntakeResult:
+                 provider: Any = None,
+                 on_sheet: Callable[[SheetOutcome], None] | None = None) -> IntakeResult:
     """Read the test paper (unless the cohort already holds it) and every answer sheet.
 
     One PDF is one student's paper. A sheet whose scan was already read into this cohort is
     skipped, not read again: `ingest_submission` mints a submission per call, and two for one
     paper would grade the student twice. A sheet the checks refuse is quarantined and the next
     is read (fail the unit, never the run); the cohort breaker (too many wrong-test papers)
-    stops the command, because it halts the cohort.
+    stops the command, because it halts the cohort. `on_sheet` is told of each sheet as it is
+    done, so a long read shows its progress.
     """
     from aeh.conf import hardware_policy_for
     from aeh.ingest import (
@@ -84,6 +95,7 @@ def ingest_files(store: Any, run_config: Any, cohort_id: str, package_version: s
         PypdfSanitizer,
         ResidencySlot,
         has_assessment_document,
+        park_interrupted_submissions,
         submitted_sources,
     )
     from aeh.orch import default_package_id_for
@@ -109,7 +121,9 @@ def ingest_files(store: Any, run_config: Any, cohort_id: str, package_version: s
                         package_catalog=catalog, package_version=package_version)
 
     if has_assessment_document(handle):
-        assessment_note = "already read"
+        # Review finding: a different test paper given now is not read; say so.
+        assessment_note = ("already read" if assessment is None else
+                           f"already read; {Path(assessment).name} was not read again")
     elif assessment is None:
         raise ValueError("this cohort holds no test paper yet: pass --assessment <test-paper.pdf> "
                          "(the right-test check compares each paper with it).")
@@ -120,32 +134,45 @@ def ingest_files(store: Any, run_config: Any, cohort_id: str, package_version: s
                                  filenames={paper: Path(assessment).name})
         assessment_note = f"read from {Path(assessment).name}"
 
+    interrupted = park_interrupted_submissions(handle)
     done = submitted_sources(handle)
     outcomes: list[SheetOutcome] = []
-    for path in sheets:
+
+    def record(outcome: SheetOutcome) -> None:
+        outcomes.append(outcome)
+        if on_sheet is not None:
+            on_sheet(outcome)
+
+    for index, path in enumerate(sheets):
         blob = blobs.put(path.read_bytes())
         if blob in done:
-            outcomes.append(SheetOutcome(file=path.name, status="skipped",
-                                         detail="already read into this cohort"))
+            record(SheetOutcome(file=path.name, status="skipped",
+                                detail="already read into this cohort"))
             continue
         try:
             report = ingestor.ingest_submission(
                 [blob], cohort_id, package_version, order_hint=[blob],
                 filenames={blob: path.name}, package_catalog=catalog)
         except IngestCohortBreakerTripped as error:
-            outcomes.append(SheetOutcome(file=path.name, status="stopped", detail=str(error)))
+            record(SheetOutcome(file=path.name, status="stopped", detail=str(error)))
+            for rest in sheets[index + 1:]:
+                record(SheetOutcome(file=rest.name, status="not_read",
+                                    detail="the cohort was stopped before this sheet"))
             break
         except IngestError as error:
-            outcomes.append(SheetOutcome(file=path.name, status="error",
-                                         detail=f"{type(error).__name__}: {error}"))
+            record(SheetOutcome(file=path.name, status="error",
+                                detail=f"{type(error).__name__}: {error}"))
             continue
         done = done | {blob}
-        outcomes.append(SheetOutcome(file=path.name, status=report.ingest_status,
-                                     submission_id=report.submission_id,
-                                     gates=dict(report.gates)))
+        findings = "; ".join(
+            str(f.get("finding")) for f in (report.detail or {}).get("findings", ())
+            if isinstance(f, dict) and f.get("finding"))
+        record(SheetOutcome(file=path.name, status=report.ingest_status,
+                            submission_id=report.submission_id, gates=dict(report.gates),
+                            detail=findings))
     read = sum(1 for o in outcomes if o.submission_id)
     return IntakeResult(
         cohort_id=cohort_id, package_version=package_version, assessment=assessment_note,
         sheets=tuple(outcomes), read=read,
         quarantined=sum(1 for o in outcomes if o.submission_id and o.status != "ok"),
-        skipped=sum(1 for o in outcomes if o.status == "skipped"))
+        skipped=sum(1 for o in outcomes if o.status == "skipped"), interrupted=interrupted)

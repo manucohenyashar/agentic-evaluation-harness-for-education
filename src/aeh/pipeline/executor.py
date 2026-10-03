@@ -66,6 +66,19 @@ class ProductionStageExecutor:
 
     # -- model identities ----------------------------------------------------------------
 
+    def seat_count(self) -> int | None:
+        """How many judge seats a cell can fill with a real model: the panel, then each
+        `escalation-arm-<k>` the caller gave a model for, in order. None when every seat can be
+        served, which is any provider but a live one (a recording derives its seats)."""
+        from .runtime import _is_live
+
+        if not _is_live(self._provider):
+            return None
+        seats = len(self._panel)
+        while f"{ESCALATION_ARM_PREFIX}-{seats + 1}" in self._judge_refs:
+            seats += 1
+        return seats
+
     def judge_for(self, build_id: str) -> Any:
         """The `ModelRef` for one panel arm: a panel member, an override, or a derived escalation
         arm.
@@ -88,6 +101,17 @@ class ProductionStageExecutor:
             raise CompositionFault(
                 f"score unit names judge {build_id!r}, which is neither a panel arm "
                 f"({sorted(self._panel)}) nor an {ESCALATION_ARM_PREFIX}-<k> extension arm"
+            )
+        from .runtime import ESCALATION_JUDGES_KEY, _is_live
+
+        if _is_live(self._provider):
+            # A derived name is a ledger seat, not a model: sent to OpenRouter or a local
+            # server it is an unknown model and the call fails. `aeh run` refuses a live run
+            # without enough real models before it starts, so reaching here is a defect.
+            raise CompositionFault(
+                f"score unit names judge {build_id!r}, an escalation seat with no real model "
+                f"behind it; a live run needs one [[profiles.<name>.{ESCALATION_JUDGES_KEY}]] "
+                f"table per seat past the panel"
             )
         first = self._panel[next(iter(self._panel))]
         return replace(first, build_id=str(build_id))

@@ -216,7 +216,7 @@ def plan_package(spec: Mapping[str, Any], packages_dir: Path) -> PackagePlan:
                 raise _fail(f"{where}: key {stray} is not among question {qid!r}'s options "
                             f"{option_ids}.")
             criteria.append({"id": cid, "question": qid, "kind": "mcq", "key": list(key_ids),
-                             "points": _number(table.get("points", 1), f"{where}: 'points'"),
+                             "max_points": _number(table.get("points", 1), f"{where}: 'points'"),
                              "options": [(o["option_id"], o["label"])
                                          for o in question["options"]]})
             continue
@@ -236,7 +236,7 @@ def plan_package(spec: Mapping[str, Any], packages_dir: Path) -> PackagePlan:
                 raise _fail(f"{bwhere}: 'points' is required (bands are listed worst first, "
                             f"and the points say so).")
             translated.append((ordinal, _text(band, "name", bwhere),
-                               _number(band["points"], f"{bwhere}: 'points'"),
+                               _number(band.get("points"), f"{bwhere}: 'points'"),
                                _text(band, "descriptor", bwhere, required=False)))
         scoring = _text(table, "scoring", where, required=False) or "holistic"
         if scoring not in SCORING_MODELS:
@@ -312,10 +312,10 @@ def build_package(store: Any, spec: Mapping[str, Any]) -> BuiltPackage:
         for c in plan.criteria:
             if c["kind"] == "mcq":
                 catalog.add_criterion(version, c["id"], question_id=c["question"], kind="mcq",
-                                      max_points=c["points"], scoring_model="atomic",
+                                      max_points=c["max_points"], scoring_model="atomic",
                                       band_count=2)
                 catalog.add_band(version, c["id"], 0, "incorrect", 0.0)
-                catalog.add_band(version, c["id"], 1, "correct", c["points"])
+                catalog.add_band(version, c["id"], 1, "correct", c["max_points"])
                 catalog.set_mcq_options(version, c["id"], c["options"])
                 catalog.set_answer_key(version, c["id"], c["key"])
                 continue

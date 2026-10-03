@@ -569,10 +569,52 @@ python -m aeh ingest --data-dir ~/aeh-data --cohort class-9a \
 
 It prints the provider (`provider: OpenRouter at ... (zero data retention enforced)` under `dev-ci`), one line per sheet, then the whole result. Each sheet is read by the page-reading model in the configuration and goes through the five checks; a sheet that fails one waits in quarantine for the operator (the operating tutorial, Phase 2). Checked with a stand-in for OpenRouter over the six physics sample sheets: three `ok`, two `incomplete` (a doubled mark; no name), one `unmatched_assessment` (the wrong test). **Not checked: a real model reading real pages**; that is what the first live run shows.
 
-* Running it again over the same folder skips every sheet already read (`skipped ... already read into this cohort`), so a paper is never counted twice. Add new sheets to the folder and run it again.
+* Running it again over the same folder skips every sheet already read (`skipped ... already read into this cohort`), so a paper is never graded twice. Add new sheets to the folder and run it again. A sheet that could not be read at all (status `unreadable`) *is* read again on a re-run, and each failed try leaves one more quarantined record in S8 to close as `unresolvable`; none of those is ever graded.
+* Stopping it with Ctrl-C is safe. The next `aeh ingest` parks the paper that was being read when you stopped (`parked 1 paper(s) an earlier, cut-off read left behind`) in quarantine, where you close it, and reads that sheet again.
+* If **no** sheet could be read, the command exits 1 with `no answer sheet could be read`. That is almost always the model, not the scans: a wrong or revoked `OPENROUTER_API_KEY`, no credit left, or a model name OpenRouter does not know. The warnings above that line say which. Fix it, close the quarantined records in S8, and run the command again.
 * A `real` class is refused before any page is sent (the consent rule, 7.4).
 * These page-reading calls cost money but are not counted against a run's cost ceiling: no run exists yet. OpenRouter's own limit (7.2) is the stop.
 * The console's upload page still only stores files; it does not read them. Use this command.
+
+### 8.4 A first live test, start to finish (Windows PowerShell)
+
+This grades the sample physics test's six typed answer sheets through OpenRouter, using the files the repository ships. It costs well under a dollar. Run it in a new, empty data folder. Steps 1 to 4 were checked here with a stand-in for OpenRouter; **steps 4 and 5 against real OpenRouter have not been run yet**: they are the live test.
+
+```powershell
+# 0. Once per terminal window (section 4 and 7.2)
+.venv\Scripts\Activate.ps1
+$env:OPENROUTER_API_KEY = "sk-or-..."
+$D = "$HOME\aeh-live-1"
+$S = "docs\live-tests\sample-materials\pdf\PS9-FORCES-01"
+
+# 1. The class: synthetic practice work, six students (8.1)
+python -m aeh cohort create --data-dir $D --cohort ps9-class --consent synthetic --roster docs\live-tests\config\ps9-roster.txt
+
+# 2. The package: questions, rubric, keys, grade boundaries (8.2). Copy package_version from the output.
+python -m aeh package build --data-dir $D --spec docs\live-tests\config\ps9-forces-01.package.toml
+$V = "PS9-FORCES-01@<the 12 characters it printed>"
+
+# 3. Check the configuration (5.4)
+python docs\live-tests\sample-materials\check_config.py docs\live-tests\config\live-test.dev-ci.toml
+
+# 4. Read the papers in with the real page-reading model (8.3)
+python -m aeh ingest --data-dir $D --cohort ps9-class --package-version $V `
+  --config docs\live-tests\config\live-test.dev-ci.toml `
+  --assessment "$S\01-test-paper.pdf" "$S\answer-sheets"
+
+# 5. Grade them (section 8)
+python -m aeh run --data-dir $D --cohort ps9-class --package-version $V `
+  --config docs\live-tests\config\live-test.dev-ci.toml
+
+# 6. Look at the results (the operating tutorial)
+python -m aeh console --data-dir $D --config docs\live-tests\config\live-test.dev-ci.toml
+```
+
+What to expect, and what to record:
+
+* **Step 4.** If the model writes the page markup the checks expect, the outcome is three `ok`, two `incomplete` (S9-004: a doubled mark; S9-006: no name) and one `unmatched_assessment` (S9-005: the wrong test), as the live-test guide says. If good papers are parked instead, that is the most important finding of the test: note each paper's status, and keep the folder.
+* **Step 5.** Exit code 0 means every paper was graded. Exit code 3 means the run paused: read `pause_reason` in what it printed (for example the cost ceiling, 7.3, or an OpenRouter refusal, 7.6), fix it, and run the same command again; it continues where it stopped.
+* **Step 6.** Open `/runs/<run id>/rollup` and `/quarantine` (the operating tutorial, section 4). The parked papers can be released or closed there (section 5); the no-name paper can only be closed.
 
 ## 9. Practice first: the rehearsal folder
 

@@ -31,9 +31,15 @@ class _FakeOpenRouter:
     def __init__(self) -> None:
         self.pages: dict[tuple[str, int], str] = {}
         self.requests: list = []
+        self.interrupt_at: int | None = None  # raise KeyboardInterrupt on this request number
+        self.status = 200
 
     def send(self, request):  # noqa: ANN001
         self.requests.append(request)
+        if self.interrupt_at is not None and len(self.requests) == self.interrupt_at:
+            raise KeyboardInterrupt
+        if self.status != 200:
+            return HttpResponse(self.status, {}, b'{"error": {"message": "User not found."}}')
         body = json.loads(request.body)
         fields = dict((name, value) for name, value in _fields_from_wire(body))
         if fields.get("instruction", "").startswith("Decide whether"):
@@ -163,3 +169,55 @@ def test_tc_pipe_31_without_a_test_paper_the_command_says_so(tmp_data_dir, physi
     code, _out, err = _ingest(tmp_data_dir, physics, capsys, with_paper=False)
     assert code == 1 and "pass --assessment" in err
     assert physics["fake"].requests == []
+
+
+# --- TC-PIPE-32: a cut-off read and a reader that cannot read (review findings) ----------------
+
+
+def _submissions(data_dir):
+    store = open_store(data_dir)
+    try:
+        return [dict(r) for r in store.cohort("class-ps9").query(
+            "SELECT submission_id, ingest_status, quarantined FROM submission")]
+    finally:
+        store.close()
+
+
+def test_tc_pipe_32_a_read_cut_off_by_ctrl_c_is_parked_and_never_graded(tmp_data_dir, physics,
+                                                                       capsys):
+    assert cli.main(["cohort", "create", "--data-dir", str(tmp_data_dir), "--cohort", "class-ps9",
+                     "--consent", "synthetic", "--roster", str(physics["roster"])]) == 0
+    physics["fake"].interrupt_at = 3  # the test paper, the first sheet, then Ctrl-C
+    with pytest.raises(KeyboardInterrupt):
+        _ingest(tmp_data_dir, physics, capsys)
+    left = [r for r in _submissions(tmp_data_dir) if r["ingest_status"] is None]
+    assert len(left) == 1, "the cut-off read left no half-made submission to test against"
+    physics["fake"].interrupt_at = None
+    code, result, err = _ingest(tmp_data_dir, physics, capsys, with_paper=False)
+    assert code == 0, err
+    assert result["interrupted"] == [left[0]["submission_id"]]
+    assert "cut-off read" in err
+    rows = {r["submission_id"]: r for r in _submissions(tmp_data_dir)}
+    assert (rows[left[0]["submission_id"]]["ingest_status"],
+            rows[left[0]["submission_id"]]["quarantined"]) == ("incomplete", 1)
+    # Nothing a run would admit is left without a status, and each student's paper counts once.
+    assert all(r["ingest_status"] is not None for r in rows.values())
+    graded = [r for r in rows.values() if not r["quarantined"]]
+    stems = {p.stem for p in physics["sheets"].iterdir()}
+    assert len(graded) == sum(1 for stem in stems if physics["expected"][stem] == "ok")
+
+
+def test_tc_pipe_32_a_reader_that_reads_nothing_exits_1_and_says_why(tmp_data_dir, physics, capsys):
+    assert cli.main(["cohort", "create", "--data-dir", str(tmp_data_dir), "--cohort", "class-ps9",
+                     "--consent", "synthetic", "--roster", str(physics["roster"])]) == 0
+    assert _ingest(tmp_data_dir, physics, capsys)[0] == 0
+    # The key is revoked; new sheets arrive in the same folder.
+    physics["fake"].status = 401
+    extra = physics["sheets"] / "late.pdf"
+    extra.write_bytes(next(physics["sheets"].glob("S9-001*.pdf")).read_bytes() + b"\n%late")
+    code, result, err = _ingest(tmp_data_dir, physics, capsys, with_paper=False)
+    assert code == 1
+    assert "no answer sheet could be read" in err and "API key" in err
+    late = next(s for s in result["sheets"] if s["file"] == "late.pdf")
+    assert late["status"] == "unreadable" and late["detail"], late
+    assert "late.pdf: unreadable" in err

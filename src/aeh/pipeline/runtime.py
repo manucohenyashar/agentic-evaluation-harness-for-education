@@ -150,3 +150,88 @@ def _load_config_file(path: str | None) -> dict[str, Any]:
     source = Path(path)
     fmt = "json" if source.suffix.lower() == ".json" else "toml"
     return parse_config_document(source.read_text(encoding="utf-8"), fmt)
+
+
+#: The config-file key naming the real models an escalation seats past the panel. A list of
+#: model tables, the same shape as `panel` (`[[profiles.<name>.escalation_judge]]`). Read here,
+#: not by `M-CONF`: `RunConfig`'s fields are fixed (`CT-CONF-C02`), and these models are not
+#: panel members — they are the `judge_refs` `run_to_completion` already takes for extension arms.
+ESCALATION_JUDGES_KEY = "escalation_judge"
+
+def _is_live(provider: Any) -> bool:
+    """Whether `provider` sends calls to a real model server (OpenRouter or a local one), where a
+    derived judge name like `escalation-arm-4` is not a model anyone serves."""
+    from aeh.prov import LocalServerProvider, OpenRouterProvider
+
+    return isinstance(getattr(provider, "_inner", provider), (OpenRouterProvider, LocalServerProvider))
+
+
+def _escalation_judge_refs(config: Mapping[str, Any], run_config: Any, cohort: Any,
+                           provider: Any) -> dict[str, Any]:
+    """The real model for each judge seat past the panel, keyed by the seat's ledger name
+    (`escalation-arm-<k>`), for `run_to_completion(judge_refs=...)`.
+
+    Live-test finding: past the panel, an escalation adds judges on derived names,
+    `escalation-arm-<k>`, which the executor turned into the first judge with that name as its
+    model, so on OpenRouter the first disagreement sent `model: "escalation-arm-2"` and the call
+    failed. With a recording, derivation is how the corpus was captured, so it stays there and
+    this returns {}.
+
+    On a live provider the `escalation_judge` list gives seats past the panel real models, in
+    order. Each entry is checked by the resolver the panel goes through (pin form, provider,
+    role), by resolving it as a one-judge panel, and no model may hold two seats. An escalation
+    or a replacement arm with no seat left does not widen (`hooks._aggregate_hook` leaves the
+    score provisional, for review). The random-arm sample (`FR-ORCH-11`) widens panels when
+    work is enumerated, before any of that, so a live run with the sample on must have the two
+    seats it adds: otherwise it is refused here, before it exists. Raises `ValueError`."""
+    from aeh.conf import ModelRef, resolve_run_config
+    from aeh.orch import ESCALATION_ARM_PREFIX, ORCH_RANDOM_ARM_RATE, RANDOM_ARM_RATE_ENV
+
+    raw = config.get(ESCALATION_JUDGES_KEY, ())
+    if raw in (None, ()):
+        raw = []
+    if not isinstance(raw, list) or not all(isinstance(entry, Mapping) for entry in raw):
+        raise ValueError(f"{ESCALATION_JUDGES_KEY} must be a list of model tables "
+                         f"([[profiles.<name>.{ESCALATION_JUDGES_KEY}]]), like the panel.")
+    if not _is_live(provider):
+        return {}
+    panel = tuple(run_config.panel)
+    refs = []
+    for index, entry in enumerate(raw):
+        where = f"{ESCALATION_JUDGES_KEY}[{index}]"
+        fields = ("role", "provider", "build_id", "quantization")
+        unknown = sorted(set(entry) - set(fields))
+        missing = [name for name in fields[:3] if name not in entry]
+        if unknown or missing:
+            raise ValueError(f"{where}: " + "; ".join(
+                part for part in (unknown and f"unknown keys {', '.join(unknown)}",
+                                  missing and f"missing {', '.join(missing)}") if part))
+        ref = ModelRef(**{name: entry.get(name) for name in fields})
+        try:
+            resolve_run_config({**config, "panel": (ref,)}, cohort)
+        except Exception as error:  # noqa: BLE001 - re-raised naming the entry
+            raise ValueError(f"{where}: {error}") from error
+        refs.append(ref)
+    seen = [ref.build_id for ref in panel]
+    for index, ref in enumerate(refs):
+        if ref.build_id in seen:
+            raise ValueError(
+                f"{ESCALATION_JUDGES_KEY}[{index}] names {ref.build_id!r}, which already has a "
+                f"seat: one model, one seat (a doubled seat lets one model outvote the others).")
+        seen.append(ref.build_id)
+    raw_rate = os.environ.get(RANDOM_ARM_RATE_ENV, "").strip()
+    try:
+        rate = float(raw_rate) if raw_rate else ORCH_RANDOM_ARM_RATE
+    except ValueError:
+        rate = ORCH_RANDOM_ARM_RATE  # M-ORCH refuses the typo itself, naming the knob
+    sampled = min(3, len(panel)) + 2
+    if rate > 0 and len(panel) + len(refs) < sampled:
+        short = sampled - len(panel) - len(refs)
+        raise ValueError(
+            f"the random-arm sample ({RANDOM_ARM_RATE_ENV}, {rate}) gives some answers "
+            f"{sampled} judges, and this live run has {len(panel) + len(refs)} real judge "
+            f"model(s). Add {short} [[profiles.<name>.{ESCALATION_JUDGES_KEY}]] table(s), each "
+            f"a different model, or set {RANDOM_ARM_RATE_ENV}=0 to turn the sample off. "
+            f"Nothing was started.")
+    return {f"{ESCALATION_ARM_PREFIX}-{len(panel) + position}": ref
+            for position, ref in enumerate(refs, start=1)}

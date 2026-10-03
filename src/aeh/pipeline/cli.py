@@ -17,7 +17,9 @@ from .settings import _int_knob, MAX_PASSES_ENV, PASS_SLEEP_MS_ENV
 from .results import RunResult
 from .hooks import _FAULT_PREFIX
 from .driver import recover, run_to_completion
-from .runtime import _describe_provider, _load_config_file, _open_store, _provider_for
+from .runtime import (
+    _describe_provider, _escalation_judge_refs, _load_config_file, _open_store, _provider_for,
+)
 from .decision_engine import _decision_provider_for_run
 from .background import resume_runs_in_background
 
@@ -96,7 +98,8 @@ def _build_parser() -> Any:
 
 
 def _ingest_command(args: Any) -> int:
-    """`aeh ingest`. One line per sheet on stderr as it goes, then the whole result as JSON."""
+    """`aeh ingest`. One line per sheet on stderr as it goes, then the whole result as JSON.
+    Exits 1 when a sheet errored, the cohort was stopped, or no sheet could be read at all."""
     from aeh.conf import resolve_run_config
 
     from .intake import answer_sheet_files, ingest_files
@@ -110,13 +113,23 @@ def _ingest_command(args: Any) -> int:
         run_config = resolve_run_config(dict(config), Orchestrator(store).cohort_ref(args.cohort))
         provider = _provider_for(run_config)
         print(f"provider: {_describe_provider(provider)}", file=sys.stderr)
-        result = ingest_files(store, run_config, args.cohort, args.package_version,
-                              assessment=args.assessment, sheets=sheets, provider=provider)
+        result = ingest_files(
+            store, run_config, args.cohort, args.package_version, assessment=args.assessment,
+            sheets=sheets, provider=provider,
+            on_sheet=lambda sheet: print(f"{sheet.file}: {sheet.status} {sheet.detail}".rstrip(),
+                                         file=sys.stderr, flush=True))
     finally:
         store.close()
-    for sheet in result.sheets:
-        print(f"{sheet.file}: {sheet.status} {sheet.detail}".rstrip(), file=sys.stderr)
+    if result.interrupted:
+        print(f"parked {len(result.interrupted)} paper(s) an earlier, cut-off read left behind; "
+              "they wait in quarantine (S8) to be closed as 'unresolvable'", file=sys.stderr)
     print(json.dumps(_as_json(result), indent=2, sort_keys=True))
+    if result.nothing_readable:
+        print("no answer sheet could be read: this is usually the page-reading model, not the "
+              "scans (check the API key, the account's credit and the model name in the warnings "
+              "above). Each sheet now waits in quarantine; close those and read the folder again.",
+              file=sys.stderr)
+        return EXIT_ERROR
     return EXIT_ERROR if any(s.status in ("stopped", "error") for s in result.sheets) else EXIT_OK
 
 
@@ -296,6 +309,10 @@ def _run_command(store: Any, args: Any, config: Mapping[str, Any]) -> RunResult:
     # the completion provider, which would answer for a model it never dispatches to.
     provider = _provider_for(run_config)
     decision_provider = _decision_provider_for_run(run_config, provider, None)
+    # Before the run exists: a live run without a real model for every judge seat an
+    # escalation can add is refused here, not on its first disagreement.
+    judge_refs = _escalation_judge_refs(
+        config, run_config, Orchestrator(store).cohort_ref(args.cohort), provider)
     orchestrator = Orchestrator(store, provider=provider, decision_provider=decision_provider)
     if existing:
         # Latest by start time. `run_id` is `run-<uuid4 hex>` and `select_all_runs` orders by
@@ -342,7 +359,7 @@ def _run_command(store: Any, args: Any, config: Mapping[str, Any]) -> RunResult:
     print(f"provider: {_describe_provider(provider)}")
     return run_to_completion(
         store, run_id, provider=provider, run_config=run_config,
-        decision_provider=decision_provider)
+        decision_provider=decision_provider, judge_refs=judge_refs)
 
 
 def _as_json(value: Any) -> Any:

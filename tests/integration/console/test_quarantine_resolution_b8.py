@@ -83,6 +83,7 @@ def test_tc_console_51_an_unknown_or_missing_word_is_refused(parked, params):
                                                  submission_id=target, **params)
     assert not outcome.dispatched
     assert "'matched'" in outcome.detail and "'unresolvable'" in outcome.detail
+    assert target in outcome.detail  # every refusal names the paper it was given
     assert _row(store, target) == before == {**before, "quarantined": 1}
 
 

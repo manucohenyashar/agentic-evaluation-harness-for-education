@@ -95,7 +95,7 @@ class DomainEffectsMixin:
                 # student's paper.
                 if resolution not in QUARANTINE_RESOLUTIONS:
                     return (
-                        f"resolution {resolution!r} is not one of "
+                        f"submission {submission_id}: resolution {resolution!r} is not one of "
                         f"{', '.join(QUARANTINE_RESOLUTIONS)}: 'matched' releases the paper "
                         "to scoring, 'unresolvable' closes it (criteria MISSING, grade "
                         "INCOMPLETE, never zero). Nothing was written.",
@@ -553,7 +553,15 @@ class DomainEffectsMixin:
                     _SELECT_SUBMISSION_IDENTITY, submission_id=submission_id))
             except Exception:  # noqa: BLE001 — one unreadable ledger is skipped
                 continue
-            if rows and str(rows[0]["v3_identity"] or "") != "pass":
+            identity = str(rows[0]["v3_identity"] or "") if rows else "pass"
+            if identity == "not_reached":
+                return (
+                    f"submission {submission_id} cannot be released: its pages were never "
+                    "read (the readability or page checks refused it before the student was "
+                    "looked for), so there is nothing to grade. Close it as 'unresolvable', or "
+                    "rescan it and read it in again with 'aeh ingest'. Nothing was written."
+                )
+            if identity != "pass":
                 return (
                     f"submission {submission_id} cannot be released: its student was not "
                     f"matched to the class list (identity check {rows[0]['v3_identity']!r}), "
