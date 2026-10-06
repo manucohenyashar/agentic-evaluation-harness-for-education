@@ -37,7 +37,7 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = [pytest.mark.slow, pytest.mark.writtenahead]
+pytestmark = pytest.mark.slow
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -115,6 +115,7 @@ def _installed_package_dir(venv: _Venv) -> Path:
     return package
 
 
+@pytest.mark.writtenahead
 def test_tc_pipe_12_pip_install_dot_alone_yields_the_command_and_all_four_libraries(clean_venv) -> None:
     """The install exits 0, `aeh --help` exits 0, each of the four standard dependencies imports,
     `console.css` is in the installed package, and the assembled harness imports none of the four."""
@@ -146,6 +147,7 @@ def test_tc_pipe_12_pip_install_dot_alone_yields_the_command_and_all_four_librar
         "that need them (the import boundary did not move with the install boundary)")
 
 
+@pytest.mark.writtenahead
 def test_tc_pipe_12_the_installed_package_carries_the_spa_bundle(clean_venv) -> None:
     """Every file of the source `console_assets/` tree — the stylesheet and the SPA bundle
     (FR-UI-01) — exists at the same path in the installed package, and the bundle's entry document

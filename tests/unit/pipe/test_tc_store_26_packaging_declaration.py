@@ -128,20 +128,30 @@ def _covered(relative: str, globs: list[str]) -> bool:
     does not cross a `/` and `**` (setuptools >= 62.3, below our `setuptools>=69` floor) does.
     `fnmatch` lets `*` cross `/`, so the segment-wise comparison below is what keeps
     `console_assets/*` from appearing to cover `console_assets/spa/index.html` when it does not.
+    setuptools expands the globs with `glob`, which skips dot-files and dot-directories unless the
+    pattern segment itself starts with `.`; `fnmatch` does not, so `_segment` re-applies that rule
+    (a bundle's `.vite/manifest.json` is NOT shipped by `console_assets/**/*`).
     """
+    def _segment(part: str, glob_part: str) -> bool:
+        if part.startswith(".") and not glob_part.startswith("."):
+            return False
+        return fnmatch.fnmatchcase(part, glob_part)
+
     parts = relative.split("/")
     for glob in globs:
         pattern = glob.split("/")
         if "**" in pattern:
             head = pattern[: pattern.index("**")]
             tail = pattern[pattern.index("**") + 1:]
+            spanned = parts[len(head):len(parts) - len(tail)]
             if (len(parts) >= len(head) + len(tail)
-                    and all(fnmatch.fnmatchcase(p, g) for p, g in zip(parts, head))
-                    and all(fnmatch.fnmatchcase(p, g)
+                    and all(_segment(p, g) for p, g in zip(parts, head))
+                    and not any(p.startswith(".") for p in spanned)
+                    and all(_segment(p, g)
                             for p, g in zip(parts[len(parts) - len(tail):], tail))):
                 return True
         elif len(pattern) == len(parts) and all(
-                fnmatch.fnmatchcase(p, g) for p, g in zip(parts, pattern)):
+                _segment(p, g) for p, g in zip(parts, pattern)):
             return True
     return False
 

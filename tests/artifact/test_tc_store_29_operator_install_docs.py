@@ -46,8 +46,8 @@ TEXT_SUFFIXES = {".md", ".txt", ".py", ".toml", ".ps1", ".sh", ".bat", ".cfg", "
 #: The two retired extras, quoted or bare, alone or in a combined bracket.
 RETIRED_EXTRA = re.compile(r"\.\[[^\]\n]*\b(?:live-ingest|jev-cloud)\b[^\]\n]*\]")
 #: Any extra on a `pip install` line: `.[x]`, `<path>[x]`, `"…[x]"`.
-PIP_INSTALL = re.compile(r"\bpip\s+install\b", re.I)
-EXTRA_ON_INSTALL = re.compile(r"\bpip\s+install\b[^\n]*?[.\w/\\\"']\[[A-Za-z0-9_,\- ]+\]", re.I)
+PIP_INSTALL = re.compile(r"\bpip3?\s+install\b", re.I)
+EXTRA_ON_INSTALL = re.compile(r"\bpip3?\s+install\b[^\n]*?[.\w/\\\"']\[[A-Za-z0-9_,\- ]+\]", re.I)
 PILLOW = re.compile(r"\bpillow\b", re.I)
 README_INSTALL_HEADING = re.compile(r"^(#{1,6})\s+.*\b(?:setup|install\w*)\b", re.I)
 
@@ -115,18 +115,31 @@ def test_tc_store_29_no_operator_document_names_an_extra_or_a_manual_pillow_inst
     )
 
 
+def _tutorial_sections() -> list[str]:
+    """The deployment tutorial split at Markdown headings — outside code fences only, so a shell
+    comment (`# on the connected machine`) inside a fenced block never starts a new section — with
+    each shell line continuation (`\\` or PowerShell's backtick) joined, so a command wrapped over
+    several lines is matched as the one command it is."""
+    sections: list[list[str]] = [[]]
+    in_fence = False
+    for line in DEPLOYMENT_TUTORIAL.read_text(encoding="utf-8").splitlines():
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+        if not in_fence and re.match(r"^#{1,6}\s", line):
+            sections.append([])
+        sections[-1].append(line)
+    return [re.sub(r"[\\`][ \t]*\n[ \t]*", " ", "\n".join(s)) for s in sections]
+
+
 @pytest.mark.writtenahead
 def test_tc_store_29_the_deployment_tutorial_carries_the_air_gap_wheelhouse_paragraph() -> None:
     """Presence: one section of the deployment tutorial names both halves of the wheelhouse
     pattern — `pip download` on a connected machine, `pip install --no-index --find-links` at the
     school. One section, not anywhere in the file: the two commands are one procedure, and an
     operator who finds one without the other has half an install."""
-    text = DEPLOYMENT_TUTORIAL.read_text(encoding="utf-8")
-    sections = re.split(r"(?m)^#{1,6}\s", text)
-    download = re.compile(r"\bpip\s+download\b")
-    offline = re.compile(r"\bpip\s+install\b[^\n]*--no-index\b[^\n]*--find-links\b"
-                         r"|\bpip\s+install\b[^\n]*--find-links\b[^\n]*--no-index\b")
-    assert any(download.search(s) and offline.search(s) for s in sections), (
+    download = re.compile(r"\bpip3?\s+download\b")
+    offline = re.compile(r"\bpip3?\s+install\b(?=[^\n]*--no-index\b)(?=[^\n]*--find-links\b)")
+    assert any(download.search(s) and offline.search(s) for s in _tutorial_sections()), (
         f"{DEPLOYMENT_TUTORIAL.relative_to(REPO_ROOT).as_posix()} has no section naming both "
         "`pip download` and `pip install --no-index --find-links` (FR-STORE-21's air-gap paragraph)"
     )
