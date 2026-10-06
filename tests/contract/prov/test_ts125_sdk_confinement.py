@@ -1,11 +1,13 @@
-"""TS-125 (#501): the TypeSafe SDK stays inside `aeh.prov`, ships only as an extra, and logs no
-student text (design 1.8, §3.12). Jev test plan §5.8, §6.5 and §6.11.6. Written ahead of #498,
-except the arms that hold today and must keep holding (marked below as green pins).
+"""TS-125 (#501): the TypeSafe SDK stays inside `aeh.prov`, ships as a standard dependency (ADR-36;
+it was the `jev-cloud` extra until the operator-requirements delta, whose TC-PROV-53 flip #613
+wrote), and logs no student text (design 1.8, §3.12). Jev test plan §5.8, §6.5 and §6.11.6.
+Written ahead of #498, except the arms that hold today and must keep holding (marked below as
+green pins).
 
 | Case | Asserted |
 |---|---|
 | TC-PROV-52 | Static: no `aeh` module but `prov` imports the SDK, and `prov` only inside a function. Subprocess: importing the harness and building every non-cloud provider loads none of `typesafe_sdk`, `httpx2`, `pydantic`, `tenacity`; building `JevOpenRouterProvider` loads the SDK; every value reachable from a returned `Decision` is a harness type |
-| TC-PROV-53 | `pyproject.toml` has no core dependency and the exact-pinned `jev-cloud` extra; `requirements-dev.txt` pins it; with the SDK unimportable, building the cloud decision provider refuses naming `jev-cloud`, while the non-cloud providers and the harness modules still load |
+| TC-PROV-53 | Flipped (#613, FR-PROV-42 amended): `typesafe-sdk==0.7.2` is a `[project].dependencies` string with no extra; no `src/aeh` module names a retired extra (the packaging refusal is deleted); `decision_provider_for` builds `JevOpenRouterProvider` under the default resolution; engine-off and edge-local (engine on) runs complete with the SDK unimportable |
 | SEC-23 | With the `typesafe_sdk` logger at DEBUG, no captured record from any logger carries the state sentinel (exception text included), no SDK record below WARNING is emitted, and the SDK's forward-compatibility WARNING still is |
 | TC-PROV-C29 | CT-PROV-29, safety-shaped: TC-PROV-52's scan and walk, SEC-23's capture, and no SDK exception type escaping `decide` |
 | TC-PROV-C30 | CT-PROV-30, safety-shaped: every request of a `decide` passes the programmed `Transport`, stamped by the SDK, with no SDK retry, under a socket guard that sees no connect |
@@ -65,10 +67,8 @@ def _noul_body(**extra_answers) -> dict:
             "answers": {"ok": {"type": "noul", "noul": 0.9}, **extra_answers}}
 
 
-def _run_python(code: str, *, block_sdk: bool = False) -> subprocess.CompletedProcess:
+def _run_python(code: str) -> subprocess.CompletedProcess:
     prelude = f"import sys; sys.path[:0] = [{str(ROOT / 'src')!r}, {str(ROOT)!r}]\n"
-    if block_sdk:
-        prelude += "for _m in ('typesafe_sdk',): sys.modules[_m] = None\n"
     return subprocess.run([sys.executable, "-c", prelude + code], capture_output=True, text=True, cwd=ROOT,
                           timeout=120)
 
@@ -146,75 +146,64 @@ def _assert_harness_typed(decision) -> None:  # noqa: ANN001
 
 
 # --- TC-PROV-53 ----------------------------------------------------------------------------------
+#
+# Flipped by #613 (operator-requirements test plan §5.0, FR-PROV-42 amended, ADR-36). The SDK is a
+# standard dependency now, so the `sys.modules["typesafe_sdk"] = None` refusal arm and the
+# cloud-run refusal arm are DELETED: there is no install without the SDK left to refuse. What
+# survives is CT-PROV-29's import-discipline half — an engine-off run and an edge-local run still
+# complete without importing the SDK — and construction under the default resolution. The pin and
+# the no-packaging-check arms are red until #614 lands (`writtenahead`, keyed there).
 
-def test_tc_prov_53_the_core_install_stays_dependency_free_and_dev_pins_the_sdk() -> None:
-    """Green pin: ADR-11's empty core, and the exact dev-tier pin (NFR-PROV-10)."""
+#: FR-STORE-20 / NFR-PROV-10, transcribed: the exact pin, as a declared string.
+SDK_PIN = "typesafe-sdk==0.7.2"
+
+#: The retired extras' names. After ADR-36 no shipped module may mention either: a message naming
+#: `jev-cloud` is the deleted packaging check, or an install instruction for an extra that no
+#: longer exists.
+RETIRED_EXTRAS = ("jev-cloud", "live-ingest")
+
+
+@pytest.mark.writtenahead
+def test_tc_prov_53_the_sdk_is_exact_pinned_in_the_core_dependencies() -> None:
+    """The pin arm (flipped): `typesafe-sdk==0.7.2` is a `[project].dependencies` string, and no
+    extra carries it — the SDK installs with `pip install .` or not at all."""
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
-    assert project.get("dependencies") == []
-    dev = (ROOT / "requirements-dev.txt").read_text(encoding="utf-8")
-    assert re.search(r"^typesafe-sdk==0\.7\.2\s*$", dev, re.M), "the dev tier pins the SDK exactly"
+    dependencies = project.get("dependencies") or []
+    assert SDK_PIN in dependencies, (
+        f"[project].dependencies is {dependencies}; FR-PROV-42 (amended) pins {SDK_PIN!r} there")
+    sdk_entries = [d for d in dependencies if re.match(r"typesafe[-_]sdk\b", d, re.I)]
+    assert sdk_entries == [SDK_PIN], f"the SDK is declared more than once or loosely: {sdk_entries}"
+    assert "optional-dependencies" not in project, project.get("optional-dependencies")
 
 
-def test_tc_prov_53_the_sdk_ships_as_the_jev_cloud_extra_and_its_absence_is_refused_by_name(tmp_path) -> None:
-    """FR-PROV-42: the extra `jev-cloud` exact-pins the SDK. With the SDK unimportable, building
-    the cloud decision provider (what run start does, FR-PIPE-11) raises `ConfigurationError`
-    naming the extra, while the harness and the non-cloud providers still load and build."""
-    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
-    assert project.get("optional-dependencies", {}).get("jev-cloud") == ["typesafe-sdk==0.7.2"]
-    blocked = _run_python(
-        "from aeh.conf import ConfigurationError, ModelRef\n"
-        "from aeh.prov import decision_provider_for\n"
-        "ref = ModelRef(role='decision', provider='openrouter-jev', build_id='openrouter/typesafe/jev-1.13@2026-09-01', quantization=None)\n"
-        "try:\n"
-        "    decision_provider_for(ref, api_key='k')\n"
-        "    print('BUILT')\n"
-        "except ConfigurationError as e:\n"
-        "    print('REFUSED', e)\n", block_sdk=True)
-    assert blocked.returncode == 0, blocked.stderr
-    assert blocked.stdout.startswith("REFUSED") and "jev-cloud" in blocked.stdout, blocked.stdout
-    others = _run_python(
-        "import aeh.judge, aeh.pipeline, aeh.conform\n"
-        "from aeh.prov import OpenJevLocalProvider, RecordedFixtureProvider\n"
-        f"OpenJevLocalProvider(); RecordedFixtureProvider(fixture_dir={str(tmp_path)!r}); print('OK')\n", block_sdk=True)
-    assert others.returncode == 0 and others.stdout.strip() == "OK", others.stderr
+@pytest.mark.writtenahead
+def test_tc_prov_53_no_shipped_module_keeps_a_packaging_check_naming_an_extra() -> None:
+    """The deleted refusal (negative): no module under `src/aeh` names a retired extra. Today
+    `aeh.prov.jev_openrouter` raises `ConfigurationError` naming `jev-cloud` when the SDK is
+    absent; FR-PROV-42 (amended) deletes that check, and with it the only reason to name the extra."""
+    hits = [f"{path.relative_to(ROOT).as_posix()}:{n}"
+            for path in sorted((ROOT / "src" / "aeh").rglob("*.py"))
+            for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+            if any(extra in line for extra in RETIRED_EXTRAS)]
+    assert hits == [], f"shipped code still names a retired extra (ADR-36): {hits}"
 
 
-@pytest.mark.integration
-def test_tc_prov_53_a_cloud_run_without_the_sdk_refuses_at_start_before_any_lease(tmp_path, monkeypatch) -> None:
-    """The plan's run-level arm: with the SDK unimportable, `run_to_completion` for a
-    `cloud-hosted` run whose decision provider is `openrouter-jev` (the composer builds it, FR-PIPE-11)
-    raises `ConfigurationError` naming `jev-cloud`, with no unit leased and no model call made."""
-    from aeh.conf import CohortRef, ConfigurationError, resolve_run_config
-    from aeh.pipeline import run_to_completion
-    from tests.support import pipe_world
-    from tests.support.conf_builders import hosted_cfg
+def test_tc_prov_53_the_cloud_provider_constructs_under_the_default_resolution(monkeypatch) -> None:
+    """Construction arm (green, and must stay green): the factory builds `JevOpenRouterProvider`
+    for an `openrouter-jev` ref with no seam injected — only the API key from the environment, as
+    a run start resolves it (FR-PIPE-11). No packaging check stands in the way."""
+    from aeh.prov import decision_provider_for
 
-    monkeypatch.setitem(sys.modules, "typesafe_sdk", None)
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-TEST")
-    world = pipe_world.replay_world(tmp_path / "d")
-    try:
-        world.build_run()
-        world.start_run()
-        leased_before = world.handle.query("SELECT count(*) n FROM work_unit WHERE status != 'pending'")[0]["n"]
-        replays_before = world.provider.replayed_calls
-        cloud = resolve_run_config(hosted_cfg("cloud-hosted", HARNESS_DECISION_ENGINE="jev",
-                                              HARNESS_JEV_BUILD="openrouter/typesafe/jev-1.13@2026-09-17"),
-                                   CohortRef(cohort_id=world.cohort_id, consent_class="synthetic"))
-        with pytest.raises(ConfigurationError) as caught:
-            run_to_completion(world.store, world.run_id, provider=world.provider, run_config=cloud,
-                              **pipe_world.corpus_refs())
-        assert "jev-cloud" in str(caught.value)
-        leased_after = world.handle.query("SELECT count(*) n FROM work_unit WHERE status != 'pending'")[0]["n"]
-        assert leased_after == leased_before and world.provider.replayed_calls == replays_before
-    finally:
-        world.store.close()
+    provider = decision_provider_for(JEV_REF)
+    assert type(provider) is JevOpenRouterProvider, type(provider)
 
 
 @pytest.mark.integration
 def test_tc_prov_53_an_engine_off_run_completes_with_the_sdk_unimportable(tmp_path, monkeypatch) -> None:
-    """Green pin: an engine-off run never touches the SDK, so blocking its import (even after
-    another test loaded it) changes nothing. A path that builds a cloud provider at run time,
-    for its capabilities say, turns this red."""
+    """Surviving arm (green pin): an engine-off run never touches the SDK, so blocking its import
+    (even after another test loaded it) changes nothing. A path that builds a cloud provider at
+    run time, for its capabilities say, turns this red."""
     from tests.support import pipe_world
 
     monkeypatch.setitem(sys.modules, "typesafe_sdk", None)
@@ -224,6 +213,29 @@ def test_tc_prov_53_an_engine_off_run_completes_with_the_sdk_unimportable(tmp_pa
         world.start_run()
         outcome = pipe_world.drive_composed(world)
         assert outcome.status == "complete"
+    finally:
+        world.store.close()
+
+
+@pytest.mark.integration
+def test_tc_prov_53_an_edge_local_run_with_the_engine_on_completes_with_the_sdk_unimportable(
+        tmp_path, monkeypatch) -> None:
+    """Surviving arm (green pin): an `edge-local` run whose decision engine is ON — F-JEV-DECISIONS'
+    fixture engine pre-screening seat 0 — also completes with the SDK blocked. The engine being on
+    is the point: an engine-off run proves nothing about the decision leg, and a decision leg
+    that reached for the SDK whatever the provider would pass the engine-off arm and fail here."""
+    from tests.support import pipe_world
+
+    monkeypatch.setitem(sys.modules, "typesafe_sdk", None)
+    world = pipe_world.jev_replay_world(tmp_path / "d")
+    try:
+        world.build_run()
+        assert world.resolved.backend_profile == "edge-local", world.resolved.backend_profile
+        world.start_run()
+        outcome = pipe_world.drive_composed(world)
+        assert outcome.status == "complete", outcome
+        prescreens = world.handle.query("SELECT count(*) n FROM decision_prescreen")[0]["n"]
+        assert prescreens > 0, "precondition: the decision leg ran (the engine is on)"
     finally:
         world.store.close()
 
