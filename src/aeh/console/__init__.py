@@ -37,6 +37,8 @@ Files:
     grade_actions.py    amending a grade, the gate outcome and the review window
     app.py              `ConsoleApp`, the console as a headless object
     server.py           the HTTP server and its request handler
+    api.py              the JSON API's route table and the SPA bundle path (FR-CONSOLE-45)
+    api_handler.py      serving `/api/` from that table, and the SPA from the same origin
     run_planning.py     building a console and planning runs
     queue_renderers.py  the review queue rendered at module level
     driver.py           `run_pipeline_for_test`, the headless end-to-end driver
@@ -162,6 +164,7 @@ from .key_correction import KeyCorrectionMixin
 from .views import ReadViewsMixin
 from .grade_actions import GradeActionsMixin
 from .app import ConsoleApp
+from .api import API_ROUTES, ApiRoute, SPA_BUNDLE_DIR
 from .server import (
     _ConsoleRequestHandler,
     ConsoleServer,
@@ -183,6 +186,8 @@ __all__ = [
     "BlindFlowRequest",
     "BlindFlowView",
     "CalibrationRender",
+    "API_ROUTES",
+    "ApiRoute",
     "ConsoleApp",
     "ConsoleBindRefused",
     "ControlOutcome",
@@ -191,6 +196,7 @@ __all__ = [
     "PreflightView",
     "ProvenanceRefused",
     "REVIEW_DEFAULT_BANDS",
+    "SPA_BUNDLE_DIR",
     "RenderedPage",
     "RunPlan",
     "TouchpointRender",
