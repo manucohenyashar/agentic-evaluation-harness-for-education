@@ -163,7 +163,7 @@ from .openjev_local import (
     OpenJevSmallLocalProvider,
 )
 from .fixtures import FIXTURE_SCHEMA, RecordedFixtureProvider
-from .factories import decision_provider_for, provider_for
+from .factories import decision_provider_for, describe_provider, provider_for
 
 
 __all__ = [
@@ -173,6 +173,7 @@ __all__ = [
     "Completion",
     "ConfigurationError",
     "CostEstimate",
+    "describe_provider",
     "DEFAULT_FIXTURE_MAX_CONCURRENCY",
     "FIXTURE_DIR_ENV",
     "BuildWatch",
