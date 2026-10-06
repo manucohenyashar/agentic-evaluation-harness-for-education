@@ -1366,6 +1366,55 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "--contracts-only --quiet",
         ("tests/contract/blast/test_tc_blast_rule.py::test_tc_blast_03_the_contracts_only_gate_fails_a_lost_clause_case_and_ci_runs_it",),
     ),
+    # --- #639, the SPA cases (TC-UI-01..07, TC-UI-C01..C06, PERF-19, TC-CONSOLE-40/41 re-pointed) --
+    #
+    # The layout is invented in `tests/support/spa.py` (the design declares no M-UI interface).
+    # #634 is keyed `path` on the committed bundle's index.html: unresolved today, resolved the
+    # moment the bundle is committed, and free to check.
+    #
+    # #635 and #638 deliver no Python name and no new file whose path the design fixes, and a
+    # `command` running their browser cases would launch a browser on every fast-tier run and read
+    # an E6 *skip* (exit 0) as "resolved". So both are keyed on a millisecond static probe over the
+    # bundle for the wording each story is the first to ship, quoted from the design: FR-UI-07's
+    # recovery text (#635) and FR-UI-06's answers-only affordance (#638). The tradeoff, stated: if
+    # #634 ships either phrase early, its entry fires before the story lands — re-check the cases
+    # green before unmarking, never unmark on the notice alone.
+    "#634 M-UI foundation: the committed SPA bundle (TC-UI-01/02, C01, C06, TC-CONSOLE-40/41)": (
+        "path",
+        "src/aeh/console_assets/spa/index.html",
+        (
+            "tests/artifact/test_spa_bundle_gate.py::test_tc_ui_01_a_the_committed_bundle_is_present_non_empty_and_ships_as_package_data",
+            "tests/artifact/test_spa_bundle_gate.py::test_tc_ui_01_b_tc_ui_c01_the_bundle_names_no_external_origin",
+            "tests/artifact/test_spa_bundle_gate.py::test_tc_console_40_spa_arm_no_service_worker_registration_anywhere_in_the_bundle",
+            "tests/artifact/test_spa_bundle_gate.py::test_tc_ui_c06_the_bundle_has_committed_source_a_pinned_toolchain_and_one_token_file",
+            "tests/browser/spa/test_spa_rebuild.py::test_tc_ui_01_c_tc_ui_c06_a_rebuild_from_committed_source_is_byte_identical",
+            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_02_the_hub_shows_every_destination_with_live_state_and_no_dead_link",
+            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_c01_a_session_over_the_hub_and_every_destination_requests_one_origin",
+            "tests/browser/spa/test_spa_hub_screens.py::test_tc_console_40_spa_a_session_over_the_react_app_leaves_no_storage_or_worker",
+            "tests/browser/spa/test_spa_hub_screens.py::test_tc_console_41_spa_the_react_app_requests_nothing_from_another_origin",
+        ),
+    ),
+    "#635 M-UI lifecycle screens (TC-UI-03/04/05/07, C02..C05, PERF-19)": (
+        "command",
+        'python -m tests.support.spa contains "check that the console service is running"',
+        (
+            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_03_the_seven_lifecycle_screens_render_the_seeded_store",
+            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_03_adv_15_the_spa_blind_sample_shows_no_decision_band_or_confidence",
+            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_04_styles_resolve_to_tokens_focus_is_visible_contrast_is_aa_fonts_are_local",
+            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_05_publish_start_and_finalize_are_no_ops_until_confirmed",
+            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_07_with_the_server_stopped_every_destination_names_the_recovery",
+            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_c02_a_reload_shows_exactly_what_the_api_reports_and_writes_nothing",
+            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_c03_no_student_text_in_storage_urls_or_logs_and_no_service_worker",
+            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_c04_an_api_error_renders_a_named_recoverable_message_on_every_screen",
+            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_c05_bands_are_editable_band_controls_and_no_screen_takes_a_numeric_score",
+            "tests/browser/spa/test_spa_hub_screens.py::test_perf_19_hub_first_contentful_paint_under_2s_and_transitions_under_300ms",
+        ),
+    ),
+    "#638 M-UI Q&A panel (TC-UI-06)": (
+        "command",
+        'python -m tests.support.spa contains "does not operate the system"',
+        ("tests/browser/spa/test_spa_qa_panel.py::test_tc_ui_06_a_manuals_answer_cites_real_anchors_under_the_answers_only_affordance",),
+    ),
     # --- TS-141 (#615), M-CONF per-profile engine default, threshold surfaces, Q&A model ----
     #
     # Keyed `command` on the written-ahead tests themselves: #616 adds no symbol the design names
