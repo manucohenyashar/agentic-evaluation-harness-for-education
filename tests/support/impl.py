@@ -1402,6 +1402,7 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         (
             "tests/unit/pipe/test_tc_store_26_packaging_declaration.py::test_tc_store_26_the_package_data_covers_the_spa_bundle_directory",
             "tests/smoke/test_tc_pipe_12_clean_venv_install.py::test_tc_pipe_12_the_installed_package_carries_the_spa_bundle",
+        ),
     ),
     # --- TS-147 (#628), M-CONSOLE's JSON API and same-origin SPA (FR-CONSOLE-45) ------------
     #
