@@ -65,10 +65,10 @@ python -m venv .venv
 Activate it. **macOS / Linux:** `source .venv/bin/activate`. **Windows PowerShell:** `.venv\Scripts\Activate.ps1`. Your prompt now starts with `(.venv)`. You must activate it in every new terminal window.
 
 ```bash
-pip install ".[live-ingest]" Pillow
+pip install .
 ```
 
-`live-ingest` adds the two libraries that read PDFs (`pypdf`, `pypdfium2`). **Pillow** is a third one that the page-picture step needs; the project's `live-ingest` extra does not list it, so name it yourself. Without all three the PDF reading step stops with `ModuleNotFoundError … PIL` (an independent audit reproduced this). The system's own core has **no** third-party dependencies.
+That one command is the whole install: it also downloads the libraries that read PDFs, decode the page pictures and talk to the Jev decision engine, so it needs internet access. There are no optional parts and nothing to add by hand. (A computer with no internet installs from a prepared folder instead; see section 4.1 of `docs/tutorials/deployment-tutorial.md`.)
 
 Check it worked:
 
@@ -76,11 +76,11 @@ Check it worked:
 aeh --help
 ```
 
-You should see `usage: aeh [-h] {run,recover,console} ...` with the three commands *run*, *recover* and *console*. (`python -m aeh ...` does the same thing and always works, even if `aeh` is not on your PATH.) The install and this `aeh --help` output were checked in a clean environment; reading a PDF through it was checked with the sample-sheet script, with Pillow added.
+You should see `usage: aeh [-h] {run,recover,console} ...` with the three commands *run*, *recover* and *console*. (`python -m aeh ...` does the same thing and always works, even if `aeh` is not on your PATH.) The install and this `aeh --help` output were checked in a clean environment; reading a PDF through it was checked with the sample-sheet script.
 
-Optional, only if you later turn the Jev decision engine on: `pip install ".[jev-cloud]"` (adds a pinned `typesafe-sdk==0.7.2`). Leave it off for the first test.
+The Jev decision engine's library (a pinned `typesafe-sdk==0.7.2`) is already part of that install. Leave the engine off for the first test.
 
-> **For the person who will also run the test suite**, not the operator: `pip install -r requirements-dev.txt` instead, on Python 3.13, and set the temporary folder away from `/tmp` (the tests use the same safe-folder rule): `TMPDIR=$HOME/tmp-aeh`.
+> **For the person who will also run the test suite**, not the operator: `pip install -e . -r requirements-dev.txt` instead, on Python 3.13, and set the temporary folder away from `/tmp` (the tests use the same safe-folder rule): `TMPDIR=$HOME/tmp-aeh`.
 
 ## 5. The data folder
 
