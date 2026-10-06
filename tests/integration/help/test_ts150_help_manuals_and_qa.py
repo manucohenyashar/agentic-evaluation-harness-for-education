@@ -182,8 +182,7 @@ def test_tc_help_02_a_grounded_answer_cites_the_recorded_grounding_sections(tmp_
     log = hv.read_log(rig.store)
     if not log or log[-1].get("outcome") != hv.GROUNDED:
         problems.append(f"the log does not record a grounded exchange: {log[-1:] }")
-    elif sorted(map(tuple, log[-1].get("cited_anchors") or ())) != sorted(cited) and \
-            sorted(log[-1].get("cited_anchors") or ()) != sorted(a for _, a in cited):
+    elif hv.logged_anchors(log[-1]) != hv.cited_anchor_strings(result):
         problems.append(f"logged anchors {log[-1].get('cited_anchors')} != cited {cited}")
     assert not problems, "\n".join(problems)
 
@@ -194,7 +193,8 @@ def test_tc_help_02_b_a_no_grounding_question_gets_the_explicit_not_found_answer
     says so and points at the manuals page, `not-found` in the log — and the double's recorded
     reply, a confident hallucination, never reaches the answer whether or not the model was called."""
     corpus = " ".join(hv.norm(str(get(s, "text"))) for s in hv.sections_by_anchor(hv.load_manuals()).values())
-    content_words = [w for w in hv.norm(hv.NOT_FOUND_T.question).split() if len(w) > 4]
+    content_words = [w for w in hv.norm(hv.NOT_FOUND_T.question).split()
+                     if len(w) > 4 and w not in hv.STOPWORDS]
     assert not [w for w in content_words if f" {w} " in f" {corpus} "], (
         "precondition: the not-found question shares content words with the manuals — re-pick it")
 
@@ -269,17 +269,27 @@ def test_tc_help_04_a_student_question_reaches_the_model_with_no_student_data(tm
         problems.append(f"the answer does not point at the results screen: {hv.answer_text(result)!r}")
     if hv.citations(result) and not all(p in hv.anchors_of(hv.load_manuals()) for p in hv.citations(result)):
         problems.append(f"a citation resolves to no manual anchor: {hv.citations(result)}")
+    # No model call at all also satisfies the clause (nothing egressed); every call that IS made
+    # is swept. The "results" pointer above is asserted either way.
     for index, text in enumerate(rig.double.payloads()):
         problems += [f"request {index}: {hit}" for hit in hv.sweep(text, rig.world.forbidden)]
         problems += [f"request {index}: Zelda's name outside the question"
                      for _ in hv.sweep(text, {"name": rig.world.zelda_name}, allow_in=hv.STUDENT_T.question)]
 
-    build_index = hv.help_module().__dict__.get(hv.BUILD_INDEX)
-    if build_index is None:
-        problems.append(f"{hv.HELP_MODULE}.{hv.BUILD_INDEX} is missing: the index is not inspectable")
+    # The index the assistant ANSWERS from, not one this test builds, is swept, and must equal
+    # the manuals-only index: a store-fed index fails either half.
+    index = getattr(rig.assistant, hv.ASSISTANT_INDEX, None)
+    build_index = getattr(hv.help_module(), hv.BUILD_INDEX, None)
+    if index is None or build_index is None:
+        problems.append(f"the assistant's {hv.ASSISTANT_INDEX!r} or {hv.BUILD_INDEX} is missing: "
+                        "the index is not inspectable")
     else:
-        index_text = "\n".join(str(get(p, "text")) for p in get(build_index(hv.load_manuals()), "passages"))
+        texts = [str(get(p, "text")) for p in get(index, "passages")]
         problems += [f"retrieval index: {hit}" for hit in hv.sweep(
-            index_text, {**rig.world.forbidden, "Zelda's name": rig.world.zelda_name})]
+            "\n".join(texts), {**rig.world.forbidden, "Zelda's name": rig.world.zelda_name})]
+        manuals_only = sorted(str(get(p, "text"))
+                              for p in get(build_index(hv.load_manuals()), "passages"))
+        if sorted(texts) != manuals_only:
+            problems.append("the assistant's index is not the manuals-only index")
     rig.store.close()
     assert not problems, "\n".join(problems)

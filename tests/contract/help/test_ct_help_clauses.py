@@ -127,14 +127,13 @@ def test_tc_help_c05_the_log_records_each_exchange_exactly(tmp_path, tmp_data_di
             start = len(log)
             continue
         start, entry = len(log), log[-1]
-        if set(entry) != hv.QA_LOG_KEYS:
-            problems.append(f"log keys {sorted(entry)} != {sorted(hv.QA_LOG_KEYS)}")
+        if not hv.QA_LOG_KEYS <= set(entry):
+            problems.append(f"log entry lacks {sorted(hv.QA_LOG_KEYS - set(entry))}")
         if entry.get("question") != transcript.question:
             problems.append(f"logged question {entry.get('question')!r}")
         if entry.get("outcome") != outcome:
             problems.append(f"{transcript.question!r}: outcome {entry.get('outcome')!r} != {outcome!r}")
-        cited = sorted(a for _, a in hv.citations(result))
-        logged = sorted(a[-1] if isinstance(a, (list, tuple)) else a for a in entry.get("cited_anchors") or ())
+        cited, logged = hv.cited_anchor_strings(result), hv.logged_anchors(entry)
         if logged != cited:
             problems.append(f"logged anchors {logged} != the answer's {cited}")
         if HOSTED_JUDGE.build_id not in str(entry.get("model_ref")):

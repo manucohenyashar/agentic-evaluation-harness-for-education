@@ -29,8 +29,14 @@ What #636 is asked to provide (and nothing more):
   injected passage in a manual without touching package data. Its only public operation is
   ``ask(question)`` returning ``{answer, citations}`` — a mapping or an object with those two
   attributes; each citation names ``manual_id`` and ``anchor``.
-* ``aeh.help.qa_log(store)`` — the Q&A log, oldest first, each entry a mapping carrying
-  ``QA_LOG_KEYS``.
+* ``HelpAssistant.index`` — the retrieval index the assistant actually answers from (a
+  non-callable attribute, so it is no second operation); its ``passages`` carry ``text``.
+* ``aeh.help.qa_log(store)`` — the Q&A log, oldest first, each entry a mapping carrying (at
+  least) ``QA_LOG_KEYS``; ``cited_anchors`` is a sequence of anchor strings.
+* The manuals reads return JSON: ``GET MANUALS_ROUTE`` a list of ``{manual_id, title}``,
+  ``GET MANUAL_ROUTE`` one manual as ``{manual_id, title, toc: [{anchor, heading}], sections:
+  [{anchor, heading, text}]}`` with section ``text`` as plain text (Markdown source is fine,
+  HTML is not), one section per heading at every level.
 * On the console's route table (#629's ``aeh.console.API_ROUTES``, records with ``method``,
   ``path`` and ``control`` — the shape PR #645's ``console_api_vocabulary`` reads): the ask
   route as a **GET** with ``control=None`` (a POST would be the orphan mutation #645's census
@@ -70,6 +76,7 @@ MANUALS_MANIFEST = "manuals_manifest"
 MANUALS_DIR = "MANUALS_DIR"
 BUILD_INDEX = "build_index"
 QA_LOG = "qa_log"
+ASSISTANT_INDEX = "index"
 MANUALS_DIR_KWARG = "manuals_dir"
 
 #: The issue every name above waits on, and the one the console routes wait on.
@@ -128,11 +135,34 @@ def citations(result: Any) -> list[tuple[str, str]]:
 
 
 def result_fields(result: Any) -> set[str]:
-    """What the answer carries beyond CT-HELP-01's two fields."""
+    """Every field the answer carries (CT-HELP-01 allows two): mapping keys, NamedTuple
+    ``_fields``, dataclass fields, ``__slots__`` and instance attributes, together."""
     if isinstance(result, Mapping):
         return set(result)
-    return {n for n in vars(result) if not n.startswith("_")} if hasattr(result, "__dict__") else {
-        n for n in getattr(type(result), "__dataclass_fields__", {})}
+    names = set(getattr(result, "_fields", ()))
+    names |= set(getattr(type(result), "__dataclass_fields__", {}))
+    for klass in type(result).__mro__:
+        slots = getattr(klass, "__slots__", ())
+        names |= {slots} if isinstance(slots, str) else set(slots)
+    names |= set(getattr(result, "__dict__", {}))
+    return {n for n in names if not n.startswith("_")}
+
+
+def logged_anchors(entry: Mapping[str, Any]) -> list[str]:
+    """A log entry's cited anchors as sorted anchor strings, whatever element shape is used."""
+    out = []
+    for item in entry.get("cited_anchors") or ():
+        if isinstance(item, Mapping):
+            out.append(str(item.get("anchor")))
+        elif isinstance(item, (list, tuple)):
+            out.append(str(item[-1]))
+        else:
+            out.append(str(item))
+    return sorted(out)
+
+
+def cited_anchor_strings(result: Any) -> list[str]:
+    return sorted(a for _, a in citations(result))
 
 
 # --- the implementation, reached lazily --------------------------------------------------
@@ -227,15 +257,17 @@ def sweep(text: str, forbidden: Mapping[str, str], *, allow_in: str | None = Non
 
 
 def contains_window(haystack_norm: str, text: str, words: int = 10) -> bool:
-    """Whether a ``words``-long window of ``text`` (its middle) is in the normalized haystack;
-    the whole text when shorter. The test of "this section was given to the model"."""
+    """Whether ANY ``words``-long run of ``text`` is in the normalized haystack (the whole text
+    when shorter): "some passage of this section was given to the model", true whether the
+    implementation sends whole sections or splits and trims them."""
     tokens = norm(text).split()
     if not tokens:
         return False
     if len(tokens) <= words:
         return " ".join(tokens) in haystack_norm
-    start = (len(tokens) - words) // 2
-    return " ".join(tokens[start:start + words]) in haystack_norm
+    padded = f" {haystack_norm} "
+    return any(f" {' '.join(tokens[i:i + words])} " in padded
+               for i in range(len(tokens) - words + 1))
 
 
 def wrapped(field_value: str, question: str) -> bool:
@@ -257,7 +289,8 @@ def store_snapshot(data_dir: Path) -> dict[str, tuple[int, str]]:
         connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
         try:
             names = [r[0] for r in connection.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")]
+                "SELECT name FROM sqlite_master WHERE type = 'table' "
+                "AND name NOT LIKE 'sqlite_%' ORDER BY name")]
             for name in names:
                 rows = sorted(repr(r) for r in connection.execute(f'SELECT * FROM "{name}"'))
                 snap[f"{rel}::{name}"] = (len(rows), hashlib.sha256("\n".join(rows).encode()).hexdigest())
@@ -336,7 +369,7 @@ GROUNDED_T = Transcript(
 #: A question no manual can ground. Its recorded reply is a confident HALLUCINATION, so the
 #: case breaks if the assistant ever lets a model-memory answer through (FR-HELP-02).
 NOT_FOUND_T = Transcript(
-    question="Which xylophone tuning suits a glockenspiel quartet?",
+    question="Which xylophone tuning flatters a glockenspiel quartet?",
     reply="Tune the xylophone to A=442 Hz and seat it to the left of the glockenspiel quartet.",
     tokens_in=310, tokens_out=22,
 )
@@ -401,6 +434,11 @@ REFERENCE_SET: tuple[Transcript, ...] = tuple(
 TRANSCRIPTS: tuple[Transcript, ...] = (
     GROUNDED_T, NOT_FOUND_T, INJECTION_T, NESTED_T, ACTION_T, STUDENT_T, *REFERENCE_SET,
 )
+
+
+#: Words too common to show a question overlaps the manuals (TC-HELP-02(b)'s precondition).
+STOPWORDS = frozenset({"which", "what", "where", "there", "their", "about", "would", "could",
+                       "should", "these", "those"})
 
 
 def profile_of(model_ref: Any) -> str:

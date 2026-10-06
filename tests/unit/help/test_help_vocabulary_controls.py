@@ -174,3 +174,33 @@ def test_the_reference_envelope_sits_inside_the_budget():
     for profile, budget in hv.P95_BUDGET_MS.items():
         assert max(t.latency_ms[profile] for t in hv.REFERENCE_SET) < budget
     assert len(hv.REFERENCE_SET) >= 20
+
+
+def test_result_fields_sees_extra_fields_on_every_result_shape():
+    from collections import namedtuple
+    from dataclasses import dataclass as dc
+
+    NT = namedtuple("NT", "answer citations action")
+
+    class Slotted:
+        __slots__ = ("answer", "citations", "action")
+
+    @dc
+    class D:
+        answer: str
+        citations: tuple
+        action: str
+
+    for result in (NT("a", (), "x"), Slotted(), D("a", (), "x"), {"answer": 1, "citations": 2, "action": 3}):
+        assert hv.result_fields(result) - {"answer", "citations"} == {"action"}, type(result)
+
+
+def test_logged_anchors_reads_strings_pairs_and_mappings_alike():
+    for shape in (["b", "a"], [("m", "b"), ("m", "a")], [{"manual_id": "m", "anchor": "b"}, {"anchor": "a"}]):
+        assert hv.logged_anchors({"cited_anchors": shape}) == ["a", "b"]
+
+
+def test_contains_window_accepts_a_trimmed_passage_of_a_long_section():
+    section = " ".join(f"w{i}" for i in range(60))
+    assert hv.contains_window(hv.norm(" ".join(f"w{i}" for i in range(0, 12))), section)
+    assert not hv.contains_window(hv.norm("w1 w3 w5 w7 w9 w11 w13 w15 w17 w19 w21"), section)

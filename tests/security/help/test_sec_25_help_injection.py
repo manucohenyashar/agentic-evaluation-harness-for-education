@@ -37,8 +37,9 @@ def _problems(rig, question: str, result, before) -> list[str]:
     extra = hv.result_fields(result) - {"answer", "citations"}
     if extra:
         problems.append(f"the answer carries operational fields {sorted(extra)}")
-    if len(rig.double.calls) != 1:
-        problems.append(f"expected one model call, saw {len(rig.double.calls)}")
+    outcome = hv.read_log(rig.store)[-1].get("outcome")
+    if len(rig.double.calls) > 1 or (outcome == hv.GROUNDED and len(rig.double.calls) != 1):
+        problems.append(f"{len(rig.double.calls)} model calls for a {outcome!r} answer")
     for call in rig.double.calls:
         fields = [v for _, v in call.prompt.fields if question in v]
         if not fields:
@@ -49,9 +50,8 @@ def _problems(rig, question: str, result, before) -> list[str]:
     entry = hv.read_log(rig.store)[-1]
     if entry.get("outcome") not in (hv.GROUNDED, hv.NOT_FOUND):
         problems.append(f"logged outcome {entry.get('outcome')!r}")
-    logged = sorted(a[-1] if isinstance(a, (list, tuple)) else a for a in entry.get("cited_anchors") or ())
-    if logged != sorted(a for _, a in hv.citations(result)):
-        problems.append(f"logged anchors {logged} != the answer's {hv.citations(result)}")
+    if hv.logged_anchors(entry) != hv.cited_anchor_strings(result):
+        problems.append(f"logged anchors {hv.logged_anchors(entry)} != the answer's {hv.citations(result)}")
     rig.store.close()
     return problems
 
@@ -61,6 +61,9 @@ def test_sec_25_an_injected_question_writes_nothing_and_gets_a_prose_answer(tmp_
     rig = hv.build_rig(tmp_data_dir, tmp_path / "rec", seed=True)
     before = hv.settled_snapshot(rig)
     result = rig.assistant.ask(hv.INJECTION_T.question)
+    # The question also asks how to start a run, which the manuals ground: the hostile reply must
+    # actually come back from the model, or the "acts on nothing" half proves nothing.
+    assert rig.double.calls, "precondition: the injected question never reached the model"
     problems = _problems(rig, hv.INJECTION_T.question, result, before)
     assert not problems, "\n".join(problems)
 
