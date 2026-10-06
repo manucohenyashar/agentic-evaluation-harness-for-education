@@ -17,6 +17,7 @@ from .settings import (
     V4_BREAKER_RATE_ENV,
     V4_SEMANTIC_FLOOR_ENV,
 )
+from .identity import redact_identity_head
 from .markup import UNTRUSTED_CLOSE
 from .descriptions import _v4_lexical_affinity
 from .schema import INGEST_STATEMENTS
@@ -221,6 +222,9 @@ class AssessmentMatchMixin:
         submission cannot step outside the block and steer the verdict by
         addressing the model from beyond the fence."""
         signals["semantic_escalation"] = {"requested": True}
+        # The written name never reaches a model (NFR-PROV-04, CT-INGEST-23): the
+        # `Student:` head is replaced before the transcript is fenced, whatever V3 decided.
+        markdown = redact_identity_head(markdown)
         declared = {row["question_id"]: row["kind"]
                     for row in package_catalog.criteria(package_version)}
         fence_terminators = markdown.count(UNTRUSTED_CLOSE)

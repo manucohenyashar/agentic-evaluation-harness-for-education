@@ -23,6 +23,7 @@ from .errors import (
     IngestGapError,
     IngestTranscriptionError,
 )
+from .identity import V3_PASS, resolve_identity, triage_finding, written_identity
 from .schema import INGEST_STATEMENTS
 from .records import IngestReport
 
@@ -344,33 +345,22 @@ class SubmissionIngestionMixin:
                         "gate": "v2", "failures": v2_failures})
                 else:
                     gates["v2"] = "pass"
-            # V3 identity (FR-INGEST-24): the transcript's declared identity,
-            # matched against the roster — ambiguous or unmatched routes to triage
-            # and is NEVER guessed.
-            named = self._extract_identity(stored_markdown)
-            roster = {row["student_ref"] for row in self._handle.query(
-                INGEST_STATEMENTS["select_roster"], cohort_id=cohort_id)}
-            if named is None:
-                gates["v3"] = "unmatched"
-                ingest_status = "incomplete"
-                quarantined = True
-                identity_matched = False
-                findings.append({"gate": "v3", "finding":
-                                 "no student identity found in the submission"})
-            elif named not in roster:
-                candidates = sorted(ref for ref in roster
-                                    if named.lower() in ref.lower())
-                gates["v3"] = "ambiguous" if len(candidates) > 1 else "unmatched"
-                ingest_status = "incomplete"
-                quarantined = True
-                identity_matched = False
-                findings.append({"gate": "v3", "finding":
-                                 f"identity {named!r} does not match the roster "
-                                 f"(candidates: {candidates})"})
+            # V3 identity (FR-INGEST-39, amending FR-INGEST-24): the name written on
+            # the paper, matched against the roster's names under normalization;
+            # ambiguous or unmatched routes to triage and is NEVER guessed. The
+            # finding names candidate refs only, never the written name.
+            named, written_id = written_identity(stored_markdown)
+            match = resolve_identity(named, written_id, self._handle.query(
+                INGEST_STATEMENTS["select_roster"], cohort_id=cohort_id))
+            gates["v3"] = match.outcome
+            identity_matched = match.outcome == V3_PASS
+            if identity_matched:
+                student_ref = match.student_ref
             else:
-                gates["v3"] = "pass"
-                student_ref = named
-                identity_matched = True
+                ingest_status = "incomplete"
+                quarantined = True
+                findings.append({"gate": "v3", "finding": triage_finding(
+                    match, name_present=named is not None)})
 
         # V4 assessment match (#41, FR-INGEST-25..28): runs whenever a transcript
         # exists — INCLUDING after a V2/V3 quarantine, because the plan's decision
@@ -498,14 +488,6 @@ class SubmissionIngestionMixin:
             detail=detail,
             v4_signals=v4_signals,
         )
-
-    @staticmethod
-    def _extract_identity(markdown: str) -> str | None:
-        """The student named on the paper: a leading `Student: <name>` line that the prompt asks
-        the model to copy exactly (FR-INGEST-24). None when there is none; V3 handles the absence
-        and never guesses."""
-        match = re.search(r"^Student:\s*(.+)$", markdown, re.MULTILINE)
-        return match.group(1).strip() if match else None
 
     # -- V4: assessment match, recorded signals, the cohort breaker (FR-INGEST-25..28) ---------------
     #

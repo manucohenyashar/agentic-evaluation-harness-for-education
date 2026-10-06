@@ -1343,22 +1343,7 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "python -m pytest -q -p no:cacheprovider tests/perf/test_perf_11_composition_overhead.py::test_perf_11_composition_adds_at_most_a_quarter_millisecond_per_unit",
         ("tests/perf/test_perf_11_composition_overhead.py::test_perf_11_composition_adds_at_most_a_quarter_millisecond_per_unit",),
     ),
-    # --- TS-143 (#619), name-primary identity --------------------------------------------
-    #
-    # Keyed `command` on the design-named migration (`ingest_roster_names`, Cohort 33, owner
-    # `aeh.ingest`) being registered: the design declares no symbol for the matcher or the
-    # roster loader, and the migration lands in the same story (#620) as everything these
-    # cases assert. SystemExit rather than assert, so `python -O` cannot make it pass.
-    "#620 TS-143 name-primary V3 matching, roster names, Cohort 33": (
-        "command",
-        "python -c \"import aeh.ingest; from aeh.store import TIER_MIGRATIONS, Tier; "
-        "raise SystemExit(0 if any(m.name == 'ingest_roster_names' "
-        "for m in TIER_MIGRATIONS[Tier.COHORT]) else 1)\"",
-        (
-            "tests/integration/ingest/test_ts143_name_identity.py",
-            "tests/contract/ingest/test_ct_ingest_23_name_identity.py",
-        ),
-    ),
+    # "#620 TS-143 name-primary V3 matching, roster names, Cohort 33" left with #620's fix.
     "#155 check_traceability --contracts-only passes the real pair (TS-82)": (
         "command",
         "python .claude/skills/create-test-plan/scripts/check_traceability.py "

@@ -32,7 +32,7 @@ def parked(tmp_data_dir, monkeypatch):
     import verify_sample_materials as v
 
     from aeh.ingest import Ingestor, PdfiumRasterizer, PypdfSanitizer, ResidencySlot
-    from aeh.orch.cohorts import create_cohort
+    from aeh.orch.cohorts import RosterEntry, create_cohort
     from aeh.pkg import PackageCatalog
     from aeh.prov import SamplingParams
 
@@ -40,8 +40,12 @@ def parked(tmp_data_dir, monkeypatch):
     built = build_package(store, read_package_spec(SAMPLE_SPEC))
     catalog = PackageCatalog(store.package(built.package_id), package_id=built.package_id,
                              blobs=store.blobs())
+    # #620: a roster entry needs a name; the sample sheets write the ID on the `Student:`
+    # line, so that is the name each paper is matched by.
     create_cohort(store, "class-ps9", "synthetic",
-                  [s["student"] or "S9-006" for s in sm.PHYSICS_SHEETS])
+                  [RosterEntry(full_name=s["student"] or "S9-006",
+                               student_ref=s["student"] or "S9-006")
+                   for s in sm.PHYSICS_SHEETS])
     files, reader, blobs = sm.build_all(), v.ScriptedReader(), store.blobs()
     ingestor = Ingestor(store.cohort("class-ps9"), blobs, reader, v.TRANSCRIBER,
                         SamplingParams(temperature=0.0), PdfiumRasterizer(),
