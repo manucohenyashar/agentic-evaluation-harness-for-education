@@ -1350,6 +1350,23 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "--contracts-only --quiet",
         ("tests/contract/blast/test_tc_blast_rule.py::test_tc_blast_03_the_contracts_only_gate_fails_a_lost_clause_case_and_ci_runs_it",),
     ),
+    # --- TS-145 (#623), M-SETUP rubric-method flows and the general derivation gate --------
+    #
+    # #624 builds them; the design names no Python surface, so the key is on all six members
+    # INVENTED in `tests/support/setup_rubric_methods.py` (the one file naming the
+    # assumed surface). If #624 lands other names this key never fires: re-point that file
+    # and this key together.
+    "#624 TS-145 general derivation read-back and evidence-sum builder (TC-SETUP-24/25, C17)": (
+        "symbols",
+        "aeh.setup:SetupService.derive_general_bands,aeh.setup:SetupService.derivation_card,"
+        "aeh.setup:SetupService.confirm_general_derivation,"
+        "aeh.setup:SetupService.build_evidence_sum,aeh.setup:SetupService.edit_aspect_descriptor,"
+        "aeh.setup:SetupService.confirm_evidence_sum",
+        (
+            "tests/integration/setup/test_tc_setup_24_25_rubric_methods.py",
+            "tests/contract/setup/test_ct_setup_c17_general_derivation_gate.py",
+        ),
+    ),
 }
 
 
