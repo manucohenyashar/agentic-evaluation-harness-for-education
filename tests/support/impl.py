@@ -1343,6 +1343,22 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "python -m pytest -q -p no:cacheprovider tests/perf/test_perf_11_composition_overhead.py::test_perf_11_composition_adds_at_most_a_quarter_millisecond_per_unit",
         ("tests/perf/test_perf_11_composition_overhead.py::test_perf_11_composition_adds_at_most_a_quarter_millisecond_per_unit",),
     ),
+    # --- TS-143 (#619), name-primary identity --------------------------------------------
+    #
+    # Keyed `command` on the design-named migration (`ingest_roster_names`, Cohort 33, owner
+    # `aeh.ingest`) being registered: the design declares no symbol for the matcher or the
+    # roster loader, and the migration lands in the same story (#620) as everything these
+    # cases assert. SystemExit rather than assert, so `python -O` cannot make it pass.
+    "#620 TS-143 name-primary V3 matching, roster names, Cohort 33": (
+        "command",
+        "python -c \"import aeh.ingest; from aeh.store import TIER_MIGRATIONS, Tier; "
+        "raise SystemExit(0 if any(m.name == 'ingest_roster_names' "
+        "for m in TIER_MIGRATIONS[Tier.COHORT]) else 1)\"",
+        (
+            "tests/integration/ingest/test_ts143_name_identity.py",
+            "tests/contract/ingest/test_ct_ingest_23_name_identity.py",
+        ),
+    ),
     "#155 check_traceability --contracts-only passes the real pair (TS-82)": (
         "command",
         "python .claude/skills/create-test-plan/scripts/check_traceability.py "
@@ -1372,6 +1388,218 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/contract/grade/test_ct_grade_c22_method_composition.py::test_tc_grade_c22_a_general_criterion_writes_exactly_its_bands_twins_rows",
             "tests/contract/grade/test_ct_grade_c22_method_composition.py::test_tc_grade_c22_an_evidence_sum_criterion_is_the_sum_of_its_aspects",
             "tests/contract/grade/test_ct_grade_c22_method_composition.py::test_tc_grade_c22_the_method_is_never_an_input_to_confidence_routing_or_escalation",
+        ),
+    ),
+    # --- TS-145 (#623), M-SETUP rubric-method flows and the general derivation gate --------
+    #
+    # #624 builds them; the design names no Python surface, so the key is on all six members
+    # INVENTED in `tests/support/setup_rubric_methods.py` (the one file naming the
+    # assumed surface). If #624 lands other names this key never fires: re-point that file
+    # and this key together.
+    "#624 TS-145 general derivation read-back and evidence-sum builder (TC-SETUP-24/25, C17)": (
+        "symbols",
+        "aeh.setup:SetupService.derive_general_bands,aeh.setup:SetupService.derivation_card,"
+        "aeh.setup:SetupService.confirm_general_derivation,"
+        "aeh.setup:SetupService.build_evidence_sum,aeh.setup:SetupService.edit_aspect_descriptor,"
+        "aeh.setup:SetupService.confirm_evidence_sum",
+        (
+            "tests/integration/setup/test_tc_setup_24_25_rubric_methods.py",
+            "tests/contract/setup/test_ct_setup_c17_general_derivation_gate.py",
+        ),
+    ),
+    # --- #639, the SPA cases (TC-UI-01..07, TC-UI-C01..C06, PERF-19, TC-CONSOLE-40/41 re-pointed) --
+    #
+    # The layout is invented in `tests/support/spa.py` (the design declares no M-UI interface).
+    # #634 is keyed `path` on the committed bundle's index.html: unresolved today, resolved the
+    # moment the bundle is committed, and free to check.
+    #
+    # #635 and #638 deliver no Python name and no new file whose path the design fixes, and a
+    # `command` running their browser cases would launch a browser on every fast-tier run and read
+    # an E6 *skip* (exit 0) as "resolved". So both are keyed on a millisecond static probe over the
+    # bundle for the wording each story is the first to ship, quoted from the design: FR-UI-07's
+    # recovery text (#635) and FR-UI-06's answers-only affordance (#638). The tradeoff, stated: if
+    # #634 ships either phrase early, its entry fires before the story lands — re-check the cases
+    # green before unmarking, never unmark on the notice alone.
+    "#634 M-UI foundation: the committed SPA bundle (TC-UI-01/02, C01, C06, TC-CONSOLE-40/41)": (
+        "path",
+        "src/aeh/console_assets/spa/index.html",
+        (
+            "tests/artifact/test_spa_bundle_gate.py::test_tc_ui_01_a_the_committed_bundle_is_present_non_empty_and_ships_as_package_data",
+            "tests/artifact/test_spa_bundle_gate.py::test_tc_ui_01_b_tc_ui_c01_the_bundle_names_no_external_origin",
+            "tests/artifact/test_spa_bundle_gate.py::test_tc_console_40_spa_arm_no_service_worker_registration_anywhere_in_the_bundle",
+            "tests/artifact/test_spa_bundle_gate.py::test_tc_ui_c06_the_bundle_has_committed_source_a_pinned_toolchain_and_one_token_file",
+            "tests/browser/spa/test_spa_rebuild.py::test_tc_ui_01_c_tc_ui_c06_a_rebuild_from_committed_source_is_byte_identical",
+            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_02_the_hub_shows_every_destination_with_live_state_and_no_dead_link",
+            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_c01_a_session_over_the_hub_and_every_destination_requests_one_origin",
+            "tests/browser/spa/test_spa_hub_screens.py::test_tc_console_40_spa_a_session_over_the_react_app_leaves_no_storage_or_worker",
+            "tests/browser/spa/test_spa_hub_screens.py::test_tc_console_41_spa_the_react_app_requests_nothing_from_another_origin",
+        ),
+    ),
+    "#635 M-UI lifecycle screens (TC-UI-03/04/05/07, C02..C05, PERF-19)": (
+        "command",
+        'python -m tests.support.spa contains "check that the console service is running"',
+        (
+            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_03_the_seven_lifecycle_screens_render_the_seeded_store",
+            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_03_adv_15_the_spa_blind_sample_shows_no_decision_band_or_confidence",
+            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_04_styles_resolve_to_tokens_focus_is_visible_contrast_is_aa_fonts_are_local",
+            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_05_publish_start_and_finalize_are_no_ops_until_confirmed",
+            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_07_with_the_server_stopped_every_destination_names_the_recovery",
+            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_c02_a_reload_shows_exactly_what_the_api_reports_and_writes_nothing",
+            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_c03_no_student_text_in_storage_urls_or_logs_and_no_service_worker",
+            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_c04_an_api_error_renders_a_named_recoverable_message_on_every_screen",
+            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_c05_bands_are_editable_band_controls_and_no_screen_takes_a_numeric_score",
+            "tests/browser/spa/test_spa_hub_screens.py::test_perf_19_hub_first_contentful_paint_under_2s_and_transitions_under_300ms",
+        ),
+    ),
+    "#638 M-UI Q&A panel (TC-UI-06)": (
+        "command",
+        'python -m tests.support.spa contains "does not operate the system"',
+        ("tests/browser/spa/test_spa_qa_panel.py::test_tc_ui_06_a_manuals_answer_cites_real_anchors_under_the_answers_only_affordance",),
+    ),
+    # --- TS-141 (#615), M-CONF per-profile engine default, threshold surfaces, Q&A model ----
+    #
+    # Keyed `command` on the written-ahead tests themselves: #616 adds no symbol the design names
+    # (the default, the file key, `HARNESS_QA_MODEL` and `provider_config.qa_model` are all
+    # behaviour of existing functions), so the only honest signal is the cases going green.
+    # Includes the flipped TC-CONF-C19 (operator-requirements plan §5.0 / §4 rule 1).
+    "#616 TS-141 per-profile engine default, threshold config surfaces, Q&A model": (
+        "command",
+        "python -m pytest -q -p no:cacheprovider "
+        "tests/contract/conf/test_ct_conf_c22_qa_model.py::test_tc_conf_c22_edge_local_has_no_override_knob "
+        "tests/contract/conf/test_ct_conf_c22_qa_model.py::test_tc_conf_c22_the_cloud_matrix "
+        "tests/contract/conf/test_ct_conf_c22_qa_model.py::test_tc_conf_c22_the_resolved_value_is_frozen_and_rehydrated "
+        "tests/contract/conf/test_ct_conf_decision_engine.py::test_tc_conf_c19_v2_2_the_default_is_a_function_of_the_profile_never_the_hardware "
+        "tests/regression/test_reg_13_engine_default_flip.py::test_tc_reg_13_a_dropping_the_explicit_off_changes_the_golden_subject "
+        "tests/regression/test_reg_13_engine_default_flip.py::test_tc_reg_13_a_the_three_profile_matrix_with_the_knob_unset "
+        "tests/unit/conf/test_ts108_decision_engine_config.py::test_tc_conf_27_the_config_file_key_resolves_to_the_engine_the_env_knob_gives "
+        "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_35_unset_on_a_cloud_profile_resolves_jev_on_openrouter_jev "
+        "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_35_unset_on_edge_local_resolves_off_even_with_a_build_configured "
+        "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_37_an_out_of_domain_file_value_is_refused_never_clamped "
+        "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_37_env_over_file_over_default "
+        "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_37_openjev_small_keeps_its_085_default_and_the_file_still_overrides_it "
+        "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_38_a_cloud_unset_resolves_panel_0_and_the_knob_overrides "
+        "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_38_b_a_floating_qa_model_is_refused_naming_the_knob "
+        "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_38_c_edge_local_resolves_panel_0_whatever_the_knob_says "
+        "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_38_d_qa_model_rehydrates_identically_on_both_profiles",
+        (
+            "tests/contract/conf/test_ct_conf_c22_qa_model.py::test_tc_conf_c22_edge_local_has_no_override_knob",
+            "tests/contract/conf/test_ct_conf_c22_qa_model.py::test_tc_conf_c22_the_cloud_matrix",
+            "tests/contract/conf/test_ct_conf_c22_qa_model.py::test_tc_conf_c22_the_resolved_value_is_frozen_and_rehydrated",
+            "tests/contract/conf/test_ct_conf_decision_engine.py::test_tc_conf_c19_v2_2_the_default_is_a_function_of_the_profile_never_the_hardware",
+            "tests/regression/test_reg_13_engine_default_flip.py::test_tc_reg_13_a_dropping_the_explicit_off_changes_the_golden_subject",
+            "tests/regression/test_reg_13_engine_default_flip.py::test_tc_reg_13_a_the_three_profile_matrix_with_the_knob_unset",
+            "tests/unit/conf/test_ts108_decision_engine_config.py::test_tc_conf_27_the_config_file_key_resolves_to_the_engine_the_env_knob_gives",
+            "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_35_unset_on_a_cloud_profile_resolves_jev_on_openrouter_jev",
+            "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_35_unset_on_edge_local_resolves_off_even_with_a_build_configured",
+            "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_37_an_out_of_domain_file_value_is_refused_never_clamped",
+            "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_37_env_over_file_over_default",
+            "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_37_openjev_small_keeps_its_085_default_and_the_file_still_overrides_it",
+            "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_38_a_cloud_unset_resolves_panel_0_and_the_knob_overrides",
+            "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_38_b_a_floating_qa_model_is_refused_naming_the_knob",
+            "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_38_c_edge_local_resolves_panel_0_whatever_the_knob_says",
+            "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_38_d_qa_model_rehydrates_identically_on_both_profiles",
+        ),
+    ),
+    # --- TS-140 (#613), packaging flips + the operator-doc sweep ----------------------------
+    #
+    # Keyed `command` on the fast static arms themselves: #614 changes a declaration and some
+    # docs, not a symbol, so the only honest signal is those arms going green. TC-PIPE-12's
+    # clean-venv case rides on the same command rather than its own: it is `slow` (a real venv
+    # and a real `pip install` from the index), and the gate runs every blocker on every
+    # TEST_CMD. Re-run it by hand when this fires; it was seen green against a local simulation
+    # of #614's declaration (#613's PR).
+    "#614 TS-140 packaging: four standard dependencies, extras retired, operator docs reduced": (
+        "command",
+        "python -m pytest -q -p no:cacheprovider -p no:randomly "
+        "tests/unit/pipe/test_tc_store_26_packaging_declaration.py::test_tc_store_26_the_core_declares_exactly_the_four_standard_dependencies "
+        "tests/unit/pipe/test_tc_store_26_packaging_declaration.py::test_tc_store_26_no_optional_dependency_table_survives "
+        "tests/contract/prov/test_ts125_sdk_confinement.py::test_tc_prov_53_the_sdk_is_exact_pinned_in_the_core_dependencies "
+        "tests/contract/prov/test_ts125_sdk_confinement.py::test_tc_prov_53_no_shipped_module_keeps_a_packaging_check_naming_an_extra "
+        "tests/artifact/test_tc_store_29_operator_install_docs.py::test_tc_store_29_no_operator_document_names_an_extra_or_a_manual_pillow_install "
+        "tests/artifact/test_tc_store_29_operator_install_docs.py::test_tc_store_29_the_deployment_tutorial_carries_the_air_gap_wheelhouse_paragraph",
+        (
+            "tests/unit/pipe/test_tc_store_26_packaging_declaration.py::test_tc_store_26_the_core_declares_exactly_the_four_standard_dependencies",
+            "tests/unit/pipe/test_tc_store_26_packaging_declaration.py::test_tc_store_26_no_optional_dependency_table_survives",
+            "tests/contract/prov/test_ts125_sdk_confinement.py::test_tc_prov_53_the_sdk_is_exact_pinned_in_the_core_dependencies",
+            "tests/contract/prov/test_ts125_sdk_confinement.py::test_tc_prov_53_no_shipped_module_keeps_a_packaging_check_naming_an_extra",
+            "tests/artifact/test_tc_store_29_operator_install_docs.py::test_tc_store_29_no_operator_document_names_an_extra_or_a_manual_pillow_install",
+            "tests/artifact/test_tc_store_29_operator_install_docs.py::test_tc_store_29_the_deployment_tutorial_carries_the_air_gap_wheelhouse_paragraph",
+            "tests/smoke/test_tc_pipe_12_clean_venv_install.py::test_tc_pipe_12_pip_install_dot_alone_yields_the_command_and_all_four_libraries",
+        ),
+    ),
+    # The SPA-bundle arms wait on M-UI's committed bundle, not on #614: the package-data glob
+    # must reach it and the clean venv must carry it. Same `command` shape, same slow rider.
+    "#634 TS-140 the SPA bundle ships as package data (TC-STORE-26 new arm, TC-PIPE-12)": (
+        "command",
+        "python -m pytest -q -p no:cacheprovider -p no:randomly "
+        "tests/unit/pipe/test_tc_store_26_packaging_declaration.py::test_tc_store_26_the_package_data_covers_the_spa_bundle_directory",
+        (
+            "tests/unit/pipe/test_tc_store_26_packaging_declaration.py::test_tc_store_26_the_package_data_covers_the_spa_bundle_directory",
+            "tests/smoke/test_tc_pipe_12_clean_venv_install.py::test_tc_pipe_12_the_installed_package_carries_the_spa_bundle",
+        ),
+    ),
+    # --- TS-147 (#628), M-CONSOLE's JSON API and same-origin SPA (FR-CONSOLE-45) ------------
+    #
+    # The names are `tests/support/console_api_vocabulary.py`'s: the route table and the
+    # bundle path #629 adds. The `spa_dir=` seam on `serve_console` arrives in the same
+    # change; if it lags, `start_console` reports it as #629's, not as a TypeError.
+    "#629 TS-147 TC-CONSOLE-53/C30 the console API serves one origin with enumerated mutations": (
+        "symbols",
+        f"{CONSOLE_MODULE}:API_ROUTES,{CONSOLE_MODULE}:SPA_BUNDLE_DIR",
+        (
+            "tests/integration/console/test_tc_console_53_api_one_origin.py::test_tc_console_53_a_the_spa_and_its_assets_come_from_this_origin_with_their_types",
+            "tests/integration/console/test_tc_console_53_api_one_origin.py::test_tc_console_53_b_the_census_lists_every_mutating_route_beside_its_control_row",
+            "tests/integration/console/test_tc_console_53_api_one_origin.py::test_tc_console_53_b_every_mutating_route_reaches_exactly_its_control_row",
+            "tests/integration/console/test_tc_console_53_api_one_origin.py::test_tc_console_53_b_a_mutating_verb_on_an_unlisted_path_writes_nothing",
+            "tests/integration/console/test_tc_console_53_api_one_origin.py::test_tc_console_53_b_no_read_route_writes",
+            "tests/integration/console/test_tc_console_53_api_one_origin.py::test_tc_console_53_c_no_served_byte_names_an_external_origin",
+            "tests/contract/console/test_ct_console_c30_one_origin_enumerated_mutations.py::test_tc_console_c30_the_api_mutations_are_exactly_the_enumerated_control_writes",
+            "tests/contract/console/test_ct_console_c30_one_origin_enumerated_mutations.py::test_tc_console_c30_an_external_origin_in_any_served_byte_breaks_the_clause",
+        ),
+    ),
+    # The shipped-bundle arm needs the built SPA at the package-data path, which #634 ships
+    # (#629's own criterion: "the bundle itself arrives with #634"). Keyed on the file's
+    # existence, so it fires when the bundle lands, whichever of #629/#634 is last.
+    "#634 TS-147 TC-CONSOLE-53(a) the shipped SPA bundle is served from package data": (
+        "command",
+        "python -c \"import sys, aeh.console as c; "
+        "sys.exit(0 if (c.SPA_BUNDLE_DIR / 'index.html').is_file() else 1)\"",
+        ("tests/integration/console/test_tc_console_53_api_one_origin.py::test_tc_console_53_a_the_shipped_bundle_is_served_and_names_no_other_origin",),
+    ),
+    # --- TS-144 (#621), M-PKG rubric methods ----------------------------------------------
+    #
+    # #622 names no Python surface for `score_method`, so no `symbol` key is honest. Keyed
+    # `command` on the cheapest case that is true only once Package migration 15 has landed
+    # under its design name with its pin bumped and CLAUDE.md updated.
+    "#622 TS-144 score_method vocabulary and Package migration 15 (TC-PKG-34..36, C21)": (
+        "command",
+        "python -m pytest -q -p no:cacheprovider tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_34_b_the_package_pin_is_15_and_names_pkg_criterion_score_method",
+        (
+            "tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_34_a_a_weighted_method_is_refused_naming_the_closed_set",
+            "tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_34_b_migration_15_adds_both_columns_with_their_defaults",
+            "tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_34_b_the_package_pin_is_15_and_names_pkg_criterion_score_method",
+            "tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_34_b_the_v14_fixture_has_neither_column",
+            "tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_34_c_criteria_with_no_explicit_method_read_bands",
+            "tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_34_the_column_check_refuses_a_value_outside_the_closed_set",
+            "tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_35_a_a_composite_of_three_two_band_aspects_publishes",
+            "tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_35_each_malformed_composite_shape_is_refused_at_publish",
+            "tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_36_a_a_general_criterion_with_confirmed_derivation_publishes",
+            "tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_36_b_a_general_criterion_without_confirmed_derivation_is_refused",
+            "tests/contract/pkg/test_ct_pkg_21_score_method_shape.py::test_tc_pkg_c21_the_valid_fixture_satisfies_the_clause",
+            "tests/contract/pkg/test_ct_pkg_21_score_method_shape.py::test_tc_pkg_c21_every_clause_violation_is_refused_at_publish",
+            "tests/contract/pkg/test_ct_pkg_21_score_method_shape.py::test_tc_pkg_c21_fifty_seeded_valid_packages_all_satisfy_the_shape",
+            "tests/contract/pkg/test_ct_pkg_21_score_method_shape.py::test_tc_pkg_c21_a_random_non_member_method_is_refused_for_every_seed",
+        ),
+    ),
+    # #627 (depends on #622): `aeh package export`. Keyed on the shipped-sample round trip,
+    # which needs only the export command — the fixture round trip also needs #622, which
+    # #627 cannot land without.
+    "#627 TS-144 aeh package export round-trips through build (TC-PKG-37)": (
+        "command",
+        "python -m pytest -q -p no:cacheprovider tests/integration/pkg/test_tc_pkg_37_export_round_trip.py::test_tc_pkg_37_a_shipped_sample_round_trips_through_export",
+        (
+            "tests/integration/pkg/test_tc_pkg_37_export_round_trip.py::test_tc_pkg_37_an_exported_spec_rebuilds_the_same_package",
+            "tests/integration/pkg/test_tc_pkg_37_export_round_trip.py::test_tc_pkg_37_a_shipped_sample_round_trips_through_export",
         ),
     ),
 }
@@ -1439,7 +1667,17 @@ def blocker_is_resolved(kind: str, target: str, repo_root: Any) -> bool:
         argv = shlex.split(target)
         if argv and argv[0] == "python":
             argv[0] = sys.executable
-        completed = subprocess.run(argv, cwd=repo_root, capture_output=True, timeout=300)
+        # Seam 3: the timeout is a knob, not a constant calibrated on one box. A command that
+        # does not finish has not exited 0, so it reads as unresolved - a slow box must not
+        # turn a still-open blocker into a crashed gate (PERF-11's run outlasts 300 s under load).
+        import os
+
+        timeout_s = float(os.environ.get("HARNESS_BLOCKER_COMMAND_TIMEOUT_S", "300"))
+        try:
+            completed = subprocess.run(argv, cwd=repo_root, capture_output=True,
+                                       timeout=timeout_s)
+        except subprocess.TimeoutExpired:
+            return False
         return completed.returncode == 0
     raise ValueError(
         f"unknown written-ahead blocker kind {kind!r}. Add a branch here when adding a kind, "

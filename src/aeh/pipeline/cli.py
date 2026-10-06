@@ -185,7 +185,7 @@ def _cohort_command(args: Any) -> int:
     print(json.dumps(_as_json(summary), indent=2, sort_keys=True))
     if summary.consent_class == "real":
         print("note: consent class 'real' - the dev-ci and cloud-hosted profiles will refuse to "
-              "send this cohort's work to OpenRouter unless HARNESS_ALLOW_REMOTE_REAL_WORK and "
+              "send this cohort's work to a hosted model unless HARNESS_ALLOW_REMOTE_REAL_WORK and "
               "allow_remote_real_work_supplied_by are both set.", file=sys.stderr)
     return EXIT_OK
 
