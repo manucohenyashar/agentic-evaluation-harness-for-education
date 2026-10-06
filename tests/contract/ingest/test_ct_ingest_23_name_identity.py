@@ -12,9 +12,10 @@ Two halves:
    (`tests/support/f_names.py`), asserted at clause strength per cell: the output is a roster
    `student_ref` (resolved) or `unknown` with the paper held (triaged) — never another value, and
    the expected one per the hand-computed table; no name in any request the model boundary
-   received, in any log record, or in the bytes of any Tier D or Tier P file. A cell with no ID
-   on the paper resolves exactly as it would with one where the name alone decides — the ID's
-   absence is never an error.
+   received (transcription, and V4's semantic escalation, which carries the transcript), in any
+   log record, or in the bytes of any Tier D or Tier P file. Every unambiguous cell carries no
+   ID on the paper and still resolves — the ID's absence is never an error; an ID only
+   disambiguates among the name's own candidates (`collision-foreign-id` stays triaged).
 2. **The static sweep** (green today, unmarked, so it guards #620 as #620 lands) — no Tier D or
    Tier P migration declares a name column, and no module that builds a model request outside
    the judge's redaction boundary reads the roster's `full_name`. Each sweep is shown to flag a
@@ -57,6 +58,7 @@ SRC = REPO_ROOT / "src" / "aeh"
 CLAUSE_CELLS = tuple((a.arm_id, a.written, None, a.intended_ref) for a in fx.ARMS) + (
     ("collision", fx.COLLISION_WRITTEN, None, None),
     ("collision-with-id", fx.COLLISION_WRITTEN, "S-0410", "S-0410"),
+    ("collision-foreign-id", fx.COLLISION_WRITTEN, "S-0401", None),
     ("unmatched", fx.UNMATCHED_WRITTEN, None, None),
     ("prefix", fx.PREFIX_WRITTEN, None, None),
 )
@@ -67,7 +69,10 @@ _NAME_COLUMN = re.compile(
     re.IGNORECASE)
 
 #: Where a model request is built, outside the judge's redaction boundary (see the docstring).
-REQUEST_BUILDERS = ("prov", "extract", "synth", "setup", "ingest/markup.py")
+#: In `aeh.ingest`, the files that assemble a `PromptPayload` (transcription, the second
+#: description pass, V4's escalation) and the prompt text itself.
+REQUEST_BUILDERS = ("prov", "extract", "synth", "setup", "ingest/markup.py",
+                    "ingest/assessment_match.py", "ingest/documents.py", "ingest/ingestor.py")
 
 _ROSTER_NAME = re.compile(r"\bfull_name\b")
 
@@ -96,6 +101,9 @@ def test_tc_ingest_c23_identity_outputs_a_ref_and_names_stay_in_tier_c(
                 f"(V3 {report.gates.get('v3')!r}: {fx.v3_findings(report)})")
         assert row["student_ref"] in set(fx.REFS) | {"unknown"}, (
             f"C23 {cell}: identity resolution output {row['student_ref']!r}, which is not a ref")
+        world.bind_assessment()
+        world.ingest_escalated(f"c23-v4-{cell}", written, student_id)
+        assert world.provider.escalations == 1, "fixture: V4 did not escalate"
         for request in world.provider.requests:
             assert not fx.find_names(request), f"C23 {cell}: a name reached a model request"
     finally:

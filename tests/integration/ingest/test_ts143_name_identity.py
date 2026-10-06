@@ -4,9 +4,9 @@ and the SEC-19 re-run (operator-requirements test plan §5.4, §5.0; design delt
 | Case | What it pins |
 |---|---|
 | TC-INGEST-56 | Each F-NAMES normalization arm (case, whitespace, diacritics dropped and added, decomposed, surname-first, `ß`/`ss`, combined) resolves to its intended `student_ref`; the unnormalized comparison matches none (corpus check); the arm's paper matches nothing once its row is removed (leave-one-out: the match is that row, not a loose one); the name lands in no Tier D or Tier P file |
-| TC-INGEST-57 | The collision pair: (a) both candidates, triage, no auto-accept — and no scoring work and no `criterion_score` row for the paper through a run's enumeration; (b) the paper's `Student ID:` line resolves to row 2; (c) no row → triage, zero candidates; (d) a prefix → triage |
+| TC-INGEST-57 | The collision pair: (a) both candidates, triage, no auto-accept — and no deterministic or score unit for the paper in a run's enumeration; (b) the paper's `Student ID:` line resolves to row 2, and another student's ID does not; (c) no row → triage, zero candidates; (d) a prefix → triage |
 | TC-INGEST-58 | (a) a names-only roster through `aeh cohort create`: refs generated, opaque, distinct, stable across reopen; (b) an IDs-only roster, and a row with an empty name, refused naming the requirement, nothing written; (c) a Cohort 32 store migrated to 33: column present, old rows NULL and still resolving by ref, pin 33, CLAUDE.md names the migration; (d) one name in two cohorts → two refs |
-| SEC-19 (re-run) | Over every arm and cell: the assembled V3 request carries no name, the triage candidate list is `student_ref`s only, and no log record carries a name |
+| SEC-19 (re-run) | Over every arm and cell: the assembled transcription request and the V4 semantic-escalation request (which carries the transcript, `Student:` head included) carry no name, the triage candidate list is `student_ref`s only, and no log record carries a name |
 
 **Written ahead of implementation: yes** — every case is keyed to #620 (`WRITTEN_AHEAD_BLOCKERS`,
 "#620 TS-143 ..."). Before #620 the roster has no `full_name` column and each case fails at the
@@ -27,6 +27,15 @@ world's precondition with `NotImplementedYet` naming #620.
 * 58 (b)'s console half is TC-CONSOLE-55's (TS-148): it is the differential against this CLI
   path, and the console has no cohort-creation surface until that story.
 * 58 (a)'s "stable" is asserted across re-reads and a store reopen, not across data folders.
+* 58 (b) pins IDs-only as a CSV with only a `student_ref` header. What the headerless
+  one-entry-per-line shape (today's `ps9-roster.txt`) becomes is left to #620: read as names it
+  would turn IDs into "names", read as IDs it must be refused — either way the CSV cell is the
+  unambiguous one.
+* 58 (c) has a nameless pre-migration row resolve from a ref written on the `Student:` line —
+  the old papers' channel, kept for rows with no name.
+* The V4 escalation arm of SEC-19 is red against today's code for a reason beyond the missing
+  column: the escalation sends the transcript verbatim, so #620 must replace the `Student:`
+  head with the ref (or drop it) before that request is assembled.
 """
 
 from __future__ import annotations
@@ -164,7 +173,15 @@ def test_tc_ingest_57_a_a_name_matching_both_collision_rows_goes_to_triage_with_
 def test_tc_ingest_57_a_a_triaged_paper_gets_no_scoring_work_and_no_score(tmp_data_dir):
     """Until triage resolves, no `criterion_score` row exists for the paper. Driven through the
     run's enumeration over a package with a deterministic criterion, because the deterministic
-    stage admits every submission today — the one path from a held paper to a score row."""
+    stage admits every submission today — the one path from a held paper to a score row.
+
+    **Narrower than the plan's oracle, disclosed.** The plan states the oracle on
+    `criterion_score`; this asserts the unit level (no `deterministic` or `score` unit for the
+    held paper), so a #620 that enumerates the unit and refuses it at the deterministic stage
+    would meet the plan and still fail here. The unit level is chosen because no score exists
+    at enumeration time to assert on, and because a filter on `quarantined` would break
+    TC-ORCH-25 (an `unreadable` paper's re-ingest adds exactly two units): the exclusion has to
+    be identity-specific, which is what an enumeration-level check pins."""
     from aeh.conf import CohortRef, resolve_run_config
     from aeh.orch import STAGE_DETERMINISTIC, STAGE_SCORE, Orchestrator
     from tests.support.conf_builders import edge_cfg, edge_panel
@@ -196,10 +213,6 @@ def test_tc_ingest_57_a_a_triaged_paper_gets_no_scoring_work_and_no_score(tmp_da
         assert not [u for u in held_units if u[0] in (STAGE_DETERMINISTIC, STAGE_SCORE)], (
             f"(a): the identity-triaged paper got scoring work {held_units} — it would be "
             f"scored under no student (or the wrong one) before triage resolves")
-        scores = world.handle.query(
-            "SELECT criterion_id FROM criterion_score WHERE submission_id = :s",
-            s=held.submission_id)
-        assert scores == [], f"(a): criterion_score rows exist for a triaged paper: {scores}"
     finally:
         world.close()
 
@@ -214,6 +227,20 @@ def test_tc_ingest_57_b_the_declared_id_resolves_the_collision_to_row_2(tmp_data
             f"(b): the secondary ID must resolve an ambiguous name (FR-INGEST-39), V3 said "
             f"{report.gates.get('v3')!r}: {fx.v3_findings(report)}")
         assert row["student_ref"] == "S-0410", f"(b): resolved to {row['student_ref']!r}"
+    finally:
+        world.close()
+
+
+@pytest.mark.writtenahead
+def test_tc_ingest_57_b_an_id_outside_the_candidates_does_not_resolve_the_collision(
+        tmp_data_dir):
+    """(b)'s negative twin: the ID only *disambiguates among the name's candidates*. An
+    ambiguous name with another student's ID (row 1's) is still triaged — "any roster ID wins"
+    would put the paper on Amara's record."""
+    world = _world(tmp_data_dir, "57b-foreign")
+    try:
+        report = world.ingest("57b-foreign", fx.COLLISION_WRITTEN, student_id="S-0401")
+        _assert_triaged(world, report, "TC-INGEST-57 (b) foreign ID")
     finally:
         world.close()
 
@@ -414,6 +441,7 @@ def test_tc_ingest_58_d_one_name_in_two_cohorts_gets_two_refs(tmp_data_dir, tmp_
 SWEEP_CELLS = tuple((a.arm_id, a.written, None) for a in fx.ARMS) + (
     ("collision", fx.COLLISION_WRITTEN, None),
     ("collision-with-id", fx.COLLISION_WRITTEN, "S-0410"),
+    ("collision-foreign-id", fx.COLLISION_WRITTEN, "S-0401"),
     ("unmatched", fx.UNMATCHED_WRITTEN, None),
     ("prefix", fx.PREFIX_WRITTEN, None),
 )
@@ -443,10 +471,37 @@ def test_sec_19_the_v3_request_and_triage_payload_carry_refs_never_names(
     assert not hits, f"SEC-19 {cell}: a log record carries {hits}"
 
 
+@pytest.mark.writtenahead
+@pytest.mark.parametrize("cell, written, student_id", SWEEP_CELLS,
+                         ids=[c[0] for c in SWEEP_CELLS])
+def test_sec_19_the_v4_escalation_request_carries_no_name(
+        tmp_data_dir, caplog, cell, written, student_id):
+    """The request a paper's transcript actually reaches after V3: V4's semantic escalation
+    (ADR-7) sends the transcript, `Student:` head included, to a model. With names as the
+    identity signal, that head is the child's name — it must not leave in the request."""
+    caplog.set_level(logging.DEBUG)
+    world = _world(tmp_data_dir, f"sec19-v4-{cell}")
+    try:
+        world.bind_assessment()
+        world.ingest_escalated(f"sec19-v4-{cell}", written, student_id)
+        assert world.provider.escalations == 1, (
+            "fixture: the paper did not reach V4's escalation, so the sweep would be vacuous")
+        for request in world.provider.requests:
+            hits = fx.find_names(request)
+            assert not hits, (
+                f"SEC-19 {cell}: the V4 escalation request carries {hits} (NFR-PROV-04, "
+                f"CT-INGEST-23)")
+    finally:
+        world.close()
+    assert not fx.find_names(caplog.text), f"SEC-19 {cell}: a log record carries a name"
+
+
 def test_sec_19_the_sweep_detects_a_planted_name():
     """The sweep is not vacuous: a request or log line carrying any spelling is caught."""
     assert fx.find_names("prompt: name=ANA   silva")  # collapsed + case-folded
     assert fx.find_names("field=ana silva")
     assert fx.find_names(unicodedata.normalize("NFD", "x Chloé Lefèvre x"))
     assert fx.find_names("Greta Strauß signed")
+    assert fx.find_names("key=haddad ines")            # a normalized match key
+    assert fx.find_names("Student: Benito \t   Ruiz")  # the raw whitespace spelling
     assert not fx.find_names("S-0409 and S-0410, Student: <name>")

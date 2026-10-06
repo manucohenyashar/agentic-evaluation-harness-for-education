@@ -119,6 +119,8 @@ def name_variants() -> set[str]:
     spellings = {row.full_name for row in ROWS}
     spellings |= {arm.written for arm in ARMS}
     spellings |= {COLLISION_WRITTEN, UNMATCHED_WRITTEN}
+    # The normalized match keys too: a log line or row carrying only `haddad ines` leaks.
+    spellings |= {row.hand_key for row in ROWS}
     out: set[str] = set()
     for spelling in spellings:
         collapsed = " ".join(spelling.split())
@@ -141,12 +143,13 @@ def find_names(text: str, names: set[str] | None = None) -> list[str]:
 
 
 def scan_bytes_for_names(path: Path) -> list[str]:
-    """Names present in a file's raw bytes, as UTF-8 in either normalization form."""
-    blob = path.read_bytes()
+    """Names present in a file's raw bytes, as UTF-8 in either normalization form. ASCII case is
+    ignored on both sides (`bytes.lower()`), so a lower-cased match key is caught too."""
+    blob = path.read_bytes().lower()
     hits = []
     for name in sorted(name_variants()):
         for form in ("NFC", "NFD"):
-            needle = unicodedata.normalize(form, name).encode("utf-8")
+            needle = unicodedata.normalize(form, name).encode("utf-8").lower()
             if needle in blob:
                 hits.append(name)
                 break
@@ -202,18 +205,26 @@ class OnePageRasterizer:
 
 
 class RecordingProvider:
-    """A transcription double keyed per (source blob, page); records `repr()` of every prompt
-    it is sent — the assembled request, as the model boundary receives it."""
+    """A transcription double keyed per (source blob, page); records every prompt it is sent —
+    the assembled request, as the model boundary receives it: each field's name and raw value
+    (not `repr()`, which would escape a tab and hide the whitespace arm's spelling). A prompt
+    with no page identity is V4's semantic escalation (ADR-7), answered `uncertain`."""
 
     def __init__(self) -> None:
         self.texts: dict[tuple[str, int], str] = {}
         self.requests: list[str] = []
+        self.escalations = 0
 
     def complete(self, prompt, model_ref, params) -> Completion:
-        self.requests.append(repr(prompt))
+        self.requests.append("\n".join(f"{name}={value}" for name, value in prompt.fields))
         fields = dict(prompt.fields)
         key = (fields.get("source_blob_hash", ""), int(fields.get("page_no") or 0))
-        return Completion(text=self.texts.get(key, "plain page"), tokens_in=1, tokens_out=1,
+        if key == ("", 0):
+            self.escalations += 1
+            text = "uncertain"
+        else:
+            text = self.texts.get(key, "plain page")
+        return Completion(text=text, tokens_in=1, tokens_out=1,
                           latency_ms=1, resolved_build=model_ref.build_id,
                           cached_prefix_tokens=0, cost=None)
 
@@ -283,6 +294,40 @@ class NamesWorld:
         self.provider.texts[(source, 1)] = transcript(written, student_id)
         return self.ingestor.ingest_submission([source], cohort_id=COHORT,
                                                package_version="v0",
+                                               filenames={source: f"scan-{tag}.pdf"})
+
+    def bind_assessment(self) -> None:
+        """Bind a package (Q1 declared `open`) and its assessment artifact, so V4 runs. A paper
+        then printed with another assessment's identifier but answering Q1 lands in V4's
+        `uncertain` band (one identifier dissent) and is escalated to a model with its
+        transcript (ADR-7): the path by which a paper's written name reaches a model request."""
+        from aeh.pkg import PackageCatalog, PackageDraft
+
+        seed = self.store.package("pkg-fnames")
+        with seed.transaction() as tx:
+            tx.execute("INSERT INTO package (package_id, created_at) "
+                       "VALUES ('pkg-fnames', '2026-10-05T00:00:00+00:00')")
+        self.catalog = PackageCatalog(seed, package_id="pkg-fnames")
+        self.version = self.catalog.create_version(None, PackageDraft(title="fnames"))
+        self.catalog.add_criterion(self.version, "C1", question_id="Q1", kind="open",
+                                   max_points=4.0)
+        source = self.store.blobs().put(b"fnames-assessment")
+        self.provider.texts[(source, 1)] = (
+            "Assessment: pkg-fnames\n<!-- region: kind=transcribed_text question_id=Q1 -->\n"
+            "explain the water cycle from evaporation to rainfall\n<!-- /region -->")
+        self.ingestor.ingest_document([source], kind="assessment",
+                                      filenames={source: "assessment.pdf"})
+
+    def ingest_escalated(self, tag: str, written: str | None,
+                         student_id: str | None = None) -> Any:
+        """Ingest a paper into V4's `uncertain` band (call `bind_assessment` first)."""
+        source = self.store.blobs().put(f"fnames-escalated-{tag}".encode())
+        page = transcript(written, student_id).replace(
+            "the worked answer", "the water cycle moves water by evaporation then rainfall")
+        self.provider.texts[(source, 1)] = "Assessment: Something Else\n" + page
+        return self.ingestor.ingest_submission([source], cohort_id=COHORT,
+                                               package_version=self.version,
+                                               package_catalog=self.catalog,
                                                filenames={source: f"scan-{tag}.pdf"})
 
     def submission(self, submission_id: str) -> Any:
