@@ -1350,6 +1350,42 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "--contracts-only --quiet",
         ("tests/contract/blast/test_tc_blast_rule.py::test_tc_blast_03_the_contracts_only_gate_fails_a_lost_clause_case_and_ci_runs_it",),
     ),
+    # --- TS-144 (#621), M-PKG rubric methods ----------------------------------------------
+    #
+    # #622 names no Python surface for `score_method`, so no `symbol` key is honest. Keyed
+    # `command` on the cheapest case that is true only once Package migration 15 has landed
+    # under its design name with its pin bumped and CLAUDE.md updated.
+    "#622 TS-144 score_method vocabulary and Package migration 15 (TC-PKG-34..36, C21)": (
+        "command",
+        "python -m pytest -q -p no:cacheprovider tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_34_b_the_package_pin_is_15_and_names_pkg_criterion_score_method",
+        (
+            "tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_34_a_a_weighted_method_is_refused_naming_the_closed_set",
+            "tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_34_b_migration_15_adds_both_columns_with_their_defaults",
+            "tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_34_b_the_package_pin_is_15_and_names_pkg_criterion_score_method",
+            "tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_34_b_the_v14_fixture_has_neither_column",
+            "tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_34_c_criteria_with_no_explicit_method_read_bands",
+            "tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_34_the_column_check_refuses_a_value_outside_the_closed_set",
+            "tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_35_a_a_composite_of_three_two_band_aspects_publishes",
+            "tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_35_each_malformed_composite_shape_is_refused_at_publish",
+            "tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_36_a_a_general_criterion_with_confirmed_derivation_publishes",
+            "tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_36_b_a_general_criterion_without_confirmed_derivation_is_refused",
+            "tests/contract/pkg/test_ct_pkg_21_score_method_shape.py::test_tc_pkg_c21_the_valid_fixture_satisfies_the_clause",
+            "tests/contract/pkg/test_ct_pkg_21_score_method_shape.py::test_tc_pkg_c21_every_clause_violation_is_refused_at_publish",
+            "tests/contract/pkg/test_ct_pkg_21_score_method_shape.py::test_tc_pkg_c21_fifty_seeded_valid_packages_all_satisfy_the_shape",
+            "tests/contract/pkg/test_ct_pkg_21_score_method_shape.py::test_tc_pkg_c21_a_random_non_member_method_is_refused_for_every_seed",
+        ),
+    ),
+    # #627 (depends on #622): `aeh package export`. Keyed on the shipped-sample round trip,
+    # which needs only the export command — the fixture round trip also needs #622, which
+    # #627 cannot land without.
+    "#627 TS-144 aeh package export round-trips through build (TC-PKG-37)": (
+        "command",
+        "python -m pytest -q -p no:cacheprovider tests/integration/pkg/test_tc_pkg_37_export_round_trip.py::test_tc_pkg_37_a_shipped_sample_round_trips_through_export",
+        (
+            "tests/integration/pkg/test_tc_pkg_37_export_round_trip.py::test_tc_pkg_37_an_exported_spec_rebuilds_the_same_package",
+            "tests/integration/pkg/test_tc_pkg_37_export_round_trip.py::test_tc_pkg_37_a_shipped_sample_round_trips_through_export",
+        ),
+    ),
 }
 
 
