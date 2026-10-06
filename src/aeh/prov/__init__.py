@@ -131,7 +131,6 @@ from .jev_openrouter import (
     JEV_COST_PER_MTOK_IN_ENV,
     JEV_OPENROUTER_PROVIDER_ENV,
     JEV_OPENROUTER_URL_ENV,
-    JEV_SDK_EXTRA,
     JEV_SDK_PATH,
     JevOpenRouterProvider,
     TYPESAFE_SDK_LOGGER,
