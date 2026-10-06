@@ -116,19 +116,10 @@ def _provider_for(config: Mapping[str, Any]) -> Any:
 
 
 def _describe_provider(provider: Any) -> str:
-    """One line naming the provider a run will call, for the operator (seam 4). The profile
-    summary lists model names, which read the same whether OpenRouter answers or a recording
-    does; this line says which."""
-    inner = getattr(provider, "_inner", provider)
-    kind = type(inner).__name__
-    if kind == "OpenRouterProvider":
-        zdr = "zero data retention enforced" if inner._routing() else "NO retention routing"
-        return f"OpenRouter at {inner._base_url} ({zdr})"
-    if kind == "LocalServerProvider":
-        return f"local model server at {inner._base_url}"
-    if kind == "RecordedFixtureProvider":
-        return f"recordings in {getattr(inner, 'fixture_dir', '?')} (no network)"
-    return kind
+    """One line naming the provider a run will call, for the operator (seam 4). Which
+    backend answers is M-PROV's knowledge (CT-PROV-15), so M-PROV words the line."""
+    from aeh.prov import describe_provider
+    return describe_provider(provider)
 
 
 def _load_config_file(path: str | None) -> dict[str, Any]:
@@ -231,7 +222,7 @@ def _escalation_judge_refs(config: Mapping[str, Any], run_config: Any, cohort: A
             f"the random-arm sample ({RANDOM_ARM_RATE_ENV}, {rate}) gives some answers "
             f"{sampled} judges, and this live run has {len(panel) + len(refs)} real judge "
             f"model(s). Add {short} [[profiles.<name>.{ESCALATION_JUDGES_KEY}]] table(s), each "
-            f"a different model, or set {RANDOM_ARM_RATE_ENV}=0 to turn the sample off. "
+            f"a different model, or turn the sample off with {RANDOM_ARM_RATE_ENV}=0. "
             f"Nothing was started.")
     return {f"{ESCALATION_ARM_PREFIX}-{len(panel) + position}": ref
             for position, ref in enumerate(refs, start=1)}
