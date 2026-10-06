@@ -132,7 +132,7 @@ People who will also run the project's own test suite use `pip install -e . -r r
 
 `pip install .` fetches the system's libraries from the internet. If the school computer has no internet, build a *wheelhouse* (a folder of ready-made install files) on a computer that has it, carry the folder across, and install from it.
 
-The connected computer must run the **same operating system and the same Python version** as the school computer: some of the libraries ship a different file for each system.
+The connected computer must run the **same operating system, the same processor type (for example Intel/AMD or ARM) and the same Python version** as the school computer: some of the libraries ship a different file for each.
 
 On the connected computer, in the project folder, with its own `.venv` switched on:
 
@@ -140,7 +140,7 @@ On the connected computer, in the project folder, with its own `.venv` switched 
 pip download . "setuptools>=69" -d wheelhouse
 ```
 
-Copy the project folder, including the new `wheelhouse` folder, to the school computer. There, do Steps 1 and 2 above, then install with no internet:
+Copy the project folder, including the new `wheelhouse` folder but **not** its `.venv` folder (a private environment does not move between computers), to the school computer. There, do Steps 1 and 2 above, then install with no internet:
 
 ```bash
 pip install --no-index --find-links wheelhouse .
