@@ -60,7 +60,7 @@ PR. A test in the repo but not in the plan makes the plan lie about coverage.
 
 - `TEST_CMD` is `./scripts/test.sh` — the fast tier, and the Stop-hook verification gate. It
   needs the dev environment: `python -m venv .venv` then
-  `.venv/Scripts/python -m pip install -r requirements-dev.txt` (`.venv/bin/python` on
+  `.venv/Scripts/python -m pip install -e . -r requirements-dev.txt` (`.venv/bin/python` on
   POSIX). `.venv/` is gitignored, so a fresh clone must do this once.
 - **`writtenahead` is load-bearing.** Test plan §8.2 has every test story land **red**,
   written ahead of its implementation — and the Stop hook blocks the turn whenever `TEST_CMD`
