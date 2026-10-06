@@ -1,0 +1,153 @@
+"""The console's JSON API and the SPA bundle it serves from the same origin (FR-CONSOLE-45).
+
+`API_ROUTES` is both the census `CT-CONSOLE-30` is checked against and the router the server
+dispatches `/api/` from: a route the table does not list does not exist. Every mutating row is
+built from `CONTROL_SURFACE_ACTIONS`, so the API cannot carry a mutation the enumeration does
+not — the API adds a transport, not a second write path. The one mutation beside the fifteen
+is the scan upload (`FR-CONSOLE-04`), which the server-rendered console already had.
+
+The SPA itself (M-UI) ships as package data at `SPA_BUNDLE_DIR` (#634); this module only says
+where it lives and how a request path maps onto a file inside it.
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+from typing import Any, NamedTuple
+
+from .vocabulary import CONTROL_SURFACE_ACTIONS
+
+#: The API's version prefix. A breaking change to the API moves to `/api/v2/` beside it.
+API_PREFIX = "/api/v1"
+
+#: The built SPA bundle: `index.html` served at `/`, `assets/<file>` at `/assets/<file>`.
+#: Resolved from this file rather than the working directory, so an installed wheel serves the
+#: same bundle a checkout does (the `_stylesheet_bytes` precedent).
+SPA_BUNDLE_DIR: Path = Path(__file__).resolve().parent.parent / "console_assets" / "spa"
+
+#: The label of the one non-control mutation the API carries (`FR-CONSOLE-04`).
+UPLOAD_CONTROL = "upload scans"
+
+#: Media types by suffix. Explicit rather than `mimetypes`, which on Windows reads the
+#: registry and can answer `text/plain` for `.js` — a module script the browser then refuses.
+CONTENT_TYPES: dict[str, str] = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".mjs": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".map": "application/json; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".ico": "image/x-icon",
+    ".woff2": "font/woff2",
+    ".woff": "font/woff",
+    ".ttf": "font/ttf",
+    ".txt": "text/plain; charset=utf-8",
+}
+DEFAULT_CONTENT_TYPE = "application/octet-stream"
+
+READ_METHODS = frozenset({"GET", "HEAD"})
+
+
+class ApiRoute(NamedTuple):
+    """One API route: its HTTP verb, its path template (`{name}` for a path parameter), the
+    control action it writes (`None` for a read), and the read it answers with (`None` for a
+    mutation)."""
+
+    method: str
+    path: str
+    control: str | None
+    read: str | None = None
+
+
+def action_slug(action: str) -> str:
+    """A control action's URL form: lowercase, with spaces and slashes turned into hyphens.
+
+    `CONTROL_SURFACE_ACTIONS` holds the actions verbatim, as prose — "start run",
+    "pause/resume" — because `FR-CONSOLE-32` pins that set to those words. None of them is a
+    legal path segment, so the URL carries a slug and the server maps it back
+    (`TC-CONSOLE-43`'s `finalize-batch`, `TC-CONF-21`'s `start-run`)."""
+    return action.lower().replace("/", "-").replace(" ", "-")
+
+
+def _build_routes() -> tuple[ApiRoute, ...]:
+    reads = (
+        ApiRoute("GET", f"{API_PREFIX}/controls", None, "controls"),
+        ApiRoute("GET", f"{API_PREFIX}/screens", None, "screens"),
+    )
+    controls = tuple(
+        ApiRoute("POST", f"{API_PREFIX}/actions/{action_slug(action)}", action)
+        for action in CONTROL_SURFACE_ACTIONS
+    )
+    upload = (ApiRoute("POST", f"{API_PREFIX}/uploads", UPLOAD_CONTROL),)
+    return reads + controls + upload
+
+
+#: The route table and the router (`FR-CONSOLE-45`, `CT-CONSOLE-30`).
+API_ROUTES: tuple[ApiRoute, ...] = _build_routes()
+
+
+if len({(r.method, r.path) for r in API_ROUTES}) != len(API_ROUTES):  # pragma: no cover
+    raise AssertionError("two API routes share a method and path; one would be unreachable")
+
+
+def _template_pattern(template: str) -> re.Pattern[str]:
+    return re.compile(re.sub(r"\\\{(\w+)\\\}", r"(?P<\1>[^/]+)", re.escape(template)))
+
+
+_PATTERNS: tuple[tuple[ApiRoute, re.Pattern[str]], ...] = tuple(
+    (route, _template_pattern(route.path)) for route in API_ROUTES
+)
+
+
+def match_route(method: str, path: str) -> tuple[ApiRoute | None, dict[str, str], bool]:
+    """The route `method path` names, its path parameters, and whether the path is routed
+    under some other verb (so the answer is 405 rather than 404)."""
+    other_verb = False
+    for route, pattern in _PATTERNS:
+        match = pattern.fullmatch(path)
+        if match is None:
+            continue
+        if route.method == method:
+            return route, match.groupdict(), False
+        other_verb = True
+    return None, {}, other_verb
+
+
+def controls_payload() -> dict[str, Any]:
+    """The enumerated control surface as the API exposes it: each action and its route."""
+    return {
+        "version": API_PREFIX.rsplit("/", 1)[-1],
+        "controls": [
+            {"action": r.control, "method": r.method, "path": r.path}
+            for r in API_ROUTES if r.method not in READ_METHODS
+        ],
+    }
+
+
+def content_type_for(path: Path) -> str:
+    return CONTENT_TYPES.get(path.suffix.lower(), DEFAULT_CONTENT_TYPE)
+
+
+def bundle_file(spa_dir: Path, relative: str) -> Path | None:
+    """The file `relative` names inside `spa_dir`, or `None` if it is not one.
+
+    Confined: the resolved path must stay inside the bundle directory. A request path is
+    attacker-shaped — `..`, a drive letter or a backslash would otherwise reach any file the
+    process can read."""
+    if not relative or "\\" in relative or ":" in relative or "\x00" in relative:
+        return None
+    try:
+        root = Path(spa_dir).resolve()
+        candidate = (root / relative).resolve()
+    except (OSError, ValueError):
+        return None
+    if root not in candidate.parents or not candidate.is_file():
+        return None
+    return candidate

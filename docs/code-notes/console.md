@@ -65,6 +65,17 @@ settled in `tests/support/console_vocabulary.py` and
   carries `Cache-Control: no-store`. There is no child process: runs execute in-process and
   the ledger makes them resumable, so a killed console loses only its memory and `recover`
   picks the run up (`NFR-CONSOLE-03`, `NFR-CONSOLE-08`).
+- **The JSON API and the SPA share one origin (`FR-CONSOLE-45`, `CT-CONSOLE-30`, #629).**
+  Everything under `/api/` is routed from `API_ROUTES` (`api.py`) and nothing else: a few
+  table-only reads (`GET /api/v1/controls`, `GET /api/v1/screens`), one
+  `POST /api/v1/actions/<slug>` per enumerated control action — built from
+  `CONTROL_SURFACE_ACTIONS`, each dispatching through `ConsoleApp.perform`, the same door
+  `POST /actions/<slug>` uses — and `POST /api/v1/uploads`, the one non-control mutation
+  (`FR-CONSOLE-04`). Any other verb or path under `/api/` is a 405/404. `GET /` and
+  `/assets/<file>` serve the built SPA from `SPA_BUNDLE_DIR` (`aeh/console_assets/spa`, or
+  `serve_console(spa_dir=...)`); until that bundle ships (#634) they fall back to the
+  server-rendered catalog and stylesheet. The server needs no Node toolchain: the bundle is
+  prebuilt package data, and replacing the SPA means redeploying a rebuilt bundle.
 - **The upload never materialises the batch, and it is PDF-only.** `upload_scans` walks the
   declared size in chunks (`HARNESS_CONSOLE_UPLOAD_CHUNK_BYTES`, default 4 MiB), digests each
   chunk, and hands the digests to the blob store when one is present; nothing of the declared
