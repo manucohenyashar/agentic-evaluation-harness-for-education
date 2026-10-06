@@ -102,10 +102,13 @@ class _ConsoleRequestHandler(ApiRequestsMixin, BaseHTTPRequestHandler):
         on stderr would mix with test output."""
 
     def _respond(
-        self, status: int, body: bytes, content_type: str, *, close: bool = False
+        self, status: int, body: bytes, content_type: str, *, close: bool = False,
+        headers: dict[str, str] | None = None,
     ) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
+        for name, value in (headers or {}).items():
+            self.send_header(name, value)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         if close:

@@ -52,7 +52,7 @@ CONTENT_TYPES: dict[str, str] = {
 }
 DEFAULT_CONTENT_TYPE = "application/octet-stream"
 
-READ_METHODS = frozenset({"GET", "HEAD"})
+READ_METHODS = frozenset({"GET"})
 
 
 class ApiRoute(NamedTuple):
@@ -118,6 +118,11 @@ def match_route(method: str, path: str) -> tuple[ApiRoute | None, dict[str, str]
             return route, match.groupdict(), False
         other_verb = True
     return None, {}, other_verb
+
+
+def allowed_methods(path: str) -> tuple[str, ...]:
+    """The verbs the table routes `path` under, for a 405's `Allow` header."""
+    return tuple(sorted({r.method for r, pattern in _PATTERNS if pattern.fullmatch(path)}))
 
 
 def controls_payload() -> dict[str, Any]:

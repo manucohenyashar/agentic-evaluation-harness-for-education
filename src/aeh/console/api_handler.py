@@ -14,6 +14,7 @@ from typing import Any
 from .api import (
     API_ROUTES,
     UPLOAD_CONTROL,
+    allowed_methods,
     ApiRoute,
     bundle_file,
     content_type_for,
@@ -84,7 +85,8 @@ class ApiRequestsMixin:
             # the client then never sees the 404/405 it was owed.
             self._drain_small_body()
             if other_verb:
-                self._respond(405, b'{"error":"method not allowed"}', JSON_TYPE, close=True)
+                self._respond(405, b'{"error":"method not allowed"}', JSON_TYPE, close=True,
+                              headers={"Allow": ", ".join(allowed_methods(route))})
             else:
                 self._respond(404, b'{"error":"not found"}', JSON_TYPE, close=True)
             return
@@ -95,6 +97,7 @@ class ApiRequestsMixin:
             self._console.recheck_environment()
         except ConsoleBindRefused as refusal:
             body = json.dumps({"error": str(refusal)}).encode("utf-8")
+            self._drain_small_body()
             self._respond(403, body, JSON_TYPE, close=True)
             return
         if matched.control == UPLOAD_CONTROL:
@@ -109,7 +112,17 @@ class ApiRequestsMixin:
     def _api_control(self, route: ApiRoute, path_params: dict[str, str]) -> None:
         """Pass the request's parameters to the door unvalidated: refusing a malformed request
         is `perform`'s job, and it reports the refusal (FR-CONSOLE-34)."""
-        body = self._read_json_object()
+        if self.headers.get("Transfer-Encoding"):
+            # A chunked body is not decoded here; left on the socket it would be parsed as the
+            # next request, so the refusal closes the connection (the `_upload` precedent).
+            self._respond(411, b'{"error":"a JSON body requires Content-Length"}', JSON_TYPE,
+                          close=True)
+            return
+        length = self._declared_length()
+        if length is None:
+            self._respond(400, b'{"error":"invalid Content-Length"}', JSON_TYPE, close=True)
+            return
+        body = self._read_json_object(length)
         if body is None:
             self._respond(400, b'{"error":"the body must be a JSON object"}', JSON_TYPE)
             return
@@ -126,22 +139,26 @@ class ApiRequestsMixin:
             return
         self._respond(200, outcome_json(action, outcome), JSON_TYPE)
 
-    def _drain_small_body(self) -> None:
-        """Read and discard a refused request's body when it declares a length within
-        `REFUSED_BODY_DRAIN_BYTES`; a larger or undeclared one is left unread."""
-        try:
-            length = int(self.headers.get("Content-Length") or 0)
-        except ValueError:
-            return
-        if 0 < length <= REFUSED_BODY_DRAIN_BYTES:
-            self.rfile.read(length)
-
-    def _read_json_object(self) -> dict[str, Any] | None:
-        """The request body as a JSON object; an empty body is `{}`, anything else `None`."""
+    def _declared_length(self) -> int | None:
+        """The declared `Content-Length`: 0 when absent, `None` when it is not a
+        non-negative integer (a negative one would read to EOF and hold the thread)."""
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
             return None
+        return length if length >= 0 else None
+
+    def _drain_small_body(self) -> None:
+        """Read and discard a refused request's body when it declares a length within
+        `REFUSED_BODY_DRAIN_BYTES`; a larger or undeclared one is left unread."""
+        length = self._declared_length()
+        if length and length <= REFUSED_BODY_DRAIN_BYTES and not self.headers.get(
+            "Transfer-Encoding"
+        ):
+            self.rfile.read(length)
+
+    def _read_json_object(self, length: int) -> dict[str, Any] | None:
+        """The request body as a JSON object; an empty body is `{}`, anything else `None`."""
         raw = self.rfile.read(length) if length else b""
         if not raw.strip():
             return {}
