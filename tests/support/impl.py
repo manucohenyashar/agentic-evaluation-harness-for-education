@@ -1451,7 +1451,17 @@ def blocker_is_resolved(kind: str, target: str, repo_root: Any) -> bool:
         argv = shlex.split(target)
         if argv and argv[0] == "python":
             argv[0] = sys.executable
-        completed = subprocess.run(argv, cwd=repo_root, capture_output=True, timeout=300)
+        # Seam 3: the timeout is a knob, not a constant calibrated on one box. A command that
+        # does not finish has not exited 0, so it reads as unresolved - a slow box must not
+        # turn a still-open blocker into a crashed gate (PERF-11's run outlasts 300 s under load).
+        import os
+
+        timeout_s = float(os.environ.get("HARNESS_BLOCKER_COMMAND_TIMEOUT_S", "300"))
+        try:
+            completed = subprocess.run(argv, cwd=repo_root, capture_output=True,
+                                       timeout=timeout_s)
+        except subprocess.TimeoutExpired:
+            return False
         return completed.returncode == 0
     raise ValueError(
         f"unknown written-ahead blocker kind {kind!r}. Add a branch here when adding a kind, "
