@@ -1350,6 +1350,50 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "--contracts-only --quiet",
         ("tests/contract/blast/test_tc_blast_rule.py::test_tc_blast_03_the_contracts_only_gate_fails_a_lost_clause_case_and_ci_runs_it",),
     ),
+    # --- TS-141 (#615), M-CONF per-profile engine default, threshold surfaces, Q&A model ----
+    #
+    # Keyed `command` on the written-ahead tests themselves: #616 adds no symbol the design names
+    # (the default, the file key, `HARNESS_QA_MODEL` and `provider_config.qa_model` are all
+    # behaviour of existing functions), so the only honest signal is the cases going green.
+    # Includes the flipped TC-CONF-C19 (operator-requirements plan §5.0 / §4 rule 1).
+    "#616 TS-141 per-profile engine default, threshold config surfaces, Q&A model": (
+        "command",
+        "python -m pytest -q -p no:cacheprovider "
+        "tests/contract/conf/test_ct_conf_c22_qa_model.py::test_tc_conf_c22_edge_local_has_no_override_knob "
+        "tests/contract/conf/test_ct_conf_c22_qa_model.py::test_tc_conf_c22_the_cloud_matrix "
+        "tests/contract/conf/test_ct_conf_c22_qa_model.py::test_tc_conf_c22_the_resolved_value_is_frozen_and_rehydrated "
+        "tests/contract/conf/test_ct_conf_decision_engine.py::test_tc_conf_c19_v2_2_the_default_is_a_function_of_the_profile_never_the_hardware "
+        "tests/regression/test_reg_13_engine_default_flip.py::test_tc_reg_13_a_dropping_the_explicit_off_changes_the_golden_subject "
+        "tests/regression/test_reg_13_engine_default_flip.py::test_tc_reg_13_a_the_three_profile_matrix_with_the_knob_unset "
+        "tests/unit/conf/test_ts108_decision_engine_config.py::test_tc_conf_27_the_config_file_key_resolves_to_the_engine_the_env_knob_gives "
+        "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_35_unset_on_a_cloud_profile_resolves_jev_on_openrouter_jev "
+        "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_35_unset_on_edge_local_resolves_off_even_with_a_build_configured "
+        "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_37_an_out_of_domain_file_value_is_refused_never_clamped "
+        "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_37_env_over_file_over_default "
+        "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_37_openjev_small_keeps_its_085_default_and_the_file_still_overrides_it "
+        "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_38_a_cloud_unset_resolves_panel_0_and_the_knob_overrides "
+        "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_38_b_a_floating_qa_model_is_refused_naming_the_knob "
+        "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_38_c_edge_local_resolves_panel_0_whatever_the_knob_says "
+        "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_38_d_qa_model_rehydrates_identically_on_both_profiles",
+        (
+            "tests/contract/conf/test_ct_conf_c22_qa_model.py::test_tc_conf_c22_edge_local_has_no_override_knob",
+            "tests/contract/conf/test_ct_conf_c22_qa_model.py::test_tc_conf_c22_the_cloud_matrix",
+            "tests/contract/conf/test_ct_conf_c22_qa_model.py::test_tc_conf_c22_the_resolved_value_is_frozen_and_rehydrated",
+            "tests/contract/conf/test_ct_conf_decision_engine.py::test_tc_conf_c19_v2_2_the_default_is_a_function_of_the_profile_never_the_hardware",
+            "tests/regression/test_reg_13_engine_default_flip.py::test_tc_reg_13_a_dropping_the_explicit_off_changes_the_golden_subject",
+            "tests/regression/test_reg_13_engine_default_flip.py::test_tc_reg_13_a_the_three_profile_matrix_with_the_knob_unset",
+            "tests/unit/conf/test_ts108_decision_engine_config.py::test_tc_conf_27_the_config_file_key_resolves_to_the_engine_the_env_knob_gives",
+            "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_35_unset_on_a_cloud_profile_resolves_jev_on_openrouter_jev",
+            "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_35_unset_on_edge_local_resolves_off_even_with_a_build_configured",
+            "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_37_an_out_of_domain_file_value_is_refused_never_clamped",
+            "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_37_env_over_file_over_default",
+            "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_37_openjev_small_keeps_its_085_default_and_the_file_still_overrides_it",
+            "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_38_a_cloud_unset_resolves_panel_0_and_the_knob_overrides",
+            "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_38_b_a_floating_qa_model_is_refused_naming_the_knob",
+            "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_38_c_edge_local_resolves_panel_0_whatever_the_knob_says",
+            "tests/unit/conf/test_ts141_engine_default_and_qa_model.py::test_tc_conf_38_d_qa_model_rehydrates_identically_on_both_profiles",
+        ),
+    ),
 }
 
 
