@@ -15,8 +15,8 @@ admitted, and that the wrong-test sheet, the sheet with no name and the sheet wi
 parked. It does NOT prove that a live page-reading model reads these pages that well. That is the
 live test's job.
 
-Run from the repository root. It needs the system installed plus the three libraries that read
-PDFs (`pip install ".[live-ingest]" Pillow`, or `pip install -r requirements-dev.txt`):
+Run from the repository root. It needs the system installed (`pip install .`, which brings the
+libraries that read PDFs with it):
 
     python docs/live-tests/sample-materials/verify_sample_materials.py
 

@@ -154,8 +154,8 @@ class PypdfSanitizer(PdfSanitizer):
         except ImportError as error:  # pragma: no cover - acceptance-run only
             raise IngestError(
                 "the live sanitizer needs the pypdf package; the fast tier uses a "
-                "scripted PdfSanitizer double instead (the dependency is declared "
-                "in requirements-dev.txt)."
+                "scripted PdfSanitizer double instead (a standard dependency in "
+                "pyproject.toml: reinstall the system with `pip install .`)."
             ) from error
 
         reader = self._open(pypdf, pdf_bytes)

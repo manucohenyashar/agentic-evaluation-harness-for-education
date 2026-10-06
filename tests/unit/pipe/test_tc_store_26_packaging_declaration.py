@@ -74,7 +74,6 @@ def test_tc_store_26_the_console_script_points_at_m_pipes_main() -> None:
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_store_26_the_core_declares_exactly_the_four_standard_dependencies() -> None:
     """FR-STORE-20 (flipped from `dependencies == []`): exactly the four declared strings.
 
@@ -90,7 +89,6 @@ def test_tc_store_26_the_core_declares_exactly_the_four_standard_dependencies() 
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_store_26_no_optional_dependency_table_survives() -> None:
     """FR-STORE-20: the `live-ingest` and `jev-cloud` extras are removed — and so is the table.
 

@@ -152,7 +152,7 @@ def _assert_harness_typed(decision) -> None:  # noqa: ANN001
 # cloud-run refusal arm are DELETED: there is no install without the SDK left to refuse. What
 # survives is CT-PROV-29's import-discipline half — an engine-off run and an edge-local run still
 # complete without importing the SDK — and construction under the default resolution. The pin and
-# the no-packaging-check arms are red until #614 lands (`writtenahead`, keyed there).
+# the no-packaging-check arms were written ahead of #614 and went green when it landed.
 
 #: FR-STORE-20 / NFR-PROV-10, transcribed: the exact pin, as a declared string.
 SDK_PIN = "typesafe-sdk==0.7.2"
@@ -163,7 +163,6 @@ SDK_PIN = "typesafe-sdk==0.7.2"
 RETIRED_EXTRAS = ("jev-cloud", "live-ingest")
 
 
-@pytest.mark.writtenahead
 def test_tc_prov_53_the_sdk_is_exact_pinned_in_the_core_dependencies() -> None:
     """The pin arm (flipped): `typesafe-sdk==0.7.2` is a `[project].dependencies` string, and no
     extra carries it — the SDK installs with `pip install .` or not at all."""
@@ -176,11 +175,10 @@ def test_tc_prov_53_the_sdk_is_exact_pinned_in_the_core_dependencies() -> None:
     assert "optional-dependencies" not in project, project.get("optional-dependencies")
 
 
-@pytest.mark.writtenahead
 def test_tc_prov_53_no_shipped_module_keeps_a_packaging_check_naming_an_extra() -> None:
     """The deleted refusal (negative): no module under `src/aeh` names a retired extra. Today
     `aeh.prov.jev_openrouter` raises `ConfigurationError` naming `jev-cloud` when the SDK is
-    absent; FR-PROV-42 (amended) deletes that check, and with it the only reason to name the extra."""
+    absent (before #614); FR-PROV-42 (amended) deletes that check, and with it the only reason to name the extra."""
     hits = [f"{path.relative_to(ROOT).as_posix()}:{n}"
             for path in sorted((ROOT / "src" / "aeh").rglob("*.py"))
             for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)

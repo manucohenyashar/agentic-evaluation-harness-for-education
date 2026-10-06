@@ -115,7 +115,6 @@ def _installed_package_dir(venv: _Venv) -> Path:
     return package
 
 
-@pytest.mark.writtenahead
 def test_tc_pipe_12_pip_install_dot_alone_yields_the_command_and_all_four_libraries(clean_venv) -> None:
     """The install exits 0, `aeh --help` exits 0, each of the four standard dependencies imports,
     `console.css` is in the installed package, and the assembled harness imports none of the four."""

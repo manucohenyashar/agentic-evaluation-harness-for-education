@@ -19,13 +19,13 @@ elif command -v python >/dev/null 2>&1; then
   PY=python
 else
   echo "error: no Python found. Create the dev environment first:" >&2
-  echo "  python -m venv .venv && .venv/Scripts/python -m pip install -r requirements-dev.txt" >&2
+  echo "  python -m venv .venv && .venv/Scripts/python -m pip install -e . -r requirements-dev.txt" >&2
   exit 2
 fi
 
 if ! "$PY" -c "import pytest" >/dev/null 2>&1; then
   echo "error: pytest is not installed in $PY. Run:" >&2
-  echo "  $PY -m pip install -r requirements-dev.txt" >&2
+  echo "  $PY -m pip install -e . -r requirements-dev.txt" >&2
   exit 2
 fi
 
