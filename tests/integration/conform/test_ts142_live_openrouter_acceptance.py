@@ -89,6 +89,7 @@ _RUN: dict[str, Any] = {}
 class _LiveRun:
     run_config: Any
     cohort: Any
+    cfg: Any
     data_dir: Path
     report: Any
 
@@ -149,19 +150,27 @@ def _resolve_live_config():
         f"HARNESS_DECISION_ENGINE unset. FR-CONF-29's default on the OpenRouter profiles is jev, "
         f"and the acceptance must exercise the Jev leg (R-3)."
     )
-    return run_config, cohort
+    return run_config, cohort, cfg
 
 
 def _live_run(tmp_path_factory) -> _LiveRun:
     """The one live run all three cases read. Key first, then the blocker, then the network."""
     require_openrouter_key()
     run_live_acceptance = require(CONFORM_MODULE, LIVE_ACCEPTANCE_ENTRY, issue=ISSUE)
+    # A failed run is cached too, so the other two cases re-raise it instead of paying for the
+    # whole live pipeline again.
+    if "error" in _RUN:
+        raise _RUN["error"]
     if "run" not in _RUN:
-        _import_full_migration_chain()
-        run_config, cohort = _resolve_live_config()
-        data_dir = tmp_path_factory.mktemp("live-acceptance")
-        report = run_live_acceptance(run_config, cohort=cohort, data_dir=data_dir)
-        _RUN["run"] = _LiveRun(run_config, cohort, data_dir, report)
+        try:
+            _import_full_migration_chain()
+            run_config, cohort, cfg = _resolve_live_config()
+            data_dir = tmp_path_factory.mktemp("live-acceptance")
+            report = run_live_acceptance(run_config, cohort=cohort, data_dir=data_dir)
+        except Exception as error:
+            _RUN["error"] = error
+            raise
+        _RUN["run"] = _LiveRun(run_config, cohort, cfg, data_dir, report)
     return _RUN["run"]
 
 
@@ -217,15 +226,29 @@ def test_tc_conform_17_every_leg_made_real_calls_with_recorded_models_and_metric
     cfg = run.run_config
     expected_refs = {
         LEG_VISION: {cfg.transcriber.build_id},
-        LEG_JUDGE: {ref.build_id for ref in cfg.panel},
         LEG_DECISION: {cfg.decision_engine.model.build_id},
     }
+    # The judge leg is the panel plus whatever real judges an escalation (the config's
+    # `escalation_judge` list) or the off-panel check seated: every panel build must appear, and
+    # nothing outside the configured judges may.
+    panel_refs = {ref.build_id for ref in cfg.panel}
+    allowed_judges = panel_refs | {
+        str(entry.get("build_id")) for entry in (run.cfg.get("escalation_judge") or ())
+    }
+    if cfg.off_panel_checker is not None:
+        allowed_judges.add(cfg.off_panel_checker.build_id)
     for leg in LIVE_LEGS:
         refs = _as_set(legs[leg].get(LEG_MODEL_REFS) or ())
         assert refs, f"TC-CONFORM-17: leg {leg!r} records no model ref (Q-O1)."
         assert RECORDED_FIXTURE_DISPATCH not in refs, (
             f"TC-CONFORM-17: leg {leg!r} was answered by the recorded fixture double."
         )
+        if leg == LEG_JUDGE:
+            assert panel_refs <= refs <= allowed_judges, (
+                f"TC-CONFORM-17: the judge leg called {sorted(refs)}; it must include every panel "
+                f"build {sorted(panel_refs)} and nothing beyond the configured judges "
+                f"{sorted(allowed_judges)}."
+            )
         if leg in expected_refs:
             assert refs == expected_refs[leg], (
                 f"TC-CONFORM-17: leg {leg!r} called {sorted(refs)}; the resolved config names "
@@ -316,7 +339,8 @@ def test_tc_conform_18_accepted_and_fallback_both_nonzero_per_criterion_else_inv
             )
         for key in ("decision_band_exact_agreement", "decision_band_adjacent_agreement"):
             value = figures[key]
-            assert isinstance(value, (int, float)) and 0.0 <= value <= 1.0, (
+            assert (isinstance(value, (int, float, Decimal)) and not isinstance(value, bool)
+                    and 0 <= value <= 1), (
                 f"TC-CONFORM-18: {criterion} {key}={value!r} is not a measured agreement."
             )
         extremes = set()

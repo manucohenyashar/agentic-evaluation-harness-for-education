@@ -31,6 +31,8 @@ behind it is a differential with the measurements missing. The overlap is report
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from tests.support.conform_vocabulary import (
@@ -206,8 +208,9 @@ def test_tc_conform_04_all_five_dimensions_are_compared_with_both_operands_prese
     )
 
 
-#: The profiles whose arm is the OpenRouter arm (FR-CONF-29 resolves `jev` by default on both).
-_OPENROUTER_PROFILES = frozenset({"cloud-hosted", "dev-ci"})
+#: The profile whose arm is the OpenRouter arm — the only OpenRouter profile
+#: `live_conformance_backends()` builds (FR-CONF-29 resolves `jev` by default on it).
+_OPENROUTER_PROFILES = frozenset({"cloud-hosted"})
 
 
 @pytest.mark.writtenahead
@@ -249,8 +252,18 @@ def test_tc_conform_04_openrouter_arm_runs_the_default_engine_and_reports_per_le
             "HARNESS_CONFORM_LIVE_BACKENDS declares no OpenRouter profile (cloud-hosted or "
             "dev-ci); the re-specified arm has nothing to run against."
         )
+    # The default engine still needs a pinned build (FR-CONF-19/20; TC-CONF-35 resolves the cloud
+    # profiles "with HARNESS_JEV_BUILD present"), and `ConformanceSuite.run` does not merge the
+    # process environment, so the nightly's pin is carried into the config here.
+    jev_build = os.environ.get("HARNESS_JEV_BUILD", "").strip()
+    if not jev_build:
+        pytest.skip(
+            "HARNESS_JEV_BUILD is unset. The re-specified OpenRouter arm resolves the default "
+            "engine (jev), which needs the nightly's pinned Jev build."
+        )
     for cfg in openrouter:
         cfg.pop("HARNESS_DECISION_ENGINE", None)
+        cfg["HARNESS_JEV_BUILD"] = jev_build
 
     report = build_suite().run("v1", backends, cohort=_synthetic_cohort())
 
