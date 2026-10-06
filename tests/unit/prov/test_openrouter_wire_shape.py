@@ -10,7 +10,7 @@ its regression case here (CLAUDE.md, "Test authorship"):
   the field name in the message's `name`, and the page image as an image part.
 - TC-PROV-61 (FR-PROV-11, FR-PROV-04): OpenRouter was sent the whole pinned build id
   (`openrouter/qwen/qwen3-30b-a3b@2026-06-01`). It is now sent the plain slug it knows.
-- TC-PROV-62 (FR-PROV-06): a refused request (4xx other than 429) fell through to parsing, so
+- TC-PROV-62 (FR-PROV-06, NFR-PROV-04): a refused request (4xx other than 429) fell through to parsing, so
   the backend's own explanation was lost. A run-wide refusal (401, 402, 404) now raises
   `ProviderUnavailableError` after one send, so the run pauses; any other refusal is that
   unit's `MalformedResponseError`. Both name the status and the backend's message, with
