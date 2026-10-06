@@ -22,6 +22,7 @@ import importlib
 import importlib.util
 from typing import Any
 
+from tests.support.help_vocabulary import BLOCKER_TARGET as _HELP_BLOCKER_TARGET
 from tests.support.extract_vocabulary import (
     ASSEMBLE as _EXTRACT_ASSEMBLE,
     PROMPT_FIELDS as _EXTRACT_PROMPT_FIELDS,
@@ -1342,6 +1343,30 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "command",
         "python -m pytest -q -p no:cacheprovider tests/perf/test_perf_11_composition_overhead.py::test_perf_11_composition_adds_at_most_a_quarter_millisecond_per_unit",
         ("tests/perf/test_perf_11_composition_overhead.py::test_perf_11_composition_adds_at_most_a_quarter_millisecond_per_unit",),
+    ),
+    # --- TS-150 (#637), M-HELP: manuals page, grounded answers-only Q&A, the log ----------
+    #
+    # Keyed `symbols` on the assistant AND #629's route table (TC-HELP-01/03 and C01 read the
+    # routes). #636 depends on #629, so in practice this resolves with #636. The invented names
+    # live in `tests/support/help_vocabulary.py`; a rename there moves this key with it.
+    "#636 TS-150 M-HELP manuals and grounded Q&A": (
+        "symbols",
+        _HELP_BLOCKER_TARGET,
+        (
+            "tests/integration/help/test_ts150_help_manuals_and_qa.py::test_tc_help_01_every_packaged_manual_renders_with_toc_search_and_stable_anchors",
+            "tests/integration/help/test_ts150_help_manuals_and_qa.py::test_tc_help_02_a_grounded_answer_cites_the_recorded_grounding_sections",
+            "tests/integration/help/test_ts150_help_manuals_and_qa.py::test_tc_help_02_b_a_no_grounding_question_gets_the_explicit_not_found_answer",
+            "tests/integration/help/test_ts150_help_manuals_and_qa.py::test_tc_help_03_one_read_only_endpoint_and_an_action_question_changes_nothing",
+            "tests/integration/help/test_ts150_help_manuals_and_qa.py::test_tc_help_04_a_student_question_reaches_the_model_with_no_student_data",
+            "tests/integration/help/test_ts150_help_latency.py::test_tc_help_05_p95_answer_latency_and_retrieval_within_budget",
+            "tests/contract/help/test_ct_help_clauses.py::test_tc_help_c01_one_read_only_endpoint",
+            "tests/contract/help/test_ct_help_clauses.py::test_tc_help_c02_citations_resolve_and_not_found_is_explicit",
+            "tests/contract/help/test_ct_help_clauses.py::test_tc_help_c03_no_student_data_in_any_request",
+            "tests/contract/help/test_ct_help_clauses.py::test_tc_help_c04_writes_only_its_own_log",
+            "tests/contract/help/test_ct_help_clauses.py::test_tc_help_c05_the_log_records_each_exchange_exactly",
+            "tests/security/help/test_sec_25_help_injection.py::test_sec_25_an_injected_question_writes_nothing_and_gets_a_prose_answer",
+            "tests/security/help/test_sec_25_help_injection.py::test_sec_25_an_injection_nested_in_a_manual_passage_writes_nothing",
+        ),
     ),
     # --- TS-143 (#619), name-primary identity --------------------------------------------
     #
