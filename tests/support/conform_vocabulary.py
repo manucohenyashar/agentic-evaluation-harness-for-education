@@ -830,3 +830,107 @@ def simulated_implementation_module(dotted_name: str, source: str) -> Any:
     module = types.ModuleType(dotted_name)
     exec(compile(source, f"<{dotted_name}>", "exec"), module.__dict__)  # noqa: S102
     return module
+
+
+# --- TS-142 (#617), the live OpenRouter acceptance ------------------------------------------
+#
+# Operator-requirements test plan §5.3: `TC-CONFORM-17`, `-18`, `-C17` and the re-specified
+# `TC-CONFORM-04` OpenRouter arm. Design delta §3.3 (`FR-CONFORM-17/18`, `CT-CONFORM-17`) names
+# the report's *keys* but no entry point and no report type, so every name below that is not a
+# clause key is **invented** by the same rule as the TS-46 names above: #618 adopts them or
+# renames them here and in the two files that use them. The clause keys themselves are
+# transcribed literally — they are the contract, and `TC-CONFORM-C17` breaks if one is renamed.
+
+#: The entry point (invented). `run_live_acceptance(run_config, *, cohort, data_dir)` drives the
+#: full pipeline once on the OpenRouter profile and returns the live acceptance report.
+#: It is also the `WRITTEN_AHEAD_BLOCKERS` key for #618: a module-level function, so the
+#: registry's `symbol` probe resolves the moment it lands (a dataclass field would not — it is
+#: not a class attribute, and the probe would read "unresolved" forever).
+LIVE_ACCEPTANCE_ENTRY = "run_live_acceptance"
+
+#: The four legs `FR-CONFORM-17` enumerates: *"the ingest vision model (VLM page transcription
+#: ...), the judge panel, the synthesis model, and the Jev decision model through the TypeSafe
+#: SDK path"*. Leg names are invented; the set's size and meaning are the requirement's.
+LEG_VISION = "vision"
+LEG_JUDGE = "judge"
+LEG_SYNTHESIS = "synthesis"
+LEG_DECISION = "decision"
+LIVE_LEGS: tuple[str, ...] = (LEG_VISION, LEG_JUDGE, LEG_SYNTHESIS, LEG_DECISION)
+
+#: `CT-CONFORM-17`, verbatim: *"names, per leg: `live_calls`, `live_tokens_in`,
+#: `live_tokens_out`, `live_cost`"*.
+LIVE_CALLS = "live_calls"
+LIVE_TOKENS_IN = "live_tokens_in"
+LIVE_TOKENS_OUT = "live_tokens_out"
+LIVE_COST = "live_cost"
+LIVE_LEG_KEYS: tuple[str, ...] = (LIVE_CALLS, LIVE_TOKENS_IN, LIVE_TOKENS_OUT, LIVE_COST)
+
+#: `CT-CONFORM-17`: *"and for the decision leg additionally `decision_accepted_rate` and
+#: `decision_fallback_rate` with the CT-JUDGE-28 names"*. `TC-CONFORM-C17` also asserts both are
+#: field names of `aeh.judge.metrics.DecisionEngineMetrics`, the CT-JUDGE-28 surface, so a
+#: rename on either side goes red rather than drifting.
+DECISION_ACCEPTED_RATE = "decision_accepted_rate"
+DECISION_FALLBACK_RATE = "decision_fallback_rate"
+DECISION_LEG_EXTRA_KEYS: tuple[str, ...] = (DECISION_ACCEPTED_RATE, DECISION_FALLBACK_RATE)
+
+#: `TC-CONFORM-C17`'s ⊇ set, exactly as the plan writes it.
+CT_CONFORM_17_KEYS: frozenset[str] = frozenset(LIVE_LEG_KEYS) | frozenset(DECISION_LEG_EXTRA_KEYS)
+
+#: Per leg, the model refs that leg called (Q-O1: *recorded*, not which model). A tuple, because
+#: the judge leg is a panel. Invented name.
+LEG_MODEL_REFS = "model_refs"
+
+#: Report fields (invented). `legs` maps leg name -> {CT-CONFORM-17 keys, `model_refs`};
+#: `per_criterion` maps criterion id -> {the two decision rates, plus the CT-CONFORM-15 band
+#: agreement figures `aeh.conform.DECISION_REPORT_KEYS` already names}; `run_id` keys the
+#: `run_metrics` rows; `valid` is the acceptance verdict; `failed_legs` are the legs with zero
+#: calls; `invalid_extremes` maps a criterion at an extreme to {`extreme`, `gate`}.
+REPORT_RUN_ID = "run_id"
+REPORT_LEGS = "legs"
+REPORT_PER_CRITERION = "per_criterion"
+REPORT_VALID = "valid"
+REPORT_FAILED_LEGS = "failed_legs"
+REPORT_INVALID_EXTREMES = "invalid_extremes"
+
+#: `FR-CONFORM-18`'s two extremes, *"never accepted a unit or never fell back"*, and the key the
+#: invalidity entry names them under. `gate` carries the gate values that produced the extreme —
+#: at minimum the run's frozen confidence threshold (`DecisionEngine.confidence_threshold`).
+EXTREME_KEY = "extreme"
+GATE_KEY = "gate"
+EXTREME_NEVER_ACCEPTED = "never_accepted"
+EXTREME_NEVER_FELL_BACK = "never_fell_back"
+GATE_CONFIDENCE_THRESHOLD = "confidence_threshold"
+
+#: The `TC-CONFORM-04` arm (invented): the cloud backend's `BackendResult` carries the same per-leg
+#: mapping, beside its existing `figures`.
+BACKEND_LIVE_LEGS_FIELD = "live_legs"
+
+
+def live_metric_name(leg: str, key: str) -> str:
+    """The `run_metrics` metric a leg's figure lands under (invented: `<key>.<leg>`, e.g.
+    `live_calls.vision`). `run_metrics` has no leg column, so the leg rides in the name."""
+    return f"{key}.{leg}"
+
+
+#: Seam 3: which config file the live acceptance resolves. Defaults to the reference config the
+#: live-test documents ship (Q-O1: it names the vision/judge/decision refs per test day).
+LIVE_ACCEPTANCE_CONFIG_ENV = "HARNESS_LIVE_ACCEPTANCE_CONFIG"
+LIVE_ACCEPTANCE_CONFIG_DEFAULT = "docs/live-tests/config/live-test.dev-ci.toml"
+
+#: The credential the live tier needs. Unset -> the cases skip naming it, before any import of the
+#: unbuilt surface and before any config is resolved, so no request can leave the box.
+OPENROUTER_KEY_ENV = "OPENROUTER_API_KEY"
+
+
+def require_openrouter_key() -> str:
+    """The OpenRouter key, or a skip naming it. Called first in every TS-142 case."""
+    import pytest
+
+    key = os.environ.get(OPENROUTER_KEY_ENV, "")
+    if not key.strip():
+        pytest.skip(
+            f"{OPENROUTER_KEY_ENV} is unset. The live OpenRouter acceptance (TC-CONFORM-17/18/"
+            f"C17, the TC-CONFORM-04 OpenRouter arm) makes real calls on every leg and is "
+            f"nightly-only (E2); set the key on the nightly box to run it."
+        )
+    return key

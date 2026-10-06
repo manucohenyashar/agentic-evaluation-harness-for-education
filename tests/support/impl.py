@@ -1366,6 +1366,20 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "--contracts-only --quiet",
         ("tests/contract/blast/test_tc_blast_rule.py::test_tc_blast_03_the_contracts_only_gate_fails_a_lost_clause_case_and_ci_runs_it",),
     ),
+    # --- TS-142 (#617), the live OpenRouter acceptance ----------------------------------------
+    #
+    # `live` + nightly, so TEST_CMD never selects them either way; the marker still matters for
+    # `-m live` runs and for this registry's notice. Keyed on the invented module-level entry
+    # point (`tests/support/conform_vocabulary.py`, TS-142) — not on a report field, which on a
+    # frozen dataclass is no class attribute and would never resolve.
+    "#618 TS-142 TC-CONFORM-17/18/C17 + TC-CONFORM-04 OpenRouter arm (live acceptance)": (
+        "symbol",
+        "aeh.conform:run_live_acceptance",
+        (
+            "tests/integration/conform/test_ts142_live_openrouter_acceptance.py",
+            "tests/integration/conform/test_tc_conform_04_full_pipeline_differential.py::test_tc_conform_04_openrouter_arm_runs_the_default_engine_and_reports_per_leg_live_keys",
+        ),
+    ),
     # --- TS-146 (#625), M-GRADE/M-JUDGE composition per method -----------------------------
     #
     # #626 names no Python surface (the one assumed name, `GradingService.criterion_lines`,
