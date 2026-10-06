@@ -1343,6 +1343,22 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "python -m pytest -q -p no:cacheprovider tests/perf/test_perf_11_composition_overhead.py::test_perf_11_composition_adds_at_most_a_quarter_millisecond_per_unit",
         ("tests/perf/test_perf_11_composition_overhead.py::test_perf_11_composition_adds_at_most_a_quarter_millisecond_per_unit",),
     ),
+    # --- TS-143 (#619), name-primary identity --------------------------------------------
+    #
+    # Keyed `command` on the design-named migration (`ingest_roster_names`, Cohort 33, owner
+    # `aeh.ingest`) being registered: the design declares no symbol for the matcher or the
+    # roster loader, and the migration lands in the same story (#620) as everything these
+    # cases assert. SystemExit rather than assert, so `python -O` cannot make it pass.
+    "#620 TS-143 name-primary V3 matching, roster names, Cohort 33": (
+        "command",
+        "python -c \"import aeh.ingest; from aeh.store import TIER_MIGRATIONS, Tier; "
+        "raise SystemExit(0 if any(m.name == 'ingest_roster_names' "
+        "for m in TIER_MIGRATIONS[Tier.COHORT]) else 1)\"",
+        (
+            "tests/integration/ingest/test_ts143_name_identity.py",
+            "tests/contract/ingest/test_ct_ingest_23_name_identity.py",
+        ),
+    ),
     "#155 check_traceability --contracts-only passes the real pair (TS-82)": (
         "command",
         "python .claude/skills/create-test-plan/scripts/check_traceability.py "
@@ -1377,6 +1393,42 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "python -c \"import sys, aeh.console as c; "
         "sys.exit(0 if (c.SPA_BUNDLE_DIR / 'index.html').is_file() else 1)\"",
         ("tests/integration/console/test_tc_console_53_api_one_origin.py::test_tc_console_53_a_the_shipped_bundle_is_served_and_names_no_other_origin",),
+    ),
+    # --- TS-144 (#621), M-PKG rubric methods ----------------------------------------------
+    #
+    # #622 names no Python surface for `score_method`, so no `symbol` key is honest. Keyed
+    # `command` on the cheapest case that is true only once Package migration 15 has landed
+    # under its design name with its pin bumped and CLAUDE.md updated.
+    "#622 TS-144 score_method vocabulary and Package migration 15 (TC-PKG-34..36, C21)": (
+        "command",
+        "python -m pytest -q -p no:cacheprovider tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_34_b_the_package_pin_is_15_and_names_pkg_criterion_score_method",
+        (
+            "tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_34_a_a_weighted_method_is_refused_naming_the_closed_set",
+            "tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_34_b_migration_15_adds_both_columns_with_their_defaults",
+            "tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_34_b_the_package_pin_is_15_and_names_pkg_criterion_score_method",
+            "tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_34_b_the_v14_fixture_has_neither_column",
+            "tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_34_c_criteria_with_no_explicit_method_read_bands",
+            "tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_34_the_column_check_refuses_a_value_outside_the_closed_set",
+            "tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_35_a_a_composite_of_three_two_band_aspects_publishes",
+            "tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_35_each_malformed_composite_shape_is_refused_at_publish",
+            "tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_36_a_a_general_criterion_with_confirmed_derivation_publishes",
+            "tests/integration/pkg/test_tc_pkg_34_36_score_methods.py::test_tc_pkg_36_b_a_general_criterion_without_confirmed_derivation_is_refused",
+            "tests/contract/pkg/test_ct_pkg_21_score_method_shape.py::test_tc_pkg_c21_the_valid_fixture_satisfies_the_clause",
+            "tests/contract/pkg/test_ct_pkg_21_score_method_shape.py::test_tc_pkg_c21_every_clause_violation_is_refused_at_publish",
+            "tests/contract/pkg/test_ct_pkg_21_score_method_shape.py::test_tc_pkg_c21_fifty_seeded_valid_packages_all_satisfy_the_shape",
+            "tests/contract/pkg/test_ct_pkg_21_score_method_shape.py::test_tc_pkg_c21_a_random_non_member_method_is_refused_for_every_seed",
+        ),
+    ),
+    # #627 (depends on #622): `aeh package export`. Keyed on the shipped-sample round trip,
+    # which needs only the export command — the fixture round trip also needs #622, which
+    # #627 cannot land without.
+    "#627 TS-144 aeh package export round-trips through build (TC-PKG-37)": (
+        "command",
+        "python -m pytest -q -p no:cacheprovider tests/integration/pkg/test_tc_pkg_37_export_round_trip.py::test_tc_pkg_37_a_shipped_sample_round_trips_through_export",
+        (
+            "tests/integration/pkg/test_tc_pkg_37_export_round_trip.py::test_tc_pkg_37_an_exported_spec_rebuilds_the_same_package",
+            "tests/integration/pkg/test_tc_pkg_37_export_round_trip.py::test_tc_pkg_37_a_shipped_sample_round_trips_through_export",
+        ),
     ),
 }
 
@@ -1443,7 +1495,17 @@ def blocker_is_resolved(kind: str, target: str, repo_root: Any) -> bool:
         argv = shlex.split(target)
         if argv and argv[0] == "python":
             argv[0] = sys.executable
-        completed = subprocess.run(argv, cwd=repo_root, capture_output=True, timeout=300)
+        # Seam 3: the timeout is a knob, not a constant calibrated on one box. A command that
+        # does not finish has not exited 0, so it reads as unresolved - a slow box must not
+        # turn a still-open blocker into a crashed gate (PERF-11's run outlasts 300 s under load).
+        import os
+
+        timeout_s = float(os.environ.get("HARNESS_BLOCKER_COMMAND_TIMEOUT_S", "300"))
+        try:
+            completed = subprocess.run(argv, cwd=repo_root, capture_output=True,
+                                       timeout=timeout_s)
+        except subprocess.TimeoutExpired:
+            return False
         return completed.returncode == 0
     raise ValueError(
         f"unknown written-ahead blocker kind {kind!r}. Add a branch here when adding a kind, "
