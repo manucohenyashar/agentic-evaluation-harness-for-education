@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Sequence
 
 from .vocabulary import (
+    declared_score_method,
     default_evaluation_mode,
     EVALUATION_MODES,
     PackageVersionId,
@@ -74,7 +75,8 @@ class CriterionEditsMixin:
         kind: str = "open", max_points: float = 0.0, scoring_model: str = "atomic",
         construct_tag: str = "", dependencies: Sequence[str] = (),
         band_count: int | None = None, evidence_type: str | None = None,
-        evaluation_mode: str | None = None,
+        evaluation_mode: str | None = None, score_method: str | None = None,
+        component_of: str | None = None,
     ) -> None:
         """Add a criterion with its dependency edges, refusing a cycle (FR-PKG-05). Published
         versions refuse the add; drafts accept it. The content arguments have defaults, so a
@@ -90,7 +92,12 @@ class CriterionEditsMixin:
 
         `band_count` is the DECLARED band-set size (`FR-PKG-06`): odd or outside 2..6
         fails at the declare — a set that can never satisfy the even-count rule should
-        not exist even as a draft. `add_band` refuses past the declared count."""
+        not exist even as a draft. `add_band` refuses past the declared count.
+
+        `score_method` (`FR-PKG-24`) is refused here when outside the closed set; omitted,
+        it is `bands`. `component_of` names an aspect's composite. The composite shape is
+        whole-version, so it is checked at publish (`RubricMethodsMixin`)."""
+        method = declared_score_method(score_method, criterion_id)
         if band_count is not None and (band_count < 2 or band_count > 6
                                        or band_count % 2 != 0):
             raise BandSetError(
@@ -118,8 +125,8 @@ class CriterionEditsMixin:
                        v=v, criterion_id=criterion_id, question_id=question_id,
                        kind=kind, max_points=max_points, scoring_model=scoring_model,
                        construct_tag=construct_tag, band_count=band_count,
-                       evidence_type=evidence_type,
-                       evaluation_mode=mode)
+                       evidence_type=evidence_type, evaluation_mode=mode,
+                       score_method=method, component_of=component_of)
             for depends_on in dependencies:
                 if depends_on == criterion_id:
                     # Same self-edge refusal as set_dependencies: the graph error the

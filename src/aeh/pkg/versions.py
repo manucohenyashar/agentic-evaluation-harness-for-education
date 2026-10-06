@@ -5,7 +5,8 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from .vocabulary import default_evaluation_mode, LOGGER, PackageVersionId
+from .vocabulary import (
+    DEFAULT_SCORE_METHOD, default_evaluation_mode, LOGGER, PackageVersionId)
 from .records import PackageDraft, _REVISION_COPY_KEYS
 from .statements import PKG_STATEMENTS
 
@@ -57,7 +58,8 @@ class VersionsMixin:
                        kind="open", max_points=0.0, scoring_model="atomic",
                        construct_tag="", band_count=None, evidence_type=None,
                        # A draft placeholder is `kind="open"`, so: judged.
-                       evaluation_mode=default_evaluation_mode("open"))
+                       evaluation_mode=default_evaluation_mode("open"),
+                       score_method=DEFAULT_SCORE_METHOD, component_of=None)
         if parent is not None:
             copied = ", ".join(
                 f"{row['surface']}={row['n']}" for row in self._handle.query(
@@ -90,6 +92,9 @@ class VersionsMixin:
             lambda name: self._handle.query(PKG_STATEMENTS[name], v=v),
             boundary="publishable",
         )
+        # FR-PKG-24/26, CT-PKG-21: the method vocabulary, the composite shape and the
+        # `general` derivation gate — also before the lock flips.
+        self._validate_score_methods(v)
         with self._handle.transaction() as tx:
             tx.execute(PKG_STATEMENTS["publish"], by=approved_by, v=v)
             LOGGER.info("published package version %s by %s at %s",

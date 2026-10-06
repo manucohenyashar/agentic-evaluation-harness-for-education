@@ -793,6 +793,69 @@ _PKG_DECISION_ENGINE_NONINFERIOR = Migration(
 )
 
 
+# --- Tier P, migration 15 (#622, `FR-PKG-24`/`FR-PKG-26`, ADR-39): the rubric method --------
+#
+# Every new method is composition over the existing banded criterion, so the schema gains
+# only what the composition needs: the method itself (closed, CHECKed, `bands` by default
+# so every pre-15 criterion reads as what it always was) and the aspect-to-composite link.
+# The `general` type's provenance — the teacher's prose and the band set derived from it,
+# plus the confirmation that makes it publishable — gets its own table, under the same
+# published-immunity triggers as every other row of a version (the §6.2 lock carried to
+# the new data, as the design states it).
+_PKG_CRITERION_SCORE_METHOD = Migration(
+    version=15,
+    name="pkg_criterion_score_method",
+    statements=(
+        Statement(
+            "ALTER TABLE criterion ADD COLUMN score_method TEXT NOT NULL DEFAULT 'bands' "
+            "CHECK (score_method IN ('bands', 'evidence_sum', 'general'))"
+        ),
+        Statement("ALTER TABLE criterion ADD COLUMN component_of TEXT NULL"),
+        Statement(
+            """
+            CREATE TABLE criterion_derivation (
+                package_version_id TEXT NOT NULL,
+                criterion_id       TEXT NOT NULL,
+                description        TEXT NOT NULL CHECK (length(trim(description)) > 0),
+                derived_bands      TEXT NOT NULL,
+                recorded_at        TEXT NOT NULL,
+                confirmed_by       TEXT,
+                confirmed_at       TEXT,
+                CHECK ((confirmed_by IS NULL) = (confirmed_at IS NULL)),
+                PRIMARY KEY (package_version_id, criterion_id),
+                FOREIGN KEY (package_version_id, criterion_id)
+                    REFERENCES criterion(package_version_id, criterion_id)
+            )
+            """
+        ),
+        Statement(
+            "CREATE TRIGGER criterion_derivation_immutable BEFORE UPDATE ON "
+            "criterion_derivation "
+            "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
+            "= OLD.package_version_id AND pv.locked = 1) "
+            "BEGIN SELECT RAISE(ABORT, 'published version is immutable: "
+            "criterion_derivation references a published version'); END"
+        ),
+        Statement(
+            "CREATE TRIGGER criterion_derivation_insert_locked BEFORE INSERT ON "
+            "criterion_derivation "
+            "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
+            "= NEW.package_version_id AND pv.locked = 1) "
+            "BEGIN SELECT RAISE(ABORT, 'published version is immutable: "
+            "criterion_derivation added to a published version'); END"
+        ),
+        Statement(
+            "CREATE TRIGGER criterion_derivation_delete_refused BEFORE DELETE ON "
+            "criterion_derivation "
+            "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
+            "= OLD.package_version_id AND pv.locked = 1) "
+            "BEGIN SELECT RAISE(ABORT, 'published version is immutable: "
+            "criterion_derivation removed from a published version'); END"
+        ),
+    ),
+)
+
+
 TIER_MIGRATIONS[Tier.PACKAGE] = (
     TIER_MIGRATIONS[Tier.PACKAGE]
     + (_PKG_VERSION_LINEAGE,)
@@ -807,6 +870,7 @@ TIER_MIGRATIONS[Tier.PACKAGE] = (
     + (_PKG_VALIDATION_BASELINE,)
     + (_PKG_EXPORT_GATE_OUTCOME,)
     + (_PKG_DECISION_ENGINE_NONINFERIOR,)
+    + (_PKG_CRITERION_SCORE_METHOD,)
 )
 
 

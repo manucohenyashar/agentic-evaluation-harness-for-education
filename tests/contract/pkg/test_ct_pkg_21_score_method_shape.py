@@ -61,7 +61,6 @@ def store(tmp_data_dir):
 # --- half 1: the clause matrix -----------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_pkg_c21_the_valid_fixture_satisfies_the_clause(store):
     """The matrix's positive control: F-RUBRIC-METHODS publishes and its rows satisfy CT-PKG-21."""
     shape = rm.rubric_methods("C21-VALID")
@@ -71,7 +70,6 @@ def test_tc_pkg_c21_the_valid_fixture_satisfies_the_clause(store):
     assert rm.shape_violations(path, version) == []
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("mutation", rm.MUTATIONS, ids=lambda m: m.case)
 def test_tc_pkg_c21_every_clause_violation_is_refused_at_publish(store, mutation):
     refusal = rm.attempt_build(store, mutation.apply(rm.rubric_methods("C21-BAD")))
@@ -115,7 +113,6 @@ def test_tc_pkg_c21_the_generator_covers_every_method_in_every_package():
     assert {2, 4, 6} <= band_counts, band_counts
 
 
-@pytest.mark.writtenahead
 def test_tc_pkg_c21_fifty_seeded_valid_packages_all_satisfy_the_shape(store):
     """Property: every seeded valid package publishes and its stored rows satisfy CT-PKG-21 —
     closed domain, every composite with ≥ 1 two-band aspect whose `component_of` names it, no
@@ -141,7 +138,6 @@ def test_tc_pkg_c21_fifty_seeded_valid_packages_all_satisfy_the_shape(store):
                 f"seed {seed}: {c.criterion_id} declared {c.score_method!r} but stored {got!r}")
 
 
-@pytest.mark.writtenahead
 def test_tc_pkg_c21_a_random_non_member_method_is_refused_for_every_seed(store):
     """The other face of the closed domain: per seed, one standalone `bands` line re-declared with
     a random value outside the set — refused, naming the closed set, nothing locked."""

@@ -237,6 +237,7 @@ def _weakest_entry(entries: list[ManifestEntry]) -> list[ManifestEntry]:
 _REVISION_COPY_KEYS: tuple[str, ...] = (
     "pkg_revision_copy_criterion",
     "pkg_revision_copy_band",
+    "pkg_revision_copy_criterion_derivation",
     "pkg_revision_copy_question",
     "pkg_revision_copy_question_option",
     "pkg_revision_copy_dependency",

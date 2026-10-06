@@ -28,6 +28,7 @@ Files:
     exchange.py         the provenance gate, export and import
     setup_records.py    what M-SETUP records: proposals, inventory, read-back, steps
     setup_checks.py     the structural checks on the inventory and read-back writes
+    rubric_methods.py   score methods: the composite shape and the general derivation
     catalog.py          `PackageCatalog`
     in_memory.py        the module-level entry points over an in-memory catalog
 
@@ -37,12 +38,14 @@ Detailed design notes (the full original module description): `docs/code-notes/p
 from __future__ import annotations
 
 from .vocabulary import (
+    DEFAULT_SCORE_METHOD,
     default_evaluation_mode,
     EVALUATION_MODES,
     LOGGER,
     PackageVersionId,
     PROVENANCE_VOCABULARY,
     QUESTION_TYPES,
+    SCORE_METHODS,
 )
 from .errors import (
     BandSetError,
