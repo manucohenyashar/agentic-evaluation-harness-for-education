@@ -51,3 +51,19 @@ def decision_provider_for(model_ref: ModelRef, **seams: Any) -> "DecisionProvide
     raise ConfigurationError(
         f"no decision provider is named {name!r}; the decision providers are "
         f"{sorted(['fixture', 'openrouter-jev', 'openjev', 'openjev-small', *_UNSHIPPED_DECISION_PROVIDERS])} (FR-PROV-26).")
+
+
+def describe_provider(provider: Any) -> str:
+    """One line naming the provider a run will call, for the operator (seam 4). The profile
+    summary lists model names, which read the same whether OpenRouter answers or a recording
+    does; this line says which. Lives in M-PROV because naming a backend is M-PROV's alone
+    (CT-PROV-15)."""
+    inner = getattr(provider, "_inner", provider)
+    if isinstance(inner, OpenRouterProvider):
+        zdr = "zero data retention enforced" if inner._routing() else "NO retention routing"
+        return f"OpenRouter at {inner._base_url} ({zdr})"
+    if isinstance(inner, LocalServerProvider):
+        return f"local model server at {inner._base_url}"
+    if isinstance(inner, RecordedFixtureProvider):
+        return f"recordings in {getattr(inner, 'fixture_dir', '?')} (no network)"
+    return type(inner).__name__
