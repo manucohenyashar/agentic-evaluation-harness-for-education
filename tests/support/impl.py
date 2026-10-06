@@ -1366,6 +1366,34 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "--contracts-only --quiet",
         ("tests/contract/blast/test_tc_blast_rule.py::test_tc_blast_03_the_contracts_only_gate_fails_a_lost_clause_case_and_ci_runs_it",),
     ),
+    # --- TS-147 (#628), M-CONSOLE's JSON API and same-origin SPA (FR-CONSOLE-45) ------------
+    #
+    # The names are `tests/support/console_api_vocabulary.py`'s: the route table and the
+    # bundle path #629 adds. The `spa_dir=` seam on `serve_console` arrives in the same
+    # change; if it lags, `start_console` reports it as #629's, not as a TypeError.
+    "#629 TS-147 TC-CONSOLE-53/C30 the console API serves one origin with enumerated mutations": (
+        "symbols",
+        f"{CONSOLE_MODULE}:API_ROUTES,{CONSOLE_MODULE}:SPA_BUNDLE_DIR",
+        (
+            "tests/integration/console/test_tc_console_53_api_one_origin.py::test_tc_console_53_a_the_spa_and_its_assets_come_from_this_origin_with_their_types",
+            "tests/integration/console/test_tc_console_53_api_one_origin.py::test_tc_console_53_b_the_census_lists_every_mutating_route_beside_its_control_row",
+            "tests/integration/console/test_tc_console_53_api_one_origin.py::test_tc_console_53_b_every_mutating_route_reaches_exactly_its_control_row",
+            "tests/integration/console/test_tc_console_53_api_one_origin.py::test_tc_console_53_b_a_mutating_verb_on_an_unlisted_path_writes_nothing",
+            "tests/integration/console/test_tc_console_53_api_one_origin.py::test_tc_console_53_b_no_read_route_writes",
+            "tests/integration/console/test_tc_console_53_api_one_origin.py::test_tc_console_53_c_no_served_byte_names_an_external_origin",
+            "tests/contract/console/test_ct_console_c30_one_origin_enumerated_mutations.py::test_tc_console_c30_the_api_mutations_are_exactly_the_enumerated_control_writes",
+            "tests/contract/console/test_ct_console_c30_one_origin_enumerated_mutations.py::test_tc_console_c30_an_external_origin_in_any_served_byte_breaks_the_clause",
+        ),
+    ),
+    # The shipped-bundle arm needs the built SPA at the package-data path, which #634 ships
+    # (#629's own criterion: "the bundle itself arrives with #634"). Keyed on the file's
+    # existence, so it fires when the bundle lands, whichever of #629/#634 is last.
+    "#634 TS-147 TC-CONSOLE-53(a) the shipped SPA bundle is served from package data": (
+        "command",
+        "python -c \"import sys, aeh.console as c; "
+        "sys.exit(0 if (c.SPA_BUNDLE_DIR / 'index.html').is_file() else 1)\"",
+        ("tests/integration/console/test_tc_console_53_api_one_origin.py::test_tc_console_53_a_the_shipped_bundle_is_served_and_names_no_other_origin",),
+    ),
     # --- TS-144 (#621), M-PKG rubric methods ----------------------------------------------
     #
     # #622 names no Python surface for `score_method`, so no `symbol` key is honest. Keyed
