@@ -7,13 +7,16 @@ advisory in a shipped dependency. **Cross-cutting** — this traces to no single
 
 The stated oracle has two halves and only one of them is expressible in this repository today.
 
-*The half that is here.* `pyproject.toml` declares `dependencies = []` — a design decision, not an
-accident: ADR-11 fixes Python 3.11+ with stdlib `sqlite3`, and `NFR-SYS-06` (test plan §4.5 E1)
-requires the fast tier to run with nothing installed. **The shipped dependency set is empty**, so
-"no High or Critical advisory in a shipped dependency" is trivially true — and the thing that makes
-it stop being true is somebody adding a dependency. That is what these cases assert, as set
-equality against a literal transcribed here, the same shape as `TC-CONF-C02`'s field set and
-`TC-CONF-C11`'s six-key set. Adding `requests` to `requirements-dev.txt` fails this file.
+*The half that is here.* `pyproject.toml` declares exactly four runtime dependencies — `pypdf`,
+`pypdfium2`, `Pillow`, `typesafe-sdk` (`FR-STORE-20`). That is a design decision, not an accident:
+ADR-11 once declared the set empty, and ADR-36 (#614) superseded its packaging clause so that the
+operator's one `pip install .` leaves the system complete. ADR-36's stated mitigation is this file:
+**the shipped set is enumerated, entry by entry, with the reason each one ships**, and every entry is
+exact-pinned or floor-bounded. The thing that widens the advisory surface is somebody adding a
+dependency, so these cases assert the set as equality against a literal transcribed here, the same
+shape as `TC-CONF-C02`'s field set and `TC-CONF-C11`'s six-key set. Adding `requests` to
+`pyproject.toml` or to `requirements-dev.txt` fails this file. (The import boundary did not move with
+the install boundary: the fast tier still imports none of the four — `NFR-SYS-06`, `TC-INGEST-01`.)
 
 *The half that is not.* Running an actual advisory scan needs an advisory database, which needs
 network. Two independent obstructions, both reported in the PR rather than engineered around:
@@ -43,13 +46,34 @@ import pytest
 pytestmark = pytest.mark.contract
 
 
-#: `pyproject.toml`'s runtime dependency list, transcribed. Empty, per ADR-11 and `NFR-SYS-06`.
+#: `pyproject.toml`'s runtime dependency list, transcribed, with the reason each one ships
+#: (FR-STORE-20, ADR-36 — the supply-chain inventory the ADR names as its mitigation). Keys are
+#: lowercased distribution names, as `_REQUIREMENT` parses them.
 #:
 #: A literal rather than a read of the same file the assertion is about — reading it and comparing
 #: it to itself is the tautology `TC-CONF-C02` avoids by transcribing the design's field list. The
-#: value of this constant is that changing `pyproject.toml` requires changing this line too, in a
-#: diff a reviewer sees.
-DECLARED_RUNTIME_DEPENDENCIES: frozenset[str] = frozenset()
+#: value of this constant is that changing `pyproject.toml` requires changing this mapping too, in
+#: a diff a reviewer sees.
+DECLARED_RUNTIME_DEPENDENCIES: dict[str, str] = {
+    "pypdf": "M-INGEST, TS-18 (#42) — the live PypdfSanitizer, the gateway's neutralize-and-bound "
+             "stage (FR-INGEST-33/34). Pure Python. Lazy-imported, so the fast tier never loads it",
+    "pypdfium2": "M-INGEST, #226 (F10) — the live PdfiumRasterizer's engine: rasterize, text_layer "
+                 "and the live crop (FR-INGEST-13). Ships the PDFium binary as a platform wheel. "
+                 "Lazy-imported",
+    "pillow": "M-INGEST / M-STORE, #226 — PdfBitmap.to_pil() needs it: the persisted page rasters "
+              "and image crops decode their PNG bytes through it (FR-STORE-06). Before ADR-36 it "
+              "was a manual install step. Lazy-imported",
+    "typesafe-sdk": "M-PROV, TS-124 (#500), design 1.8 ADR-28 — the TypeSafe SDK behind "
+                    "JevOpenRouterProvider, exact-pinned (NFR-PROV-10). Imported solely inside "
+                    "aeh.prov, lazily, at provider construction (CT-PROV-29). Pulls httpx2, "
+                    "pydantic, pydantic-core, tenacity and typing-extensions",
+}
+
+#: The exact specifier strings FR-STORE-20 pins, so a loosened pin is caught here as well as in
+#: `TC-STORE-26`: an advisory obligation is only answerable if the shipped version is known.
+DECLARED_RUNTIME_SPECIFIERS: frozenset[str] = frozenset(
+    {"pypdf>=6.0", "pypdfium2>=4.0", "Pillow>=10.0", "typesafe-sdk==0.7.2"}
+)
 
 #: Every distribution `requirements-dev.txt` is allowed to install, with the story that added it.
 #: A dev dependency is not shipped, so it carries no `SEC-14` advisory obligation of its own — but
@@ -59,23 +83,10 @@ REVIEWED_DEV_DEPENDENCIES: dict[str, str] = {
     "pytest": "TS-00 (#1) — the framework itself",
     "pytest-randomly": "TS-00 (#1) — §4.6 runs the unit suite shuffled",
     "hypothesis": "TS-03 (#7) — the first story carrying Property-level cases",
-    "pypdf": "TS-18 (#42) — the live PdfSanitizer (FR-INGEST-33/34) and the "
-             "rung-2 security cases' F-ADV-PDF fixtures",
-    "pypdfium2": "#226 (F10) — the live PdfiumRasterizer's engine: rasterize, "
-                 "text_layer and the live crop (FR-INGEST-13). Lazy-imported, "
-                 "so the fast tier never loads it; declared so a fresh clone "
-                 "runs the live path the acceptance run needs",
-    "Pillow": "#226 — PdfBitmap.to_pil() needs it: the persisted page rasters "
-              "and image crops decode their PNG bytes through it (FR-STORE-06)",
     "playwright": "TS-49 (#130) — test plan §4.5's E6 headless browser for the browser-level "
                   "console facts (TC-CONSOLE-40/41, SEC-12). Test-only: imported solely by "
                   "tests/support/console_browser.py, launching an installed Edge/Chrome by "
                   "channel, so no browser binary is downloaded",
-    "typesafe-sdk": "TS-124 (#500), design 1.8 ADR-28 (user decision 2026-09-27) — the TypeSafe "
-                    "SDK behind JevOpenRouterProvider, exact-pinned (NFR-PROV-10). Dev tier only "
-                    "here; production installs it through the `jev-cloud` extra, never the core "
-                    "(ADR-11). Imported solely inside aeh.prov (CT-PROV-29). Pulls httpx2, "
-                    "pydantic, pydantic-core, tenacity and typing-extensions",
 }
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -122,32 +133,48 @@ def _declared_dev_requirements() -> dict[str, str]:
     return _dev_requirement_lines()[0]
 
 
-def test_sec_14_the_shipped_dependency_set_is_empty():
-    """`SEC-14` — no shipped dependency, so no advisory can apply to one.
-
-    Set equality against the transcribed literal, not `assert not deps`: the two differ the day
-    someone declares a dependency *and* the day someone rewrites this file's expectation, and only
-    the first should be silent.
-
-    This is the assertion the whole case rests on. Every other supply-chain claim in this
-    repository — the air-gapped tier (§4.5 E1), `NFR-SYS-06`'s "nothing required to run", the
-    absence of a lockfile — is downstream of the runtime dependency set being empty, and none of
-    them is checked anywhere else.
-    """
+def _declared_runtime_entries() -> list[str]:
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    declared = {
-        _REQUIREMENT.match(entry).group(1).lower()
-        for entry in pyproject["project"].get("dependencies", [])
-    }
+    return list(pyproject["project"].get("dependencies", []))
 
-    assert declared == DECLARED_RUNTIME_DEPENDENCIES, (
+
+def test_sec_14_the_shipped_dependency_set_is_the_enumerated_inventory():
+    """`SEC-14` — every shipped dependency is on the inventory, with its reason, and nothing else.
+
+    Set equality against the transcribed literal, both directions: the two differ the day someone
+    declares a dependency *and* the day someone drops one while its reason stays here, and only a
+    reviewed diff to this mapping should make them agree again.
+
+    This is the assertion the whole case rests on. ADR-36 traded ADR-11's empty runtime set for
+    the operator's one-command install, and named this enumeration as the mitigation: the advisory
+    surface of a school node is exactly these four distributions and their transitive sets.
+    """
+    entries = _declared_runtime_entries()
+    declared = {_REQUIREMENT.match(entry).group(1).lower() for entry in entries}
+    inventory = set(DECLARED_RUNTIME_DEPENDENCIES)
+
+    assert declared == inventory, (
         "SEC-14: the shipped dependency set changed.\n"
-        f"  newly declared: {sorted(declared - DECLARED_RUNTIME_DEPENDENCIES)}\n"
-        f"  removed:        {sorted(DECLARED_RUNTIME_DEPENDENCIES - declared)}\n"
+        f"  newly declared: {sorted(declared - inventory)}\n"
+        f"  removed:        {sorted(inventory - declared)}\n"
         "Every addition ships to a school node and carries an advisory obligation this "
-        "repository cannot currently scan for (see this file's docstring). ADR-11 and "
-        "NFR-SYS-06 say the runtime set is empty; if that is changing, it is a design "
-        "decision, not a dependency bump."
+        "repository cannot currently scan for (see this file's docstring). FR-STORE-20 / ADR-36 "
+        "enumerate the runtime set; if that is changing, it is a design decision recorded in "
+        "DECLARED_RUNTIME_DEPENDENCIES with its reason, not a dependency bump."
+    )
+    unexplained = sorted(name for name, reason in DECLARED_RUNTIME_DEPENDENCIES.items()
+                         if not reason.strip())
+    assert not unexplained, f"SEC-14: inventory entries with no reason: {unexplained}"
+
+
+def test_sec_14_every_shipped_dependency_carries_its_declared_pin():
+    """The specifiers, not only the names: `Pillow` unbounded or `typesafe-sdk>=0.7.2` is a
+    different install from the one whose advisories anyone could answer for (NFR-PROV-10)."""
+    entries = _declared_runtime_entries()
+
+    assert sorted(entries) == sorted(DECLARED_RUNTIME_SPECIFIERS), (
+        f"SEC-14: pyproject.toml declares {entries}; FR-STORE-20 pins "
+        f"{sorted(DECLARED_RUNTIME_SPECIFIERS)}, each exact-pinned or floor-bounded"
     )
 
 
@@ -218,7 +245,8 @@ def test_sec_14_no_option_line_redirects_the_install():
 def test_sec_14_no_lockfile_claims_a_dependency_set_that_does_not_exist():
     """A stale lockfile is a supply-chain claim nobody is maintaining.
 
-    This repository has no lockfile and, with an empty runtime dependency set, needs none. The
+    This repository has no lockfile: its four runtime dependencies are pinned in `pyproject.toml`
+    and enumerated above, so the declaration itself is the maintained claim. The
     case exists so that adding one is a decision: a `poetry.lock` or `requirements.txt` that
     nobody regenerates describes an install that never happens, and it is the artifact a reader
     trusts when asking "what shipped".

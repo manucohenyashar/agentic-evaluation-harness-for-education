@@ -163,7 +163,6 @@ SDK_PIN = "typesafe-sdk==0.7.2"
 RETIRED_EXTRAS = ("jev-cloud", "live-ingest")
 
 
-@pytest.mark.writtenahead
 def test_tc_prov_53_the_sdk_is_exact_pinned_in_the_core_dependencies() -> None:
     """The pin arm (flipped): `typesafe-sdk==0.7.2` is a `[project].dependencies` string, and no
     extra carries it — the SDK installs with `pip install .` or not at all."""
@@ -176,7 +175,6 @@ def test_tc_prov_53_the_sdk_is_exact_pinned_in_the_core_dependencies() -> None:
     assert "optional-dependencies" not in project, project.get("optional-dependencies")
 
 
-@pytest.mark.writtenahead
 def test_tc_prov_53_no_shipped_module_keeps_a_packaging_check_naming_an_extra() -> None:
     """The deleted refusal (negative): no module under `src/aeh` names a retired extra. Today
     `aeh.prov.jev_openrouter` raises `ConfigurationError` naming `jev-cloud` when the SDK is

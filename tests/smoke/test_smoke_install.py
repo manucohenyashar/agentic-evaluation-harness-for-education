@@ -8,10 +8,12 @@ required.
 The oracle has two halves, because "no additional install step" is a claim about **what the
 repository declares** and **what the source tree actually does**:
 
-1.  **Declared** — `pyproject.toml` ships `dependencies = []` (ADR-11: stdlib-only runtime),
-    and the tracked tree carries no npm manifest, no lockfile, no container image, no
-    server-composition file. Anything a fresh machine needs beyond `python -m venv` and
-    `pip install -r requirements-dev.txt` is an additional install step by definition.
+1.  **Declared** — `pyproject.toml` ships exactly the four standard dependencies of
+    `FR-STORE-20` (ADR-36, #614, which superseded ADR-11's empty `dependencies = []`), so one
+    pip step resolves everything from the package index, and no extras exist; and the tracked
+    tree carries no npm manifest, no lockfile, no container image, no server-composition file.
+    Anything a fresh machine needs beyond `python -m venv` and that one pip step is an
+    additional install step by definition.
 2.  **Demonstrated** — the `TC-STORE-19` pattern (issue #16): a subprocess whose environment
     carries nothing but the OS minimum and `HARNESS_DATA_DIR` imports the whole assembled
     system (the eleven migration-chain contributors) from the source tree, opens a store,
@@ -26,11 +28,11 @@ the whole-system version, which is why its child imports all eleven contributors
 `aeh.store` alone.
 
 One residual masking vector the demonstration cannot see: its child runs on the dev venv's
-interpreter, so an undeclared **eager** runtime import of a package that
-`requirements-dev.txt` happens to carry would ride in with the interpreter and pass. The
-declared half (`dependencies == []` above) and the shipped lazy-import convention hold that
-line — `pypdfium2`/`pypdf` are imported inside the ingest implementations that need them,
-not at module top — which is why the demonstration is the second wall, not the only one.
+interpreter, so an undeclared **eager** runtime import of a package that the dev venv
+happens to carry would ride in with the interpreter and pass. The declared half (the exact
+four-package set above) and the shipped lazy-import convention hold that line —
+`pypdfium2`/`pypdf`/`PIL`/`typesafe_sdk` are imported inside the implementations that need
+them, not at module top — which is why the demonstration is the second wall, not the only one.
 
 `Written ahead of implementation: yes` is stale — every module the smoke suite drives is
 landed (#42-#302); the suite runs green by design, exactly as §8.2's unmarking rule predicts.
@@ -42,6 +44,7 @@ import os
 import subprocess
 import sys
 import tomllib
+from collections import Counter
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -57,6 +60,11 @@ NPM_MANIFESTS = {"package.json", "package-lock.json", "yarn.lock", "pnpm-lock.ya
 #: Server-shaped install steps: anything the operator would have to start before the first
 #: run. The console's loopback server is opt-in at runtime, not an install requirement.
 SERVER_ARTIFACTS = {"Dockerfile", "docker-compose.yml", "docker-compose.yaml", "Vagrantfile"}
+
+#: FR-STORE-20 (ADR-36, #614), transcribed rather than read back from the file under test: the
+#: complete runtime set `pip install .` carries. Pip resolves these in the one install step, so
+#: they are not an additional step — an entry outside this set is.
+STANDARD_DEPENDENCIES = ("pypdf>=6.0", "pypdfium2>=4.0", "Pillow>=10.0", "typesafe-sdk==0.7.2")
 
 
 def test_tc_smoke_01_clean_install_needs_nothing_beyond_a_venv_and_a_data_dir(
@@ -76,11 +84,15 @@ def test_tc_smoke_01_clean_install_needs_nothing_beyond_a_venv_and_a_data_dir(
     # -- the declared half -------------------------------------------------------------------
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     dependencies = pyproject["project"]["dependencies"]
-    assert dependencies == [], (
-        f"TC-SMOKE-01: pyproject.toml declares runtime dependencies {dependencies}. "
-        "NFR-STORE-03: no separate installation step — the runtime is stdlib-only "
-        "(ADR-11), so anything a pip install does not carry is an install step the "
-        "smoke suite was written to catch."
+    assert Counter(dependencies) == Counter(STANDARD_DEPENDENCIES), (
+        f"TC-SMOKE-01: pyproject.toml declares runtime dependencies {dependencies}, not "
+        f"FR-STORE-20's {list(STANDARD_DEPENDENCIES)}. NFR-STORE-03: no separate installation "
+        "step — `pip install .` must carry exactly the declared set (ADR-36), so a changed "
+        "set is an install the smoke suite was written to catch."
+    )
+    assert "optional-dependencies" not in pyproject["project"], (
+        "TC-SMOKE-01: an extra is a second install command, and ADR-36 retired them all: "
+        f"{pyproject['project']['optional-dependencies']}"
     )
 
     tracked = subprocess.run(

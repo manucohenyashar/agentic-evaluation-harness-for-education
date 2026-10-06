@@ -1516,33 +1516,11 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     ),
     # --- TS-140 (#613), packaging flips + the operator-doc sweep ----------------------------
     #
-    # Keyed `command` on the fast static arms themselves: #614 changes a declaration and some
-    # docs, not a symbol, so the only honest signal is those arms going green. TC-PIPE-12's
-    # clean-venv case rides on the same command rather than its own: it is `slow` (a real venv
-    # and a real `pip install` from the index), and the gate runs every blocker on every
-    # TEST_CMD. Re-run it by hand when this fires; it was seen green against a local simulation
-    # of #614's declaration (#613's PR).
-    "#614 TS-140 packaging: four standard dependencies, extras retired, operator docs reduced": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider -p no:randomly "
-        "tests/unit/pipe/test_tc_store_26_packaging_declaration.py::test_tc_store_26_the_core_declares_exactly_the_four_standard_dependencies "
-        "tests/unit/pipe/test_tc_store_26_packaging_declaration.py::test_tc_store_26_no_optional_dependency_table_survives "
-        "tests/contract/prov/test_ts125_sdk_confinement.py::test_tc_prov_53_the_sdk_is_exact_pinned_in_the_core_dependencies "
-        "tests/contract/prov/test_ts125_sdk_confinement.py::test_tc_prov_53_no_shipped_module_keeps_a_packaging_check_naming_an_extra "
-        "tests/artifact/test_tc_store_29_operator_install_docs.py::test_tc_store_29_no_operator_document_names_an_extra_or_a_manual_pillow_install "
-        "tests/artifact/test_tc_store_29_operator_install_docs.py::test_tc_store_29_the_deployment_tutorial_carries_the_air_gap_wheelhouse_paragraph",
-        (
-            "tests/unit/pipe/test_tc_store_26_packaging_declaration.py::test_tc_store_26_the_core_declares_exactly_the_four_standard_dependencies",
-            "tests/unit/pipe/test_tc_store_26_packaging_declaration.py::test_tc_store_26_no_optional_dependency_table_survives",
-            "tests/contract/prov/test_ts125_sdk_confinement.py::test_tc_prov_53_the_sdk_is_exact_pinned_in_the_core_dependencies",
-            "tests/contract/prov/test_ts125_sdk_confinement.py::test_tc_prov_53_no_shipped_module_keeps_a_packaging_check_naming_an_extra",
-            "tests/artifact/test_tc_store_29_operator_install_docs.py::test_tc_store_29_no_operator_document_names_an_extra_or_a_manual_pillow_install",
-            "tests/artifact/test_tc_store_29_operator_install_docs.py::test_tc_store_29_the_deployment_tutorial_carries_the_air_gap_wheelhouse_paragraph",
-            "tests/smoke/test_tc_pipe_12_clean_venv_install.py::test_tc_pipe_12_pip_install_dot_alone_yields_the_command_and_all_four_libraries",
-        ),
-    ),
-    # The SPA-bundle arms wait on M-UI's committed bundle, not on #614: the package-data glob
-    # must reach it and the clean venv must carry it. Same `command` shape, same slow rider.
+    # #614's entry (the four standard dependencies, extras retired, operator docs reduced) was
+    # dropped when #614 landed. The SPA-bundle arms wait on M-UI's committed bundle, not on #614:
+    # the package-data glob must reach it and the clean venv must carry it. Keyed `command` on the
+    # fast static arm; TC-PIPE-12's clean-venv case rides on it rather than its own command
+    # because it is `slow` (a real venv and a real `pip install`) — re-run it by hand when this fires.
     "#634 TS-140 the SPA bundle ships as package data (TC-STORE-26 new arm, TC-PIPE-12)": (
         "command",
         "python -m pytest -q -p no:cacheprovider -p no:randomly "
