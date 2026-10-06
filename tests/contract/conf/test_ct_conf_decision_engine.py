@@ -4,7 +4,7 @@
 |---|---|---|
 | TC-CONF-C17 | data | The profile/provider pairing and build pinning are held by the type: `dataclasses.replace` to a cloud engine on an edge config raises |
 | TC-CONF-C18 | behaviour | Gate values frozen for the run: the resolved object and its rehydrated row keep threshold and token ratio under a changed environment; at rung 2 a seat dispatched with the rehydrated config after the change records threshold 0.8 and falls back at gate 0.70 |
-| TC-CONF-C19 | config | The engine key has no default; per-provider threshold defaults; explicit values override; out-of-domain raises, never clamps |
+| TC-CONF-C19 | config | v2.2 (flipped, #615): the default is `jev` on `cloud-hosted`/`dev-ci` and `off` on `edge-local` whatever the hardware (written ahead of #616); explicit values override; per-provider threshold defaults; out-of-domain raises, never clamps |
 | TC-CONF-C20 | behaviour | The engine-off `panel_build_ref` and `ProfileSummary` equal the fb12d1e goldens; every engine-on variant differs |
 """
 
@@ -108,11 +108,40 @@ def test_tc_conf_c18_after_a_resume_the_frozen_gate_still_decides(tmp_data_dir, 
 
 # --- TC-CONF-C19 -------------------------------------------------------------------------------
 
-def test_tc_conf_c19_defaults_overrides_and_no_clamping() -> None:
-    cfg = _cloud()
-    cfg.pop("HARNESS_DECISION_ENGINE")
-    with pytest.raises(ConfigurationError):
-        resolve_run_config(cfg, COHORT)
+#
+# Flipped by the operator-requirements delta (test plan §5.0, CT-CONF-19 v2.2, #615): the old
+# break condition ("a default is introduced") is the new specification. Split in two so the
+# unchanged sentences stay in the gate while the default itself is written ahead of #616.
+
+@pytest.mark.writtenahead
+def test_tc_conf_c19_v2_2_the_default_is_a_function_of_the_profile_never_the_hardware() -> None:
+    from aeh.conf import HARDWARE_PROFILES
+
+    for profile in ("cloud-hosted", "dev-ci"):
+        cfg = hosted_cfg(profile, HARNESS_JEV_BUILD=OR_BUILD)
+        cfg.pop("HARNESS_DECISION_ENGINE")
+        engine = resolve_run_config(cfg, COHORT).decision_engine
+        assert engine is not None and engine.model.provider == "openrouter-jev", profile
+    # Breaks if edge-local defaults to jev, or if the default reads the hardware: every hardware
+    # profile — including the one that could host openjev — resolves off with the knob unset.
+    assert set(HARDWARE_PROFILES) == {"unified-large", "unified-small", "discrete-gpu"}
+    for hardware in HARDWARE_PROFILES:
+        for build, quantization, provider in ((OJ_BUILD, "fp8", None), (SMALL_BUILD, "bf16", "openjev-small")):
+            cfg = edge_cfg(HARNESS_HARDWARE_PROFILE=hardware, HARNESS_JEV_BUILD=build,
+                           HARNESS_JEV_QUANTIZATION=quantization, HARNESS_DECISION_PROVIDER=provider)
+            cfg.pop("HARNESS_DECISION_ENGINE")
+            assert resolve_run_config(cfg, COHORT).decision_engine is None, (hardware, build)
+
+
+def test_tc_conf_c19_explicit_values_override_and_out_of_domain_refuses() -> None:
+    for profile in ("cloud-hosted", "dev-ci"):
+        assert resolve_run_config(hosted_cfg(profile, HARNESS_DECISION_ENGINE="off", HARNESS_JEV_BUILD=OR_BUILD),
+                                  COHORT).decision_engine is None
+    assert resolve_run_config(_edge(), COHORT).decision_engine.model.provider == "openjev"
+    for value in ("maybe", "", "JEV", "on"):
+        with pytest.raises(ConfigurationError) as caught:
+            resolve_run_config({**_cloud(), "HARNESS_DECISION_ENGINE": value}, COHORT)
+        assert "HARNESS_DECISION_ENGINE" in str(caught.value)
     assert resolve_run_config(_cloud(), COHORT).decision_engine.confidence_threshold == Decimal("0.80")
     assert resolve_run_config(_edge(), COHORT).decision_engine.confidence_threshold == Decimal("0.80")
     small = edge_cfg(HARNESS_DECISION_ENGINE="jev", HARNESS_DECISION_PROVIDER="openjev-small",

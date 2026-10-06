@@ -31,6 +31,8 @@ behind it is a differential with the measurements missing. The overlap is report
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from tests.support.conform_vocabulary import (
@@ -204,3 +206,91 @@ def test_tc_conform_04_all_five_dimensions_are_compared_with_both_operands_prese
         f"set it was given is {fixtures.version!r}. Agreement 'with the fixture labels' is "
         f"agreement with whatever set this names."
     )
+
+
+#: The profile whose arm is the OpenRouter arm — the only OpenRouter profile
+#: `live_conformance_backends()` builds (FR-CONF-29 resolves `jev` by default on it).
+_OPENROUTER_PROFILES = frozenset({"cloud-hosted"})
+
+
+@pytest.mark.writtenahead
+def test_tc_conform_04_openrouter_arm_runs_the_default_engine_and_reports_per_leg_live_keys():
+    """`TC-CONFORM-04`, re-specified by the operator-requirements plan (§5.0; TS-142, #617).
+
+    *"The OpenRouter arm runs with the resolved default engine (`jev` on that profile), so the
+    differential includes the decision leg; the report carries the CT-CONFORM-17 per-leg keys
+    alongside the existing figures."*
+
+    **The resolved default, not a pinned value.** `conf_builders.hosted_cfg` pins
+    `HARNESS_DECISION_ENGINE="off"` so every older case stays engine-off; this arm deletes the
+    key so the profile's default decides. The decision leg's `live_calls > 0` is then the proof
+    that the default resolved to an engine that actually ran.
+
+    Written ahead of #618 (keyed on `aeh.conform:run_live_acceptance`, the story's entry point,
+    since #618 lands this arm's per-leg figures with it). The key is checked first so a box
+    without one skips before anything is resolved or dispatched.
+    """
+    from tests.support.conform_vocabulary import (
+        BACKEND_LIVE_LEGS_FIELD,
+        CT_CONFORM_17_KEYS,
+        LEG_DECISION,
+        LIVE_ACCEPTANCE_ENTRY,
+        LIVE_CALLS,
+        LIVE_LEG_KEYS,
+        LIVE_LEGS,
+        require_openrouter_key,
+    )
+
+    require_openrouter_key()
+    build_suite = require(CONFORM_MODULE, "build_conformance_suite", issue=ISSUE)
+    require(CONFORM_MODULE, LIVE_ACCEPTANCE_ENTRY, issue="#618")
+
+    backends = live_conformance_backends()
+    openrouter = [cfg for cfg in backends if cfg["HARNESS_PROFILE"] in _OPENROUTER_PROFILES]
+    if not openrouter:
+        pytest.skip(
+            "HARNESS_CONFORM_LIVE_BACKENDS declares no OpenRouter profile (cloud-hosted or "
+            "dev-ci); the re-specified arm has nothing to run against."
+        )
+    # The default engine still needs a pinned build (FR-CONF-19/20; TC-CONF-35 resolves the cloud
+    # profiles "with HARNESS_JEV_BUILD present"), and `ConformanceSuite.run` does not merge the
+    # process environment, so the nightly's pin is carried into the config here.
+    jev_build = os.environ.get("HARNESS_JEV_BUILD", "").strip()
+    if not jev_build:
+        pytest.skip(
+            "HARNESS_JEV_BUILD is unset. The re-specified OpenRouter arm resolves the default "
+            "engine (jev), which needs the nightly's pinned Jev build."
+        )
+    for cfg in openrouter:
+        cfg.pop("HARNESS_DECISION_ENGINE", None)
+        cfg["HARNESS_JEV_BUILD"] = jev_build
+
+    report = build_suite().run("v1", backends, cohort=_synthetic_cohort())
+
+    for cfg in openrouter:
+        profile = cfg["HARNESS_PROFILE"]
+        result = report.per_backend[profile]
+        figures = getattr(result, PER_BACKEND_FIGURES_FIELD, None)
+        assert figures and set(DIVERGENCE_DIMENSIONS) <= set(figures), (
+            f"{profile}: the existing per-backend figures must stay alongside the new keys"
+        )
+        legs = getattr(result, BACKEND_LIVE_LEGS_FIELD, None)
+        assert legs is not None, (
+            f"{profile}'s result carries no {BACKEND_LIVE_LEGS_FIELD!r}; the re-specified arm "
+            f"reports the CT-CONFORM-17 per-leg keys beside the existing figures."
+        )
+        assert set(legs) == set(LIVE_LEGS), (
+            f"{profile} reports legs {sorted(legs)}; the full-pipeline arm has {sorted(LIVE_LEGS)}"
+        )
+        for leg in LIVE_LEGS:
+            missing = set(LIVE_LEG_KEYS) - set(legs[leg])
+            assert not missing, f"{profile} leg {leg!r} lacks {sorted(missing)}"
+            assert float(legs[leg][LIVE_CALLS]) > 0, (
+                f"{profile} leg {leg!r} made no live calls; a zero-call leg fails the report "
+                f"(CT-CONFORM-17)."
+            )
+        missing = CT_CONFORM_17_KEYS - set(legs[LEG_DECISION])
+        assert not missing, (
+            f"{profile}'s decision leg lacks {sorted(missing)}. With the engine resolved by "
+            f"default the differential includes the decision leg (FR-CONFORM-17)."
+        )
