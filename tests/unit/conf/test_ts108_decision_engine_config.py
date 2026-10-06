@@ -2,10 +2,10 @@
 
 | Case | Asserted |
 |---|---|
-| TC-CONF-24 | `HARNESS_DECISION_ENGINE` is required with no default, per profile; `off` gives `None`, `jev` a decision-role engine; every section of the reference config resolves with a pinned build, and `edge-local` names `unified-large` |
+| TC-CONF-24 | `HARNESS_DECISION_ENGINE`'s domain is closed, per profile (the absent-key arm moved to TC-CONF-35/C19 with FR-CONF-29); `off` gives `None`, `jev` a decision-role engine; every section of the reference config resolves with a pinned build, and `edge-local` names `unified-large` |
 | TC-CONF-25 | The profile × provider binding table (three profiles × two providers: three accepts, three cross-pair refusals; the plan says "four" but the grid has three), `fixture` only under `HARNESS_FIXTURE_DIR` |
 | TC-CONF-26 | Build pinning: two accepts, everything else `UnresolvedModelRefError` |
-| TC-CONF-27 | Knob bounds refuse, never clamp; per-provider threshold defaults; frozen at resolution; rehydration round-trips, and a pre-delta row rehydrates to `None` |
+| TC-CONF-27 | Knob bounds refuse, never clamp; per-provider threshold defaults; frozen at resolution; rehydration round-trips, and a pre-delta row rehydrates to `None`; the config-file key `decision_confidence_threshold` resolves to the same `DecisionEngine` the env knob does (FR-CONF-32 arm, written ahead of #616) |
 | TC-CONF-28 | `panel_build_ref` distinguishes every engine-on variant from each other and from engine-off |
 | TC-CONF-29 | Residency, as re-specified by FR-CONF-28 (plan §5.0): `unified-small` and `discrete-gpu` refuse `openjev`, naming `unified-small` / `off`; `unified-large` resolves; `off` resolves anywhere |
 | TC-CONF-30 | The consent gate refuses `cloud-hosted` + `jev` for a remote-forbidden cohort and names the decision engine; `edge-local` resolves |
@@ -45,14 +45,15 @@ def _cfg(profile: str, **overrides):
 
 # --- TC-CONF-24 --------------------------------------------------------------------------------
 
+# The `None` (key absent) value that stood in this parametrization pinned FR-CONF-18's "no
+# default" rule, which FR-CONF-29 / CT-CONF-19 v2.2 supersede (operator-requirements delta, #615):
+# absence now resolves the per-profile default. That arm moved to TC-CONF-35 and the flipped
+# TC-CONF-C19 (written ahead of #616); the closed domain stays pinned here.
 @pytest.mark.parametrize("profile", ["edge-local", "cloud-hosted", "dev-ci"])
-@pytest.mark.parametrize("value", [None, "", "JEV", "on"])
-def test_tc_conf_24_the_engine_key_is_required_and_closed(profile, value) -> None:
+@pytest.mark.parametrize("value", ["", "JEV", "on"])
+def test_tc_conf_24_the_engine_key_is_closed(profile, value) -> None:
     cfg = _cfg(profile)
-    if value is None:
-        cfg.pop("HARNESS_DECISION_ENGINE")
-    else:
-        cfg["HARNESS_DECISION_ENGINE"] = value
+    cfg["HARNESS_DECISION_ENGINE"] = value
     with pytest.raises(ConfigurationError) as caught:
         resolve_run_config(cfg, COHORT)
     assert "HARNESS_DECISION_ENGINE" in str(caught.value)
@@ -193,6 +194,25 @@ def test_tc_conf_27_defaults_per_provider_frozen_and_rehydrated(monkeypatch, tmp
     assert "decision_engine" not in pre["provider_config"], "a pre-delta row carries no key"
     assert rehydrate_run_config({"backend_profile": pre["backend_profile"], "panel_config": pre["panel_config"],
                                  "provider_config": pre["provider_config"]}).decision_engine is None
+
+
+@pytest.mark.writtenahead
+def test_tc_conf_27_the_config_file_key_resolves_to_the_engine_the_env_knob_gives() -> None:
+    """FR-CONF-32's extended arm (operator-requirements plan §5.0, #615): a TOML float in the profile
+    section (`decision_confidence_threshold = 0.9`, a flat key — the placement is this suite's
+    reading of "under the engine settings") resolves to the very `DecisionEngine`, and so the very
+    work identity, that `HARNESS_JEV_CONFIDENCE_THRESHOLD=0.9` from the environment does. The
+    precedence between the two is TC-CONF-37's."""
+    from aeh.conf import effective_config
+
+    base = _cfg("cloud-hosted", HARNESS_DECISION_ENGINE="jev")
+    section = parse_config_document("[profiles.cloud-hosted]\ndecision_confidence_threshold = 0.9\n", "toml")
+    from_file = resolve_run_config(effective_config({**base, "profiles": section["profiles"]}, environ={}), COHORT)
+    from_env = resolve_run_config(effective_config(base, environ={"HARNESS_JEV_CONFIDENCE_THRESHOLD": "0.9"}), COHORT)
+    assert from_env.decision_engine.confidence_threshold == Decimal("0.9")
+    assert from_file.decision_engine == from_env.decision_engine
+    assert from_file.panel_build_ref == from_env.panel_build_ref
+    assert from_file.to_persisted_dict() == from_env.to_persisted_dict()
 
 
 # --- TC-CONF-28 --------------------------------------------------------------------------------
