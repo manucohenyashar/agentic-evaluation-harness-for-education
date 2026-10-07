@@ -18,10 +18,15 @@ its sign-off criterion, or loses a required section. To change a scenario, chang
 | [UAT-06](UAT-06-operator-quarantine.md) | Operator | Scanning problems are mine, marking decisions are the teacher's |
 | [UAT-07](UAT-07-provisional-grades.md) | Teacher | A provisional grade is still a usable grade |
 | [UAT-08](UAT-08-no-validation-data.md) | Teacher | The system tells me when it does not know |
+| [UAT-13](UAT-13-teachers-day-walkthrough.md) | Operator | The whole workflow — install, configure, set up, run, monitor, review, export, ask for help — without a terminal |
 
 `UAT-02` (setup time) and `UAT-03` (calibration time) are not in this folder. They have a
 measurable ceiling, so their stories (TS-21, TS-45) implement them as timed suites under
 `tests/uat/setup/` and `tests/uat/calib/`.
+
+`UAT-13` comes from the operator-requirements test plan delta (§5.6, issue #641's row), not the
+base plan's §6.3; `tests/uat/acceptance/test_uat_13_walkthrough.py` parses that delta row instead,
+with the same checks.
 
 ## How to run a script at release
 

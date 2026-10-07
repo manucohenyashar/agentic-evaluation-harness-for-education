@@ -1446,6 +1446,37 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/unit/console/test_tc_console_54_parity_census.py::test_tc_console_54_the_teacher_operations_have_console_paths_not_debugging_listings",
         ),
     ),
+    # --- TS-152 (#641), TC-E2E-06 + UAT-13 ------------------------------------------------
+    #
+    # The journey needs seven blockers, none of which is alone sufficient: the committed
+    # bundle (#634), the bundle's lifecycle-screen wording (#635), the Q&A wording (#638),
+    # the help module (#636), the live-acceptance entry point (#618), the rubric-method
+    # read-backs (#624) and the console reads (#631). A single key on any one of them
+    # would fire while the journey is still blocked on the rest, so this is one `command`
+    # probe that resolves only when EVERY limb does — the same limbs the test's own
+    # `_gates()` re-checks at unmarking time, each naming its issue there.
+    # #641 does NOT depend on all seven: they are its disclosed prerequisites (PR body).
+    "#641 TS-152 TC-E2E-06 the teacher's-day journey + UAT-13 walkthrough": (
+        "command",
+        "python -c \"import sys, pathlib; sys.path.insert(0, 'src');"
+        "import aeh.console as c; from aeh.console import SPA_BUNDLE_DIR;"
+        "ok = (SPA_BUNDLE_DIR / 'index.html').is_file();"
+        "text = (SPA_BUNDLE_DIR / 'index.html').read_text(encoding='utf-8') if ok else '';"
+        "ok = ok and 'check that the console service is running' in text"
+        " and 'does not operate the system' in text;"
+        "import aeh.conform; ok = ok and hasattr(aeh.conform, 'run_live_acceptance');"
+        "import aeh.help; ok = ok and hasattr(aeh.help, 'HelpAssistant');"
+        "import aeh.setup;"
+        "ok = ok and all(hasattr(aeh.setup.SetupService, m) for m in"
+        " ('derive_general_bands', 'derivation_card', 'confirm_general_derivation',"
+        "  'build_evidence_sum', 'set_aspect_descriptor', 'confirm_evidence_sum'));"
+        "reads = {getattr(r, 'read', None) for r in c.API_ROUTES};"
+        "ok = ok and {'run start preview', 'results export'} <= reads;"
+        "raise SystemExit(0 if ok else 1)\"",
+        (
+            "tests/browser/spa/test_tc_e2e_06_teachers_day.py::test_tc_e2e_06_teachers_day_journey",
+        ),
+    ),
 }
 
 
