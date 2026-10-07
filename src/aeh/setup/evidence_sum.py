@@ -248,9 +248,9 @@ def _draft_from_payload(payload: Mapping[str, Any]) -> EvidenceSumDraft:
         criterion_id=str(payload["criterion_id"]),
         question_id=str(payload["question_id"]),
         aspects=tuple(AspectDraft(criterion_id=str(a["criterion_id"]), name=str(a["name"]),
-                                  points=float(a["points"]), bands=bands_from_json(a["bands"]))
+                                  points=float(a.get("points")), bands=bands_from_json(a["bands"]))
                       for a in payload["aspects"]),
-        promotions=tuple(AspectPromotion(aspect=str(p["aspect"]), points=float(p["points"]),
+        promotions=tuple(AspectPromotion(aspect=str(p["aspect"]), points=float(p.get("points")),
                                          levels=tuple(p["levels"]),
                                          score_method=str(p["score_method"]),
                                          reason=str(p["reason"]))

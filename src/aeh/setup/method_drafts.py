@@ -50,7 +50,7 @@ def typed_bands(raw_bands: Any) -> tuple[ProposedBand, ...]:
         if not isinstance(raw, Mapping):
             raise ValueError(f"band {position} is not an object")
         try:
-            points = float(raw["points"])
+            points = float(raw.get("points"))
             label = str(raw["band"]).strip()
             descriptor = str(raw.get("descriptor") or "").strip()
             given = int(raw.get("ordinal", position))
@@ -103,7 +103,7 @@ def bands_to_json(bands: Sequence[ProposedBand]) -> list[dict]:
 
 def bands_from_json(rows: Sequence[Mapping[str, Any]]) -> tuple[ProposedBand, ...]:
     return tuple(ProposedBand(band=str(r["band"]), ordinal=int(r["ordinal"]),
-                              points=float(r["points"]), descriptor=str(r["descriptor"]))
+                              points=float(r.get("points")), descriptor=str(r["descriptor"]))
                  for r in rows)
 
 
