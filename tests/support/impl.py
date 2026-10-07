@@ -1345,6 +1345,8 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         ("tests/perf/test_perf_11_composition_overhead.py::test_perf_11_composition_adds_at_most_a_quarter_millisecond_per_unit",),
     ),
     # "#620 TS-143 name-primary V3 matching, roster names, Cohort 33" left with #620's fix.
+    # A keep-both merge re-added the entry (the same artifact #626's entry hit); with #620
+    # merged and its two cases running unmarked, the re-added entry only fires the gate.
     # --- TS-150 (#637), M-HELP: manuals page, grounded answers-only Q&A, the log ----------
     #
     # Keyed `symbols` on the assistant AND #629's route table (TC-HELP-01/03 and C01 read the
@@ -1367,22 +1369,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/contract/help/test_ct_help_clauses.py::test_tc_help_c05_the_log_records_each_exchange_exactly",
             "tests/security/help/test_sec_25_help_injection.py::test_sec_25_an_injected_question_writes_nothing_and_gets_a_prose_answer",
             "tests/security/help/test_sec_25_help_injection.py::test_sec_25_an_injection_nested_in_a_manual_passage_writes_nothing",
-        ),
-    ),
-    # --- TS-143 (#619), name-primary identity --------------------------------------------
-    #
-    # Keyed `command` on the design-named migration (`ingest_roster_names`, Cohort 33, owner
-    # `aeh.ingest`) being registered: the design declares no symbol for the matcher or the
-    # roster loader, and the migration lands in the same story (#620) as everything these
-    # cases assert. SystemExit rather than assert, so `python -O` cannot make it pass.
-    "#620 TS-143 name-primary V3 matching, roster names, Cohort 33": (
-        "command",
-        "python -c \"import aeh.ingest; from aeh.store import TIER_MIGRATIONS, Tier; "
-        "raise SystemExit(0 if any(m.name == 'ingest_roster_names' "
-        "for m in TIER_MIGRATIONS[Tier.COHORT]) else 1)\"",
-        (
-            "tests/integration/ingest/test_ts143_name_identity.py",
-            "tests/contract/ingest/test_ct_ingest_23_name_identity.py",
         ),
     ),
     "#155 check_traceability --contracts-only passes the real pair (TS-82)": (
@@ -1503,17 +1489,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     ),
     # --- TS-144 (#621), M-PKG rubric methods ----------------------------------------------
     #
-    # #627 (depends on #622): `aeh package export`. Keyed on the shipped-sample round trip,
-    # which needs only the export command — the fixture round trip also needs #622, which
-    # #627 cannot land without.
-    "#627 TS-144 aeh package export round-trips through build (TC-PKG-37)": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider tests/integration/pkg/test_tc_pkg_37_export_round_trip.py::test_tc_pkg_37_a_shipped_sample_round_trips_through_export",
-        (
-            "tests/integration/pkg/test_tc_pkg_37_export_round_trip.py::test_tc_pkg_37_an_exported_spec_rebuilds_the_same_package",
-            "tests/integration/pkg/test_tc_pkg_37_export_round_trip.py::test_tc_pkg_37_a_shipped_sample_round_trips_through_export",
-        ),
-    ),
+    # The "#627 aeh package export" entry left with #627: the export command landed, and the
+    # two round-trip arms of `test_tc_pkg_37_export_round_trip.py` run green unmarked — the
+    # fixture differential, the shipped-sample round trip and the build guard all pass.
     # --- TS-148 (#633), console coverage: parity census, roster editor, run start, exports --
     #
     # The names are invented in `tests/support/console_api_vocabulary.py` (TS-148 section): each
