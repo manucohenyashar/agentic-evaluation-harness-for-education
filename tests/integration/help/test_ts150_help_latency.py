@@ -27,7 +27,6 @@ from tests.support import help_vocabulary as hv
 pytestmark = [pytest.mark.integration, pytest.mark.slow]
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("profile", ["cloud", "edge"])
 def test_tc_help_05_p95_answer_latency_and_retrieval_within_budget(tmp_path, profile):
     from tests.support.conf_builders import EDGE_JUDGE, HOSTED_JUDGE

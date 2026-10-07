@@ -10,9 +10,18 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
+
+from .help_read import (
+    MANUAL_ID_PARAM,
+    ask_payload,
+    manual_payload,
+    manuals_payload,
+)
 
 from .api import (
     API_ROUTES,
+    ASK_QUERY_PARAM,
     UPLOAD_CONTROL,
     allowed_methods,
     ApiRoute,
@@ -44,11 +53,16 @@ def outcome_json(action: str, outcome: Any) -> bytes:
 
 
 #: The reads the API answers, by the name a read route carries. Each is a pure function of
-#: the declared tables — no store is opened, so no read can create or touch a stored byte.
+#: the declared tables — no store is opened, so no read can create or touch a stored byte —
+#: taking the route's path parameters and the request's query string. The ask read (`M-HELP`)
+#: is answered by the mixin, not this table: its only write is the assistant's own Q&A log,
+#: written after the model answered, so a refused or failed ask writes nothing (`CT-HELP-04`).
 _READS = {
-    "controls": controls_payload,
-    "screens": lambda: {"screens": dict(SCREENS)},
-    "roster editor": roster_editor_payload,
+    "controls": lambda params, query: controls_payload(),
+    "screens": lambda params, query: {"screens": dict(SCREENS)},
+    "roster editor": lambda params, query: roster_editor_payload(),
+    "manuals": lambda params, query: manuals_payload(),
+    "manual": lambda params, query: manual_payload(params.get(MANUAL_ID_PARAM, "")),
 }
 
 
@@ -93,7 +107,7 @@ class ApiRequestsMixin:
                 self._respond(404, b'{"error":"not found"}', JSON_TYPE, close=True)
             return
         if matched.control is None:
-            self._api_read(matched)
+            self._api_read(matched, params)
             return
         try:
             self._console.recheck_environment()
@@ -107,8 +121,36 @@ class ApiRequestsMixin:
             return
         self._api_control(matched, params)
 
-    def _api_read(self, route: ApiRoute) -> None:
-        payload = _READS[str(route.read)]()
+    def _api_read(self, route: ApiRoute, path_params: dict[str, str]) -> None:
+        query = {
+            key: values[-1] for key, values in parse_qs(urlsplit(self.path).query).items()
+        }
+        if route.read == "help ask":
+            self._help_ask(query)
+            return
+        payload = _READS[str(route.read)](path_params, query)
+        if payload is None:
+            body = json.dumps({"error": "not found"}).encode("utf-8")
+            self._respond(404, body, JSON_TYPE, close=True)
+            return
+        self._respond(200, json.dumps(payload).encode("utf-8"), JSON_TYPE)
+
+    def _help_ask(self, query: dict[str, str]) -> None:
+        """The grounded Q&A ask (`M-HELP`, `CT-HELP-01`): one read-only GET whose only write
+        is the assistant's own Q&A log row, written after the model answered."""
+        question = query.get(ASK_QUERY_PARAM, "").strip()
+        if not question:
+            body = json.dumps(
+                {"error": "the ask read takes the question as ?q=<question>"}
+            ).encode("utf-8")
+            self._respond(400, body, JSON_TYPE)
+            return
+        try:
+            payload = ask_payload(self._console.help_assistant(), question)
+        except Exception as error:  # noqa: BLE001 — a failed ask is a 500, never a dropped socket
+            body = json.dumps({"error": str(error)}).encode("utf-8")
+            self._respond(500, body, JSON_TYPE, close=True)
+            return
         self._respond(200, json.dumps(payload).encode("utf-8"), JSON_TYPE)
 
     def _api_control(self, route: ApiRoute, path_params: dict[str, str]) -> None:

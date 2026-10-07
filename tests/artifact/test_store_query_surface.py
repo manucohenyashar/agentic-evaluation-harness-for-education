@@ -786,6 +786,13 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.calib.fixtures:295",
     "aeh.calib.fixtures:326",
     "aeh.calib.fixtures:336",
+    # #636's (FR-HELP-04): the Q&A log's one durable write — `record_exchange`'s
+    # `tx.execute` of the declared HELP_STATEMENTS["insert_qa_exchange"],
+    # keyword-parameterized, in the module's only write surface's synchronous
+    # transaction (CT-HELP-04: nothing else in M-HELP writes a stored byte).
+    # The read side goes through `handle.query` and is not a census site. Pinned
+    # from the walker.
+    "aeh.help.log:38",
 
 })
 
