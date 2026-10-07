@@ -83,6 +83,9 @@ def _build_routes() -> tuple[ApiRoute, ...]:
         # FR-CONSOLE-42: the roster editor's columns, its "ID is optional" statement and the
         # consent classes — the copy the SPA renders, so it restates no rule of its own.
         ApiRoute("GET", f"{API_PREFIX}/roster-editor", None, "roster editor"),
+        # FR-UI-02: the home hub's live state — the package version, the served run's status
+        # and the engine in use — which the hub reads on load and polls.
+        ApiRoute("GET", f"{API_PREFIX}/hub", None, "hub"),
     )
     controls = tuple(
         ApiRoute("POST", f"{API_PREFIX}/actions/{action_slug(action)}", action)

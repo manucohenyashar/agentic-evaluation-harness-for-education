@@ -23,6 +23,7 @@ from .api import (
 )
 from .cohort_editor import roster_editor_payload
 from .errors import ConsoleBindRefused
+from .hub_state import hub_payload
 from .routes import SCREENS
 
 JSON_TYPE = "application/json; charset=utf-8"
@@ -43,12 +44,14 @@ def outcome_json(action: str, outcome: Any) -> bytes:
     }).encode("utf-8")
 
 
-#: The reads the API answers, by the name a read route carries. Each is a pure function of
-#: the declared tables — no store is opened, so no read can create or touch a stored byte.
+#: The reads the API answers, by the name a read route carries. Each takes the running console
+#: and is a pure function over what it already holds — no store is opened that is not already
+#: open, no read can create or touch a stored byte.
 _READS = {
-    "controls": controls_payload,
-    "screens": lambda: {"screens": dict(SCREENS)},
-    "roster editor": roster_editor_payload,
+    "controls": lambda _console: controls_payload(),
+    "screens": lambda _console: {"screens": dict(SCREENS)},
+    "roster editor": lambda _console: roster_editor_payload(),
+    "hub": hub_payload,
 }
 
 
@@ -108,7 +111,7 @@ class ApiRequestsMixin:
         self._api_control(matched, params)
 
     def _api_read(self, route: ApiRoute) -> None:
-        payload = _READS[str(route.read)]()
+        payload = _READS[str(route.read)](self._console)
         self._respond(200, json.dumps(payload).encode("utf-8"), JSON_TYPE)
 
     def _api_control(self, route: ApiRoute, path_params: dict[str, str]) -> None:

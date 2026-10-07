@@ -219,3 +219,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# M-UI: the SPA source tree keeps its installed toolchain out of the commit (Q-O3 pins the
+# toolchain through the lockfile, not the node_modules).
+ui/node_modules/
