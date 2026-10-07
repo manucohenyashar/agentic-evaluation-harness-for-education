@@ -1280,6 +1280,19 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `aeh.pipeline:recover` landed, so its three arms lost the marker and rejoined
     # the gate. Arm (c), the review-window regrade, was never in the entry; it has now
     # landed green with #378's decided rule (recovery does not touch the window).
+    # --- TS-151 (#640), the delta's Requires pairwise cases (the SPA side) -------------------
+    #
+    # TC-REQ-128's SPA session needs the lifecycle screens' recovery wording (#635, FR-UI-07)
+    # and the answers-only affordance (#638, FR-UI-06). Keyed `command` on the same two bundle
+    # probes the TS-152 journey's gate uses, so it resolves only when BOTH stories have shipped
+    # their wording; the contract file's cases (TC-REQ-130..133) run green unmarked already.
+    "#640 TS-151 TC-REQ-128 the SPA publish-and-run-start pairing (waits on #635/#638)": (
+        "command",
+        "python -c \"import sys; sys.path.insert(0, 'src'); from aeh.console import SPA_BUNDLE_DIR; t = (SPA_BUNDLE_DIR / 'index.html').read_text(encoding='utf-8') if (SPA_BUNDLE_DIR / 'index.html').is_file() else ''; ok = ('check that the console service is running' in t) and ('does not operate the system' in t); raise SystemExit(0 if ok else 1)\"",
+        (
+            "tests/browser/spa/test_ts151_requires_spa_pairs.py::test_tc_req_128_the_spa_session_performs_publish_and_run_start_like_the_cli",
+        ),
+    ),
     # --- TS-82 (#155), the blast-radius rule ------------------------------------------------
     #
     # `harness.blast_radius` is the command test plan 4.7 and 6.12 name, and no story in the
