@@ -1582,6 +1582,38 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/integration/pkg/test_tc_pkg_37_export_round_trip.py::test_tc_pkg_37_a_shipped_sample_round_trips_through_export",
         ),
     ),
+    # --- TS-148 (#633), console coverage: parity census, roster editor, run start, exports --
+    #
+    # The names are invented in `tests/support/console_api_vocabulary.py` (TS-148 section): each
+    # key probes the route-table label or inventory name its story is asked to add, so a rename
+    # there moves the key with it. The `_control_` cases in these files are not marked (green).
+    "#630 TS-148 TC-CONSOLE-55 the roster editor writes the CLI's rows": (
+        "command",
+        "python -c \"import sys; sys.path.insert(0, 'src'); import aeh.console as c; sys.exit(0 if any("
+        "getattr(r, 'control', None) == 'create cohort' for r in c.API_ROUTES) else 1)\"",
+        (
+            "tests/integration/console/test_ts148_console_coverage.py::test_tc_console_55_a_a_names_only_paste_creates_the_cli_cohort",
+            "tests/integration/console/test_ts148_console_coverage.py::test_tc_console_55_b_names_and_ids_create_the_cli_cohort",
+            "tests/integration/console/test_ts148_console_coverage.py::test_tc_console_55_c_d_a_roster_without_names_is_refused_and_writes_nothing",
+        ),
+    ),
+    "#631 TS-148 TC-CONSOLE-56/57 run start, results views and exports match the CLI": (
+        "command",
+        "python -c \"import sys; sys.path.insert(0, 'src'); import aeh.console as c; reads = {getattr(r, 'read', None) for r in "
+        "c.API_ROUTES}; sys.exit(0 if {'run start preview', 'results export'} <= reads else 1)\"",
+        (
+            "tests/integration/console/test_ts148_console_coverage.py::test_tc_console_56_the_run_start_banner_estimate_and_confirmation_match_the_cli",
+            "tests/integration/console/test_ts148_console_coverage.py::test_tc_console_57_exports_are_byte_identical_and_views_match_the_cli",
+        ),
+    ),
+    "#632 TS-148 TC-CONSOLE-54 the CLI/console parity census": (
+        "symbols",
+        "aeh.console:CLI_CONSOLE_PATHS,aeh.console:DEBUGGING_ONLY_COMMANDS",
+        (
+            "tests/unit/console/test_tc_console_54_parity_census.py::test_tc_console_54_every_aeh_subcommand_has_a_console_path_or_a_debugging_only_reason",
+            "tests/unit/console/test_tc_console_54_parity_census.py::test_tc_console_54_the_teacher_operations_have_console_paths_not_debugging_listings",
+        ),
+    ),
 }
 
 
