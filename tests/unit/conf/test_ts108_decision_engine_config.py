@@ -196,7 +196,6 @@ def test_tc_conf_27_defaults_per_provider_frozen_and_rehydrated(monkeypatch, tmp
                                  "provider_config": pre["provider_config"]}).decision_engine is None
 
 
-@pytest.mark.writtenahead
 def test_tc_conf_27_the_config_file_key_resolves_to_the_engine_the_env_knob_gives() -> None:
     """FR-CONF-32's extended arm (operator-requirements plan §5.0, #615): a TOML float in the profile
     section (`decision_confidence_threshold = 0.9`, a flat key — the placement is this suite's
@@ -278,7 +277,8 @@ def test_tc_conf_c02_decision_engine_iff_in_both_directions() -> None:
     off = resolve_run_config(_cfg("cloud-hosted", HARNESS_DECISION_ENGINE="off"), COHORT)
     on = resolve_run_config(_cfg("cloud-hosted", HARNESS_DECISION_ENGINE="jev"), COHORT)
     assert off.decision_engine is None and on.decision_engine is not None
-    assert len(dataclasses.fields(off)) == 13
+    # 14 since #616: FR-CONF-30's `qa_model` joined `decision_engine` (CT-CONF-C02's design list).
+    assert len(dataclasses.fields(off)) == 14
     with pytest.raises(ConfigurationError):
         dataclasses.replace(off, decision_engine=on.decision_engine)
     with pytest.raises(ConfigurationError):

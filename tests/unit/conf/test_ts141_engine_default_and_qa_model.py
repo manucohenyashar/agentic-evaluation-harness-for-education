@@ -3,10 +3,10 @@ and the Q&A model. Operator-requirements test plan §5.2 (design delta §3.2, AD
 
 | Case | Asserted | State |
 |---|---|---|
-| TC-CONF-35 | Knob unset: `cloud-hosted`/`dev-ci` → `jev` on `openrouter-jev`, `edge-local` → `off` (`decision_engine=None`) even with a local build configured; the choice is on `provider_config`, rehydrates identically, and the banner names it | written ahead (#616) |
+| TC-CONF-35 | Knob unset: `cloud-hosted`/`dev-ci` → `jev` on `openrouter-jev`, `edge-local` → `off` (`decision_engine=None`) even with a local build configured; the choice is on `provider_config`, rehydrates identically, and the banner names it | green (#616) |
 | TC-CONF-36 | Explicit values win on every profile: `off` on `cloud-hosted` (cfg and environment); `jev` on `edge-local` via the explicit-config path; `jev` on `edge-local` without `HARNESS_JEV_BUILD` names the knob; `maybe` is refused naming the domain | green today (the rules are unchanged) |
-| TC-CONF-37 | Config-file key `decision_confidence_threshold` beats the default, `HARNESS_JEV_CONFIDENCE_THRESHOLD` beats the file; out-of-domain file values refused (never clamped) naming knob, value and `[0.50, 1.00)`; banner `DECISION_GATE: jev > <t>`; `openjev-small` still 0.85 | written ahead (#616) |
-| TC-CONF-38 | Q&A model: cloud profiles from `HARNESS_QA_MODEL` (default `panel[0]`), floating tags refused naming the knob; `edge-local` always `panel[0]` whatever the knob says; `provider_config.qa_model` rehydrates identically; banner `QA_ASSISTANT: <provider>:<build>` | written ahead (#616) |
+| TC-CONF-37 | Config-file key `decision_confidence_threshold` beats the default, `HARNESS_JEV_CONFIDENCE_THRESHOLD` beats the file; out-of-domain file values refused (never clamped) naming knob, value and `[0.50, 1.00)`; banner `DECISION_GATE: jev > <t>`; `openjev-small` still 0.85 | green (#616) |
+| TC-CONF-38 | Q&A model: cloud profiles from `HARNESS_QA_MODEL` (default `panel[0]`), floating tags refused naming the knob; `edge-local` always `panel[0]` whatever the knob says; `provider_config.qa_model` rehydrates identically; banner `QA_ASSISTANT: <provider>:<build>` | green (#616) |
 
 **Interface choices the design leaves open, made here and named in the PR:**
 
@@ -42,8 +42,6 @@ SMALL_BUILD = "/models/openjev-small/qwen3.5-4b-nli-v5/model.safetensors@sha256:
 #: A pinned OpenRouter ref that is in no panel, so "came from the knob" and "came from panel[0]"
 #: cannot be confused.
 QA_REF = "vendor/qa-model@2026-09-01"
-
-writtenahead = pytest.mark.writtenahead
 
 
 # --- builders ----------------------------------------------------------------------------------
@@ -101,7 +99,6 @@ def _ref(ref: Any) -> tuple[Any, Any, Any]:
 
 # --- TC-CONF-35 --------------------------------------------------------------------------------
 
-@writtenahead
 @pytest.mark.parametrize("profile", ["cloud-hosted", "dev-ci"])
 def test_tc_conf_35_unset_on_a_cloud_profile_resolves_jev_on_openrouter_jev(profile) -> None:
     resolved = resolve_run_config(_unset(_hosted(profile)), COHORT)
@@ -118,7 +115,6 @@ def test_tc_conf_35_unset_on_a_cloud_profile_resolves_jev_on_openrouter_jev(prof
                               COHORT).decision_engine == engine
 
 
-@writtenahead
 def test_tc_conf_35_unset_on_edge_local_resolves_off_even_with_a_build_configured() -> None:
     resolved = resolve_run_config(_unset(_edge()), COHORT)
     assert resolved.decision_engine is None, "FR-CONF-29: edge-local defaults to off"
@@ -165,7 +161,6 @@ def test_tc_conf_36_d_an_out_of_domain_engine_is_refused_naming_the_domain(profi
 
 # --- TC-CONF-37 --------------------------------------------------------------------------------
 
-@writtenahead
 def test_tc_conf_37_env_over_file_over_default() -> None:
     base = _hosted("cloud-hosted", HARNESS_DECISION_ENGINE="jev")
     default = resolve_run_config(effective_config(base, environ={}), COHORT)
@@ -189,7 +184,6 @@ def test_tc_conf_37_env_over_file_over_default() -> None:
     assert back.decision_engine == from_file.decision_engine
 
 
-@writtenahead
 @pytest.mark.parametrize("value", ["0.4", "0.4999", "1.0", "1.5"])
 def test_tc_conf_37_an_out_of_domain_file_value_is_refused_never_clamped(value) -> None:
     file_cfg = _with_file_section(_hosted("cloud-hosted", HARNESS_DECISION_ENGINE="jev"), "cloud-hosted",
@@ -201,7 +195,6 @@ def test_tc_conf_37_an_out_of_domain_file_value_is_refused_never_clamped(value) 
     assert value in message and "[0.50, 1.00)" in message, message
 
 
-@writtenahead
 def test_tc_conf_37_openjev_small_keeps_its_085_default_and_the_file_still_overrides_it() -> None:
     unset = resolve_run_config(effective_config(_small(), environ={}), COHORT)
     assert unset.decision_engine.confidence_threshold == Decimal("0.85")
@@ -213,7 +206,6 @@ def test_tc_conf_37_openjev_small_keeps_its_085_default_and_the_file_still_overr
 
 # --- TC-CONF-38 --------------------------------------------------------------------------------
 
-@writtenahead
 @pytest.mark.parametrize("profile", ["cloud-hosted", "dev-ci"])
 def test_tc_conf_38_a_cloud_unset_resolves_panel_0_and_the_knob_overrides(profile) -> None:
     unset = resolve_run_config(effective_config(_hosted(profile, HARNESS_DECISION_ENGINE="off"), environ={}), COHORT)
@@ -226,7 +218,6 @@ def test_tc_conf_38_a_cloud_unset_resolves_panel_0_and_the_knob_overrides(profil
     assert f"QA_ASSISTANT: openrouter:{QA_REF}" in _banner(knob)
 
 
-@writtenahead
 @pytest.mark.parametrize("floating", ["vendor/model:free", "vendor/model:latest", "vendor/model@latest", "vendor/model"])
 def test_tc_conf_38_b_a_floating_qa_model_is_refused_naming_the_knob(floating) -> None:
     composed = effective_config(_hosted("cloud-hosted", HARNESS_DECISION_ENGINE="off"),
@@ -236,7 +227,6 @@ def test_tc_conf_38_b_a_floating_qa_model_is_refused_naming_the_knob(floating) -
     assert "HARNESS_QA_MODEL" in str(caught.value)
 
 
-@writtenahead
 def test_tc_conf_38_c_edge_local_resolves_panel_0_whatever_the_knob_says() -> None:
     composed = effective_config(_edge(HARNESS_DECISION_ENGINE="off"), environ={"HARNESS_QA_MODEL": QA_REF})
     resolved = resolve_run_config(composed, COHORT)
@@ -245,7 +235,6 @@ def test_tc_conf_38_c_edge_local_resolves_panel_0_whatever_the_knob_says() -> No
     assert QA_REF not in format_profile_banner(resolved, "file")
 
 
-@writtenahead
 def test_tc_conf_38_d_qa_model_rehydrates_identically_on_both_profiles() -> None:
     for cfg, environ in ((_hosted("cloud-hosted", HARNESS_DECISION_ENGINE="off"), {"HARNESS_QA_MODEL": QA_REF}),
                          (_edge(HARNESS_DECISION_ENGINE="off"), {})):

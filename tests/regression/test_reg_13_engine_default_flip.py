@@ -2,7 +2,7 @@
 
 | Arm | Asserted | State |
 |---|---|---|
-| (a) | The three-profile matrix with the knob unset — `jev`/`openrouter-jev` on `cloud-hosted` and `dev-ci`, `off` on `edge-local` — and, on the engine-off golden's own cloud config, removing the explicit `off` now changes the subject (engine on, a different `panel_build_ref`): the explicit pin is load-bearing | written ahead (#616) |
+| (a) | The three-profile matrix with the knob unset — `jev`/`openrouter-jev` on `cloud-hosted` and `dev-ci`, `off` on `edge-local` — and, on the engine-off golden's own cloud config, removing the explicit `off` now changes the subject (engine on, a different `panel_build_ref`): the explicit pin is load-bearing | green (#616) |
 | (b) | With `HARNESS_DECISION_ENGINE=off` explicit on the cloud profile, the engine-off differential subjects (CT-ORCH-30's serialization, CT-CONF-C20's work identity) hold byte-identically against the fb12d1e goldens; every engine-off differential fixture names the knob explicitly | green |
 | (c) | The chunked full non-live tier's failure set equals `main`'s known-red baseline ∪ this delta's `writtenahead` set | **not automated here** — an execution-plan acceptance step (test plan §4 rule 6) run on #616's PR |
 
@@ -33,7 +33,6 @@ def _golden() -> dict:
     return json.loads(GOLDEN.read_text(encoding="utf-8"))["serialization"]
 
 
-@pytest.mark.writtenahead
 def test_tc_reg_13_a_the_three_profile_matrix_with_the_knob_unset() -> None:
     matrix = {
         "cloud-hosted": hosted_cfg("cloud-hosted", HARNESS_JEV_BUILD=OR_BUILD),
@@ -48,7 +47,6 @@ def test_tc_reg_13_a_the_three_profile_matrix_with_the_knob_unset() -> None:
     assert got == {"cloud-hosted": "openrouter-jev", "dev-ci": "openrouter-jev", "edge-local": None}
 
 
-@pytest.mark.writtenahead
 def test_tc_reg_13_a_dropping_the_explicit_off_changes_the_golden_subject() -> None:
     cfg = dict(serialization_configs()["cloud-hosted"], HARNESS_JEV_BUILD=OR_BUILD)
     cfg.pop("HARNESS_DECISION_ENGINE")
