@@ -18,6 +18,7 @@ from aeh.orch import ORCH_STATEMENTS, Orchestrator
 from aeh.orch import cohorts as cohorts_module
 from aeh.orch.cohorts import (
     CohortSetupError,
+    RosterEntry,
     add_to_roster,
     cohort_summary,
     create_cohort,
@@ -33,6 +34,15 @@ def _roster(store, cohort_id):
         ORCH_STATEMENTS["select_roster_refs"], cohort_id=cohort_id)]
 
 
+#: Names for the fixtures' students (#620: a roster entry needs a full name; the ID rides beside it).
+_NAMES = ("Ann Lee", "Bo Chen", "Cy Diaz", "Di Eze", "Ed Fox")
+
+
+def _named(refs):
+    """Name-bearing roster entries carrying `refs` as their IDs (#620, FR-INGEST-40)."""
+    return [RosterEntry(full_name=_NAMES[i], student_ref=ref) for i, ref in enumerate(refs)]
+
+
 def _no_cohort_files(data_dir):
     cohorts = Path(data_dir) / "cohorts"
     return not cohorts.exists() or list(cohorts.iterdir()) == []
@@ -44,7 +54,7 @@ def _no_cohort_files(data_dir):
 def test_tc_orch_59_a_cohort_is_created_with_its_consent_class_and_roster(tmp_data_dir):
     store = open_store(tmp_data_dir)
     try:
-        summary = create_cohort(store, "class-9a", "synthetic", ["S9-001", "S9-002"],
+        summary = create_cohort(store, "class-9a", "synthetic", _named(["S9-001", "S9-002"]),
                                 created_at="2026-10-03T00:00:00+00:00")
         assert (summary.consent_class, summary.roster_size) == ("synthetic", 2)
         assert _roster(store, "class-9a") == ["S9-001", "S9-002"]
@@ -73,7 +83,7 @@ def test_tc_orch_59_a_refused_cohort_writes_nothing(tmp_data_dir, cohort_id, con
     store = open_store(tmp_data_dir)
     try:
         with pytest.raises(CohortSetupError) as caught:
-            create_cohort(store, cohort_id, consent, refs)
+            create_cohort(store, cohort_id, consent, _named(refs))
         assert words in str(caught.value) and "Nothing was written" in str(caught.value)
     finally:
         store.close()
@@ -85,9 +95,9 @@ def test_tc_orch_59_a_refused_cohort_writes_nothing(tmp_data_dir, cohort_id, con
 def test_tc_orch_59_an_existing_cohort_is_never_overwritten(tmp_data_dir):
     store = open_store(tmp_data_dir)
     try:
-        create_cohort(store, "class-9a", "synthetic", ["S1"])
+        create_cohort(store, "class-9a", "synthetic", _named(["S1"]))
         with pytest.raises(CohortSetupError, match="already exists"):
-            create_cohort(store, "class-9a", "real", ["S2"])
+            create_cohort(store, "class-9a", "real", _named(["S2"]))
         assert cohort_summary(store, "class-9a").consent_class == "synthetic"
         assert _roster(store, "class-9a") == ["S1"]
     finally:
@@ -101,7 +111,7 @@ def test_tc_orch_59_a_file_holding_another_cohort_is_refused(tmp_data_dir):
 
     store = open_store(tmp_data_dir)
     try:
-        create_cohort(store, "class-9a", "synthetic", ["S1"])
+        create_cohort(store, "class-9a", "synthetic", _named(["S1"]))
         source, target = store.cohort_path("class-9a"), store.cohort_path("class-9b")
     finally:
         store.close()
@@ -109,7 +119,7 @@ def test_tc_orch_59_a_file_holding_another_cohort_is_refused(tmp_data_dir):
     store = open_store(tmp_data_dir)
     try:
         with pytest.raises(CohortSetupError, match="refusing to share it"):
-            create_cohort(store, "class-9b", "real", ["S2"])
+            create_cohort(store, "class-9b", "real", _named(["S2"]))
         rows = store.cohort("class-9b").query(ORCH_STATEMENTS["select_cohort_ids"])
         assert [row["cohort_id"] for row in rows] == ["class-9a"]
     finally:
@@ -124,7 +134,7 @@ def test_tc_orch_59_the_cohort_and_its_roster_are_one_transaction(tmp_data_dir, 
     store = open_store(tmp_data_dir)
     try:
         with pytest.raises(Exception):
-            create_cohort(store, "class-9a", "synthetic", ["S1"])
+            create_cohort(store, "class-9a", "synthetic", _named(["S1"]))
         monkeypatch.setattr(cohorts_module, "ORCH_STATEMENTS", ORCH_STATEMENTS)
         assert cohort_summary(store, "class-9a") is None
     finally:
@@ -136,9 +146,9 @@ def test_tc_orch_59_a_simultaneous_create_says_already_exists(tmp_data_dir, monk
     store = open_store(tmp_data_dir)
     try:
         monkeypatch.setattr(cohorts_module, "cohort_summary", lambda store, cohort_id: None)
-        create_cohort(store, "class-9a", "synthetic", ["S1"])
+        create_cohort(store, "class-9a", "synthetic", _named(["S1"]))
         with pytest.raises(CohortSetupError, match="already exists.*same moment"):
-            create_cohort(store, "class-9a", "real", ["S1"])
+            create_cohort(store, "class-9a", "real", _named(["S1"]))
     finally:
         store.close()
 
@@ -146,14 +156,14 @@ def test_tc_orch_59_a_simultaneous_create_says_already_exists(tmp_data_dir, monk
 def test_tc_orch_59_students_are_added_and_a_repeat_is_refused_whole(tmp_data_dir):
     store = open_store(tmp_data_dir)
     try:
-        create_cohort(store, "class-9a", "consented", ["S1"])
+        create_cohort(store, "class-9a", "consented", _named(["S1"]))
         with pytest.raises(CohortSetupError, match="already on the roster: S1"):
-            add_to_roster(store, "class-9a", ["S2", "S1"])
+            add_to_roster(store, "class-9a", _named(["S2", "S1"]))
         assert _roster(store, "class-9a") == ["S1"]
-        assert add_to_roster(store, "class-9a", ["S2", "S3"]).roster_size == 3
+        assert add_to_roster(store, "class-9a", _named(["S2", "S3"])).roster_size == 3
         assert cohort_summary(store, "class-9a").consent_class == "consented"
         with pytest.raises(CohortSetupError, match="create it first"):
-            add_to_roster(store, "no-such", ["S1"])
+            add_to_roster(store, "no-such", _named(["S1"]))
     finally:
         store.close()
 
@@ -170,8 +180,8 @@ def test_tc_orch_59_asking_about_a_missing_cohort_creates_no_file(tmp_data_dir):
 def test_tc_orch_59_the_consent_gate_acts_on_the_stored_class(tmp_data_dir):
     store = open_store(tmp_data_dir)
     try:
-        create_cohort(store, "class-real", "real", ["S1"])
-        create_cohort(store, "class-syn", "synthetic", ["S1"])
+        create_cohort(store, "class-real", "real", _named(["S1"]))
+        create_cohort(store, "class-syn", "synthetic", _named(["S1"]))
         orchestrator = Orchestrator(store)
         cfg = hosted_cfg("dev-ci", panel=HOSTED_PANEL_3)
         with pytest.raises(ConsentGateError):
@@ -184,13 +194,18 @@ def test_tc_orch_59_the_consent_gate_acts_on_the_stored_class(tmp_data_dir):
 # --- TC-ORCH-60: the roster file and the command ----------------------------------------------
 
 
+E = RosterEntry
+
+
 @pytest.mark.parametrize("text, expected", [
-    ("S1\nS2\n", ("S1", "S2")),
-    ("S1\r\nS2\r\n", ("S1", "S2")),
-    ("﻿student_ref,name\nS1,Ann\n\nS2,Bo\n", ("S1", "S2")),
-    ("name,student_ref\n,S1\nBo,S2\n", ("S1", "S2")),           # a blank name keeps the student
-    ('name,student_ref\n"Lee, Ann",S1\n', ("S1",)),
-    ("# a comment\n  S1  \n\nS2\n", ("S1", "S2")),
+    ("Ann Lee\nBo Chen\n", (E("Ann Lee"), E("Bo Chen"))),
+    ("Ann Lee\r\nBo Chen\r\n", (E("Ann Lee"), E("Bo Chen"))),
+    ("﻿student_ref,full_name\nS1,Ann Lee\n\nS2,Bo Chen\n",
+     (E("Ann Lee", "S1"), E("Bo Chen", "S2"))),
+    ("full_name,student_ref\nAnn Lee,\nBo Chen,S2\n",          # a blank ID: a ref is generated
+     (E("Ann Lee"), E("Bo Chen", "S2"))),
+    ('full_name,student_ref\n"Lee, Ann",S1\n', (E("Lee, Ann", "S1"),)),
+    ("# a comment\n  Ann Lee  \n\nBo Chen\n", (E("Ann Lee"), E("Bo Chen"))),
     ("", ()),
 ])
 def test_tc_orch_60_roster_files_read_as_written(tmp_path, text, expected):
@@ -200,10 +215,11 @@ def test_tc_orch_60_roster_files_read_as_written(tmp_path, text, expected):
 
 
 @pytest.mark.parametrize("text, words", [
-    ("name,id\nAnn,S1\nBo,S2\n", "no 'student_ref' header"),   # names would become the roster
-    ("S1,Ann\n", "no 'student_ref' header"),
-    ("id\nS1\nS2\n", "looks like a header"),                    # 'id' would become a student
-    ("name,student_ref\nAnn,\n", "line 2 has no student_ref"),  # a student would be dropped
+    ("name,id\nAnn,S1\nBo,S2\n", "no 'full_name' header"),     # 'name,id' would become a student
+    ("S1,Ann\n", "no 'full_name' header"),
+    ("name\nAnn Lee\nBo Chen\n", "looks like a header"),       # 'name' would become a student
+    ("full_name,student_ref\n,S1\n", "line 2 has no full_name"),  # an ID alone is no student
+    ("student_ref\nS1\nS2\n", "IDs-only roster is refused"),   # FR-INGEST-40
 ])
 def test_tc_orch_60_an_ambiguous_roster_file_is_refused(tmp_path, text, words):
     path = tmp_path / "roster.csv"
@@ -214,9 +230,10 @@ def test_tc_orch_60_an_ambiguous_roster_file_is_refused(tmp_path, text, words):
 
 def test_tc_orch_60_aeh_cohort_create_show_and_add(tmp_data_dir, tmp_path, capsys):
     roster = tmp_path / "roster.csv"
-    roster.write_text("﻿student_ref\nS9-001\nS9-002\n", encoding="utf-8")
+    roster.write_text("﻿full_name,student_ref\nAnn Lee,S9-001\nBo Chen,S9-002\n",
+                      encoding="utf-8")
     more = tmp_path / "more.txt"
-    more.write_text("S9-003\n", encoding="utf-8")
+    more.write_text("Cy Diaz\n", encoding="utf-8")
     base = ["--data-dir", str(tmp_data_dir), "--cohort", "class-9a"]
 
     assert cli.main(["cohort", "create", *base, "--consent", "synthetic",
@@ -250,7 +267,7 @@ def test_tc_orch_60_a_bad_id_or_file_is_refused_before_the_data_folder_exists(tm
 def test_tc_orch_60_a_real_cohort_is_flagged_and_the_consent_has_no_default(
         tmp_data_dir, tmp_path, capsys):
     roster = tmp_path / "roster.txt"
-    roster.write_text("S1\n", encoding="utf-8")
+    roster.write_text("Ann Lee\n", encoding="utf-8")
     base = ["cohort", "create", "--data-dir", str(tmp_data_dir), "--cohort", "c-real",
             "--roster", str(roster)]
     with pytest.raises(SystemExit):

@@ -115,7 +115,6 @@ def test_tc_ingest_56_the_corpus_is_hand_computed_and_normalization_is_load_bear
         assert fx.hand_fold(arm.written) == fx.BY_REF[arm.intended_ref].hand_key, arm.arm_id
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("arm", fx.ARMS, ids=[a.arm_id for a in fx.ARMS])
 def test_tc_ingest_56_each_normalization_arm_resolves_to_its_student(tmp_data_dir, arm):
     """Every arm resolves to the intended `student_ref`, and the name reaches no Tier D/P file."""
@@ -135,7 +134,6 @@ def test_tc_ingest_56_each_normalization_arm_resolves_to_its_student(tmp_data_di
     _assert_no_name_in_tier_d_or_p(world.root, f"TC-INGEST-56 {arm.arm_id}")
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("arm", fx.ARMS, ids=[a.arm_id for a in fx.ARMS])
 def test_tc_ingest_56_an_arm_without_its_row_matches_nobody(tmp_data_dir, arm):
     """Leave-one-out: the same paper against the roster minus its intended row is triaged — the
@@ -152,7 +150,6 @@ def test_tc_ingest_56_an_arm_without_its_row_matches_nobody(tmp_data_dir, arm):
 # --- TC-INGEST-57 ------------------------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_ingest_57_a_a_name_matching_both_collision_rows_goes_to_triage_with_both(
         tmp_data_dir):
     world = _world(tmp_data_dir, "57a")
@@ -169,7 +166,6 @@ def test_tc_ingest_57_a_a_name_matching_both_collision_rows_goes_to_triage_with_
         world.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_ingest_57_a_a_triaged_paper_gets_no_scoring_work_and_no_score(tmp_data_dir):
     """Until triage resolves, no `criterion_score` row exists for the paper. Driven through the
     run's enumeration over a package with a deterministic criterion, because the deterministic
@@ -217,7 +213,6 @@ def test_tc_ingest_57_a_a_triaged_paper_gets_no_scoring_work_and_no_score(tmp_da
         world.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_ingest_57_b_the_declared_id_resolves_the_collision_to_row_2(tmp_data_dir):
     world = _world(tmp_data_dir, "57b")
     try:
@@ -231,7 +226,6 @@ def test_tc_ingest_57_b_the_declared_id_resolves_the_collision_to_row_2(tmp_data
         world.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_ingest_57_b_an_id_outside_the_candidates_does_not_resolve_the_collision(
         tmp_data_dir):
     """(b)'s negative twin: the ID only *disambiguates among the name's candidates*. An
@@ -245,7 +239,6 @@ def test_tc_ingest_57_b_an_id_outside_the_candidates_does_not_resolve_the_collis
         world.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_ingest_57_c_a_name_matching_no_row_goes_to_triage_with_no_candidates(tmp_data_dir):
     world = _world(tmp_data_dir, "57c")
     try:
@@ -258,7 +251,6 @@ def test_tc_ingest_57_c_a_name_matching_no_row_goes_to_triage_with_no_candidates
         world.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_ingest_57_d_a_prefix_of_a_name_is_not_a_match(tmp_data_dir):
     world = _world(tmp_data_dir, "57d")
     try:
@@ -306,7 +298,6 @@ def _require_migration_registered() -> None:
             f"no Cohort migration named {MIGRATION_NAME!r} is registered (blocked on {ISSUE})")
 
 
-@pytest.mark.writtenahead
 def test_tc_ingest_58_a_a_names_only_roster_creates_the_cohort_with_generated_refs(
         tmp_data_dir, tmp_path, capsys):
     _require_migration_registered()
@@ -330,7 +321,6 @@ def test_tc_ingest_58_a_a_names_only_roster_creates_the_cohort_with_generated_re
         "(a): the refs changed across a store reopen — they must be stable")
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("cell, text, words", [
     ("ids-only-csv", "student_ref\nS-1\nS-2\n", r"\bnames?\b"),
     ("empty-name", "full_name,student_ref\nAmara Okafor,S-1\n,S-2\n", r"line 3"),
@@ -375,7 +365,6 @@ def _build_cohort_at_32(data_dir: Path, cohort_id: str, refs) -> Path:
     return path
 
 
-@pytest.mark.writtenahead
 def test_tc_ingest_58_c_a_cohort_32_store_migrates_to_33_and_still_resolves_by_ref(
         tmp_data_dir):
     _require_migration_registered()
@@ -420,7 +409,6 @@ def test_tc_ingest_58_c_a_cohort_32_store_migrates_to_33_and_still_resolves_by_r
         store.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_ingest_58_d_one_name_in_two_cohorts_gets_two_refs(tmp_data_dir, tmp_path, capsys):
     _require_migration_registered()
     roster = _names_csv(tmp_path, "one.csv", ["Amara Okafor", "Benito Ruiz"])
@@ -447,7 +435,6 @@ SWEEP_CELLS = tuple((a.arm_id, a.written, None) for a in fx.ARMS) + (
 )
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("cell, written, student_id", SWEEP_CELLS,
                          ids=[c[0] for c in SWEEP_CELLS])
 def test_sec_19_the_v3_request_and_triage_payload_carry_refs_never_names(
@@ -471,7 +458,6 @@ def test_sec_19_the_v3_request_and_triage_payload_carry_refs_never_names(
     assert not hits, f"SEC-19 {cell}: a log record carries {hits}"
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("cell, written, student_id", SWEEP_CELLS,
                          ids=[c[0] for c in SWEEP_CELLS])
 def test_sec_19_the_v4_escalation_request_carries_no_name(

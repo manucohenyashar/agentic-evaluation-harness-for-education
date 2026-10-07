@@ -64,8 +64,9 @@ def _build_parser() -> Any:
     create.add_argument("--consent", required=True, choices=_consent_classes(),
                         help="synthetic (made-up practice work), consented, or real")
     create.add_argument("--roster", required=True,
-                        help="a file of student IDs: one per line, or a CSV with a student_ref "
-                             "column. Each ID must match the 'Student:' line on the paper")
+                        help="a file of students' full names: one per line, or a CSV with a "
+                             "full_name column and an optional student_ref (ID) column. Papers "
+                             "are matched by the name on their 'Student:' line")
     add = cohort_sub.add_parser("add-students", help="add students to an existing cohort")
     add.add_argument("--data-dir", required=True)
     add.add_argument("--cohort", required=True)
@@ -169,13 +170,13 @@ def _cohort_command(args: Any) -> int:
     # Checked and read BEFORE the store is opened, so a typo'd id or a bad roster file leaves no
     # data-folder skeleton behind.
     check_cohort_id(args.cohort)
-    refs = read_roster_file(args.roster) if args.cohort_command != "show" else ()
+    entries = read_roster_file(args.roster) if args.cohort_command != "show" else ()
     store = _open_store(args.data_dir)
     try:
         if args.cohort_command == "create":
-            summary = create_cohort(store, args.cohort, args.consent, refs)
+            summary = create_cohort(store, args.cohort, args.consent, entries)
         elif args.cohort_command == "add-students":
-            summary = add_to_roster(store, args.cohort, refs)
+            summary = add_to_roster(store, args.cohort, entries)
         else:
             summary = cohort_summary(store, args.cohort)
             if summary is None:

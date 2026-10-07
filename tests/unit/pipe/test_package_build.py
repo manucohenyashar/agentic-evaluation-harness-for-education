@@ -215,7 +215,7 @@ def test_tc_pipe_29_the_sample_sheets_meet_the_real_intake_gates(tmp_data_dir, m
     from aeh.conf import resolve_run_config
     from aeh.ingest import Ingestor, PdfiumRasterizer, PypdfSanitizer, ResidencySlot
     from aeh.orch import Orchestrator
-    from aeh.orch.cohorts import create_cohort
+    from aeh.orch.cohorts import RosterEntry, create_cohort
     from aeh.prov import SamplingParams
     from tests.support.conf_builders import HOSTED_PANEL_3, hosted_cfg
 
@@ -224,8 +224,12 @@ def test_tc_pipe_29_the_sample_sheets_meet_the_real_intake_gates(tmp_data_dir, m
         built = build_package(store, _spec())
         catalog = _catalog(store, built)
         sheets = sm.PHYSICS_SHEETS
+        # #620: a roster entry needs a name; the sample sheets write the ID on the
+        # `Student:` line, so that is the name each paper is matched by.
         create_cohort(store, "class-ps9", "synthetic",
-                      [sheet["student"] or "S9-006" for sheet in sheets])
+                      [RosterEntry(full_name=sheet["student"] or "S9-006",
+                                   student_ref=sheet["student"] or "S9-006")
+                       for sheet in sheets])
         files = sm.build_all()
         reader, blobs = v.ScriptedReader(), store.blobs()
         ingestor = Ingestor(store.cohort("class-ps9"), blobs, reader, v.TRANSCRIBER,

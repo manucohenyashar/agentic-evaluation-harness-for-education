@@ -17,9 +17,11 @@ from .versions import VersionsMixin
 from .exchange import ExchangeMixin
 from .setup_records import SetupRecordsMixin
 from .setup_checks import SetupChecksMixin
+from .rubric_methods import RubricMethodsMixin
 
 
-class PackageCatalog(DependencyGraphMixin, CriterionEditsMixin, PolicyAndKeysMixin, ValidationReadsMixin, VersionsMixin, ExchangeMixin, SetupRecordsMixin, SetupChecksMixin):
+class PackageCatalog(DependencyGraphMixin, CriterionEditsMixin, PolicyAndKeysMixin, ValidationReadsMixin, VersionsMixin, ExchangeMixin, SetupRecordsMixin, SetupChecksMixin,
+                     RubricMethodsMixin):
     """Reads and writes one package's Tier P database, through M-STORE's `package(id)` handle.
 
     Every mutating method funnels through `_refuse_mutation` — the data-layer guard —

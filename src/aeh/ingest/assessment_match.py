@@ -17,6 +17,7 @@ from .settings import (
     V4_BREAKER_RATE_ENV,
     V4_SEMANTIC_FLOOR_ENV,
 )
+from .identity import redact_identity_head
 from .markup import UNTRUSTED_CLOSE
 from .descriptions import _v4_lexical_affinity
 from .schema import INGEST_STATEMENTS
@@ -208,7 +209,7 @@ class AssessmentMatchMixin:
                                          for k, v in sorted(per_question.items())}}
 
     def _v4_escalate(self, markdown: str, signals: dict, package_version: str,
-                     package_catalog: Any) -> None:
+                     package_catalog: Any, student_ref: str | None = None) -> None:
         """Ask a model about an `uncertain` V4 result (ADR-7): one call, whose verdict is recorded
         with the signals but never applied, so the escalation rate can be monitored. If the call
         fails, the deterministic result stands and the failure is recorded.
@@ -221,6 +222,10 @@ class AssessmentMatchMixin:
         submission cannot step outside the block and steer the verdict by
         addressing the model from beyond the fence."""
         signals["semantic_escalation"] = {"requested": True}
+        # The written name never reaches a model (NFR-PROV-04, CT-INGEST-23): the
+        # `Student:` head is replaced (by the resolved ref, else a placeholder) before the
+        # transcript is fenced, whatever V3 decided.
+        markdown = redact_identity_head(markdown, student_ref)
         declared = {row["question_id"]: row["kind"]
                     for row in package_catalog.criteria(package_version)}
         fence_terminators = markdown.count(UNTRUSTED_CLOSE)
@@ -283,7 +288,8 @@ class AssessmentMatchMixin:
 
     def _v4_evaluate(self, markdown: str, regions: Sequence[Any],
                      package_version: str, package_catalog: Any,
-                     identity_matched: bool | None) -> tuple[str, dict]:
+                     identity_matched: bool | None,
+                     student_ref: str | None = None) -> tuple[str, dict]:
         """Compute the four V4 signals and apply the declared decision rule. Returns the
         three-valued outcome and the signals record for the submission."""
         identifier, identifier_detail = self._v4_identifier_signal(
@@ -313,7 +319,8 @@ class AssessmentMatchMixin:
         else:
             outcome = "match"
         if outcome == "uncertain":
-            self._v4_escalate(markdown, signals, package_version, package_catalog)
+            self._v4_escalate(markdown, signals, package_version, package_catalog,
+                              student_ref)
         signals["outcome"] = outcome
         return outcome, signals
 

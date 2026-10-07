@@ -67,7 +67,8 @@ ORCH_STATEMENTS: dict[str, Statement] = {
         "VALUES (:cohort_id, :consent_class, :created_at)"
     ),
     "insert_roster_entry": Statement(
-        "INSERT INTO roster (cohort_id, student_ref) VALUES (:cohort_id, :student_ref)"
+        "INSERT INTO roster (cohort_id, student_ref, full_name) "
+        "VALUES (:cohort_id, :student_ref, :full_name)"
     ),
     "select_roster_refs": Statement(
         "SELECT student_ref FROM roster WHERE cohort_id = :cohort_id ORDER BY student_ref"
@@ -89,7 +90,7 @@ ORCH_STATEMENTS: dict[str, Statement] = {
         "GROUP BY submission_id ORDER BY MIN(rowid)"
     ),
     "select_submissions": Statement(
-        "SELECT submission_id, student_ref, ingest_status FROM submission "
+        "SELECT submission_id, student_ref, ingest_status, v3_identity FROM submission "
         "WHERE cohort_id = :cohort_id ORDER BY submission_id"
     ),
     "select_run_counts": Statement(

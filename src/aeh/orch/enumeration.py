@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from .constants import (
+    IDENTITY_TRIAGE_V3_OUTCOMES,
     SCORING_MODEL_BASE_DEPTH,
     STAGE_DETERMINISTIC,
     STAGE_EXTRACT,
@@ -96,6 +97,16 @@ class EnumerationMixin:
             + (f" (statuses: {refused})" if refused else "")
         )
 
+        # Identity triage (#620, CT-INGEST-23): a paper V3 could not match to one student
+        # gets no unit of any stage until a re-ingest resolves it.
+        identity_held = {
+            s["submission_id"] for s in submissions
+            if s["v3_identity"] in IDENTITY_TRIAGE_V3_OUTCOMES
+        }
+        gates["identity_triage"] = (
+            f"{len(identity_held)} submission(s) held for identity triage get no units"
+        )
+
         batch = _env_int(ENUM_COMMIT_BATCH_ENV, ENUM_COMMIT_BATCH_DEFAULT)
         random_arm_rate = _env_float(
             RANDOM_ARM_RATE_ENV, ORCH_RANDOM_ARM_RATE, low=0.0, high=1.0
@@ -106,6 +117,8 @@ class EnumerationMixin:
         random_arm_pairs = 0
         random_arm_units = 0
         for submission in submissions:
+            if submission["submission_id"] in identity_held:
+                continue
             for criterion in criteria:
                 # `FR-ORCH-35`: the criterion's DECLARED mode, not its shape. A package
                 # may declare a judged multiple-choice criterion — one whose options a
