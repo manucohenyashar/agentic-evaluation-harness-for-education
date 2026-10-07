@@ -74,7 +74,7 @@ All of the above was read from the code and checked with the configuration check
 | **Local mode only:** model files and a model server | See section 6 | Not checked with a real server |
 | **OpenRouter mode only:** an OpenRouter account and key, and outbound HTTPS to `openrouter.ai` | See section 7 | Not checked (no network access to OpenRouter here) |
 
-The system's own core has **no** extra Python libraries. Reading PDFs needs three (section 4).
+The one install command in section 4 brings every Python library the system uses with it. You do not install anything else by hand.
 
 ## 4. Install
 
@@ -91,14 +91,13 @@ python -m venv .venv
 * macOS / Linux: `source .venv/bin/activate`
 * Windows PowerShell: `.venv\Scripts\Activate.ps1`
 
-**Step 3: install the system and the PDF readers.**
+**Step 3: install the system.**
 
 ```bash
-pip install ".[live-ingest]" Pillow
+pip install .
 ```
 
-* `live-ingest` adds the two libraries that read PDFs (`pypdf` and `pypdfium2`).
-* `Pillow` is a third one the page-picture step needs. The project's `live-ingest` list does not include it, so you name it yourself. Without it, reading a PDF stops with an error that mentions `PIL` (reported by an earlier audit; not re-checked here).
+That one command is the whole install. It also downloads the libraries that read PDFs, decode page pictures and talk to the Jev decision engine in OpenRouter mode, so it needs internet access. There are no optional parts to add and nothing to name by hand. (No internet on the school computer? See section 4.1.)
 
 **Step 4: check it worked.**
 
@@ -127,10 +126,27 @@ positional arguments:
 * The `--config` option belongs **after** the command word: `aeh console --data-dir ... --config ...`. Putting it first (`aeh --config x console ...`) fails with *"invalid choice: 'x'"*. The comment at the top of `config/harness.example.toml` shows it the wrong way round; ignore that line.
 * `aeh recover` takes only `--data-dir`. It has no `--config`.
 
-**Optional extras.** Leave both off for a first test:
+People who will also run the project's own test suite use `pip install -e . -r requirements-dev.txt` instead, on Python 3.13. An operator does not need it.
 
-* `pip install ".[jev-cloud]"` adds the Jev decision engine's library (OpenRouter mode only).
-* People who will also run the project's own test suite use `pip install -r requirements-dev.txt` instead, on Python 3.13.
+### 4.1 Installing on a computer with no internet (air gap)
+
+`pip install .` fetches the system's libraries from the internet. If the school computer has no internet, build a *wheelhouse* (a folder of ready-made install files) on a computer that has it, carry the folder across, and install from it.
+
+The connected computer must run the **same operating system, the same processor type (for example Intel/AMD or ARM) and the same Python version** as the school computer: some of the libraries ship a different file for each.
+
+On the connected computer, in the project folder, with its own `.venv` switched on:
+
+```bash
+pip download . "setuptools>=69" -d wheelhouse
+```
+
+Copy the project folder, including the new `wheelhouse` folder but **not** its `.venv` folder (a private environment does not move between computers), to the school computer. There, do Steps 1 and 2 above, then install with no internet:
+
+```bash
+pip install --no-index --find-links wheelhouse .
+```
+
+`--no-index` tells pip not to look online; `--find-links wheelhouse` tells it to use the folder instead. `setuptools` is in the download because pip needs it to build the system itself. Then check with Step 4 as usual. **Not checked on a real air-gapped machine.**
 
 ## 5. The data folder and the configuration file
 
@@ -408,7 +424,7 @@ A named person can override this by setting `HARNESS_ALLOW_REMOTE_REAL_WORK=true
 
 ### 7.5 The decision engine in OpenRouter mode (leave it off)
 
-`HARNESS_DECISION_ENGINE = "jev"` needs `pip install ".[jev-cloud]"` and a pinned build, for example (from `config/harness.example.toml`):
+`HARNESS_DECISION_ENGINE = "jev"` needs a pinned build (its library already came with `pip install .`), for example (from `config/harness.example.toml`):
 
 ```toml
 HARNESS_DECISION_ENGINE = "jev"

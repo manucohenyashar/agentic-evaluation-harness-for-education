@@ -8,6 +8,7 @@ import os
 import re
 import socket
 import threading
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 from typing import Any
@@ -22,18 +23,11 @@ from .errors import ConsoleBindRefused
 from .html import _row_get, _stylesheet_bytes
 from .uploads import _record_upload_part, upload_scans
 from .run_planning import build_console
+from .api import SPA_BUNDLE_DIR, action_slug as _action_slug
+from .api_handler import ApiRequestsMixin, outcome_json
 
-
-def _action_slug(action: str) -> str:
-    """A control action's URL form: lowercase, with spaces and slashes turned into hyphens.
-
-    `CONTROL_SURFACE_ACTIONS` holds the actions verbatim, as prose — "start run",
-    "pause/resume", "approve exemplar paraphrases at export" — because `FR-CONSOLE-32` pins
-    that set to those words. None of them is a legal path segment: a space cannot appear in a
-    request line at all, and a slash would split into two segments. So the URL carries a slug
-    and the server maps it back, which is the form the cases pin
-    (`TC-CONSOLE-43`'s `finalize-batch`, `TC-CONF-21`'s `start-run`)."""
-    return action.lower().replace("/", "-").replace(" ", "-")
+#: Paths the API owns: everything under it is routed from `API_ROUTES` and nothing else.
+_API_ROOT = "/api/"
 
 
 #: slug -> action, for `POST /actions/<slug>`. Built from the declared set rather than written
@@ -88,7 +82,7 @@ def _known_route(route: str) -> bool:
     return route == "/"
 
 
-class _ConsoleRequestHandler(BaseHTTPRequestHandler):
+class _ConsoleRequestHandler(ApiRequestsMixin, BaseHTTPRequestHandler):
     """Serves the routes FR-CONSOLE-33 declares, and nothing else.
 
     Every response carries `Cache-Control: no-store`: the console renders student records, and
@@ -108,10 +102,13 @@ class _ConsoleRequestHandler(BaseHTTPRequestHandler):
         on stderr would mix with test output."""
 
     def _respond(
-        self, status: int, body: bytes, content_type: str, *, close: bool = False
+        self, status: int, body: bytes, content_type: str, *, close: bool = False,
+        headers: dict[str, str] | None = None,
     ) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
+        for name, value in (headers or {}).items():
+            self.send_header(name, value)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         if close:
@@ -150,6 +147,15 @@ class _ConsoleRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802 — the stdlib's dispatch name
         parsed = urlsplit(self.path)
         route = parsed.path
+        if route.startswith(_API_ROOT):
+            self._serve_api("GET", route)
+            return
+        # FR-CONSOLE-45: the SPA bundle, once it ships, answers `/` and `/assets/…`; until it
+        # does (#634), the server-rendered catalog and stylesheet answer as before.
+        if route == "/" and self._serve_spa_index():
+            return
+        if self._serve_bundle_asset(route):
+            return
         if route == "/assets/console.css":
             try:
                 body = _stylesheet_bytes()
@@ -183,6 +189,9 @@ class _ConsoleRequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802 — the stdlib's dispatch name
         route = urlsplit(self.path).path
+        if route.startswith(_API_ROOT):
+            self._serve_api("POST", route)
+            return
         if route == "/upload":
             self._upload()
             return
@@ -208,14 +217,25 @@ class _ConsoleRequestHandler(BaseHTTPRequestHandler):
             return
         form = self._read_form()
         outcome = self._console.app.perform(action, **form)
-        body = json.dumps({
-            "action": action,
-            "dispatched": bool(getattr(outcome, "dispatched", False)),
-            "refused": bool(getattr(outcome, "refused", False)),
-            "detail": str(getattr(outcome, "detail", "")),
-            "rows_written": len(getattr(outcome, "rows_written", ()) or ()),
-        }).encode("utf-8")
-        self._respond(200, body, "application/json; charset=utf-8")
+        self._respond(200, outcome_json(action, outcome), "application/json; charset=utf-8")
+
+    def _other_verb(self, method: str) -> None:
+        """PUT, PATCH and DELETE: routed only where `API_ROUTES` lists them (it lists none
+        today), so anything else is a 404/405 rather than the stdlib's 501."""
+        route = urlsplit(self.path).path
+        if route.startswith(_API_ROOT):
+            self._serve_api(method, route)
+            return
+        self._not_found()
+
+    def do_PUT(self) -> None:  # noqa: N802 — the stdlib's dispatch name
+        self._other_verb("PUT")
+
+    def do_PATCH(self) -> None:  # noqa: N802 — the stdlib's dispatch name
+        self._other_verb("PATCH")
+
+    def do_DELETE(self) -> None:  # noqa: N802 — the stdlib's dispatch name
+        self._other_verb("DELETE")
 
     def _read_form(self) -> dict:
         length = int(self.headers.get("Content-Length") or 0)
@@ -310,8 +330,12 @@ class ConsoleServer:
         bind: str | None = None,
         port: int | None = None,
         environ: Any = None,
+        spa_dir: Any = None,
     ) -> None:
         self._cfg = dict(cfg or {})
+        #: Where `/` and `/assets/` are served from (FR-CONSOLE-45): the packaged bundle unless a
+        #: caller names another — the seam that serves a known bundle without touching package data.
+        self.spa_dir = Path(spa_dir) if spa_dir is not None else SPA_BUNDLE_DIR
         self._environ = environ
         self._bind = bind
         config = self._effective()
@@ -414,12 +438,14 @@ def serve_console(
     run_id: str | None = None,
     cfg: dict[str, Any] | None = None,
     environ: Any = None,
+    spa_dir: Any = None,
 ) -> ConsoleServer:
     """Serve the console. Before binding it refuses, in this order: the `cloud-hosted` deployment
     profile (never allowed, whatever the settings), then any non-loopback address. Both are read
     from the effective configuration, with environment variables taking priority over `cfg`
-    (FR-CONSOLE-36)."""
-    return ConsoleServer(store, run_id=run_id, cfg=cfg, environ=environ)
+    (FR-CONSOLE-36). `spa_dir` names the SPA bundle to serve at `/` and `/assets/`; the
+    packaged one (`SPA_BUNDLE_DIR`) when omitted (FR-CONSOLE-45)."""
+    return ConsoleServer(store, run_id=run_id, cfg=cfg, environ=environ, spa_dir=spa_dir)
 
 
 def start_console(
@@ -428,9 +454,11 @@ def start_console(
     store: Any = None,
     run_id: str | None = None,
     environ: Any = None,
+    spa_dir: Any = None,
 ) -> ConsoleServer:
     """Start the console with `cfg`. The same refusals apply in the same order: the profile first,
     then the address, so the refusal cannot be turned off like a default (CT-CONSOLE-20). Both use
     the effective configuration, with environment variables taking priority over `cfg`
-    (FR-CONSOLE-36)."""
-    return ConsoleServer(store, run_id=run_id, cfg=cfg, environ=environ)
+    (FR-CONSOLE-36). `spa_dir` names the SPA bundle to serve at `/` and `/assets/`; the
+    packaged one (`SPA_BUNDLE_DIR`) when omitted (FR-CONSOLE-45)."""
+    return ConsoleServer(store, run_id=run_id, cfg=cfg, environ=environ, spa_dir=spa_dir)

@@ -60,7 +60,7 @@ PR. A test in the repo but not in the plan makes the plan lie about coverage.
 
 - `TEST_CMD` is `./scripts/test.sh` — the fast tier, and the Stop-hook verification gate. It
   needs the dev environment: `python -m venv .venv` then
-  `.venv/Scripts/python -m pip install -r requirements-dev.txt` (`.venv/bin/python` on
+  `.venv/Scripts/python -m pip install -e . -r requirements-dev.txt` (`.venv/bin/python` on
   POSIX). `.venv/` is gitignored, so a fresh clone must do this once.
 - **`writtenahead` is load-bearing.** Test plan §8.2 has every test story land **red**,
   written ahead of its implementation — and the Stop hook blocks the turn whenever `TEST_CMD`
@@ -115,7 +115,7 @@ The tier migration chains in `TIER_MIGRATIONS` are concatenated **at import time
 modules that own the schema they add. Before the first store open in any process, import all
 eleven contributors: `import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.ingest, aeh.integ, aeh.judge, aeh.orch, aeh.pkg, aeh.review, aeh.synth` —
 `import aeh.pkg` alone is not enough (Tier P's chain is short by `aeh.det`'s migration without it;
-`aeh.pkg` owns Package's last migration — #454's `pkg_decision_engine_noninferior`, 14; #528's `pkg_export_gate_outcome` was 13; #373's `pkg_validation_baseline` was 12; #369's
+`aeh.pkg` owns Package's last migration — #622's `pkg_criterion_score_method`, 15; #454's `pkg_decision_engine_noninferior` was 14; #528's `pkg_export_gate_outcome` was 13; #373's `pkg_validation_baseline` was 12; #369's
 `pkg_criterion_evaluation_mode` was 11 — and
 `aeh.det`'s `det_selection_policy_columns` is 10),
 `aeh.ingest` owns Cohort's last migration (#620's `ingest_roster_names`, 33; #531's

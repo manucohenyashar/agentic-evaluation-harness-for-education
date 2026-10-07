@@ -49,10 +49,6 @@ DEFAULT_JEV_OPENROUTER_URL = "https://openrouter.ai/api/v1/systemone"
 JEV_SDK_PATH = "/v1/systemone"
 
 
-#: The pip extra that carries the SDK (FR-PROV-42); the core install never needs it (ADR-11).
-JEV_SDK_EXTRA = "jev-cloud"
-
-
 #: The SDK's logger. It logs request and response bodies at DEBUG (design §1.2), so the provider
 #: filters out everything below WARNING on it (NFR-PROV-11).
 TYPESAFE_SDK_LOGGER = "typesafe_sdk"
@@ -96,13 +92,11 @@ class _BelowWarningFilter(logging.Filter):
 
 def _load_typesafe_sdk() -> Any:
     """Import the TypeSafe SDK, only here and only when first needed (FR-PROV-39, CT-PROV-29).
-    `import aeh.prov` never loads it, and nothing outside this file imports it."""
-    try:
-        import typesafe_sdk
-    except ImportError:
-        raise ConfigurationError(
-            f"the openrouter-jev decision provider needs the TypeSafe SDK: install the "
-            f"'{JEV_SDK_EXTRA}' extra (pip install '.[{JEV_SDK_EXTRA}]') (FR-PROV-42).") from None
+    `import aeh.prov` never loads it, and nothing outside this file imports it. There is no
+    packaging check: the SDK is a standard dependency of `pip install .` (FR-PROV-42 amended,
+    ADR-36), so the import boundary stays lazy while the install boundary includes it."""
+    import typesafe_sdk
+
     logger = logging.getLogger(TYPESAFE_SDK_LOGGER)
     if not any(isinstance(f, _BelowWarningFilter) for f in logger.filters):
         logger.addFilter(_BelowWarningFilter())

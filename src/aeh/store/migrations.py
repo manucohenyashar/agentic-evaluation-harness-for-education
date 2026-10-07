@@ -490,7 +490,7 @@ def current_schema_version(tier: Tier) -> int:
 #: again, where it began. #362's `orch_cell_phase` moved Cohort 23→24, and `aeh.orch` holds the
 #: tail. #363's `integ_read_indexes` moved Cohort 24→25 — `aeh.integ` holds it now.)
 COMPLETE_SCHEMA_VERSIONS: Mapping[Tier, int] = {
-    Tier.PACKAGE: 14,
+    Tier.PACKAGE: 15,
     Tier.COHORT: 33,
     Tier.DURABLE: 12,
 }

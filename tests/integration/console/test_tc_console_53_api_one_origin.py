@@ -175,7 +175,6 @@ def _assert_spa_served_from_this_origin(port: int, bundle: dict[str, bytes]) -> 
     return served
 
 
-@pytest.mark.writtenahead
 def test_tc_console_53_a_the_spa_and_its_assets_come_from_this_origin_with_their_types(
     store, bundle_dir, network_guard
 ):
@@ -227,7 +226,6 @@ def test_tc_console_53_a_the_shipped_bundle_is_served_and_names_no_other_origin(
 # --- (b) the route census ------------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_console_53_b_the_census_lists_every_mutating_route_beside_its_control_row():
     """The table, read as the census: each mutating route beside the control action it writes,
     no orphans, every API path versioned, every read route writing nothing, and all fifteen
@@ -267,7 +265,6 @@ def test_tc_console_53_b_the_census_lists_every_mutating_route_beside_its_contro
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_console_53_b_every_mutating_route_reaches_exactly_its_control_row(
     store, bundle_dir, network_guard, monkeypatch
 ):
@@ -300,7 +297,6 @@ def test_tc_console_53_b_every_mutating_route_reaches_exactly_its_control_row(
     network_guard.assert_no_network()
 
 
-@pytest.mark.writtenahead
 def test_tc_console_53_b_a_mutating_verb_on_an_unlisted_path_writes_nothing(
     store, tmp_data_dir, bundle_dir, network_guard, monkeypatch
 ):
@@ -345,7 +341,6 @@ def test_tc_console_53_b_a_mutating_verb_on_an_unlisted_path_writes_nothing(
     network_guard.assert_no_network()
 
 
-@pytest.mark.writtenahead
 def test_tc_console_53_b_no_read_route_writes(
     store, tmp_data_dir, bundle_dir, network_guard, monkeypatch
 ):
@@ -373,7 +368,6 @@ def test_tc_console_53_b_no_read_route_writes(
 # --- (c) the served-bytes sweep (RISK-108) --------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_console_53_c_no_served_byte_names_an_external_origin(
     store, bundle_dir, network_guard, monkeypatch
 ):

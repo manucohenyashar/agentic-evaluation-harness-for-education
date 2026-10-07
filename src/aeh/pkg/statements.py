@@ -50,10 +50,12 @@ PKG_STATEMENTS.update({
         # criterion rows whose evidence_type the copy silently NULLed.
         "INSERT INTO criterion (package_version_id, criterion_id, question_id, kind, "
         "max_points, scoring_model, construct_tag, band_count, answer_key, "
-        "evidence_type, band_justification, evaluation_mode) "
+        "evidence_type, band_justification, evaluation_mode, score_method, "
+        "component_of) "
         "SELECT :new, criterion_id, question_id, kind, max_points, scoring_model, "
         "construct_tag, band_count, answer_key, evidence_type, band_justification, "
-        "evaluation_mode FROM criterion WHERE package_version_id = :old"
+        "evaluation_mode, score_method, component_of FROM criterion "
+        "WHERE package_version_id = :old"
     ),
     "pkg_revision_copy_band": Statement(
         # The descriptor rides with the set (#230): a band without its descriptor is
@@ -108,9 +110,10 @@ PKG_STATEMENTS.update({
     "insert_criterion": Statement(
         "INSERT INTO criterion (package_version_id, criterion_id, question_id, kind, "
         "max_points, scoring_model, construct_tag, band_count, evidence_type, "
-        "evaluation_mode) VALUES "
+        "evaluation_mode, score_method, component_of) VALUES "
         "(:v, :criterion_id, :question_id, :kind, :max_points, :scoring_model, "
-        ":construct_tag, :band_count, :evidence_type, :evaluation_mode)"
+        ":construct_tag, :band_count, :evidence_type, :evaluation_mode, "
+        ":score_method, :component_of)"
     ),
     "insert_dependency": Statement(
         "INSERT INTO criterion_dependency (package_version_id, criterion_id, "
@@ -128,7 +131,7 @@ PKG_STATEMENTS.update({
     "select_criteria": Statement(
         "SELECT criterion_id, question_id, kind, max_points, scoring_model, "
         "construct_tag, band_count, answer_key, evidence_type, band_justification, "
-        "evaluation_mode FROM criterion "
+        "evaluation_mode, score_method, component_of FROM criterion "
         "WHERE package_version_id = :v ORDER BY criterion_id"
     ),
     "select_bands": Statement(
@@ -545,6 +548,8 @@ PKG_STATEMENTS.update({
         "UNION ALL SELECT 'setup_classification', COUNT(*) FROM setup_classification "
         "WHERE package_version_id = :v "
         "UNION ALL SELECT 'setup_step_record', COUNT(*) FROM setup_step_record "
+        "WHERE package_version_id = :v "
+        "UNION ALL SELECT 'criterion_derivation', COUNT(*) FROM criterion_derivation "
         "WHERE package_version_id = :v"
     ),
     # Per-field UPDATE statements: the SET column cannot be a bound parameter, so each
@@ -593,6 +598,37 @@ PKG_STATEMENTS.update({
     "select_export_gate_outcome": Statement(
         "SELECT outcome FROM export_gate_outcome WHERE package_version_id = :v "
         "ORDER BY rowid DESC LIMIT 1"
+    ),
+})
+
+
+# #622 (FR-PKG-26): the `general` criterion's derivation provenance. Recording a
+# derivation again replaces it AND clears its confirmation: a confirmation is of one
+# derived band set, never of whatever set is stored later.
+PKG_STATEMENTS.update({
+    "upsert_criterion_derivation": Statement(
+        "INSERT INTO criterion_derivation (package_version_id, criterion_id, description, "
+        "derived_bands, recorded_at, confirmed_by, confirmed_at) VALUES (:v, "
+        ":criterion_id, :description, :derived_bands, :recorded_at, NULL, NULL) "
+        "ON CONFLICT (package_version_id, criterion_id) DO UPDATE SET "
+        "description = excluded.description, derived_bands = excluded.derived_bands, "
+        "recorded_at = excluded.recorded_at, confirmed_by = NULL, confirmed_at = NULL"
+    ),
+    "confirm_criterion_derivation": Statement(
+        "UPDATE criterion_derivation SET confirmed_by = :confirmed_by, "
+        "confirmed_at = :confirmed_at WHERE package_version_id = :v "
+        "AND criterion_id = :criterion_id"
+    ),
+    "select_criterion_derivations": Statement(
+        "SELECT criterion_id, description, derived_bands, recorded_at, confirmed_by, "
+        "confirmed_at FROM criterion_derivation WHERE package_version_id = :v "
+        "ORDER BY criterion_id"
+    ),
+    "pkg_revision_copy_criterion_derivation": Statement(
+        "INSERT INTO criterion_derivation (package_version_id, criterion_id, description, "
+        "derived_bands, recorded_at, confirmed_by, confirmed_at) SELECT :new, "
+        "criterion_id, description, derived_bands, recorded_at, confirmed_by, "
+        "confirmed_at FROM criterion_derivation WHERE package_version_id = :old"
     ),
 })
 

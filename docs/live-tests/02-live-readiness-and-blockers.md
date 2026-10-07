@@ -10,7 +10,7 @@ What **does** work, checked by running it, and is enough to rehearse the whole o
 
 | Works today (verified) | How it was checked |
 |---|---|
-| `pip install ".[live-ingest]" Pillow`; the `aeh` command appears with `run`, `recover`, `console` (Pillow is needed to read PDFs and is not pulled in by the extra) | Fresh Python 3.13 environment; `aeh --help` |
+| `pip install .` alone; the `aeh` command appears with `run`, `recover`, `console`, and the PDF-reading libraries come with it | Fresh Python 3.13 environment; `aeh --help` |
 | Starting the console, its 14 pages, and its safety refusals (unsafe data folder, network bind, cloud-hosted profile) | Started it and opened every page |
 | Sending the control commands: success paths seen for `review-action`, `finalize-batch`, `amend-a-finalized-grade`, `export-import-package`, `correct-an-answer-key-after-a-run`, `pause-resume` (a request is queued), and the PDF upload; refusals seen for 8 more. Only the rubric read-back was not sent: it cannot succeed over the web (see B5). | Sent each to a running console over a finished practice run |
 | Crash recovery: `aeh recover` releases stuck work; starting the console also resumes runs, when `HARNESS_PROFILE` matches the run's own | Ran `recover`; resume read from the code, not tried on a live run |
@@ -144,7 +144,7 @@ The right-test gate (V4) compares the words in a student's answers with the word
 | B2 (the request shape) against the real service | **Closed (2026-10-03):** see B2 | — |
 | How well a page-reading model reads handwriting | The sample sheets are typed | Add two or three hand-written, scanned sheets |
 | Real cost and real run time | No live run was possible | Read them off the first run, using the cost ceiling as the guard |
-| The Jev decision engine | Left off on purpose | Needs `pip install ".[jev-cloud]"` and a pinned Jev build; try it on a second test |
+| The Jev decision engine | Left off on purpose | Needs a pinned Jev build (its library comes with `pip install .`); try it on a second test |
 | The `accept-or-correct-rubric-read-back` command | It needs a model reference object, which a web form cannot supply, so it cannot succeed over the web (B5) | Fix with B5 |
 | Resuming a paused run from the console | Only the request is queued; the worker stops when the run pauses, so a resume probably waits for the next console start (read from the code, not tried) | Try it once a live run exists |
 

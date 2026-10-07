@@ -16,7 +16,7 @@ money. It is a rehearsal of the SCREENS, not of the sample tests in this folder:
 students are not the sample answer sheets.
 
 For engineers: it needs a repository checkout (it imports `tests.support` and `harness`) and the
-dev requirements (`pip install -r requirements-dev.txt`). The recorded replies in the repository's
+dev requirements (`pip install -e . -r requirements-dev.txt`). The recorded replies in the repository's
 corpus depend on the exact page-rendering library version, so this script records a fresh set on
 your machine first (about a minute) and replays that, which always matches.
 """

@@ -105,7 +105,6 @@ def _violations(name: str, numbered: list[tuple[int, str]]) -> list[str]:
     return found
 
 
-@pytest.mark.writtenahead
 def test_tc_store_29_no_operator_document_names_an_extra_or_a_manual_pillow_install() -> None:
     """Zero matches across the whole operator-facing set (FR-STORE-21)."""
     violations = [v for name, numbered in _scanned() for v in _violations(name, numbered)]
@@ -131,7 +130,6 @@ def _tutorial_sections() -> list[str]:
     return [re.sub(r"[\\`][ \t]*\n[ \t]*", " ", "\n".join(s)) for s in sections]
 
 
-@pytest.mark.writtenahead
 def test_tc_store_29_the_deployment_tutorial_carries_the_air_gap_wheelhouse_paragraph() -> None:
     """Presence: one section of the deployment tutorial names both halves of the wheelhouse
     pattern — `pip download` on a connected machine, `pip install --no-index --find-links` at the

@@ -115,7 +115,7 @@ Between them: `check_traceability.py` proves **requirement → test**; `trace-is
 | File | Integration |
 |---|---|
 | [`pyproject.toml`](../pyproject.toml) | `--strict-markers` and the marker table (`integration`, `live`, `slow`, `browser`, `property`, `fuzz`, `e2e`, `contract`, `writtenahead`). A typo'd marker is an error, because **the marker is the tier selector** |
-| [`requirements-dev.txt`](../requirements-dev.txt) | `pytest`, `pytest-randomly` (the suite runs **shuffled**: a test that only passes in file order has hidden shared state), `hypothesis`, `pypdf`, `pypdfium2`, `Pillow`, `playwright` |
+| [`requirements-dev.txt`](../requirements-dev.txt) | `pytest`, `pytest-randomly` (the suite runs **shuffled**: a test that only passes in file order has hidden shared state), `hypothesis`, `playwright` (the runtime libraries are `[project] dependencies` since ADR-36, so the dev install is `pip install -e . -r requirements-dev.txt`) |
 | [`tests/conftest.py`](../tests/conftest.py) | The suite-wide guards in section 5.2 (network, environment, clock, hypothesis profiles), plus imports of all eleven modules that own a migration, so every store opens on a complete schema chain |
 | [`.gitattributes`](../.gitattributes) | Pins `fixtures/**` to LF so content hashes survive a Windows checkout |
 | [`.github/workflows/*.disabled`](../.github/workflows) | The CI variant, kept **inert on purpose**. All verification runs on the developer's machine; GitHub hosts the repository and the issue graph and runs nothing (`CLAUDE.md` "All work runs locally") |

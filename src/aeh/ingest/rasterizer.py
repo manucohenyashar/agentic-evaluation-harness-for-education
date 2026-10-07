@@ -58,8 +58,8 @@ class PdfiumRasterizer(Rasterizer):
         except ImportError as error:  # pragma: no cover - acceptance-run only
             raise IngestError(
                 "the live rasterizer needs the pypdfium2 package; the fast tier uses "
-                "a scripted Rasterizer double instead. Install it for the acceptance "
-                "run."
+                "a scripted Rasterizer double instead. It is a standard dependency: "
+                "reinstall the system with `pip install .`."
             ) from error
         pdf = pdfium.PdfDocument(pdf_bytes)
         try:
@@ -111,8 +111,8 @@ class PdfiumRasterizer(Rasterizer):
         except ImportError as error:  # pragma: no cover - acceptance-run only
             raise IngestError(
                 "the live rasterizer needs the pypdfium2 package; the fast tier uses "
-                "a scripted Rasterizer double instead. Install it for the acceptance "
-                "run."
+                "a scripted Rasterizer double instead. It is a standard dependency: "
+                "reinstall the system with `pip install .`."
             ) from error
         x, y, width, height = _validated_crop_box(box)
         if page_no < 1:
