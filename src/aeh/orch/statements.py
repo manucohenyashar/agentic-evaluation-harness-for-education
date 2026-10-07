@@ -125,11 +125,20 @@ ORCH_STATEMENTS: dict[str, Statement] = {
     # order cache: the sorted result is derived once and drained front to back, so a
     # one-at-a-time poll late in a large run serves its head instead of re-reading and
     # re-sorting the whole pending set.
+    # The roster join (#593, NFR-PROV-08): the claimed row carries the student's roster
+    # display name beside the ref, so the boundary (`M-JUDGE`'s assembler) HAS a name to
+    # replace. LEFT join on the roster's own key — a ref the roster does not hold, or
+    # holds namelessly (a pre-migration row), yields NULL, and the assembler passes the
+    # request through unchanged. A ref-only or nameless roster is the pre-#620 shape and
+    # must keep assembling today's bytes.
     "select_run_claimable": Statement(
         "SELECT w.work_id, w.run_id, w.stage, w.submission_id, w.criterion_id, "
-        "w.judge_id, w.origin, w.attempts AS attempt, s.student_ref AS student_ref "
+        "w.judge_id, w.origin, w.attempts AS attempt, s.student_ref AS student_ref, "
+        "r.full_name AS student_name "
         "FROM work_unit w "
         "JOIN submission s ON s.submission_id = w.submission_id "
+        "LEFT JOIN roster r ON r.cohort_id = s.cohort_id "
+        "AND r.student_ref = s.student_ref "
         "WHERE w.run_id = :run_id AND w.status = 'pending' AND w.stage = :stage "
         "ORDER BY w.work_id"
     ),
@@ -165,6 +174,52 @@ ORCH_STATEMENTS: dict[str, Statement] = {
         "SUM(CASE WHEN status = 'quarantined' THEN 1 ELSE 0 END) AS quarantined, "
         "COUNT(*) AS total FROM work_unit WHERE run_id = :run_id "
         "GROUP BY submission_id, criterion_id, stage"
+    ),
+    # --- #597 (NFR-PIPE-02): the readiness decision runs IN SQL -------------------------------
+    #
+    # The Python-side scan (`_ready_cells_in` before #597) read every count row and every
+    # phase row of the run into dicts on every pass, and a pass's hook then touched only the
+    # few cells the run's concurrency cap allows. At 40 submissions that is a 13.9 ms read
+    # twice per pass over a 9.3 ms/unit composition budget. The GROUP BY + HAVING forms here
+    # decide readiness where the rows live: the same index range is walked in C, and only the
+    # ready cells — a handful per pass — are materialized. `ready_cells`' exact semantics
+    # (FR-ORCH-29): every unit of the cell's stage terminal, and either no phase row yet
+    # (`integrity_pre`) or more terminal units than the `aggregated` phase consumed
+    # (`aggregate` — the count comparison that re-aggregates a widened panel).
+    #
+    # Two literals rather than one parameterized shape because the two hooks' phase arms
+    # genuinely differ: `integrity_pre` is ready only while the phase is ABSENT, `aggregate`
+    # is ready when absent or outgrown. Assembling that difference at run time is exactly what
+    # SEC-15/FR-STORE-08 refuses.
+    "select_ready_integrity_pre": Statement(
+        "SELECT w.submission_id AS submission_id, w.criterion_id AS criterion_id, "
+        "SUM(CASE WHEN w.status IN ('done', 'quarantined') THEN 1 ELSE 0 END) AS terminal, "
+        "SUM(CASE WHEN w.status = 'quarantined' THEN 1 ELSE 0 END) AS quarantined, "
+        "COUNT(*) AS total "
+        "FROM work_unit w LEFT JOIN cell_phase p "
+        "ON p.run_id = w.run_id AND p.submission_id = w.submission_id "
+        "AND p.criterion_id = w.criterion_id AND p.phase = 'integrity_pre' "
+        "WHERE w.run_id = :run_id AND w.stage = 'extract' "
+        "GROUP BY w.submission_id, w.criterion_id "
+        "HAVING SUM(CASE WHEN w.status IN ('done', 'quarantined') THEN 1 ELSE 0 END) "
+        "= COUNT(*) AND p.units_consumed IS NULL "
+        "ORDER BY w.submission_id, w.criterion_id"
+    ),
+    "select_ready_aggregate": Statement(
+        "SELECT w.submission_id AS submission_id, w.criterion_id AS criterion_id, "
+        "SUM(CASE WHEN w.status IN ('done', 'quarantined') THEN 1 ELSE 0 END) AS terminal, "
+        "SUM(CASE WHEN w.status = 'quarantined' THEN 1 ELSE 0 END) AS quarantined, "
+        "COUNT(*) AS total "
+        "FROM work_unit w LEFT JOIN cell_phase p "
+        "ON p.run_id = w.run_id AND p.submission_id = w.submission_id "
+        "AND p.criterion_id = w.criterion_id AND p.phase = 'aggregated' "
+        "WHERE w.run_id = :run_id AND w.stage = 'score' "
+        "GROUP BY w.submission_id, w.criterion_id "
+        "HAVING SUM(CASE WHEN w.status IN ('done', 'quarantined') THEN 1 ELSE 0 END) "
+        "= COUNT(*) AND (p.units_consumed IS NULL OR "
+        "SUM(CASE WHEN w.status IN ('done', 'quarantined') THEN 1 ELSE 0 END) "
+        "> p.units_consumed) "
+        "ORDER BY w.submission_id, w.criterion_id"
     ),
     # The provenance join (#223, FR-INGEST-01): unit -> submission -> document, LEFT-joined
     # so a broken hop reads as NULL here and is refused by `provenance()`, never imputed.

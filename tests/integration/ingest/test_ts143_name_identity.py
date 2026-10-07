@@ -369,11 +369,15 @@ def test_tc_ingest_58_c_a_cohort_32_store_migrates_to_33_and_still_resolves_by_r
         tmp_data_dir):
     _require_migration_registered()
     head = max(m.version for m in TIER_MIGRATIONS[Tier.COHORT])
-    assert head == MIGRATION_VERSION, f"(c): the Cohort head is {head}, expected 33"
+    # `>=`, not `==`: this arm's oracle is #620's migration and pin, and a later Cohort
+    # migration (#597's `integ_evidence_work_index`, 34) legitimately moves the head past it —
+    # the pin-equals-head form `test_tc_agg_22_e` states is what holds, not a frozen 33.
+    assert head >= MIGRATION_VERSION, f"(c): the Cohort head is {head}, expected at least 33"
     owner = [m for m in TIER_MIGRATIONS[Tier.COHORT] if m.version == MIGRATION_VERSION]
     assert [m.name for m in owner] == [MIGRATION_NAME], owner
-    assert COMPLETE_SCHEMA_VERSIONS[Tier.COHORT] == MIGRATION_VERSION, (
-        "(c): the Cohort pin must move to 33 in the same change (RISK-119)")
+    assert COMPLETE_SCHEMA_VERSIONS[Tier.COHORT] == head, (
+        "(c): the Cohort pin must equal the chain's head — at least 33 in #620's own "
+        "change (RISK-119)")
     claude_md = (REPO_ROOT / "CLAUDE.md").read_text(encoding="utf-8")
     assert MIGRATION_NAME in claude_md, (
         "(c): CLAUDE.md's migration-chain paragraph must name `ingest_roster_names`")
@@ -387,7 +391,10 @@ def test_tc_ingest_58_c_a_cohort_32_store_migrates_to_33_and_still_resolves_by_r
         assert [(r["student_ref"], r["full_name"]) for r in rows] == [
             ("S9-001", None), ("S9-002", None)], "(c): pre-migration rows must read NULL"
         versions = [r["version"] for r in handle.query("SELECT version FROM schema_version")]
-        assert max(versions) == MIGRATION_VERSION
+        # The applied head is the chain's head, not #620's own 33: a later Cohort migration
+        # (#597's `integ_evidence_work_index`, 34) is applied to this store in the same open,
+        # and #620's oracle is that the 32-built store migrates THROUGH 33 to it.
+        assert max(versions) == head
         from aeh.ingest import Ingestor, ResidencySlot
         from aeh.prov import SamplingParams
 

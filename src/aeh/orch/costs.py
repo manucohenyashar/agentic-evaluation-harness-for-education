@@ -167,6 +167,18 @@ class CostsMixin:
             record = json.loads(_mapping_get(run_row, "panel_config") or "{}")
         except (TypeError, ValueError):
             return Decimal("0")
+        return self._decision_cost_from_record(record, rows)
+
+    def _decision_cost_from_record(self, record: Any, rows: Any) -> Decimal:
+        """The decision-engine figure for the panel record `record` over the unit rows
+        `rows` — the arithmetic of `_decision_cost_estimate` without the run-row read, so
+        the pre-start estimate (`_plan_cost_estimate`, FR-CONSOLE-43) prices the SAME seat
+        rule the started run's estimate does. Zero with no decision provider, a malformed
+        record, no engine on the record, no arms, or no seats."""
+        if self._decision_provider is None:
+            return Decimal("0")
+        if not isinstance(record, dict):
+            return Decimal("0")
         arms = record.get("arms") or []
         if not record.get("decision_engine") or not arms:
             return Decimal("0")
@@ -175,6 +187,31 @@ class CostsMixin:
         if not seats:
             return Decimal("0")
         return self._decision_per_seat_cost(seats)
+
+    def _plan_cost_estimate(
+        self, planned_params: list[dict[str, Any]], *, panel_record: dict[str, Any],
+    ) -> Decimal | None:
+        """The pre-start figure for a run's PLANNED units (FR-CONSOLE-43's preview): the
+        same sum `_run_cost_estimate` computes over the ledger's rows, priced over the
+        plan `_planned_units` returned instead — one pricing arithmetic, two row sources.
+
+        The run does not exist yet, so nothing is read from a run row and nothing is
+        written. None when no provider seam is bound or the plan is empty (the started
+        run's estimate would be absent in both cases, not zero). The decision figure is
+        `panel_record`'s seats over the same planned rows — the per-seat cost of every
+        first-arm score unit the plan holds."""
+        if self._provider is None:
+            return None
+        if not planned_params:
+            return None
+        total = Decimal("0")
+        run_id = str(planned_params[0].get("run_id") or "")
+        for params in planned_params:
+            unit = self._unit_from_row({**params, "attempt": 0})
+            figure = self._normalize_figure(self._provider.estimate_cost(unit), run_id)
+            if figure is not None:
+                total += figure
+        return total + self._decision_cost_from_record(panel_record, planned_params)
 
     def _decision_per_seat_cost(self, seats: int) -> Decimal:
         """The decision provider's `estimate_cost` for `seats` calls of

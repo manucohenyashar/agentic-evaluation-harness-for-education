@@ -17,12 +17,21 @@ reclaimed and resumed unconditionally satisfies (a) and (b) and is badly wrong �
 resume runs an operator deliberately paused. So (d) asserts the *absence* of action on a clean
 store, and it compares row counts before and after rather than trusting the report about itself.
 
-**Arm (c) is NOT implemented here, and that is deliberate.** It needs a package whose grade
-policy declares `review_window_hours = 24` and a run graded to `provisional`, and the grade
-policy surface is one I have not verified against the code. Writing assertions against a surface
-I have only read about in the plan is exactly the defect that sank #377's first suite, so the
-arm is named here and in #378's PR rather than guessed at. `FR-PIPE-07`'s regrade clause is
-therefore **not covered** by this file, and the RTM should not claim it is.
+**Arm (c) is the review-window regrade, under the decided rule (2026-10-07): recovery does
+not touch the review window.** Recovery restores persisted state and never mutates it — the
+review window after recovery is exactly what it was at crash time. So the regrade applies
+`FR-GRADE-10`'s settlement to the window *as it was*: the policy's `review_window_hours`
+stays 24, the grades' window anchor (`computed_at`) stays the original issuance, and no new
+revision is minted — a settlement in place, never a restarted, extended or re-armed window.
+The case fails on each of those mutations. Verified empirically before writing (issue #378's
+decided-rule instruction): the landed `recover` satisfies the rule, so the arm is green and
+carries no `writtenahead` marker.
+
+**The boundary clause resolves outside recovery's door.** A `complete` run settles through
+`FR-GRADE-10`'s first automatic path — run completion — regardless of the window operator
+(`_settlement_state` checks `run_complete` before the lapse comparison), so at clock exactly
+24 h recovery cannot distinguish strict `>` from `<=`; whichever operator `FR-GRADE-10`
+declares is observable only through the direct M-GRADE pass, not through `FR-PIPE-07`.
 
 **The lease clock is the store's monotonic counter, not wall time.** `sweep_expired_leases`
 compares `ticks >= lease_expires_ticks` (`orch.py:4363`), so the expiry is produced by advancing
@@ -53,9 +62,12 @@ import aeh.orch  # noqa: F401
 import aeh.pkg  # noqa: F401
 import aeh.review  # noqa: F401
 import aeh.synth  # noqa: F401
+from aeh.grade import open_grade
 from aeh.orch import ORCH_LEASE_SECONDS, Orchestrator
+from aeh.pkg import GradePolicy, PackageCatalog
 from aeh.store import Statement, open_store
 from tests.support.clock import FrozenClock
+from tests.support.grade_vocabulary import grade_rows, write_criterion_scores
 from tests.support.impl import PIPE_MODULE, require
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 
@@ -92,6 +104,16 @@ def _run_status(store: Any, run_id: str) -> str:
         Statement("SELECT status FROM run WHERE run_id = :run_id"), run_id=run_id,
     )
     return str(rows[0]["status"])
+
+
+def _recover_without_a_clock(store: Any) -> Any:
+    """Recovery through the real pipeline entry, exactly as a crashed-into operator runs it.
+
+    `recover(store)` with no clock argument: the review window runs on wall time (the grade
+    service's clock), so the plain call is the honest one — the (c) arm advances only the wall
+    clock and asserts nothing about `finalized_at`, which recovery's own clock stamps.
+    """
+    return require(PIPE_MODULE, "recover", issue=ISSUE)(store)
 
 
 @pytest.fixture
@@ -174,7 +196,115 @@ def test_tc_pipe_07_a_running_run_with_pending_units_is_resumed(abandoned_lease)
     )
 
 
-# --- TC-PIPE-07 (d) ------------------------------------------------------------------------
+# --- TC-PIPE-07 (c) ------------------------------------------------------------------------
+
+
+WINDOW_HOURS = 24
+PACKAGE = "pkg-orch"
+
+
+@pytest.fixture
+def complete_run_past_window(tmp_data_dir):
+    """A `complete` run holding provisional grades whose `WINDOW_HOURS` window lapsed during
+    the downtime — the world of TC-PIPE-07 (c).
+
+    The grades are issued while the run is still open, so they read `provisional` under the
+    declared 24-hour window; the run row then flips to `complete` with no settling pass after
+    it (the crash: the process recorded completion and died before `compute_all` would have
+    settled them), and the clock advances 25 hours. The `FrozenClock` drives the grade service's
+    `clock` — a callable returning an ISO timestamp — for issuance and for the wall-time lapse;
+    `recover` itself builds its grading pass on the default wall clock, which touches only
+    `finalized_at`, a column the oracle deliberately does not assert.
+    """
+    clock = FrozenClock()
+    tick = lambda: clock.now().isoformat()  # noqa: E731 — the service wants a str
+    store = open_store(tmp_data_dir)
+    try:
+        _orchestrator, run_id, version = seed_run(
+            store, submissions=SUBMISSIONS, criteria=CRITERIA,
+        )
+        catalog = PackageCatalog(store.package(PACKAGE), package_id=PACKAGE)
+        catalog.set_grade_policy(
+            version, GradePolicy(combination="weighted_sum", review_window_hours=WINDOW_HOURS)
+        )
+        cohort = store.cohort(ORCH_COHORT_ID)
+        write_criterion_scores(cohort, [(s, "C1", "B2", 7.0, "auto") for s in SUBMISSIONS])
+        open_grade(store, clock=tick).compute_all(run_id)
+        assert catalog.grade_policy(version).review_window_hours == WINDOW_HOURS, (
+            "precondition: the declared 24-hour window did not persist — the grades' "
+            "provisional state below would then mean 'no window declared', not 'window open'"
+        )
+        before = [dict(r) for r in grade_rows(cohort) if r["is_current"]]
+        assert before and all(r["state"] == "provisional" for r in before), (
+            "precondition: the fixture's grades did not issue provisional under the open "
+            f"window: {[(r['submission_id'], r['state']) for r in before]}"
+        )
+        with cohort.transaction() as tx:
+            tx.execute("UPDATE run SET status = 'complete' WHERE run_id = :r", r=run_id)
+        clock.advance(25 * 3600)
+        yield store, run_id, version, before
+    finally:
+        store.close()
+
+
+def test_tc_pipe_07_a_complete_run_with_a_lapsed_window_is_regraded_without_touching_the_window(
+        complete_run_past_window):
+    """Arm (c) — `runs_regraded` contains the run, every grade is `final`, and the review
+    window is exactly what it was at crash time (the decided rule, 2026-10-07).
+
+    The plan's oracle is the first two sentences. The rest is the rule the case exists to
+    pin: recovery restores persisted state and never mutates it, so the regrade settles the
+    *lapsed* window — policy hours unchanged, the grades' window anchor (`computed_at`)
+    unchanged, no new revision (a fresh revision would earn a fresh window, `_settlement_state`'s
+    fresh-issuance anchor — that is the re-arm this arm refuses). A recovery that restarted,
+    extended or re-armed the window fails here even if its report looks right.
+    """
+    store, run_id, version, before = complete_run_past_window
+    cohort = store.cohort(ORCH_COHORT_ID)
+    catalog = PackageCatalog(store.package(PACKAGE), package_id=PACKAGE)
+
+    report = _recover_without_a_clock(store)
+
+    assert run_id in report.runs_regraded, (
+        f"recover regraded {list(report.runs_regraded)} and not {run_id!r}, whose grades sat "
+        "provisional on a complete run past a lapsed 24-hour window (FR-PIPE-07's third step "
+        "exists because nothing else wakes up to settle them)"
+    )
+    after = [dict(r) for r in grade_rows(cohort) if r["is_current"]]
+    assert {r["submission_id"] for r in after} == {r["submission_id"] for r in before} and all(
+        r["state"] == "final" for r in after
+    ), (
+        f"the regraded grades read {[(r['submission_id'], r['state']) for r in after]} — every "
+        "grade must settle `final` at the lapse of the window (FR-GRADE-10, TC-PIPE-07 (c))"
+    )
+    assert catalog.grade_policy(version).review_window_hours == WINDOW_HOURS, (
+        "recovery altered the review window's policy: grade_policy.review_window_hours left "
+        f"{catalog.grade_policy(version).review_window_hours!r}, entered "
+        f"{WINDOW_HOURS!r} — recovery does not touch the window (decided rule)"
+    )
+    anchor_before = {r["submission_id"]: r["computed_at"] for r in before}
+    anchor_after = {r["submission_id"]: r["computed_at"] for r in after}
+    assert anchor_after == anchor_before, (
+        f"recovery re-anchored the window: computed_at {anchor_before} became {anchor_after} — "
+        "a recovery that restarts the window at its own clock mints the grades a fresh 24 "
+        "hours they never earned (decided rule)"
+    )
+    revisions_before = {r["submission_id"]: r["revision"] for r in before}
+    revisions_after = {r["submission_id"]: r["revision"] for r in after}
+    assert revisions_after == revisions_before, (
+        f"recovery minted a new grade revision: {revisions_before} became {revisions_after} — "
+        "a fresh revision earns a fresh window, so re-arming by re-issuing is the same "
+        "mutation under another name (decided rule)"
+    )
+
+    again = _recover_without_a_clock(store)
+    assert again.runs_regraded == () and not again.runs_resumed and again.leases_reclaimed == 0, (
+        f"a second recovery acted again: {again} — recovery restores persisted state once and "
+        "a repeat pass must find nothing to do"
+    )
+    assert [dict(r) for r in grade_rows(cohort) if r["is_current"]] == after, (
+        "a second recovery rewrote the grade rows"
+    )
 
 
 def test_tc_pipe_07_a_clean_store_is_left_alone(tmp_data_dir):

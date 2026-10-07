@@ -24,13 +24,18 @@ class WorkUnit:
     against an assembler that copies every field it is given. The name travels on the unit
     so those cases can assert the assembled payload drops it.
 
-    **`student_name` and `submission_text` are None on enumerated units.** The ledger row
-    carries none of it — Tier C's tables hold `student_ref`, and text lives in the
-    documents — so enumeration returns units with these unresolved; the lease surface
-    (#58, `FR-ORCH-04`) resolves them from the store before handing a unit to a worker.
-    None, not an empty string: None is visible ("not resolved yet"), an empty string is
-    the silent-failure shape. Neither field is a `work_id` input, so resolving them later
-    cannot fork the work-ID space.
+    **Enumeration resolves neither field; the claim resolves the name.** The ledger
+    row carries none of it — Tier C's tables hold `student_ref`, and text lives in the
+    documents — so enumeration returns units with these unresolved. The claim select
+    (#58, `FR-ORCH-04`) resolves `student_name` from the cohort's roster (#620) before
+    handing a unit to a worker: the boundary at assembly (`M-JUDGE`) replaces the name
+    with the ref in every text field of the request (#593, `NFR-PROV-08`), and it can
+    only do that when the unit carries the name. A roster with no row for the ref — or
+    a nameless row, the pre-#620 shape — leases a unit with `student_name=None`, and
+    assembly passes the request through unchanged. `submission_text` stays None until
+    assembly resolves it from the store. None, not an empty string: None is visible
+    ("not resolved"), an empty string is the silent-failure shape. Neither field is a
+    `work_id` input, so resolving them later cannot fork the work-ID space.
     """
 
     work_id: str

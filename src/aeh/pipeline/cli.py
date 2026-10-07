@@ -101,6 +101,17 @@ def _build_parser() -> Any:
         "build", help="build and publish a package from a TOML spec; it can never be changed")
     build.add_argument("--data-dir", required=True)
     build.add_argument("--spec", required=True, help="the package spec (TOML)")
+    # FR-PKG-27: the spec is a system-emitted export, and this is the command that emits it —
+    # the inverse of `build`, kept as the debugging/export path (Q-O6). No teacher-facing
+    # surface presents TOML authoring.
+    export = package_sub.add_parser(
+        "export",
+        help="write a package version's spec TOML, which `aeh package build --spec` accepts "
+             "unchanged")
+    export.add_argument("--data-dir", required=True)
+    export.add_argument("--package-version", required=True,
+                        help="the package version id, as build and the console print it")
+    export.add_argument("--spec", required=True, help="the file the spec is written to")
 
     # Live-test blocker B4: read scanned papers through the intake checks.
     ingest_parser = sub.add_parser(
@@ -113,7 +124,53 @@ def _build_parser() -> Any:
                                help="the test paper PDF (needed once per cohort)")
     ingest_parser.add_argument("sheets", nargs="+",
                                help="answer sheet PDFs, one per student, or folders of them")
+
+    # #631 (FR-CONSOLE-44): the results reads as CLI subcommands. The console's results
+    # views are compared against these — the export byte for byte (TC-CONSOLE-57) — and
+    # a debugging session reaches for them without a browser, so they are the inverse
+    # half of the same reads, not a second implementation.
+    results_parser = sub.add_parser(
+        "results", help="show a run's grades and rollup, or export the school-facing set")
+    results_sub = results_parser.add_subparsers(dest="results_command", required=True)
+    results_show = results_sub.add_parser(
+        "show", help="print the run's per-student records and class rollup as JSON")
+    results_show.add_argument("--data-dir", required=True)
+    results_show.add_argument("--run", required=True)
+    results_export = results_sub.add_parser(
+        "export", help="write the school-facing export: the marks CSV and one PDF per student")
+    results_export.add_argument("--data-dir", required=True)
+    results_export.add_argument("--run", required=True)
+    results_export.add_argument("--revision", type=int, default=1)
+    results_export.add_argument("--out", required=True,
+                                help="the directory the export's files are written into")
     return parser
+
+
+def _results_command(args: Any) -> int:
+    """`aeh results show | export` (#631, FR-CONSOLE-44). Both are M-GRADE's doors —
+    the same reads the console's results views call — so the CLI and the console are one
+    implementation, and a refusal (a run no ledger holds, a revision with no rows) leaves
+    nothing written."""
+    from pathlib import Path
+
+    from aeh.grade import export_grade_artifacts, run_results
+
+    store = _open_store(args.data_dir)
+    try:
+        if args.results_command == "show":
+            print(json.dumps(_as_json(run_results(store, args.run)), indent=2, sort_keys=True))
+            return EXIT_OK
+        artifacts = export_grade_artifacts(
+            args.run, int(args.revision), Path(args.out), store=store)
+        # Paths are printed as strings themselves (`_as_json` passes a `Path` through),
+        # so the export's shape is exactly the file names an operator acts on.
+        print(json.dumps(
+            {"csv_path": str(artifacts.csv_path),
+             "pdf_paths": [str(p) for p in artifacts.pdf_paths]},
+            indent=2, sort_keys=True))
+        return EXIT_OK
+    finally:
+        store.close()
 
 
 def _ingest_command(args: Any) -> int:
@@ -172,6 +229,22 @@ def _package_command(args: Any) -> int:
     return EXIT_OK
 
 
+def _package_export_command(args: Any) -> int:
+    """`aeh package export`. Writes the spec TOML for one published package version and prints
+    what was written as JSON; the store is only read."""
+    from pathlib import Path
+
+    from .spec_export import export_spec
+
+    store = _open_store(args.data_dir)
+    try:
+        exported = export_spec(store, args.package_version, Path(args.spec))
+    finally:
+        store.close()
+    print(json.dumps(_as_json(exported), indent=2, sort_keys=True))
+    return EXIT_OK
+
+
 def _consent_classes() -> tuple[str, ...]:
     from aeh.orch.cohorts import CONSENT_CLASSES
 
@@ -227,9 +300,13 @@ def main(argv: "Sequence[str] | None" = None) -> int:
         if args.command == "cohort":
             return _cohort_command(args)
         if args.command == "package":
+            if args.package_command == "export":
+                return _package_export_command(args)
             return _package_command(args)
         if args.command == "ingest":
             return _ingest_command(args)
+        if args.command == "results":
+            return _results_command(args)
         if args.command == "recover":
             # FR-PIPE-19 / TC-PIPE-35: the pins are resolved and refused BEFORE the store
             # opens — the same checked-before-the-store posture the knob checks above have,

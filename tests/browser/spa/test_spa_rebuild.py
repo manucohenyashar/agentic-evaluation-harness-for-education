@@ -12,9 +12,10 @@ temporary directory: rebuilding over `src/aeh/console_assets/spa` would dirty th
 every case that reads the bundle. The comparator is `spa.bundle_diff`, whose stale-bundle control
 runs green in the fast tier.
 
-**Written ahead of #634** (`writtenahead`, keyed in `WRITTEN_AHEAD_BLOCKERS` on the bundle's
-`index.html`). `npm ci` reads the registry or the local npm cache; on an air-gapped box with a cold
-cache it fails, and the failure says so rather than reading as a stale bundle.
+Written ahead of #634 and unmarked when the bundle landed (the entry is out of
+`WRITTEN_AHEAD_BLOCKERS`, the case re-checked green unmarked). `npm ci` reads the registry or the
+local npm cache; on an air-gapped box with a cold cache it fails, and the failure says so rather
+than reading as a stale bundle.
 """
 
 from __future__ import annotations
@@ -34,7 +35,6 @@ pytestmark = [pytest.mark.browser, pytest.mark.integration]
 REBUILD_TIMEOUT_S = int(os.environ.get("HARNESS_UI_REBUILD_TIMEOUT_S", "600"))
 
 
-@pytest.mark.writtenahead
 def test_tc_ui_01_c_tc_ui_c06_a_rebuild_from_committed_source_is_byte_identical(tmp_path):
     """`TC-UI-01 (c)` / `TC-UI-C06` (P0) — install the locked toolchain (`npm ci` against the
     committed lockfile) and build the committed source into a fresh directory; the result equals

@@ -258,10 +258,12 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # commit together.
     # #664 (FR-PIPE-19): the model-pin recording in `create_run` and the pin-reader in
     # `run_records` shifted the file's line numbers; the sites are the same statements
-    # as before, and the re-pin is line drift only.
+    # as before, and the re-pin is line drift only. `run_lifecycle.py` is unchanged on
+    # main, so #664's numbers hold; `enumeration.py` is #597's SQL-ready rewrite, whose
+    # sites are main's re-pin.
     "aeh.orch.run_lifecycle:99",
-    "aeh.orch.enumeration:204",
-    "aeh.orch.enumeration:213",
+    "aeh.orch.enumeration:102",
+    "aeh.orch.enumeration:111",
     "aeh.orch.run_lifecycle:260",
     "aeh.orch.run_lifecycle:255",
     "aeh.orch.run_lifecycle:249",
@@ -302,9 +304,15 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.orch.escalation:474",
     "aeh.orch.escalation:427",
     "aeh.orch.escalation:556",
-    "aeh.orch.composition:44",
-    "aeh.orch.costs:203",
-    "aeh.orch.costs:204",
+    # #597's re-pin: the readiness redesign's docstring growth above `mark_cell_phase`'s
+    # upsert moved the site 44 -> 49. `ready_cells_with_units` adds no execute site — its
+    # read goes through `handle.query`, which is not an execute method — so the site is the
+    # same statement, re-read from the walker rather than hand-shifted. The costs sites
+    # follow #667's edits on main (240/241).
+    "aeh.orch.composition:49",
+    "aeh.orch.costs:240",
+    "aeh.orch.costs:241",
+
     # `record_pause_reason` (#365): the one write that annotates an already-paused run
     # without flipping its state. `pause()` deliberately changes nothing on a paused run,
     # so a run recovery REFUSED to resume - a profile switch, FR-CONF-15 - would keep a
@@ -468,7 +476,7 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.pkg.criteria:56",
     "aeh.pkg.criteria:58",
     "aeh.pkg.criteria:60",
-    "aeh.pkg.rubric_methods:137",
+    "aeh.pkg.rubric_methods:147",
     "aeh.pkg.rubric_methods:92",
     "aeh.pkg.rubric_methods:111",
     "aeh.pkg.rubric_methods:118",
@@ -492,12 +500,12 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.pkg.policy_and_keys:50",
     "aeh.pkg.policy_and_keys:128",
     "aeh.pkg.policy_and_keys:126",
-    "aeh.pkg.policy_and_keys:172",
+    "aeh.pkg.policy_and_keys:180",
     "aeh.pkg.policy_and_keys:218",
-    "aeh.pkg.policy_and_keys:215",
-    "aeh.pkg.policy_and_keys:177",
+    "aeh.pkg.policy_and_keys:226",
+    "aeh.pkg.policy_and_keys:185",
     "aeh.pkg.setup_records:29",
-    "aeh.pkg.policy_and_keys:210",
+    "aeh.pkg.policy_and_keys:223",
     "aeh.pkg.exchange:143",
     "aeh.pkg.exchange:309",
     "aeh.pkg.exchange:315",
@@ -511,9 +519,9 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.pkg.setup_records:121",
     "aeh.pkg.setup_records:184",
     "aeh.pkg.setup_records:247",
-    "aeh.pkg.policy_and_keys:245",
+    "aeh.pkg.policy_and_keys:253",
     "aeh.pkg.setup_records:215",
-    "aeh.pkg.policy_and_keys:246",
+    "aeh.pkg.policy_and_keys:254",
     "aeh.pkg.setup_records:267",
     "aeh.pkg.setup_records:361",
     "aeh.pkg.setup_records:353",
@@ -581,8 +589,10 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # isolation check on the payload-less document fallback, again with #98's
     # score-claim ladder and pattern list landing above the write, again with the
     # reviewer's pattern-tightening disclosures expanding the comments above it;
-    # same statement, re-pinned from the walker each time.)
-    "aeh.synth.worker:269",
+    # again with #523's MC-only helpers landing in the resolution section above the
+    # write, again with #668's roster-identity read landing beside `_evidence` — same
+    # statement, re-pinned from the walker each time.)
+    "aeh.synth.worker:353",
     # The grade sites are #104's line numbers (the module's own write surface, every
     # one from GRADE_STATEMENTS or a raw fixture DDL string, keyword-parameterized):
     # `compute_all`'s five pass writes (demote/insert/settle/queue-row/queue-clear),
@@ -789,6 +799,13 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.calib.fixtures:295",
     "aeh.calib.fixtures:326",
     "aeh.calib.fixtures:336",
+    # #636's (FR-HELP-04): the Q&A log's one durable write — `record_exchange`'s
+    # `tx.execute` of the declared HELP_STATEMENTS["insert_qa_exchange"],
+    # keyword-parameterized, in the module's only write surface's synchronous
+    # transaction (CT-HELP-04: nothing else in M-HELP writes a stored byte).
+    # The read side goes through `handle.query` and is not a census site. Pinned
+    # from the walker.
+    "aeh.help.log:38",
 
 })
 
