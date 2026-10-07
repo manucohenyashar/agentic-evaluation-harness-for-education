@@ -686,8 +686,9 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # submission's declared consent class. (Re-pinned from the walker on any
     # line move.) (#134's re-pin: the conformance module's divergence-gate
     # machinery and the per-fixture ingest-ladder drive grew the module above
-    # the ephemeral store open.)
-    "aeh.conform.suite:347",
+    # the ephemeral store open.) (#618's re-pin: the TS-142 live arm's branch grew
+    # `_run_backend`'s opening above the ephemeral store open.)
+    "aeh.conform.suite:348",
     # The review site is #110's: the label store's one durable write, a single
     # `tx.execute` inside `_persist_label`'s transaction body, passing
     # `REVIEW_STATEMENTS["insert_label"]` — a declared statement with keyword

@@ -238,24 +238,6 @@ JUDGE_STATEMENTS: dict[str, Statement] = {
         "WHERE w.run_id = :run_id AND w.submission_id = :submission_id "
         "AND w.criterion_id = :criterion_id ORDER BY v.work_id"
     ),
-    # FR-CONFORM-18: one run's pre-screen rows with their band columns, for the live
-    # acceptance's per-criterion band agreement. `select_run_prescreens` deliberately omits
-    # these columns (M-STATS needs only the outcome mix); the acceptance needs the engine's
-    # band per cell next to the LLM panel's, so it reads its own statement rather than widening
-    # one consumer's SELECT for another's sake.
-    "select_run_prescreen_bands": Statement(
-        "SELECT work_id, submission_id, criterion_id, outcome, argmax_band, "
-        "band_probabilities FROM decision_prescreen WHERE run_id = :run_id ORDER BY work_id"
-    ),
-    # FR-CONFORM-18: one run's LLM-panel band ordinals, per cell, for the same comparison.
-    # `scoring_engine = 'llm'` excludes the decision engine's own verdict rows — the panel is
-    # the operand the engine's band is compared against.
-    "select_run_llm_band_ordinals": Statement(
-        "SELECT w.submission_id, w.criterion_id, v.band_ordinal FROM verdict v "
-        "JOIN work_unit w ON w.work_id = v.work_id "
-        "WHERE w.run_id = :run_id AND v.scoring_engine = 'llm' "
-        "AND v.band_ordinal IS NOT NULL ORDER BY v.work_id"
-    ),
     # FR-JUDGE-21: dispatch's strike path counts contract violations per (criterion, judge)
     # on the durable run_metrics row, accumulating across the run's units.
     "add_contract_violations": Statement(

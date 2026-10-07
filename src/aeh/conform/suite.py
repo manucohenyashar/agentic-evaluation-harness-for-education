@@ -528,6 +528,9 @@ def _run_backend(
     profile = str(backend_config["HARNESS_PROFILE"])
     substituted = bool(backend_config.get(_SUBSTITUTION_MARKER))
     live = profile in _live_backend_profiles()
+    # Computed inside the live branch, initialized here so the recorded tier carries None
+    # without the branch having to say so.
+    live_legs: Mapping[str, Any] | None = None
     if live:
         # The live tier dispatches the transcription stage through the backend's own
         # transport, with the backend's own transcriber ref — the dispatch field reports
@@ -552,7 +555,6 @@ def _run_backend(
         memoize = self_suite._provider is None
     stages_executed: dict[str, tuple[str, ...]] = {}
     ingest_outcomes: dict[str, IngestOutcome] = {}
-    live_legs: Mapping[str, Any] | None = None
     for submission in fixture_set.submissions:
         if submission.pdf_threat_kind is not None:
             # The real ladder, driven: quarantine at V0 with no model calls is a fact about
@@ -591,12 +593,12 @@ def _live_arm_legs(
     presence is not the claim, the legs' contents are.
     """
     from aeh.conf import resolve_run_config
-    from aeh.conf.decision_engine import DECISION_PROVIDERS_BY_PROFILE
+    from aeh.conf import HOSTED_JEV_PROFILES
 
     from .live_acceptance import live_backend_legs
 
     profile = str(backend_config["HARNESS_PROFILE"])
-    if "openrouter-jev" not in DECISION_PROVIDERS_BY_PROFILE.get(profile, ()):
+    if profile not in HOSTED_JEV_PROFILES:
         return None
     run_config = resolve_run_config(dict(backend_config), cohort)
     if run_config.decision_engine is None:

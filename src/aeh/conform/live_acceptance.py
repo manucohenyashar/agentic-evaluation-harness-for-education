@@ -34,6 +34,9 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Mapping
 
+from aeh.prov import OPENROUTER_API_KEY_ENV
+from aeh.store import Statement
+
 from .errors import LiveAcceptanceRefused
 from .reports import LiveAcceptanceReport
 
@@ -60,6 +63,24 @@ LEG_JUDGE = "judge"
 LEG_SYNTHESIS = "synthesis"
 LEG_DECISION = "decision"
 LIVE_LEGS: tuple[str, ...] = (LEG_VISION, LEG_JUDGE, LEG_SYNTHESIS, LEG_DECISION)
+
+# FR-CONFORM-18: the run's pre-screen rows with their band columns, and its LLM-panel band
+# ordinals per cell, for the acceptance's per-criterion band agreement. These read THIS
+# module's own comparison, so they are declared here rather than in `JUDGE_STATEMENTS` —
+# `select_run_prescreens` deliberately omits the band columns (M-STATS needs only the outcome
+# mix), and a judge-module verdict read is CT-JUDGE-C18's line to hold. `scoring_engine = 'llm'`
+# excludes the decision engine's own verdict rows — the panel is the operand the engine's band
+# is compared against.
+SELECT_RUN_PRESCREEN_BANDS = Statement(
+    "SELECT work_id, submission_id, criterion_id, outcome, argmax_band, "
+    "band_probabilities FROM decision_prescreen WHERE run_id = :run_id ORDER BY work_id"
+)
+SELECT_RUN_LLM_BAND_ORDINALS = Statement(
+    "SELECT w.submission_id, w.criterion_id, v.band_ordinal FROM verdict v "
+    "JOIN work_unit w ON w.work_id = v.work_id "
+    "WHERE w.run_id = :run_id AND v.scoring_engine = 'llm' "
+    "AND v.band_ordinal IS NOT NULL ORDER BY v.work_id"
+)
 
 LIVE_CALLS = "live_calls"
 LIVE_TOKENS_IN = "live_tokens_in"
@@ -169,7 +190,7 @@ class _CountingDecisionProvider:
 # --- the run-start refusal gates (FR-CONFORM-17's preconditions) ----------------------------------
 
 _OPENROUTER_PROFILES = frozenset({"dev-ci", "cloud-hosted"})
-_KEY_ENV = "OPENROUTER_API_KEY"
+_KEY_ENV = OPENROUTER_API_KEY_ENV
 _FIXTURE_DIR_ENV = "HARNESS_FIXTURE_DIR"
 
 
@@ -210,13 +231,13 @@ def _refusal_gates(run_config: Any) -> None:
     profile = str(getattr(run_config, "backend_profile", "") or "")
     if profile not in _OPENROUTER_PROFILES:
         raise LiveAcceptanceRefused(
-            f"the live acceptance runs on an OpenRouter profile ({sorted(_OPENROUTER_PROFILES)}); "
+            f"the live acceptance runs on a remote hosted profile ({sorted(_OPENROUTER_PROFILES)}); "
             f"the resolved profile is {profile!r}."
         )
     if getattr(run_config, "decision_engine", None) is None:
         raise LiveAcceptanceRefused(
             f"profile {profile!r} resolved the decision engine off. The acceptance must "
-            f"exercise the Jev leg (FR-CONFORM-17): FR-CONF-29's default on the OpenRouter "
+            f"exercise the Jev leg (FR-CONFORM-17): FR-CONF-29's default on the hosted "
             f"profiles is jev, and a pinned off is the configuration the acceptance exists to "
             f"retire (design delta §3.3)."
         )
@@ -369,18 +390,16 @@ def _band_agreement(store: Any, cohort_id: str, run_id: str) -> dict[str, Mappin
     An even panel's median can fall between two ordinals; a distance within one band still
     counts as adjacent, which is what `decision_band_adjacent_agreement` claims.
     """
-    from aeh.judge.schema import JUDGE_STATEMENTS
-
     handle = store.cohort(cohort_id)
     engine_cells: dict[tuple[str, str], int | None] = {}
-    for row in handle.query(JUDGE_STATEMENTS["select_run_prescreen_bands"], run_id=run_id):
+    for row in handle.query(SELECT_RUN_PRESCREEN_BANDS, run_id=run_id):
         probabilities = json.loads(row["band_probabilities"]) if row["band_probabilities"] else ()
         top = max(probabilities) if probabilities else None
         banded = top is not None and probabilities.count(top) == 1
         engine_cells[(str(row["submission_id"]), str(row["criterion_id"]))] = (
             probabilities.index(top) if banded else None)
     llm_ordinals: dict[tuple[str, str], list[int]] = {}
-    for row in handle.query(JUDGE_STATEMENTS["select_run_llm_band_ordinals"], run_id=run_id):
+    for row in handle.query(SELECT_RUN_LLM_BAND_ORDINALS, run_id=run_id):
         llm_ordinals.setdefault(
             (str(row["submission_id"]), str(row["criterion_id"])), []).append(
             int(row["band_ordinal"]))
@@ -521,6 +540,7 @@ def live_backend_legs(run_config: Any, cohort: Any, data_dir: Path) -> dict[str,
     this drive exists so the report can show the decision leg really ran on the profile's
     default engine.
     """
+    from aeh.judge.metrics import decision_engine_metrics
     from aeh.store import open_store
 
     _refusal_gates(run_config)
@@ -528,9 +548,15 @@ def live_backend_legs(run_config: Any, cohort: Any, data_dir: Path) -> dict[str,
     completion, decision, tallies = _counting_providers(run_config)
     store = open_store(Path(data_dir))
     try:
-        _drive_live_pipeline(
+        run_id = _drive_live_pipeline(
             store, run_config, cohort, provider=completion, decision_provider=decision)
-        return {leg: tallies[leg].figures() for leg in LIVE_LEGS}
+        legs = {leg: tallies[leg].figures() for leg in LIVE_LEGS}
+        # CT-CONFORM-17: the decision leg carries the two rate keys too — the differential's
+        # key set is the clause's, on this arm the same as on `run_live_acceptance`'s.
+        metrics = decision_engine_metrics(store.cohort(cohort.cohort_id), run_id)
+        legs[LEG_DECISION]["decision_accepted_rate"] = metrics.decision_accepted_rate
+        legs[LEG_DECISION]["decision_fallback_rate"] = metrics.decision_fallback_rate
+        return legs
     finally:
         store.close()
 
