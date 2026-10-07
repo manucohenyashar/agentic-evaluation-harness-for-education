@@ -257,8 +257,8 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # written through the caller's transaction so the phase and the work it stands for
     # commit together.
     "aeh.orch.run_lifecycle:88",
-    "aeh.orch.enumeration:191",
-    "aeh.orch.enumeration:200",
+    "aeh.orch.enumeration:204",
+    "aeh.orch.enumeration:213",
     "aeh.orch.run_lifecycle:244",
     "aeh.orch.run_lifecycle:238",
     "aeh.orch.run_lifecycle:249",
@@ -317,9 +317,8 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # roster through ORCH_STATEMENTS, and ingest marks interrupted submissions
     # not_reached through INGEST_STATEMENTS - declared statements, keyword parameters,
     # in the caller's transaction (FR-STORE-08). The rest of this re-pin is line drift.
-    "aeh.orch.cohorts:140",
-    "aeh.orch.cohorts:143",
-    "aeh.orch.cohorts:182",
+    "aeh.orch.cohorts:131",
+    "aeh.orch.cohorts:146",
     "aeh.ingest.sources:64",
     "aeh.orch.escalation:157",
     "aeh.orch.escalation:170",
@@ -400,7 +399,7 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.ingest.revision:249",
     "aeh.ingest.revision:272",
     "aeh.ingest.revision:299",
-    "aeh.ingest.submissions:50",
+    "aeh.ingest.submissions:51",
     # #355's per-kind split (FR-INGEST-36): `resolve_selection_region` writes a matched
     # option's selection and state together, and `update_region_text` (below) replaces the
     # content of a region that resolved to no declared option — both declared statements,
@@ -410,11 +409,11 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.ingest.clusters:113",
     "aeh.ingest.clusters:131",
     "aeh.ingest.clusters:136",
-    "aeh.ingest.submissions:214",
-    "aeh.ingest.submissions:450",
-    "aeh.ingest.submissions:462",
-    "aeh.ingest.assessment_match:380",
-    "aeh.ingest.assessment_match:403",
+    "aeh.ingest.submissions:215",
+    "aeh.ingest.submissions:440",
+    "aeh.ingest.submissions:452",
+    "aeh.ingest.assessment_match:387",
+    "aeh.ingest.assessment_match:410",
     "aeh.ingest.uploads:19",
     # The pkg sites are #230's line numbers (the verbatim revision copy and the
     # copied-counts statement shifted the module; the tripwire diff being the
@@ -580,7 +579,7 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # score-claim ladder and pattern list landing above the write, again with the
     # reviewer's pattern-tightening disclosures expanding the comments above it;
     # same statement, re-pinned from the walker each time.)
-    "aeh.synth.worker:265",
+    "aeh.synth.worker:269",
     # The grade sites are #104's line numbers (the module's own write surface, every
     # one from GRADE_STATEMENTS or a raw fixture DDL string, keyword-parameterized):
     # `compute_all`'s five pass writes (demote/insert/settle/queue-row/queue-clear),
@@ -644,9 +643,10 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.grade.rollups:91",
     "aeh.grade.rollups:75",
     "aeh.grade.rollups:86",
-    "aeh.grade.exports:69",
-    "aeh.grade.exports:63",
-    "aeh.grade.exports:74",
+    "aeh.grade.exports:83",
+    "aeh.grade.exports:73",
+    "aeh.grade.exports:79",  # #620: the reference roster's names (inline SQL, as its neighbours)
+    "aeh.grade.exports:88",
     "aeh.grade.signals:162",
     # The integ sites, **twelve until `#432` and four after it**. The module's write SET is
     # unchanged (`CT-INTEG-04` pins it); what changed is that one `verify` now issues its

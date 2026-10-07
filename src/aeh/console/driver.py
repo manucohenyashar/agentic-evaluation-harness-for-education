@@ -276,8 +276,8 @@ def _driver_cfg() -> dict[str, Any]:
     return {
         "HARNESS_PROFILE": "edge-local",
         "HARNESS_HARDWARE_PROFILE": "unified-large",
-        # FR-CONF-18: required with no default. The driver is deterministic end to end and
-        # never dispatches a judgment, so there is no decision engine to run.
+        # Explicit, though edge-local already defaults to off (FR-CONF-29): the driver is
+        # deterministic end to end and never dispatches a judgment, so there is no engine to run.
         "HARNESS_DECISION_ENGINE": "off",
         "panel": (
             ModelRef(

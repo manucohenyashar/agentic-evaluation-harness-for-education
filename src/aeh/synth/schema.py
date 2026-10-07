@@ -83,8 +83,9 @@ SYNTH_STATEMENTS: dict[str, Statement] = {
         "WHERE work_id = :work_id"
     ),
     "select_synth_document": Statement(
-        "SELECT document_id, submission_id, markdown FROM document "
-        "WHERE document_id = :document_id"
+        "SELECT d.document_id, d.submission_id, d.markdown, s.student_ref "
+        "FROM document d LEFT JOIN submission s ON s.submission_id = d.submission_id "
+        "WHERE d.document_id = :document_id"
     ),
     "select_narratives": Statement(
         "SELECT narrative_id, run_id, submission_id, level, question_id, text, "

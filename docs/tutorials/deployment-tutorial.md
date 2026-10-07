@@ -175,7 +175,9 @@ You pass one file with `--config`. It can hold a section for each profile, so on
 |---|---|---|
 | `HARNESS_PROFILE` | Which mode: `edge-local`, `cloud-hosted` or `dev-ci`. No default. | All |
 | `prompt_template_v` | The version of the wording given to the judges. Use `judge-prompt/2`, as the shipped files do. | All |
-| `HARNESS_DECISION_ENGINE` | `off` or `jev`. **No default.** `off` means the page reader and the judges do all the grading. Start with `off`. | All |
+| `HARNESS_DECISION_ENGINE` | `off` or `jev`. Default: `jev` on `cloud-hosted` and `dev-ci`, `off` on `edge-local`. `off` means the page reader and the judges do all the grading. | All |
+| `HARNESS_JEV_CONFIDENCE_THRESHOLD` | Jev's confidence bar, 0.50 up to (not including) 1.00. Default 0.80 (0.85 for `openjev-small`). Also settable as `decision_confidence_threshold` in the profile's section of the config file; the environment wins. | All, with Jev on |
+| `HARNESS_QA_MODEL` | The help assistant's model: a pinned OpenRouter build (`vendor/model@2026-09-01`). Default: the first judge. Ignored on `edge-local`, where the assistant is always the first judge. | `cloud-hosted`, `dev-ci` |
 | `[profiles.<name>.transcriber]` | The model that reads the page pictures | All |
 | `[[profiles.<name>.panel]]` | The judges. **You must list 1, 3 or 5** (an even number cannot break a tie). | All |
 | `HARNESS_HARDWARE_PROFILE` | `unified-large`, `unified-small` or `discrete-gpu`. Sets how many model calls run at once. | Local only |
@@ -502,21 +504,23 @@ If a teacher at another desk must see the console, they connect to *your* comput
 Every class you grade is a **cohort** with two things fixed when it is created:
 
 * its **consent class**: `synthetic` (made-up practice papers), `consented` (the students or guardians agreed), or `real` (everything else). In OpenRouter mode only `synthetic` and `consented` classes may be graded (section 7.4). There is no default, and it can never be changed later.
-* its **student list** (the roster): the IDs students write on their papers. The intake check V3 compares what the page reader transcribes after `Student:` with this list **exactly**: no change of case, punctuation or hyphen is forgiven, and a paper that does not match waits in quarantine for the operator. So choose short IDs that are easy to write and read (such as `S9-001`), not names: an ID may not contain spaces.
+* its **student list** (the roster): each student's **full name**, as they write it on their papers, and optionally a student ID. The intake check V3 reads the name the page reader transcribes after `Student:` and matches it to the list forgiving case, extra spaces, accents (`Chloé` = `Chloe`) and order (`Volkov Dmitri` = `Dmitri Volkov`); nothing else is guessed. A name that matches no one, or matches two students equally, waits in quarantine for the operator with the possible students listed. A student ID is never required and never enough on its own. If two students share a name, their papers wait in quarantine with both listed, for the operator to settle.
 
-Write the IDs in a file, in one of two shapes:
+Write the list in a file, in one of two shapes:
 
-* one ID per line (blank lines and lines starting with `#` are skipped), or
-* a CSV whose first row names a `student_ref` column. Other columns, such as names, are ignored, so a sheet exported from Excel works once that header is there.
+* one full name per line (blank lines and lines starting with `#` are skipped), or
+* a CSV whose first row names a `full_name` column, and optionally a `student_ref` column of IDs. Other columns are ignored, so a sheet exported from Excel works once that header is there. A student with no ID gets an internal reference made up for them.
 
 ```
-student_ref,name
-S9-001,Ann
-S9-002,Bo
-S9-003,Cy
+full_name,student_ref
+Ann Lee,S9-001
+Bo Chen,S9-002
+Cy Diaz,
 ```
 
-The reader never guesses. These are refused, naming the line, and nothing is created: a file with several columns but no `student_ref` header (otherwise the names could become the list), a first line that looks like a header such as `id` or `name` (it would become a student), and a row with an empty `student_ref` cell (otherwise that student would silently drop out).
+The reader never guesses. These are refused, naming the line, and nothing is created: a CSV with a `student_ref` column but no `full_name` column (a list of IDs alone), a file with several columns but no `full_name` header, a first line that looks like a header such as `id` or `name` (it would become a student), and a row with an empty `full_name` cell (every student needs a name).
+
+The class list stays in the class's own file; the identity check refers to students by their reference, and removes the written name before a paper's text is sent to a model to confirm which test it is. The marks export adds a `full_name` column, read from the class list when the export is made.
 
 Then (checked):
 
@@ -533,7 +537,7 @@ python -m aeh cohort create --data-dir ~/aeh-data --cohort class-9a --consent sy
 }
 ```
 
-* `aeh cohort add-students --data-dir ... --cohort class-9a --roster more.csv` adds late students. An ID already on the list is refused, by name, and nothing is added.
+* `aeh cohort add-students --data-dir ... --cohort class-9a --roster more.csv` adds late students, in the same file shapes. An ID already on the list is refused, by name, and nothing is added.
 * `aeh cohort show --data-dir ... --cohort class-9a` prints the class as above.
 * The class ID becomes a file name, so it may hold only **lower-case** letters, digits, `.`, `_` and `-` (on Windows and macOS `Class-9A` and `class-9a` would be the same file), and may not be a Windows device name such as `con` or `nul`.
 * Running `create` again for the same class is refused (*"already exists; it is never overwritten"*), and so is a repeated ID, or one holding a space or an invisible character. Every refusal writes nothing, and a mistyped ID or a bad file is refused before the data folder is touched.
@@ -727,7 +731,9 @@ Every message is the system's real wording (checked unless said).
 | `HARNESS_PROFILE must be one of (...), got None` | No profile chosen | Set `HARNESS_PROFILE`, or put it at the top of the file |
 | `the config file has no section for 'X'` | The file has no section for that profile | Add the section, or choose another profile |
 | `HARNESS_HARDWARE_PROFILE is required when HARNESS_PROFILE is 'edge-local'` | Local mode needs the hardware profile | Add it (6.2) |
-| `HARNESS_DECISION_ENGINE is required: 'jev' or 'off'` | No default | Add `HARNESS_DECISION_ENGINE = "off"` |
+| `HARNESS_JEV_BUILD is required when HARNESS_DECISION_ENGINE is 'jev'` | Jev is on (the default on `cloud-hosted` and `dev-ci`) but no Jev build is named | Add `HARNESS_JEV_BUILD`, or set `HARNESS_DECISION_ENGINE = "off"` |
+| `decision_confidence_threshold must lie in [0.50, 1.00), got ...` (or `HARNESS_JEV_CONFIDENCE_THRESHOLD`) | The Jev threshold is out of range; it is refused, never rounded | Use a value from 0.50 up to (not including) 1.00 |
+| `HARNESS_QA_MODEL is not a resolved build identity` | The Q&A model has a moving tag (`:free`, `@latest`) or no `@` pin | Pin it, e.g. `vendor/model@2026-09-01` |
 | `panel[0] is a provider-pinned build, but ... 'edge-local' requires a edge-weights build` | An OpenRouter-style name in local mode | Use a file path ending `.gguf` (or another weights suffix), plus fingerprint and `quantization` |
 | `panel[0] is not a resolved build identity` | Missing `@...` pin or fingerprint, a moving tag, or no `quantization` (local) | Pin the model (6.3, 7.3) |
 | `panel must hold [1, 3, 5] judges, got 2` | Even panel | Use 1, 3 or 5 judges |

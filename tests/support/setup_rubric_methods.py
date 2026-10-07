@@ -38,8 +38,10 @@ Assumed `SetupService` members (#624):
   the teacher describes as needing levels. Returns a draft carrying `aspects` (each with
   `criterion_id`, `name`, `points`, `bands`) and `promotions` (each with `aspect`, the aspect's
   name, and `score_method == "bands"`, the proposed standalone method).
-* `edit_aspect_descriptor(criterion_id, aspect_criterion_id, *, ordinal, descriptor)` — the
-  teacher's edit of one generated descriptor, before confirmation.
+* `set_aspect_descriptor(criterion_id, aspect_criterion_id, *, ordinal, descriptor)` — the
+  teacher's edit of one generated descriptor, before confirmation. (Assumed here as
+  `edit_aspect_descriptor`; #624 renamed it because `TC-SETUP-C16`'s reflection refuses an
+  "edit" in any `SetupService` member name.)
 * `confirm_evidence_sum(criterion_id, *, confirmed_by)` — the teacher's confirmation.
 
 The derivation reply the scripted setup model returns is `{"criterion_id", "bands": [...]}` in
@@ -73,7 +75,9 @@ DERIVE = "derive_general_bands"
 CARD = "derivation_card"
 CONFIRM_GENERAL = "confirm_general_derivation"
 BUILD_SUM = "build_evidence_sum"
-EDIT_ASPECT = "edit_aspect_descriptor"
+#: Landed by #624 as `set_aspect_descriptor`, not the assumed `edit_aspect_descriptor`:
+#: TC-SETUP-C16 refuses any `SetupService` member whose name carries "edit" (CT-SETUP-16).
+EDIT_ASPECT = "set_aspect_descriptor"
 CONFIRM_SUM = "confirm_evidence_sum"
 
 TEACHER = "teacher-1"

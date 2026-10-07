@@ -206,13 +206,17 @@ GRADE_STATEMENTS: dict[str, Statement] = {
     ),
     # The exports' read: the named revision's grade rows joined to their
     # submissions for the student ref the school-facing mapping needs (the
-    # pseudonymous identity column — Tier D's rule reaches every exported row).
+    # pseudonymous identity column — Tier D's rule reaches every exported row),
+    # and the student's name resolved from the Tier C roster at read time (#620,
+    # ADR-38: names are never copied anywhere; NULL for a row created before names).
     "select_run_grades_with_students": Statement(
         "SELECT g.submission_id, g.revision, g.state, g.grade, g.total, "
         "g.criteria_total, g.criteria_auto, g.criteria_reviewed, "
         "g.criteria_provisional, g.criteria_missing, g.missing_criteria, "
-        "s.student_ref FROM submission_grade g "
+        "s.student_ref, r.full_name FROM submission_grade g "
         "JOIN submission s ON g.submission_id = s.submission_id "
+        "LEFT JOIN roster r ON r.cohort_id = s.cohort_id "
+        "AND r.student_ref = s.student_ref "
         "WHERE g.run_id = :run_id AND g.revision = :revision "
         "ORDER BY g.submission_id"
     ),

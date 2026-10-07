@@ -80,7 +80,6 @@ _ROSTER_NAME = re.compile(r"\bfull_name\b")
 # --- 1. the clause suite -----------------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("cell, written, student_id, expected", CLAUSE_CELLS,
                          ids=[c[0] for c in CLAUSE_CELLS])
 def test_tc_ingest_c23_identity_outputs_a_ref_and_names_stay_in_tier_c(

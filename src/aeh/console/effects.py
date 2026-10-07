@@ -545,8 +545,8 @@ class DomainEffectsMixin:
         """Why `matched` may not release this paper, or None. A paper whose student V3 did not
         match carries `student_ref = 'unknown'`: released, it would be scored and graded under
         nobody. The console records no student (its write surface is the two status columns,
-        FR-CONSOLE-32), so such a paper is closed, or rescanned with the ID written on it and
-        read in again with `aeh ingest`."""
+        FR-CONSOLE-32), so such a paper is closed, or rescanned with the student's name written
+        clearly and read in again with `aeh ingest`."""
         for key in self._cohort_keys():
             try:
                 rows = list(self._store.cohort(key).query(
@@ -566,8 +566,8 @@ class DomainEffectsMixin:
                     f"submission {submission_id} cannot be released: its student was not "
                     f"matched to the class list (identity check {rows[0]['v3_identity']!r}), "
                     "so it would be graded under nobody. Close it as 'unresolvable', or rescan "
-                    "it with the student's ID written at the top and read it in again with "
-                    "'aeh ingest'. Nothing was written."
+                    "it with the student's full name written on the Student line and read it "
+                    "in again with 'aeh ingest'. Nothing was written."
                 )
         return None
 

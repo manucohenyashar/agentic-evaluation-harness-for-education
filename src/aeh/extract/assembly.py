@@ -6,6 +6,7 @@ import hashlib
 from typing import Any, Sequence
 
 from aeh.ingest import INGEST_STATEMENTS
+from aeh.ingest.identity import redact_identity_head
 from aeh.orch import _cohort_keys_on_filesystem
 from aeh.pkg import PackageCatalog
 
@@ -211,7 +212,11 @@ def assemble_request(
             _dependency_entry(entry)
             for entry in (dependency_evidence or ())
         ),
+        # The paper's `Student:` head carries the child's written name; the request
+        # carries the resolved ref in its place (NFR-PROV-04, CT-INGEST-23, #620). Spans
+        # are parsed against the stored document, never this copy.
         submission=SubmissionRef(
-            submission_id=submission_id, transcript=transcript
+            submission_id=submission_id,
+            transcript=redact_identity_head(transcript, getattr(unit, "student_ref", None)),
         ),
     )

@@ -5,10 +5,19 @@
 # Copy this file, replace every placeholder digest and slug with the build you actually serve,
 # and pass it with `python -m aeh --config <file> ...`.
 #
-# HARNESS_DECISION_ENGINE is required with no default (FR-CONF-18). Every section below sets
-# "jev": grading is powered by the Jev decision engine, and a unit falls back to the LLM panel
-# judge when Jev's confidence is not above the threshold (0.80 by default; 0.85 for openjev-small).
-# Set it to "off" to grade with the LLM panel alone.
+# HARNESS_DECISION_ENGINE defaults by profile (FR-CONF-29): "jev" on cloud-hosted and dev-ci,
+# "off" on edge-local. Every section below sets "jev" explicitly: grading is powered by the Jev
+# decision engine, and a unit falls back to the LLM panel judge when Jev's confidence is not above
+# the threshold. Set it to "off" to grade with the LLM panel alone.
+#
+# The threshold (FR-CONF-32) is 0.80 by default (0.85 for openjev-small), domain [0.50, 1.00).
+# Set it per profile with `decision_confidence_threshold = 0.85` in a section below; the
+# environment's HARNESS_JEV_CONFIDENCE_THRESHOLD overrides the file. The banner shows the value in
+# force as `DECISION_GATE: jev > 0.80`.
+#
+# The Q&A assistant's model (FR-CONF-30): on cloud-hosted and dev-ci, HARNESS_QA_MODEL (a pinned
+# OpenRouter build such as "vendor/model@2026-09-01"; no floating tag), default the panel's first
+# judge. On edge-local it is always the panel's first judge; there is no knob.
 
 prompt_template_v = "judge-prompt/2"
 
@@ -24,6 +33,8 @@ prompt_template_v = "judge-prompt/2"
 # where 4B is too slow: name it here. It is never swapped in at runtime. Its default threshold is 0.85.
 [profiles.edge-local]
 HARNESS_HARDWARE_PROFILE = "unified-large"
+# Residency warning (FR-CONF-28): edge-local defaults to "off". This line turns Jev on, which loads
+# a second model beside the judge; confirm this hardware profile can hold both, or remove the line.
 HARNESS_DECISION_ENGINE = "jev"
 HARNESS_DECISION_PROVIDER = "openjev"
 HARNESS_JEV_BUILD = "/models/openjev-FP8/model.safetensors@sha256:0000000000000000000000000000000000000000000000000000000000000000"
