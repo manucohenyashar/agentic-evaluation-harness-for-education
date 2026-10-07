@@ -16,6 +16,9 @@ from .keys_and_policy import KeysAndPolicyMixin
 from .decomposability import DecomposabilityMixin
 from .dependencies import DependencyStepMixin
 from .progress import ProgressMixin
+from .method_drafts import MethodDraftsMixin
+from .general_derivation import GeneralDerivationMixin
+from .evidence_sum import EvidenceSumMixin
 
 
 def setup_service_for_store(
@@ -39,7 +42,9 @@ def setup_service_for_store(
     return SetupService(catalog, ingestor, provider, model_ref)
 
 
-class SetupService(InventoryStepMixin, ReadbackStepMixin, KeysAndPolicyMixin, DecomposabilityMixin, DependencyStepMixin, ProgressMixin):
+class SetupService(InventoryStepMixin, ReadbackStepMixin, KeysAndPolicyMixin,
+                   DecomposabilityMixin, DependencyStepMixin, ProgressMixin,
+                   MethodDraftsMixin, GeneralDerivationMixin, EvidenceSumMixin):
     """Runs setup (Stage A) for one package version, end to end, from code (CT-SETUP-11).
 
     More detail: `docs/code-notes/setup.md`, section `service.py: SetupService`.
@@ -176,6 +181,10 @@ class SetupService(InventoryStepMixin, ReadbackStepMixin, KeysAndPolicyMixin, De
                 f"{', '.join(unkeyed)} — blocking gate 2 of 2 (§4.2.1): "
                 "set_answer_keys first."
             )
+        # The rubric-method read-backs (`FR-SETUP-18/-19`, `CT-SETUP-17`): a `general`
+        # derivation or an evidence checklist still awaiting the teacher holds publish,
+        # named per criterion.
+        self._refuse_pending_methods(v)
         # The structural check beside the two blocking gates (`FR-SETUP-09`, #232): a
         # JUDGED criterion — kind `open`, the kind the judged set is (`aeh.pkg`,
         # `PackageDraft`: "criteria names the judged criteria as bare ids (kind
@@ -187,9 +196,12 @@ class SetupService(InventoryStepMixin, ReadbackStepMixin, KeysAndPolicyMixin, De
         # NOT judged (kind `mcq`, #53's staged deterministic criteria) is keyed, not
         # judged, and does not require one: the gate reads judged-ness, not the whole
         # criterion set (`TC-SETUP-12`). Every offender is named, not just the first.
+        # An `evidence_sum` composite is a grouping record that is never judged
+        # (FR-JUDGE-38) — its aspects carry the declaration — so it needs none.
         untyped = [
             row["criterion_id"] for row in self._catalog.criteria(v)
             if row["kind"] == "open"
+            and row.get("score_method") != "evidence_sum"
             and not str(row.get("evidence_type") or "").strip()
         ]
         if untyped:

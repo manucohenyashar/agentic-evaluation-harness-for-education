@@ -274,6 +274,54 @@ def _configured_readback_attempts() -> int:
     return value
 
 
+#: The version-pinned `general` derivation prompt (`FR-SETUP-18`): the teacher's prose goes
+#: to the setup model, which proposes a band set the teacher then confirms.
+SETUP_DERIVATION_TEMPLATE_V = "setup-derivation-v1"
+
+
+#: The derivation's attempt budget (`FR-SETUP-18`, `RISK-112`): a derivation reply that
+#: fails to parse, breaks the band rules, or carries a numeral or magnitude phrase in a
+#: band label or descriptor is re-requested up to this many times, then refused with a
+#: `SetupError` — never staged. Env-gated, read at call time.
+DERIVATION_ATTEMPTS_ENV = "HARNESS_SETUP_DERIVATION_ATTEMPTS"
+
+
+DERIVATION_ATTEMPTS_DEFAULT = 3
+
+
+def _configured_derivation_attempts() -> int:
+    """The derivation attempt budget, read from its knob on each call, never at import."""
+    raw = os.environ.get(DERIVATION_ATTEMPTS_ENV)
+    if not raw:
+        return DERIVATION_ATTEMPTS_DEFAULT
+    try:
+        value = int(raw)
+    except ValueError as error:
+        raise SetupError(
+            f"{DERIVATION_ATTEMPTS_ENV}={raw!r} is not an integer."
+        ) from error
+    if value < 1:
+        raise SetupError(
+            f"{DERIVATION_ATTEMPTS_ENV}={value} is below 1: at least one derivation "
+            "attempt is required."
+        )
+    return value
+
+
+#: The rubric methods offered per criterion, in teacher language (`FR-SETUP-18`), in the
+#: order the console lists them. The stored value is the first element (`FR-PKG-24`'s
+#: closed set); the teacher reads the second.
+RUBRIC_METHOD_CHOICES: tuple[tuple[str, str], ...] = (
+    ("bands", "Describe what each score band looks like"),
+    ("evidence_sum", "An evidence checklist: name the aspects and what each is worth"),
+    ("general", "Describe in your own words how you score it"),
+)
+
+
+#: The method a criterion takes when the teacher chooses none (`FR-SETUP-18`).
+DEFAULT_RUBRIC_METHOD = "bands"
+
+
 def _now() -> str:
     """The confirmation timestamp in UTC ISO format, matching the store's own UTC timestamps so one
     column sorts cleanly."""

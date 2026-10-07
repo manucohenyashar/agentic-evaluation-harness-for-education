@@ -17,7 +17,7 @@ import pytest
 
 from tests.support import setup_rubric_methods as rm
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 
 # --- TC-SETUP-24 (a): the derivation output passes the numeral scan ----------------------------

@@ -1429,23 +1429,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/contract/grade/test_ct_grade_c22_method_composition.py::test_tc_grade_c22_the_method_is_never_an_input_to_confidence_routing_or_escalation",
         ),
     ),
-    # --- TS-145 (#623), M-SETUP rubric-method flows and the general derivation gate --------
-    #
-    # #624 builds them; the design names no Python surface, so the key is on all six members
-    # INVENTED in `tests/support/setup_rubric_methods.py` (the one file naming the
-    # assumed surface). If #624 lands other names this key never fires: re-point that file
-    # and this key together.
-    "#624 TS-145 general derivation read-back and evidence-sum builder (TC-SETUP-24/25, C17)": (
-        "symbols",
-        "aeh.setup:SetupService.derive_general_bands,aeh.setup:SetupService.derivation_card,"
-        "aeh.setup:SetupService.confirm_general_derivation,"
-        "aeh.setup:SetupService.build_evidence_sum,aeh.setup:SetupService.edit_aspect_descriptor,"
-        "aeh.setup:SetupService.confirm_evidence_sum",
-        (
-            "tests/integration/setup/test_tc_setup_24_25_rubric_methods.py",
-            "tests/contract/setup/test_ct_setup_c17_general_derivation_gate.py",
-        ),
-    ),
     # --- #639, the SPA cases (TC-UI-01..07, TC-UI-C01..C06, PERF-19, TC-CONSOLE-40/41 re-pointed) --
     #
     # The layout is invented in `tests/support/spa.py` (the design declares no M-UI interface).

@@ -293,3 +293,83 @@ class SetupProgress:
             f"setup incomplete — {self.remaining_steps} step(s) remain for "
             f"{self.package_version_id!r}"
         )
+
+
+# --- rubric methods (FR-SETUP-18/-19, #624) -------------------------------------------------
+
+
+@dataclass(frozen=True)
+class RubricMethodChoice:
+    """One rubric method as the console offers it: the stored value (`FR-PKG-24`'s closed set)
+    and the teacher-language label (`FR-SETUP-18`). `default` marks the method a criterion
+    takes when the teacher chooses none."""
+
+    score_method: str
+    label: str
+    default: bool
+
+
+@dataclass(frozen=True)
+class DerivationCard:
+    """The `general` derivation read-back card (`FR-SETUP-18`, `CT-SETUP-17`): the teacher's
+    description shown back beside the band set the system derived from it. Blocking — nothing
+    publishes while a card reads `confirmed=False`.
+
+    `bands` is what will be (or, once confirmed, was) published: the derived set, or the
+    teacher's edit of it. `derived_bands` is always the model's own derivation, kept so an
+    edited card still shows what the system proposed."""
+
+    criterion_id: str
+    question_id: str
+    description: str
+    bands: tuple[ProposedBand, ...]
+    derived_bands: tuple[ProposedBand, ...]
+    confirmed: bool
+    confirmed_by: str | None
+    attempts: int
+    template_version: str
+    model_ref: str
+
+
+@dataclass(frozen=True)
+class AspectDraft:
+    """One generated aspect of an `evidence_sum` criterion (`FR-SETUP-19`): a binary
+    (absent / present) criterion worth `points`, its descriptors derived from the aspect's
+    name and editable before confirmation."""
+
+    criterion_id: str
+    name: str
+    points: float
+    bands: tuple[ProposedBand, ...]
+
+
+@dataclass(frozen=True)
+class AspectPromotion:
+    """An aspect the teacher described with more than two levels: the decomposability test
+    in reverse fails, so setup proposes it as a standalone criterion of `score_method`
+    (`bands`) instead of an aspect (`FR-SETUP-19`)."""
+
+    aspect: str
+    points: float
+    levels: tuple[str, ...]
+    score_method: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class EvidenceSumDraft:
+    """The evidence-sum builder's draft (`FR-SETUP-19`): the composite's generated aspects,
+    the aspects proposed for promotion, and whether the teacher has confirmed it. Nothing of
+    it is in the package until confirmation."""
+
+    criterion_id: str
+    question_id: str
+    aspects: tuple[AspectDraft, ...]
+    promotions: tuple[AspectPromotion, ...]
+    confirmed: bool
+    confirmed_by: str | None
+
+    @property
+    def max_points(self) -> float:
+        """The composite's maximum: the sum of its aspects' maxima (`FR-PKG-25`)."""
+        return sum(aspect.points for aspect in self.aspects)

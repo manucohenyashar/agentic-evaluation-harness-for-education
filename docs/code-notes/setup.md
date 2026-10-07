@@ -138,3 +138,33 @@ operation                     status
 `store_calibration_papers`    here — #53: stored-not-used intake; ambiguity
                               discovery waits for M-CALIB (FR-SETUP-15)
 ============================  =============================================
+
+### method_drafts.py, general_derivation.py, evidence_sum.py: rubric methods (#624)
+
+`FR-SETUP-18/-19`, `CT-SETUP-17`. Per criterion the teacher picks a method in teacher
+language (`rubric_method_choices()`, `bands` the default). Both non-default flows keep the
+teacher's work as a **pending setup step record** (`rubric_method.general:<id>`,
+`rubric_method.evidence_sum:<id>`) and write criterion and band rows only on confirmation.
+The reason is M-PKG's draft surface: `remove_criterion` is a guard-only stub, bands cannot
+be deleted, and `band_count` cannot be changed — so rows staged before confirmation would be
+stranded by an edit that changes the band count, or by the teacher switching method (which
+marks the other method's pending record `superseded`).
+
+- `general`: the setup model derives a band set from the teacher's prose
+  (`HARNESS_SETUP_DERIVATION_ATTEMPTS`, default 3). The numeral/magnitude scan runs on the
+  derivation output (`RISK-112`); a failing reply is re-requested, and past the budget the
+  derivation is refused, never staged. Showing a card spends one of the six optional
+  confirmations (Q-O4), once per criterion. On confirmation (as derived, or edited) the
+  criterion is written with `score_method='general'`, its bands, and M-PKG's derivation
+  provenance — recorded with the CONFIRMED set, because M-PKG's publish check requires the
+  stored bands to equal the recorded derivation; the model's original derivation stays in
+  the step record's payload (`derived_bands`).
+- `evidence_sum`: deterministic, no model call. Each named aspect becomes a 2-band aspect
+  criterion (`<id>-a<n>`), descriptors derived from the aspect name; more than two levels →
+  a promotion proposal (`score_method='bands'`), never a wider aspect. The composite carries
+  no bands, no key and no evidence type (publish's `FR-SETUP-09` check exempts it).
+- The gate: publish refuses, naming every criterion whose record is still `pending`, and
+  `steps().ready_to_publish` is False while one is.
+
+Ordering caveat: `read_back_rubric` refuses a draft that already carries criteria it did not
+stage, so method criteria are confirmed after the read back.
