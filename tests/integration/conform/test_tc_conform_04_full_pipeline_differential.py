@@ -213,7 +213,6 @@ def test_tc_conform_04_all_five_dimensions_are_compared_with_both_operands_prese
 _OPENROUTER_PROFILES = frozenset({"cloud-hosted"})
 
 
-@pytest.mark.writtenahead
 def test_tc_conform_04_openrouter_arm_runs_the_default_engine_and_reports_per_leg_live_keys():
     """`TC-CONFORM-04`, re-specified by the operator-requirements plan (§5.0; TS-142, #617).
 
@@ -226,9 +225,9 @@ def test_tc_conform_04_openrouter_arm_runs_the_default_engine_and_reports_per_le
     key so the profile's default decides. The decision leg's `live_calls > 0` is then the proof
     that the default resolved to an engine that actually ran.
 
-    Written ahead of #618 (keyed on `aeh.conform:run_live_acceptance`, the story's entry point,
-    since #618 lands this arm's per-leg figures with it). The key is checked first so a box
-    without one skips before anything is resolved or dispatched.
+    #618 landed the arm (`aeh.conform.live_acceptance.live_backend_legs`, attached to the
+    backend result's `live_legs`). The key is checked first so a box without one skips before
+    anything is resolved or dispatched.
     """
     from tests.support.conform_vocabulary import (
         BACKEND_LIVE_LEGS_FIELD,

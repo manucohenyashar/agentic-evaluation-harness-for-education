@@ -47,6 +47,30 @@ class BackendResult:
     outcomes: Mapping[str, UnitOutcome]
     ingest_outcomes: Mapping[str, "IngestOutcome"]
     duration_seconds: float
+    # The re-specified TC-CONFORM-04 arm (TS-142, #618): a live OpenRouter backend whose
+    # config resolves the decision engine also drives the full pipeline once and carries the
+    # CT-CONFORM-17 per-leg figures beside `figures`. `None` on every engine-off backend and
+    # on the recorded tier — the field's presence is not the claim; the legs' contents are.
+    live_legs: Mapping[str, Any] | None = None
+
+
+@dataclasses.dataclass(frozen=True)
+class LiveAcceptanceReport:
+    """The live OpenRouter acceptance's result (FR-CONFORM-17/18; TS-142).
+
+    `legs` maps each of the four leg names (`vision`, `judge`, `synthesis`, `decision`) to
+    the CT-CONFORM-17 keys plus `model_refs`; `per_criterion` maps a criterion id to the two
+    CT-JUDGE-28 decision rates plus the band-agreement keys `DECISION_REPORT_KEYS` names.
+    `valid` is the acceptance verdict: no zero-call leg (`failed_legs`) and no criterion at
+    an extreme (`invalid_extremes`, each entry naming the extreme and the gate values).
+    """
+
+    run_id: str
+    legs: Mapping[str, Any]
+    per_criterion: Mapping[str, Any]
+    valid: bool
+    failed_legs: tuple[str, ...]
+    invalid_extremes: Mapping[str, Any]
 
 
 @dataclasses.dataclass(frozen=True)

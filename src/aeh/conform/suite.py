@@ -156,7 +156,8 @@ class ConformanceSuite:
                     "distinct backends, and a second config under the same profile would "
                     "overwrite the first's measurement"
                 )
-            results[profile] = _run_backend(self, fixture_set, backend_config, bands_by_id)
+            results[profile] = _run_backend(self, fixture_set, backend_config, bands_by_id,
+                                            cohort=cohort)
 
         divergence = _dimension_divergence(
             list(results.values()), frozenset(_ACTIVE_INDUCED_DIMENSIONS)
@@ -518,6 +519,8 @@ def _run_backend(
     fixture_set: FixtureSet,
     backend_config: Mapping[str, Any],
     bands_by_id: Mapping[str, Mapping[str, str]],
+    *,
+    cohort: Any,
 ) -> BackendResult:
     """One backend's pass over the fixture set: check the fixtures, stage them, replay the
     judgments and prepare the figures for comparison."""
@@ -532,6 +535,7 @@ def _run_backend(
         drive_suite = ConformanceSuite(provider=_live_provider_for(backend_config))
         transcriber = backend_config.get("transcriber")
         memoize = False
+        live_legs = _live_arm_legs(backend_config, cohort)
     else:
         # The recorded transport: the suite's own injected provider drives the ladder (a
         # counting provider passed to the suite sees the dispatches), defaulting to the
@@ -548,6 +552,7 @@ def _run_backend(
         memoize = self_suite._provider is None
     stages_executed: dict[str, tuple[str, ...]] = {}
     ingest_outcomes: dict[str, IngestOutcome] = {}
+    live_legs: Mapping[str, Any] | None = None
     for submission in fixture_set.submissions:
         if submission.pdf_threat_kind is not None:
             # The real ladder, driven: quarantine at V0 with no model calls is a fact about
@@ -569,4 +574,32 @@ def _run_backend(
         outcomes={sid: unit for sid, (_, unit) in units.items()},
         ingest_outcomes=ingest_outcomes,
         duration_seconds=time.perf_counter() - started,
+        live_legs=live_legs,
     )
+
+
+def _live_arm_legs(
+    backend_config: Mapping[str, Any], cohort: Any,
+) -> Mapping[str, Any] | None:
+    """The re-specified TC-CONFORM-04 arm's per-leg figures, or None when there is no arm.
+
+    A live backend on an OpenRouter profile whose config resolves the decision engine drives
+    the full pipeline once (`aeh.conform.live_acceptance.live_backend_legs`) and carries the
+    CT-CONFORM-17 per-leg keys beside its figures (TS-142, #618): the differential includes
+    the decision leg, and the report shows it really ran. The engine-off backends — the
+    `edge-local` profile, or a config that pins the engine off — carry None: the field's
+    presence is not the claim, the legs' contents are.
+    """
+    from aeh.conf import resolve_run_config
+    from aeh.conf.decision_engine import DECISION_PROVIDERS_BY_PROFILE
+
+    from .live_acceptance import live_backend_legs
+
+    profile = str(backend_config["HARNESS_PROFILE"])
+    if "openrouter-jev" not in DECISION_PROVIDERS_BY_PROFILE.get(profile, ()):
+        return None
+    run_config = resolve_run_config(dict(backend_config), cohort)
+    if run_config.decision_engine is None:
+        return None
+    with tempfile.TemporaryDirectory(prefix="conform-live-arm-") as arm_dir:
+        return live_backend_legs(run_config, cohort, Path(arm_dir))

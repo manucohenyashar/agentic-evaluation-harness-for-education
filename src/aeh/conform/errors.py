@@ -27,6 +27,16 @@ class StaleFixtureError(ConformanceError):
     """
 
 
+class LiveAcceptanceRefused(ConformanceError):
+    """The live OpenRouter acceptance refused to start, or the live run itself failed.
+
+    Raised at run start for a missing credential, a bound recorded fixture, a non-OpenRouter
+    profile or a resolved-off decision engine (`FR-CONFORM-17`'s preconditions), and after the
+    run for a run that did not reach `complete`. A refusal names what to fix — an acceptance
+    that cannot run is a refusal, never a green report with empty legs.
+    """
+
+
 class MergeRefused(ConformanceError):
     """A write that would merge two backends' validation records into one was refused.
 
