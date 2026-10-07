@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
-from typing import Any
+from typing import Any, Mapping
 
 from .constants import _JSON_SEPARATORS
 from .errors import RunNotFoundError, RunStateError, WorkLedgerError
@@ -14,6 +14,7 @@ from .run_records import (
     decision_engine_record,
     panel_config_json,
     _persisted_run_config,
+    _pin_records,
     record_run_start,
     _refuse_profile_switch,
 )
@@ -32,10 +33,19 @@ class RunLifecycleMixin:
         cfg: Any,
         *,
         run_id: str | None = None,
+        model_pins: "Mapping[str, Any] | None" = None,
     ) -> str:
         """Create the run row and its audit record, and return the run id.
 
         More detail: `docs/code-notes/orch.md`, section `run_lifecycle.py: RunLifecycleMixin.create_run`.
+
+        `model_pins` (`FR-PIPE-19`) freezes the run's extractor and synthesizer identities
+        beside the other provider fields — a mapping of `MODEL_PIN_ROLES` role to
+        `ModelRef`. The recorded pin is what `compute_work_id`'s `extractor_version` input
+        reads (`_unit` reads it from the run row, so a resumed run keeps its pin) and what
+        a later `aeh run` / `aeh recover` validates a fresh flag against. Absent or empty,
+        nothing is recorded and the row is byte-identical to its pre-feature shape
+        (`NFR-CONF-04`).
         """
         package_id = self._package_id_for(package_version)
         # FR-ORCH-31: the version's own declarations must hang together before the run row
@@ -61,6 +71,7 @@ class RunLifecycleMixin:
             provider_fields["retention_verified"] = sorted(
                 ref.build_id for ref in retention.confirmed
             )
+        provider_fields.update(_pin_records(model_pins))
         provider_config = json.dumps(
             {
                 **provider_fields,

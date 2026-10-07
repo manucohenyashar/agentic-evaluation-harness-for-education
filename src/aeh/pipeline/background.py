@@ -36,6 +36,23 @@ class RunAlreadyStartedError(ValueError):
     already owns the run (FR-CONSOLE-02)."""
 
 
+def _reapply_frozen_pins(handle: Any, drive_keywords: dict[str, Any]) -> None:
+    """Re-apply a run's recorded model pins as drive keywords (FR-PIPE-19).
+
+    A run that froze `model_pins` keeps the identities it froze when it is driven again —
+    the same posture `aeh run`'s continuation path re-applies (`cli._applied_pins`). The
+    drive keywords win when the caller supplied a ref explicitly (a replay against a
+    recorded corpus is that caller's business), and a run with no recorded pins is
+    untouched — a console-started run takes the declared defaults (CT-PIPE-14).
+    """
+    from aeh.conf import ModelRef
+
+    for role, provider, build_id, quantization in handle.model_pins:
+        drive_keywords.setdefault(
+            role, ModelRef(role=role, provider=provider, build_id=build_id,
+                           quantization=quantization))
+
+
 def start_run_in_background(
     store: Any,
     *,
@@ -108,6 +125,12 @@ def start_run_in_background(
         if status != "pending" and not (allow_running and status == "running"):
             raise RunAlreadyStartedError(
                 f"run {run_id} is already {status}; nothing was started")
+    # The run this call drives may be one an earlier process pinned (`FR-PIPE-19`): a
+    # CLI-created pinned run the console picks up, or one resumed after a restart. Driving
+    # it without its frozen identities would extract with the declared default instead of
+    # the build the run froze. A fresh create_run records no pins, so the re-apply is a
+    # no-op there.
+    _reapply_frozen_pins(orchestrator.run_handle(run_id), drive_keywords)
     data_dir = getattr(store, "data_dir", None)
     if data_dir is None:
         raise ValueError("start_run_in_background needs a store with a data_dir")

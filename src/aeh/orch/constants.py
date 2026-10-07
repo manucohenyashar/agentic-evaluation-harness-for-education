@@ -55,6 +55,24 @@ SWEEP1_ADMITTED_INGEST_STATUSES: frozenset[str] = frozenset(
 IDENTITY_TRIAGE_V3_OUTCOMES: frozenset[str] = frozenset({"ambiguous", "unmatched"})
 
 
+#: The `provider_config` key under which a run's frozen extractor/synthesizer pins are
+#: recorded (`FR-PIPE-19`). The CLI's `--extractor` / `--synthesizer` flags resolve to
+#: `ModelRef`s the pipeline threads to `run_to_completion`, and M-ORCH freezes them here
+#: beside the other provider identities — absent entirely when no pin was given, so a
+#: pre-feature row round-trips byte-identically (`NFR-CONF-04`). The recorded extractor
+#: pin feeds `compute_work_id`'s `extractor_version` input (`_unit` reads it from the row,
+#: not from the caller, so a resumed run keeps its pin); the recorded synthesizer pin is
+#: what a later `aeh recover` validates a fresh flag against. M-PIPE imports this name —
+#: the schema is the owner's, never the reader's.
+MODEL_PINS_KEY = "model_pins"
+
+
+#: The two roles a run may pin. A `create_run` caller passing any other role is refused —
+#: a pin that names a seat the pipeline does not drive would record an identity nothing
+#: honours (`ModelRef`'s role vocabulary is wider than the two CLI flags).
+MODEL_PIN_ROLES: tuple[str, ...] = ("extractor", "synthesizer")
+
+
 #: Where the base enumeration's depths come from (`FR-SETUP-08`): base scoring depth 1
 #: for `atomic`/`atomic_with_gate` criteria and 3 for `holistic` ones. Unknown scoring
 #: models enumerate at depth 1 — the conservative base — and a package introducing a new
