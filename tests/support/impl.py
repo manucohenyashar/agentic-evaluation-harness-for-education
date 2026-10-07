@@ -1393,12 +1393,12 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # #634's entry (the committed bundle, keyed `path` on its index.html) was dropped when #634
     # landed and the bundle was committed; its cases were re-checked green unmarked at the drop.
     #
-    # #635 and #638 deliver no Python name and no new file whose path the design fixes, and a
+    # #635 and #638 delivered no Python name and no new file whose path the design fixes, and a
     # `command` running their browser cases would launch a browser on every fast-tier run and read
-    # an E6 *skip* (exit 0) as "resolved". So both are keyed on a millisecond static probe over the
-    # bundle for the wording each story is the first to ship, quoted from the design: FR-UI-07's
-    # recovery text (#635) and FR-UI-06's answers-only affordance (#638). The tradeoff, stated: if
-    # an earlier story ships either phrase, its entry fires before the story lands — re-check the
+    # an E6 *skip* (exit 0) as "resolved". So the entry was keyed on a millisecond static probe
+    # over the bundle for the wording the story is the first to ship, quoted from the design.
+    # The tradeoff, stated: if
+    # an earlier story ships the phrase, the entry fires before the story lands — re-check the
     # cases green before unmarking, never unmark on the notice alone.
     "#635 M-UI lifecycle screens (TC-UI-03/04/05/07, C02..C05, PERF-19)": (
         "command",
@@ -1416,11 +1416,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/browser/spa/test_spa_hub_screens.py::test_perf_19_hub_first_contentful_paint_under_2s_and_transitions_under_300ms",
         ),
     ),
-    "#638 M-UI Q&A panel (TC-UI-06)": (
-        "command",
-        'python -m tests.support.spa contains "does not operate the system"',
-        ("tests/browser/spa/test_spa_qa_panel.py::test_tc_ui_06_a_manuals_answer_cites_real_anchors_under_the_answers_only_affordance",),
-    ),
+    # #638's entry (the bundle probe for FR-UI-06's answers-only affordance) was dropped when
+    # #638 landed and the bundle carried the wording; its case was re-checked green unmarked
+    # at the drop.
     # --- TS-140 (#613), packaging flips + the operator-doc sweep ----------------------------
     #
     # #614's entry (the four standard dependencies, extras retired, operator docs reduced) was

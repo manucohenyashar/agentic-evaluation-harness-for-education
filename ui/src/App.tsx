@@ -2,9 +2,9 @@ import { useEffect, useState, type ComponentType } from "react";
 import type { HubState } from "./api";
 import { DESTINATIONS } from "./destinations";
 import { Hub } from "./screens/Hub";
+import { Help } from "./screens/Help";
 import {
   ClassSetup,
-  Help,
   Monitor,
   NotFound,
   Papers,

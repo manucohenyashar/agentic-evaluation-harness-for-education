@@ -244,6 +244,13 @@ class RunHandle:
     #: part of the six-part validation key a composition layer reads baselines under
     #: (FR-PIPE-15, #525). `""` when the row predates the field.
     panel_build_ref: str = ""
+    #: The model pins the run froze (FR-PIPE-19), from its persisted provider config:
+    #: `(role, provider, build_id, quantization)` tuples, in role order. A composition
+    #: layer compares a fresh `--extractor` / `--synthesizer` flag against them before
+    #: driving (`TC-PIPE-36`) and re-applies them when the run is continued without one.
+    #: `()` when the row carries no `model_pins` key — a pre-feature row, or a run
+    #: started without pins.
+    model_pins: "tuple[tuple[str, str, str, str | None], ...]" = ()
 
 
 class PackageCatalogProtocol(Protocol):

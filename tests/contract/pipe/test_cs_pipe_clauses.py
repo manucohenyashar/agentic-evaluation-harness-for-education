@@ -80,8 +80,16 @@ def test_tc_pipe_c01_the_entry_points_keep_their_surface():
         assert p.kind is inspect.Parameter.KEYWORD_ONLY and p.default is not inspect.Parameter.empty, (
             f"run_to_completion's {name} is not an additive keyword-only default")
     rec = inspect.signature(pipeline.recover).parameters
-    assert list(rec) == ["store", "clock"] and rec["clock"].kind is inspect.Parameter.KEYWORD_ONLY
+    # #664 (FR-PIPE-19, CT-PIPE-14): recover gained the two validate-only pin keywords,
+    # additive keyword-only defaults beside `clock` like run_to_completion's four.
+    assert list(rec) == ["store", "clock", "extractor", "synthesizer"], list(rec)
+    assert all(
+        rec[n].kind is inspect.Parameter.KEYWORD_ONLY for n in ("clock", "extractor", "synthesizer")
+    )
     assert rec["clock"].default is None
+    assert all(
+        rec[n].default is None for n in ("extractor", "synthesizer")
+    ), "recover's pin keywords are validate-only and default to no pin"
     main = inspect.signature(pipeline.main).parameters
     assert list(main) == ["argv"] and main["argv"].default is None
     done = subprocess.run([sys.executable, "-m", "aeh", "--help"], capture_output=True, text=True,

@@ -48,6 +48,8 @@ from aeh.store import store_metrics
 
 from .constants import (
     EXTRACTOR_VERSION,
+    MODEL_PIN_ROLES,
+    MODEL_PINS_KEY,
     SCORING_MODEL_BASE_DEPTH,
     STAGE_DETERMINISTIC,
     STAGE_EXTRACT,

@@ -114,3 +114,69 @@ textarea:focus-visible {
   outline-style: none;
   box-shadow: var(--shadow-focus);
 }
+
+/* The Q&A panel (FR-UI-06): the affordance is the panel's first line and never leaves. */
+.qa-panel {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-md);
+  max-width: 40rem;
+}
+
+.qa-affordance {
+  font-weight: 700;
+  margin: 0 0 var(--space-md);
+}
+
+.qa-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  align-items: flex-start;
+}
+
+.qa-form label {
+  font-weight: 700;
+}
+
+.qa-form textarea {
+  width: 100%;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  padding: var(--space-xs) var(--space-sm);
+}
+
+.qa-form button {
+  background-color: var(--color-accent);
+  color: var(--color-accent-ink);
+  border: none;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-weight: 700;
+  padding: var(--space-xs) var(--space-md);
+}
+
+.qa-form button:disabled {
+  opacity: 0.6;
+}
+
+.qa-answer {
+  margin: var(--space-md) 0 0;
+}
+
+.qa-answer-text {
+  margin: 0 0 var(--space-sm);
+}
+
+.qa-citations {
+  margin: 0;
+  padding-left: var(--space-md);
+}
+
+.qa-not-found,
+.qa-manuals-link {
+  color: var(--color-muted);
+}
