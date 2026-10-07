@@ -18,7 +18,7 @@ import pytest
 
 from tests.support import setup_rubric_methods as rm
 
-pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.contract]
 
 
 def test_tc_setup_c17_the_card_shows_the_derived_bands_before_confirmation(tmp_data_dir):

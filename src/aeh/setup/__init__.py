@@ -10,7 +10,10 @@ Setup walks a teacher through a fixed sequence of steps for one package version:
 4. Each criterion is classified for decomposability against five questions, with a capped
    number of teacher confirmations; likely dependencies between criteria are proposed and
    only become edges when the teacher approves them.
-5. The version is published, after which the package is locked.
+5. Per criterion, the teacher may choose a rubric method other than per-band descriptions:
+   an evidence checklist (aspects and their points) or a description in their own words,
+   from which bands are derived and shown back for a blocking confirmation.
+6. The version is published, after which the package is locked.
 
 Every step records its outcome through M-PKG, so a console can resume a half-finished setup.
 
@@ -25,6 +28,9 @@ Files:
     decomposability.py classifying criteria and the teacher's confirmations
     dependencies.py    proposing criterion dependencies and the teacher's approval
     progress.py        the step list and what remains
+    method_drafts.py   rubric-method choices, pending method records and their publish gate
+    general_derivation.py  the `general` method: prose -> derived bands -> confirmation
+    evidence_sum.py    the `evidence_sum` method: the evidence-checklist builder
     service.py         `SetupService`, which runs the steps and publishes the version
 
 Detailed design notes (the full original module description): `docs/code-notes/setup.md`.
@@ -41,6 +47,9 @@ from .settings import (
     CLASSIFY_ATTEMPTS_ENV,
     CONFIRMATIONS_DEFAULT,
     CONFIRMATIONS_ENV,
+    DEFAULT_RUBRIC_METHOD,
+    DERIVATION_ATTEMPTS_DEFAULT,
+    DERIVATION_ATTEMPTS_ENV,
     FIVE_QUESTIONS,
     LOGGER,
     _prefix_ceiling,
@@ -48,10 +57,12 @@ from .settings import (
     PROPOSAL_ATTEMPTS_ENV,
     READBACK_ATTEMPTS_DEFAULT,
     READBACK_ATTEMPTS_ENV,
+    RUBRIC_METHOD_CHOICES,
     SCORING_MODELS,
     SETUP_CLASSIFY_TEMPLATE_V,
     SETUP_DEFAULT_BAND_COUNT,
     SETUP_DEPENDENCIES_TEMPLATE_V,
+    SETUP_DERIVATION_TEMPLATE_V,
     SETUP_EVIDENCE_TYPE_DEFAULT,
     SETUP_MAGNITUDE_PHRASES,
     SETUP_MAX_CONFIRMATIONS,
@@ -62,15 +73,20 @@ from .settings import (
 )
 from .errors import SetupError, SetupOrderError
 from .records import (
+    AspectDraft,
+    AspectPromotion,
     CriterionDraft,
     DecomposabilityVerdict,
     DependencyProposal,
+    DerivationCard,
+    EvidenceSumDraft,
     InventoryProposal,
     PrefixBudgetReport,
     ProposedBand,
     ProposedOption,
     ProposedQuestion,
     QuestionCorrection,
+    RubricMethodChoice,
     RubricReadback,
     SetupProgress,
     SetupStep,
@@ -86,14 +102,21 @@ from .service import setup_service_for_store, SetupService
 
 
 __all__ = [
+    "AspectDraft",
+    "AspectPromotion",
     "CLASSIFICATIONS",
     "CLASSIFY_ATTEMPTS_DEFAULT",
     "CLASSIFY_ATTEMPTS_ENV",
     "CONFIRMATIONS_DEFAULT",
     "CONFIRMATIONS_ENV",
     "CriterionDraft",
+    "DEFAULT_RUBRIC_METHOD",
+    "DERIVATION_ATTEMPTS_DEFAULT",
+    "DERIVATION_ATTEMPTS_ENV",
     "DecomposabilityVerdict",
     "DependencyProposal",
+    "DerivationCard",
+    "EvidenceSumDraft",
     "FIVE_QUESTIONS",
     "InventoryProposal",
     "PROPOSAL_ATTEMPTS_DEFAULT",
@@ -105,11 +128,14 @@ __all__ = [
     "QuestionCorrection",
     "READBACK_ATTEMPTS_DEFAULT",
     "READBACK_ATTEMPTS_ENV",
+    "RUBRIC_METHOD_CHOICES",
+    "RubricMethodChoice",
     "RubricReadback",
     "SCORING_MODELS",
     "SETUP_CLASSIFY_TEMPLATE_V",
     "SETUP_DEFAULT_BAND_COUNT",
     "SETUP_DEPENDENCIES_TEMPLATE_V",
+    "SETUP_DERIVATION_TEMPLATE_V",
     "SETUP_EVIDENCE_TYPE_DEFAULT",
     "SETUP_MAGNITUDE_PHRASES",
     "SETUP_MAX_CONFIRMATIONS",

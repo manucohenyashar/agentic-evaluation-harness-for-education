@@ -110,3 +110,23 @@ _DEPENDENCIES_INSTRUCTION = (
     '"reason": "error carried forward: the derivation is graded on work that '
     'presupposes the definition"}]}'
 )
+
+
+_DERIVATION_INSTRUCTION = (
+    "You are turning a teacher's own description of how they score one criterion into a "
+    "band set (FR-SETUP-18). The teacher will see your band set beside their description "
+    "and must confirm it before anything is graded, so derive exactly what the "
+    "description says — add no requirement it does not state.\n"
+    "- Propose an EVEN number of bands, from two to six, ordered from the lowest to the "
+    "highest; points rise with the band and the highest band carries the question's "
+    "maximum points.\n"
+    "- Every band has a short label and a descriptor stating what a response IN THAT "
+    "BAND DOES — the observable action, not a quality judgment. NEVER use the words "
+    "good, excellent, weak, adequate, or 'out of', and never write a numeral in a label "
+    "or a descriptor (no counts such as '3 details'): a number there is a points scale "
+    "leaking into the language the judge sees, and it will be rejected.\n"
+    "Reply with ONLY a JSON object, no prose, of this shape:\n"
+    '{"criterion_id": "CRIT-1", "bands": [{"ordinal": 0, "band": "not started", '
+    '"points": 0, "descriptor": "the response does ..."}, {"ordinal": 1, '
+    '"band": "complete", "points": 4, "descriptor": "the response does ..."}]}'
+)
