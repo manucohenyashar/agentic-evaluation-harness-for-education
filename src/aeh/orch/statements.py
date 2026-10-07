@@ -166,6 +166,52 @@ ORCH_STATEMENTS: dict[str, Statement] = {
         "COUNT(*) AS total FROM work_unit WHERE run_id = :run_id "
         "GROUP BY submission_id, criterion_id, stage"
     ),
+    # --- #597 (NFR-PIPE-02): the readiness decision runs IN SQL -------------------------------
+    #
+    # The Python-side scan (`_ready_cells_in` before #597) read every count row and every
+    # phase row of the run into dicts on every pass, and a pass's hook then touched only the
+    # few cells the run's concurrency cap allows. At 40 submissions that is a 13.9 ms read
+    # twice per pass over a 9.3 ms/unit composition budget. The GROUP BY + HAVING forms here
+    # decide readiness where the rows live: the same index range is walked in C, and only the
+    # ready cells — a handful per pass — are materialized. `ready_cells`' exact semantics
+    # (FR-ORCH-29): every unit of the cell's stage terminal, and either no phase row yet
+    # (`integrity_pre`) or more terminal units than the `aggregated` phase consumed
+    # (`aggregate` — the count comparison that re-aggregates a widened panel).
+    #
+    # Two literals rather than one parameterized shape because the two hooks' phase arms
+    # genuinely differ: `integrity_pre` is ready only while the phase is ABSENT, `aggregate`
+    # is ready when absent or outgrown. Assembling that difference at run time is exactly what
+    # SEC-15/FR-STORE-08 refuses.
+    "select_ready_integrity_pre": Statement(
+        "SELECT w.submission_id AS submission_id, w.criterion_id AS criterion_id, "
+        "SUM(CASE WHEN w.status IN ('done', 'quarantined') THEN 1 ELSE 0 END) AS terminal, "
+        "SUM(CASE WHEN w.status = 'quarantined' THEN 1 ELSE 0 END) AS quarantined, "
+        "COUNT(*) AS total "
+        "FROM work_unit w LEFT JOIN cell_phase p "
+        "ON p.run_id = w.run_id AND p.submission_id = w.submission_id "
+        "AND p.criterion_id = w.criterion_id AND p.phase = 'integrity_pre' "
+        "WHERE w.run_id = :run_id AND w.stage = 'extract' "
+        "GROUP BY w.submission_id, w.criterion_id "
+        "HAVING SUM(CASE WHEN w.status IN ('done', 'quarantined') THEN 1 ELSE 0 END) "
+        "= COUNT(*) AND p.units_consumed IS NULL "
+        "ORDER BY w.submission_id, w.criterion_id"
+    ),
+    "select_ready_aggregate": Statement(
+        "SELECT w.submission_id AS submission_id, w.criterion_id AS criterion_id, "
+        "SUM(CASE WHEN w.status IN ('done', 'quarantined') THEN 1 ELSE 0 END) AS terminal, "
+        "SUM(CASE WHEN w.status = 'quarantined' THEN 1 ELSE 0 END) AS quarantined, "
+        "COUNT(*) AS total "
+        "FROM work_unit w LEFT JOIN cell_phase p "
+        "ON p.run_id = w.run_id AND p.submission_id = w.submission_id "
+        "AND p.criterion_id = w.criterion_id AND p.phase = 'aggregated' "
+        "WHERE w.run_id = :run_id AND w.stage = 'score' "
+        "GROUP BY w.submission_id, w.criterion_id "
+        "HAVING SUM(CASE WHEN w.status IN ('done', 'quarantined') THEN 1 ELSE 0 END) "
+        "= COUNT(*) AND (p.units_consumed IS NULL OR "
+        "SUM(CASE WHEN w.status IN ('done', 'quarantined') THEN 1 ELSE 0 END) "
+        "> p.units_consumed) "
+        "ORDER BY w.submission_id, w.criterion_id"
+    ),
     # The provenance join (#223, FR-INGEST-01): unit -> submission -> document, LEFT-joined
     # so a broken hop reads as NULL here and is refused by `provenance()`, never imputed.
     # One row per document of the submission, oldest first; the head is the last row, the

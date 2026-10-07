@@ -1336,14 +1336,10 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # "unowned: S3 shows the proposed inventory as editable rows (TS-91 TC-CONSOLE-45)" left with #599's fix.
     # "unowned: the blind-flow plan names no removed table (TS-91 TC-CONSOLE-45)" left with #601's fix.
     # "unowned: a console review accept records a label (TS-91 TC-CONSOLE-44 row 8)" left with #598's fix.
-    # #597 (design 1.9.1 §5.4 R30): M-PIPE's hooks cost 3.8 ms/unit at 10 submissions after
-    # #597's first change (5.3 before), against NFR-PIPE-02's 0.25 ms. The rest is readiness
-    # rescans per pass and the owners' per-cell work; #597 is needs-attention on the budget.
-    "#597 TS-99 PERF-11 composition adds at most 0.25 ms per unit": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider tests/perf/test_perf_11_composition_overhead.py::test_perf_11_composition_adds_at_most_a_quarter_millisecond_per_unit",
-        ("tests/perf/test_perf_11_composition_overhead.py::test_perf_11_composition_adds_at_most_a_quarter_millisecond_per_unit",),
-    ),
+    # "#597 TS-99 PERF-11 composition adds at most 0.25 ms per unit" left with #597's fix:
+    # the readiness decision runs in SQL, the aggregate hook's per-pass run-wide count reads
+    # are folded into one ready read, the gate's evidence read is indexed (Cohort 34), and
+    # PERF-11 runs as the budget + no-growth guard with its `writtenahead` marker off.
     # "#620 TS-143 name-primary V3 matching, roster names, Cohort 33" left with #620's fix.
     # --- TS-150 (#637), M-HELP: manuals page, grounded answers-only Q&A, the log ----------
     #
@@ -1375,16 +1371,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `aeh.ingest`) being registered: the design declares no symbol for the matcher or the
     # roster loader, and the migration lands in the same story (#620) as everything these
     # cases assert. SystemExit rather than assert, so `python -O` cannot make it pass.
-    "#620 TS-143 name-primary V3 matching, roster names, Cohort 33": (
-        "command",
-        "python -c \"import aeh.ingest; from aeh.store import TIER_MIGRATIONS, Tier; "
-        "raise SystemExit(0 if any(m.name == 'ingest_roster_names' "
-        "for m in TIER_MIGRATIONS[Tier.COHORT]) else 1)\"",
-        (
-            "tests/integration/ingest/test_ts143_name_identity.py",
-            "tests/contract/ingest/test_ct_ingest_23_name_identity.py",
-        ),
-    ),
+    # "#620 TS-143 name-primary V3 matching, roster names, Cohort 33" left with #620's fix —
+    # its tests were unmarked there, but the registry entry was left behind, so the gate above
+    # red on a resolved blocker. Dropped with #597's fix (which adds Cohort 34 on top of 33).
     "#155 check_traceability --contracts-only passes the real pair (TS-82)": (
         "command",
         "python .claude/skills/create-test-plan/scripts/check_traceability.py "
