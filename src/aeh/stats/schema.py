@@ -92,7 +92,11 @@ STATS_STATEMENTS: dict[str, Statement] = {
     #
     # The `student_ref` join is not decoration: `assemble`'s store door fills the view's
     # ref slot from it, so a unit rebuilt without it assembles a DIFFERENT request and
-    # misses its recorded reply.
+    # misses its recorded reply. The roster join is the same fidelity (#593): the claim
+    # select resolves the roster display name, so a lease leaves a NAMED unit, and a
+    # rebuild without the name assembles an unpseudonymized transcript where the run
+    # sent the ref — the same different-request miss. LEFT join: a ref the roster does
+    # not hold, or holds namelessly, rebuilds nameless, exactly as such a lease does.
     #
     # Deliberately NOT filtered by run: `FR-STATS-21`'s signature names a fixture
     # submission set, not a run, and a fixture set judged across two runs is still that
@@ -101,8 +105,11 @@ STATS_STATEMENTS: dict[str, Statement] = {
     # judgments precisely so a second run cannot inflate a rate past 1.0.
     "select_score_units": Statement(
         "SELECT w.work_id, w.run_id, w.stage, w.submission_id, w.criterion_id, "
-        "w.judge_id, w.attempts AS attempt, s.student_ref AS student_ref "
+        "w.judge_id, w.attempts AS attempt, s.student_ref AS student_ref, "
+        "r.full_name AS student_name "
         "FROM work_unit w JOIN submission s ON s.submission_id = w.submission_id "
+        "LEFT JOIN roster r ON r.cohort_id = s.cohort_id "
+        "AND r.student_ref = s.student_ref "
         "WHERE w.stage = 'score' AND w.judge_id IS NOT NULL AND w.status = 'done' "
         "ORDER BY w.work_id"
     ),

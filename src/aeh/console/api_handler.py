@@ -19,11 +19,21 @@ from .api import (
     bundle_file,
     content_type_for,
     controls_payload,
+    FileAnswer,
     match_route,
 )
 from .cohort_editor import roster_editor_payload
 from .errors import ConsoleBindRefused
+from .hub_state import hub_payload
+from .results_reads import results_class_read, results_export_read, results_student_read
 from .routes import SCREENS
+from .run_start import run_start_preview_read
+from .vocabulary import (
+    RESULTS_CLASS_READ,
+    RESULTS_EXPORT_READ,
+    RESULTS_STUDENT_READ,
+    RUN_START_PREVIEW_READ,
+)
 
 JSON_TYPE = "application/json; charset=utf-8"
 ASSETS_PREFIX = "/assets/"
@@ -43,12 +53,24 @@ def outcome_json(action: str, outcome: Any) -> bytes:
     }).encode("utf-8")
 
 
-#: The reads the API answers, by the name a read route carries. Each is a pure function of
-#: the declared tables — no store is opened, so no read can create or touch a stored byte.
+#: The reads the API answers, by the name a read route carries. Each takes the running
+#: console, the console's app and the request's query parameters. The first three are pure
+#: functions of the declared tables — no store is opened, so no read can create or touch a
+#: stored byte. The hub read is a pure function of the console's own held state (its config,
+#: its served run); the TS-148 reads (`run start preview`, the results views, the export)
+#: reach the running app's store and M-ORCH/M-GRADE's doors; the preview writes nothing
+#: (its cohort/package guards are read-only), and the export reads the bytes
+#: `export_grade_artifacts` writes into a temporary directory. Each answers JSON, or a
+#: `FileAnswer` for the export's raw bytes.
 _READS = {
-    "controls": controls_payload,
-    "screens": lambda: {"screens": dict(SCREENS)},
-    "roster editor": roster_editor_payload,
+    "controls": lambda _console, _app, _query: controls_payload(),
+    "screens": lambda _console, _app, _query: {"screens": dict(SCREENS)},
+    "roster editor": lambda _console, _app, _query: roster_editor_payload(),
+    "hub": lambda console, _app, _query: hub_payload(console),
+    RUN_START_PREVIEW_READ: lambda _console, app, query: run_start_preview_read(app, query),
+    RESULTS_CLASS_READ: lambda _console, app, query: results_class_read(app, query),
+    RESULTS_STUDENT_READ: lambda _console, app, query: results_student_read(app, query),
+    RESULTS_EXPORT_READ: lambda _console, app, query: results_export_read(app, query),
 }
 
 
@@ -78,7 +100,7 @@ class ApiRequestsMixin:
 
     # -- the API ----------------------------------------------------------------------------
 
-    def _serve_api(self, method: str, route: str) -> None:
+    def _serve_api(self, method: str, route: str, query: dict[str, str] | None = None) -> None:
         """Dispatch one `/api/` request through the route table, and nothing else."""
         matched, params, other_verb = match_route(method, route)
         if matched is None:
@@ -93,7 +115,7 @@ class ApiRequestsMixin:
                 self._respond(404, b'{"error":"not found"}', JSON_TYPE, close=True)
             return
         if matched.control is None:
-            self._api_read(matched)
+            self._api_read(matched, query or {})
             return
         try:
             self._console.recheck_environment()
@@ -107,9 +129,26 @@ class ApiRequestsMixin:
             return
         self._api_control(matched, params)
 
-    def _api_read(self, route: ApiRoute) -> None:
-        payload = _READS[str(route.read)]()
-        self._respond(200, json.dumps(payload).encode("utf-8"), JSON_TYPE)
+    def _api_read(self, route: ApiRoute, query: dict[str, str]) -> None:
+        """One read: the reader's answer as JSON, or a `FileAnswer`'s bytes with their own
+        media type. A refusal is a 400 — a read asked for something that is not there is
+        the caller's mistake, and the body carries the named gap; anything else is a 500
+        with the connection closed, so a failed read is answered, never a dropped socket."""
+        reader = _READS[str(route.read)]
+        try:
+            answer = reader(self._console, self._console.app, query)
+        except (ValueError, KeyError) as refusal:
+            body = json.dumps({"error": str(refusal)}).encode("utf-8")
+            self._respond(400, body, JSON_TYPE)
+            return
+        except Exception as error:  # noqa: BLE001 — a failed read is a 500, never a dropped socket
+            body = json.dumps({"error": str(error)}).encode("utf-8")
+            self._respond(500, body, JSON_TYPE, close=True)
+            return
+        if isinstance(answer, FileAnswer):
+            self._respond(200, answer.body, answer.content_type)
+            return
+        self._respond(200, json.dumps(answer).encode("utf-8"), JSON_TYPE)
 
     def _api_control(self, route: ApiRoute, path_params: dict[str, str]) -> None:
         """Pass the request's parameters to the door unvalidated: refusing a malformed request

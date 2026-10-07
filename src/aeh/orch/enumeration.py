@@ -27,6 +27,31 @@ from .escalation_policy import escalation_plan, random_arm_selection, run_random
 from .reports import EnumerationReport
 
 
+class RunPlan:
+    """The plan `enumerate_units` would insert, computed without writing anything.
+
+    `computed` holds the `(work_id, params)` pairs in enumeration order; `gates` holds the
+    plan's report gates (`panel_config` through `identity_triage`, in report order); the
+    `random_arm_*` fields carry the draw's figures for the report's `random_arm` gate."""
+
+    __slots__ = ("computed", "gates", "random_arm_pairs", "random_arm_units", "random_arm_rate")
+
+    def __init__(
+        self,
+        computed: list[tuple[str, dict[str, Any]]],
+        gates: dict[str, str],
+        *,
+        random_arm_pairs: int,
+        random_arm_units: int,
+        random_arm_rate: float,
+    ) -> None:
+        self.computed = computed
+        self.gates = gates
+        self.random_arm_pairs = random_arm_pairs
+        self.random_arm_units = random_arm_units
+        self.random_arm_rate = random_arm_rate
+
+
 class EnumerationMixin:
     """Creates a run's work units and traces each unit back to its source."""
 
@@ -45,9 +70,104 @@ class EnumerationMixin:
         gates: dict[str, str] = {
             "run_row": f"found (status={row['status']}, cohort={row['cohort_id']})",
         }
+        plan = self._planned_units(row)
+        gates.update(plan.gates)
+
+        cohort = self._store.cohort(row["cohort_id"])
+        computed = plan.computed
+        batch = _env_int(ENUM_COMMIT_BATCH_ENV, ENUM_COMMIT_BATCH_DEFAULT)
+
+        work_ids = sorted(work_id for work_id, _ in computed)
+        existing = {
+            r["work_id"] for r in cohort.query(
+                ORCH_STATEMENTS["select_run_work_ids"], run_id=run_id
+            )
+        }
+        gates["ledger_read"] = (
+            f"{len(existing)} unit(s) already in the ledger for this run"
+        )
+
+        pending = [
+            (work_id, params) for work_id, params in computed
+            if work_id not in existing
+        ]
+        inserted = 0
+        for start in range(0, len(pending), batch):
+            with cohort.transaction() as tx:
+                for _, params in pending[start:start + batch]:
+                    # The existing-set read and this write are separated by design —
+                    # the single-writer queue serializes them — and INSERT OR IGNORE is
+                    # the idempotent form regardless: a row that appeared between read
+                    # and write is left exactly as the ledger holds it, never rewritten.
+                    tx.execute(ORCH_STATEMENTS["insert_work_unit"], **params)
+                    # `OR IGNORE` cannot report what it did: an ignored row is either a
+                    # duplicate that raced in between the read and this write, or a row
+                    # a constraint refused — and `OR IGNORE` swallows both silently.
+                    # Counting the loop's iterations would report the ledger as having
+                    # taken rows it does not hold, so the count comes from the ledger:
+                    # `changes()` read in the same transaction, of the write that
+                    # transaction itself just made.
+                    inserted += int(
+                        tx.execute(ORCH_STATEMENTS["select_changes"])[0]["n"]
+                    )
+
+        counts: dict[tuple[str, str], int] = {}
+        for r in cohort.query(ORCH_STATEMENTS["select_run_counts"], run_id=run_id):
+            counts[(r["stage"], r["status"])] = r["n"]
+        by_stage: dict[str, int] = {}
+        by_status: dict[str, int] = {}
+        for (stage, status), n in counts.items():
+            by_stage[stage] = by_stage.get(stage, 0) + n
+            by_status[status] = by_status.get(status, 0) + n
+        gates["ledger_write"] = (
+            f"{inserted} inserted, {len(computed) - inserted} already present"
+        )
+        gates["ledger_counts"] = ", ".join(
+            f"{status}={by_status[status]}" for status in sorted(by_status)
+        ) or "ledger empty for this run"
+        # `CT-ORCH-15`'s observability: the arm's sample size is visible next to the
+        # enumeration's status, and the gate names its independence — a reader of the
+        # report can tell drawn units from suppressed ones without re-deriving the
+        # draw.
+        gates["random_arm"] = (
+            f"{plan.random_arm_pairs} pair(s) drawn at rate {plan.random_arm_rate} "
+            f"({plan.random_arm_units} unit(s), origin='random_arm'); independent of "
+            "confidence — never suppressed by the escalation budget or a breaker"
+        )
+
+        return EnumerationReport(
+            run_id=run_id,
+            status="enumerated" if inserted else "no-op",
+            work_ids=tuple(work_ids),
+            units_enumerated=len(computed),
+            units_inserted=inserted,
+            units_already_present=len(computed) - inserted,
+            by_stage=by_stage,
+            by_status=by_status,
+            gates=gates,
+        )
+
+    def _planned_units(self, row: Any) -> RunPlan:
+        """The units `enumerate_units` would insert for the run `row` names, computed
+        WITHOUT writing anything (FR-CONSOLE-43's preview prices this plan).
+
+        `enumerate_units` is this plan plus the insert, so the preview's estimate and the
+        started run's ledger are the same enumeration by construction. The run-row-like
+        mapping needs `run_id`, `cohort_id`, `package_id`, `package_version_id`,
+        `panel_config` and `prompt_template_v` — the fields `_unit` and `_catalog` read.
+        The random-arm draw is seeded from `run_id` (`run_random_arm_seed`), so a
+        pre-start caller plans with the placeholder id it passes; the plan is exact for a
+        run with the sample off and an estimate for a sampled one.
+
+        Raises what `enumerate_units` raises: `WorkLedgerError` for an unparsable
+        `panel_config`, and the package/catalog errors for a version the store does not
+        hold — a caller that must not write anything checks the version BEFORE this runs,
+        because `_catalog` opens the version's tier file and the open would create it.
+        """
+        gates: dict[str, str] = {}
+        run_id = row["run_id"]
         arms = self._panel_arms(row["panel_config"])
         gates["panel_config"] = f"{len(arms)} arm(s) in panel order"
-        prompt_template_version = row["prompt_template_v"]
 
         catalog = self._catalog(row)
         # Imported here, as `_catalog` imports `aeh.pkg`: the import adds Tier P migrations.
@@ -119,7 +239,6 @@ class EnumerationMixin:
             f"{len(identity_held)} submission(s) held for identity triage get no units"
         )
 
-        batch = _env_int(ENUM_COMMIT_BATCH_ENV, ENUM_COMMIT_BATCH_DEFAULT)
         random_arm_rate = _env_float(
             RANDOM_ARM_RATE_ENV, ORCH_RANDOM_ARM_RATE, low=0.0, high=1.0
         )
@@ -179,74 +298,12 @@ class EnumerationMixin:
                     random_arm_pairs += 1
                     random_arm_units += len(widened) - depth
 
-        work_ids = sorted(work_id for work_id, _ in computed)
-        existing = {
-            r["work_id"] for r in cohort.query(
-                ORCH_STATEMENTS["select_run_work_ids"], run_id=run_id
-            )
-        }
-        gates["ledger_read"] = (
-            f"{len(existing)} unit(s) already in the ledger for this run"
-        )
-
-        pending = [
-            (work_id, params) for work_id, params in computed
-            if work_id not in existing
-        ]
-        inserted = 0
-        for start in range(0, len(pending), batch):
-            with cohort.transaction() as tx:
-                for _, params in pending[start:start + batch]:
-                    # The existing-set read and this write are separated by design —
-                    # the single-writer queue serializes them — and INSERT OR IGNORE is
-                    # the idempotent form regardless: a row that appeared between read
-                    # and write is left exactly as the ledger holds it, never rewritten.
-                    tx.execute(ORCH_STATEMENTS["insert_work_unit"], **params)
-                    # `OR IGNORE` cannot report what it did: an ignored row is either a
-                    # duplicate that raced in between the read and this write, or a row
-                    # a constraint refused — and `OR IGNORE` swallows both silently.
-                    # Counting the loop's iterations would report the ledger as having
-                    # taken rows it does not hold, so the count comes from the ledger:
-                    # `changes()` read in the same transaction, of the write that
-                    # transaction itself just made.
-                    inserted += int(
-                        tx.execute(ORCH_STATEMENTS["select_changes"])[0]["n"]
-                    )
-
-        counts: dict[tuple[str, str], int] = {}
-        for r in cohort.query(ORCH_STATEMENTS["select_run_counts"], run_id=run_id):
-            counts[(r["stage"], r["status"])] = r["n"]
-        by_stage: dict[str, int] = {}
-        by_status: dict[str, int] = {}
-        for (stage, status), n in counts.items():
-            by_stage[stage] = by_stage.get(stage, 0) + n
-            by_status[status] = by_status.get(status, 0) + n
-        gates["ledger_write"] = (
-            f"{inserted} inserted, {len(computed) - inserted} already present"
-        )
-        gates["ledger_counts"] = ", ".join(
-            f"{status}={by_status[status]}" for status in sorted(by_status)
-        ) or "ledger empty for this run"
-        # `CT-ORCH-15`'s observability: the arm's sample size is visible next to the
-        # enumeration's status, and the gate names its independence — a reader of the
-        # report can tell drawn units from suppressed ones without re-deriving the
-        # draw.
-        gates["random_arm"] = (
-            f"{random_arm_pairs} pair(s) drawn at rate {random_arm_rate} "
-            f"({random_arm_units} unit(s), origin='random_arm'); independent of "
-            "confidence — never suppressed by the escalation budget or a breaker"
-        )
-
-        return EnumerationReport(
-            run_id=run_id,
-            status="enumerated" if inserted else "no-op",
-            work_ids=tuple(work_ids),
-            units_enumerated=len(computed),
-            units_inserted=inserted,
-            units_already_present=len(computed) - inserted,
-            by_stage=by_stage,
-            by_status=by_status,
-            gates=gates,
+        return RunPlan(
+            computed,
+            gates,
+            random_arm_pairs=random_arm_pairs,
+            random_arm_units=random_arm_units,
+            random_arm_rate=random_arm_rate,
         )
 
     def provenance(self, work_id: str) -> UnitProvenance:

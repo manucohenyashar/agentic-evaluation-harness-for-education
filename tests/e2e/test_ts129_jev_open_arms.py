@@ -6,16 +6,19 @@
 | ADV-15 | The blind sample over an engine-on run can draw a decision-seat cell, and what the blind flow holds or renders carries no decision band and no decision confidence |
 | SEC-19 | A unit carrying the student's roster name ("Zelda Quartermaine"), whose script also carries that name, is assembled into a request with the name replaced by the `student_ref`; no log record carries it |
 
-**SEC-19 is red: two defects, owned by no issue yet (they need issues from /plan-to-issues).**
-(1) Even when the unit carries the student's roster name, `judge.assemble` replaces it in the
-transcript only: the extracted EVIDENCE SPANS the request carries keep it, so the name reaches the
-scoring and decide requests. (2) In the shipped system M-ORCH enumerates every unit with `student_name = None` ("the ledger holds neither")
-and no tier stores a roster display name, so the boundary never receives a name to replace: a name a
-student writes on the script reaches the decide requests and the judge prompts (measured: 6 of 6 and
-48 of 54 on F-DEV-PIPE with a signed answer). That missing roster-name plumbing is the second defect. The arm
-feeds the boundary the roster name the design says it receives, so a design-conformant fix of both
-turns it green; it does not ask for free-text redaction of names the roster does not hold, which
-`judge.py` §3.2 rejects.
+**SEC-19 was red: two defects (design 1.9.1 §5.4 R21, issue #593).**
+(1) Even when the unit carries the student's roster name, `judge.assemble` replaced it in the
+transcript only: the extracted EVIDENCE SPANS the request carries kept it, so the name reached the
+scoring and decide requests — fixed by #604 (assembly replaces the name in every text field, and a
+citation of a pseudonymized span still verifies). (2) M-ORCH enumerated every unit with
+`student_name = None` ("the ledger holds neither") and no select resolved the roster's display
+name, so the boundary never received a name to replace: a name a student writes on the script
+reached the decide requests and the judge prompts (measured: 6 of 6 and 48 of 54 on F-DEV-PIPE
+with a signed answer) — fixed by #593's claim-time resolution: the claim select joins the roster
+(#620's `full_name`) on the roster's own key, and a leased unit carries the name for the assembler
+to replace. The case feeds the boundary the roster name the design says it receives, and asserts
+the composed run's decide bodies and judge prompts clean. It does not ask for free-text redaction
+of names the roster does not hold, which `judge.py` §3.2 rejects.
 """
 
 from __future__ import annotations
@@ -198,6 +201,8 @@ def test_sec_19_a_units_roster_name_never_reaches_the_request(tmp_path, monkeypa
 
     from aeh import judge
 
+    from tests.support.roster import strings_in
+
     real_render = dev_pipe.render_band
     monkeypatch.setattr(dev_pipe, "render_band",
                         lambda cid, o: real_render(cid, o) + (f" Signed, {NAME}." if cid == "C1" else ""))
@@ -208,6 +213,28 @@ def test_sec_19_a_units_roster_name_never_reaches_the_request(tmp_path, monkeypa
     (tmp_path / "fx").mkdir()
     world = pipe_world.PipeWorld(root, tmp_path / "fx", record_as_you_go=True, decision_engine=True,
                                  monkeypatch=monkeypatch)
+    # The roster the claim pass resolves (#593) carries the display name. It arrives AFTER
+    # ingest on purpose: the papers write the REF on the `Student:` line, and a named roster
+    # row would have made V3's legacy channel (a nameless row resolves by its ref written
+    # exactly) refuse the paper at ingest. An operator's roster is the same shape — names
+    # added or corrected beside refs the store already resolved.
+    with world.handle.transaction() as tx:
+        tx.execute("UPDATE roster SET full_name = :name", name=NAME)
+    decide_bodies: list[str] = []
+    judge_prompts: list[str] = []
+    real_decide = world.provider.decide
+    real_complete = world.provider.complete
+
+    def decide(request, model_ref):
+        decide_bodies.append("\n".join(strings_in(request)))
+        return real_decide(request, model_ref)
+
+    def complete(prompt, model_ref, params):
+        judge_prompts.append("\n".join(strings_in(prompt)))
+        return real_complete(prompt, model_ref, params)
+
+    world.provider.decide = decide
+    world.provider.complete = complete
     try:
         world.build_run()
         world.start_run()
@@ -229,3 +256,9 @@ def test_sec_19_a_units_roster_name_never_reaches_the_request(tmp_path, monkeypa
     assert NAME not in text, "the unit's roster name reached the assembled request (NFR-PROV-08)"
     assert row["student_ref"] in text, "the request does not carry the student_ref in the name's place"
     assert NAME not in caplog.text, "the student's name reached a log record"
+    # The composed half (AC2): the name the lease resolved reaches no model request — the
+    # decide bodies and the judge prompts carry the ref in its place.
+    assert decide_bodies, "fixture: the engine answered no decide request"
+    assert judge_prompts, "fixture: the run made no judge call"
+    for body in decide_bodies + judge_prompts:
+        assert NAME not in body, "the roster name reached a model request (NFR-PROV-08)"

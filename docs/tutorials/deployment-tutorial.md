@@ -547,7 +547,7 @@ Not yet recorded: who created the class. Only the time is stored.
 
 ### 8.2 Build a package (the test, its rubric and keys)
 
-A **package** is everything about one test: its questions, the rubric lines and their bands, the multiple-choice keys and the grade boundaries. Once built it is published and can never be changed. Write it as a TOML file; [`docs/live-tests/config/ps9-forces-01.package.toml`](../live-tests/config/ps9-forces-01.package.toml) is a complete example, the sample physics test. In short:
+A **package** is everything about one test: its questions, the rubric lines and their bands, the multiple-choice keys and the grade boundaries. Once built it is published and can never be changed. The spec file below is the **debugging/export path**, not the teacher's path (FR-PKG-27): the system creates the valid package file itself from what the teacher confirmed in setup, so a teacher never authors a spec. A published version's spec is a **system-emitted export** — `aeh package export --data-dir ~/aeh-data --package-version <version> --spec out.toml` writes it, and the `aeh package build --spec` command below accepts that export unchanged — and the command is kept so an engineer can build a package without the setup flow, as this tutorial does with the sample physics test. Write it as a TOML file; [`docs/live-tests/config/ps9-forces-01.package.toml`](../live-tests/config/ps9-forces-01.package.toml) is a complete example, the sample physics test. In short:
 
 * `package`: the test's name **exactly as printed on the paper** (`Assessment: PS9-FORCES-01`). Intake's right-test check compares the two, ignoring case.
 * `approved_by`: who approved the questions, keys and rubric.

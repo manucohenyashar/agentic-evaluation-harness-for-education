@@ -16,7 +16,13 @@ import re
 from pathlib import Path
 from typing import Any, NamedTuple
 
-from .vocabulary import CONTROL_SURFACE_ACTIONS
+from .vocabulary import (
+    CONTROL_SURFACE_ACTIONS,
+    RESULTS_CLASS_READ,
+    RESULTS_EXPORT_READ,
+    RESULTS_STUDENT_READ,
+    RUN_START_PREVIEW_READ,
+)
 
 #: The API's version prefix. A breaking change to the API moves to `/api/v2/` beside it.
 API_PREFIX = "/api/v1"
@@ -66,6 +72,14 @@ class ApiRoute(NamedTuple):
     read: str | None = None
 
 
+class FileAnswer(NamedTuple):
+    """A read that answers a stored file's bytes (the results export, FR-CONSOLE-44) rather
+    than a JSON document: the raw bytes and the media type they carry."""
+
+    body: bytes
+    content_type: str
+
+
 def action_slug(action: str) -> str:
     """A control action's URL form: lowercase, with spaces and slashes turned into hyphens.
 
@@ -83,6 +97,17 @@ def _build_routes() -> tuple[ApiRoute, ...]:
         # FR-CONSOLE-42: the roster editor's columns, its "ID is optional" statement and the
         # consent classes — the copy the SPA renders, so it restates no rule of its own.
         ApiRoute("GET", f"{API_PREFIX}/roster-editor", None, "roster editor"),
+        # FR-UI-02: the home hub's live state — the package version, the served run's status
+        # and the engine in use — which the hub reads on load and polls.
+        ApiRoute("GET", f"{API_PREFIX}/hub", None, "hub"),
+        # #631: the run-start screen's data behind its one confirmation (FR-CONSOLE-43) and
+        # the results views, byte-identical with the CLI's (FR-CONSOLE-44, TC-CONSOLE-56/57).
+        # Reads, not controls: the preview writes nothing, and the confirmation's write is
+        # the enumerated "start run" control, not a second one.
+        ApiRoute("GET", f"{API_PREFIX}/run-start-preview", None, RUN_START_PREVIEW_READ),
+        ApiRoute("GET", f"{API_PREFIX}/results/class", None, RESULTS_CLASS_READ),
+        ApiRoute("GET", f"{API_PREFIX}/results/student", None, RESULTS_STUDENT_READ),
+        ApiRoute("GET", f"{API_PREFIX}/results/export", None, RESULTS_EXPORT_READ),
     )
     controls = tuple(
         ApiRoute("POST", f"{API_PREFIX}/actions/{action_slug(action)}", action)

@@ -144,13 +144,15 @@ def test_tc_console_34_the_console_starts_and_serves_its_pages_with_no_toolchain
         finally:
             network_guard.install()
         status, content_type, body = index
-        if status != 200 or "text/html" not in content_type or "<title>Packages</title>" not in body:
+        # Since #634, `/` serves the committed SPA bundle (same origin, no toolchain, no
+        # network); the server-rendered pages remain behind it. Either rendering proves the
+        # console starts and renders; what may not happen is a non-answer or an error page.
+        if status != 200 or "text/html" not in content_type or "<title>" not in body:
             problems.append(
                 f"GET / on the started console's port {port} answered status={status}, "
                 f"content-type={content_type!r}, body={body[:120]!r}. NFR-CONSOLE-02: the console "
-                f"starts *and renders*. [When written: serve_console's configured socket listens "
-                f"and never accepts, and its child answers every route with plain-text "
-                f"'console page'.]"
+                f"starts *and renders* — since #634 the SPA bundle's index (title 'Assessment "
+                f"console') is the expected rendering."
             )
         status, content_type, body = stylesheet
         if status != 200:

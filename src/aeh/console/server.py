@@ -148,7 +148,12 @@ class _ConsoleRequestHandler(ApiRequestsMixin, BaseHTTPRequestHandler):
         parsed = urlsplit(self.path)
         route = parsed.path
         if route.startswith(_API_ROOT):
-            self._serve_api("GET", route)
+            # FR-CONSOLE-43/44: the API's reads take query parameters (the run-start
+            # preview's cohort, package version and per-request profile; the results
+            # views' run and revision) — the screens path re-derives theirs per render,
+            # the API reads receive them.
+            api_query = {key: values[-1] for key, values in parse_qs(parsed.query).items()}
+            self._serve_api("GET", route, api_query)
             return
         # FR-CONSOLE-45: the SPA bundle, once it ships, answers `/` and `/assets/…`; until it
         # does (#634), the server-rendered catalog and stylesheet answer as before.
@@ -348,6 +353,10 @@ class ConsoleServer:
         self.app = build_console(store=store, bind_address=str(self.bind_address))
         # "start run" resolves the run configuration the server was started with.
         self.app.run_config = self._effective()
+        # And a run NAMED per request (`run_start.py`) re-selects its profile section from
+        # the configuration file itself — `run_config` is already profile-flattened, its
+        # `profiles` table gone, so the raw file is what a section selection needs.
+        self.app.file_config = dict(self._cfg)
         self._httpd = _ConsoleHTTPServer(
             (host, int(resolved_port)), _ConsoleRequestHandler, self
         )
@@ -403,6 +412,11 @@ class ConsoleServer:
     @property
     def store(self) -> Any:
         return self._store
+
+    @property
+    def run_id(self) -> str | None:
+        """The run the console serves, as `serve_console` was given it (`None` when none)."""
+        return self._run_id
 
     @property
     def port(self) -> int:

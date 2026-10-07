@@ -321,7 +321,6 @@ def test_tc_pipe_21_b_a_complete_run_with_no_scores_is_not_graded(tmp_path, monk
 # --- TC-PIPE-22 -----------------------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_pipe_22_an_mcq_only_paper_is_offered_to_synthesis_and_narrated(tmp_path, monkeypatch):
     import aeh.synth as synth
 

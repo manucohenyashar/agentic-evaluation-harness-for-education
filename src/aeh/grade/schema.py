@@ -220,6 +220,19 @@ GRADE_STATEMENTS: dict[str, Statement] = {
         "WHERE g.run_id = :run_id AND g.revision = :revision "
         "ORDER BY g.submission_id"
     ),
+    # The results views' read (#631, FR-CONSOLE-44): the run's CURRENT revision's
+    # grade, total and state with the five coverage counters — the same columns the
+    # console's per-run grades read carries (GRADE_KEYS + COVERAGE_KEYS), so the
+    # console's JSON views, `aeh results show` and the stored ledger agree record for
+    # record. Read through the cohort handle like every other reader; no names — the
+    # pseudonymous `student_ref` identity reaches results views through the export.
+    "select_run_current_grade_records": Statement(
+        "SELECT g.submission_id, g.grade, g.total, g.state, "
+        "g.criteria_total, g.criteria_auto, g.criteria_reviewed, "
+        "g.criteria_provisional, g.criteria_missing "
+        "FROM submission_grade g WHERE g.run_id = :run_id AND g.is_current = 1 "
+        "ORDER BY g.submission_id"
+    ),
 }
 
 

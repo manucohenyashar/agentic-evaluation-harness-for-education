@@ -17,10 +17,9 @@ derivation provenance intact").
 **Both CLI directions run through `aeh.pipeline.cli.main`**, in process, as the operator types
 them.
 
-**Written ahead of #627 (and #622).** The round-trip arms are `writtenahead`, keyed to #627 —
-the `export` subcommand does not exist yet, and the fixture itself needs #622's `score_method`.
-The sample-spec arm is green today and is NOT marked: it is the regression guard that the build
-path keeps accepting the shipped spec while #622/#627 change it.
+**#627 landed.** The `export` subcommand exists and the round-trip arms run unmarked: the
+fixture differential and the shipped-sample round trip are both green, and the sample-spec arm
+stays the regression guard that the build path keeps accepting the shipped spec.
 
 **Plan finding:** the plan and #627 say "both shipped sample specs"; the repository ships one
 (`docs/live-tests/config/ps9-forces-01.package.toml`). The arm builds every tracked
@@ -123,7 +122,6 @@ def _diff(original: dict[str, list[dict]], rebuilt: dict[str, list[dict]]) -> li
 # --- the round trip ----------------------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_pkg_37_an_exported_spec_rebuilds_the_same_package(tmp_path, capsys):
     """F-RUBRIC-METHODS → export → build into a fresh store → identical rows."""
     source_dir, target_dir = tmp_path / "source", tmp_path / "target"
@@ -166,7 +164,6 @@ def test_tc_pkg_37_an_exported_spec_rebuilds_the_same_package(tmp_path, capsys):
         provenance["derived_bands"])
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("spec", _shipped_specs(), ids=lambda p: p.name)
 def test_tc_pkg_37_a_shipped_sample_round_trips_through_export(tmp_path, capsys, spec):
     """The shipped sample, built, exported and rebuilt, is row-identical to its first build —
