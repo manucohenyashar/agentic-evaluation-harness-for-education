@@ -52,6 +52,8 @@ DECISION_KEYS: tuple[str, ...] = (
     "HARNESS_JEV_CITE_THRESHOLD",
     "HARNESS_JEV_MAX_CITATION_QUESTIONS",
     "HARNESS_JEV_TOKEN_BYTES_RATIO",
+    # FR-CONF-30: the Q&A assistant's model on the cloud profiles, lifted the same way.
+    "HARNESS_QA_MODEL",
 )
 
 
@@ -273,18 +275,27 @@ def format_profile_banner(config: RunConfig, source: str | None) -> str:
     return (
         f"HARNESS_PROFILE: {summary.backend_profile}\n"
         f"HARNESS_PROFILE source: {source if source is not None else 'unset'}\n"
-        f"{_decision_banner_line(config)}\n"
+        f"{_decision_banner_lines(config)}\n"
+        f"{_qa_banner_line(config)}\n"
         f"profile_summary: {summary.to_canonical_json()}"
     )
 
 
-def _decision_banner_line(config: RunConfig) -> str:
-    """The start-up line saying which engine grades (FR-CONF-25)."""
+def _decision_banner_lines(config: RunConfig) -> str:
+    """The start-up lines saying which engine grades (FR-CONF-25) and, when it is on, the gate
+    that decides whether its verdict counts (FR-CONF-32)."""
     engine = config.decision_engine
     if engine is None:
         return "DECISION_ENGINE: off"
     return (f"DECISION_ENGINE: {engine.model.provider}:{engine.model.build_id} "
-            f"threshold={engine.confidence_threshold}")
+            f"threshold={engine.confidence_threshold}\n"
+            f"DECISION_GATE: jev > {engine.confidence_threshold}")
+
+
+def _qa_banner_line(config: RunConfig) -> str:
+    """The start-up line naming the Q&A assistant's model (FR-CONF-30)."""
+    model = config.assistant_model()
+    return f"QA_ASSISTANT: {model.provider}:{model.build_id}"
 
 
 def resume_profile_conflict(

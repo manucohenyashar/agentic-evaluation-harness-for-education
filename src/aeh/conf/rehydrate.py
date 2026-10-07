@@ -10,7 +10,7 @@ from typing import Any
 
 from .errors import BackendMismatchError, ConfigurationError
 from .model_ref import ModelRef, _ref_from_dict, _ref_to_dict
-from .decision_engine import DecisionEngine
+from .decision_engine import decision_engine_setting, DecisionEngine
 from .checks import _echo
 from .run_config import CohortRef, RunConfig
 from .panel import compute_panel_build_ref
@@ -120,6 +120,10 @@ def rehydrate_run_config(
         retention_setting=provider_config.get("retention_setting"),
         panel_build_ref=persisted_ref,  # type: ignore[arg-type]
         decision_engine=decision_engine,
+        # FR-CONF-30 / CT-CONF-22: the frozen Q&A model comes back as recorded, never re-read
+        # from the environment; a pre-delta row has none and rehydrates to `None`.
+        qa_model=(None if provider_config.get("qa_model") is None
+                  else _ref_from_dict(provider_config.get("qa_model"), "qa_model")),
     )
 
     if cfg is not None:
@@ -179,15 +183,21 @@ def _refuse_on_mismatch(persisted: RunConfig, cfg: Mapping[str, Any]) -> None:
     # The decision engine is part of which grader this run is (CT-CONF-14). A current config that
     # names an engine state must agree with the persisted one; its gate values are frozen on the
     # row and deliberately not re-compared (CT-CONF-18: an environment change after start does
-    # not alter them). A config predating the key compares only when the run had an engine.
-    wants = cfg.get("HARNESS_DECISION_ENGINE")
+    # not alter them). An unset key means the profile's default (FR-CONF-29), read through the
+    # same helper the resolver uses, so an unmodified cloud config resumes the jev run it started.
+    wants = decision_engine_setting(cfg, persisted.backend_profile)
     had = persisted.decision_engine
     if wants is not None or had is not None:
         if (wants == "jev") != (had is not None):
+            # The domain is closed (`jev`/`off`), so naming the setting echoes nothing secret; an
+            # unset key is called out because the operator never typed the value it defaulted to.
+            current = (f"unset (defaults to {wants!r} on {persisted.backend_profile!r})"
+                       if cfg.get("HARNESS_DECISION_ENGINE") is None
+                       else _echo("HARNESS_DECISION_ENGINE", wants))
             raise BackendMismatchError(
                 f"this run was started with the decision engine "
                 f"{'on' if had is not None else 'off'} and current configuration says "
-                f"{_echo('HARNESS_DECISION_ENGINE', wants)} (FR-CONF-04, CT-CONF-14).")
+                f"{current} (FR-CONF-04, FR-CONF-29, CT-CONF-14).")
         current_model = cfg.get("decision_model")
         current_build = (current_model.build_id if isinstance(current_model, ModelRef)
                          else cfg.get("HARNESS_JEV_BUILD"))
