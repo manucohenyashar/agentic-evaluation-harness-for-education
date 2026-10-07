@@ -22,7 +22,6 @@ import importlib
 import importlib.util
 from typing import Any
 
-from tests.support.help_vocabulary import BLOCKER_TARGET as _HELP_BLOCKER_TARGET
 from tests.support.extract_vocabulary import (
     ASSEMBLE as _EXTRACT_ASSEMBLE,
     PROMPT_FIELDS as _EXTRACT_PROMPT_FIELDS,
@@ -1276,12 +1275,11 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # itself arrives with #364, and a module-kind probe would fire the gate for these cases on
     # the day the module lands rather than on the day `recover` does.
     #
-    # TC-PIPE-07's arm (c) - the review-window regrade - is NOT among these: it needs a grade
-    # policy surface this author did not verify, and #377 is the cautionary tale for asserting
-    # against an unverified one. TC-PIPE-08/11/12 and TC-SMOKE-12 are blocked on F-DEV-PIPE.
-    # The "#365 TS-84 M-PIPE recover (TC-PIPE-07 arms a, b, d)" entry left with #365:
+    # TC-PIPE-08/11/12 and TC-SMOKE-12 are blocked on F-DEV-PIPE. The
+    # "#365 TS-84 M-PIPE recover (TC-PIPE-07 arms a, b, d)" entry left with #365:
     # `aeh.pipeline:recover` landed, so its three arms lost the marker and rejoined
-    # the gate. Arm (c), the review-window regrade, was never in the entry.
+    # the gate. Arm (c), the review-window regrade, was never in the entry; it has now
+    # landed green with #378's decided rule (recovery does not touch the window).
     # --- TS-82 (#155), the blast-radius rule ------------------------------------------------
     #
     # `harness.blast_radius` is the command test plan 4.7 and 6.12 name, and no story in the
@@ -1315,12 +1313,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "python -m pytest -q -p no:cacheprovider tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_20_a_prime_the_baseline_reaches_the_runs_version_through_its_writer",
         ("tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_20_a_prime_the_baseline_reaches_the_runs_version_through_its_writer",),
     ),
-    # #523 (needs-attention): an MCQ-only submission is offered to M-SYNTH but gets no narrative.
-    "#523 TS-134 TC-PIPE-22 an MCQ-only paper is narrated": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_22_an_mcq_only_paper_is_offered_to_synthesis_and_narrated",
-        ("tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_22_an_mcq_only_paper_is_offered_to_synthesis_and_narrated",),
-    ),
+    # "#523 TS-134 TC-PIPE-22 an MCQ-only paper is narrated" left with #523's fix: the
+    # worker's MC-only branch narrates a multiple-choice-only submission from its scored
+    # deterministic results by template, with no model call, so the case rejoined the gate.
     # "#524 TS-134 TC-PIPE-23 even panel after quarantine" left with #524's fix: the run no
     # longer completes around a cell awaiting aggregation, the refused row stands on the odd
     # panel, and the quarantine count is the ledger's, so the three arms rejoined the gate.
@@ -1336,55 +1331,15 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # "unowned: S3 shows the proposed inventory as editable rows (TS-91 TC-CONSOLE-45)" left with #599's fix.
     # "unowned: the blind-flow plan names no removed table (TS-91 TC-CONSOLE-45)" left with #601's fix.
     # "unowned: a console review accept records a label (TS-91 TC-CONSOLE-44 row 8)" left with #598's fix.
-    # #597 (design 1.9.1 §5.4 R30): M-PIPE's hooks cost 3.8 ms/unit at 10 submissions after
-    # #597's first change (5.3 before), against NFR-PIPE-02's 0.25 ms. The rest is readiness
-    # rescans per pass and the owners' per-cell work; #597 is needs-attention on the budget.
-    "#597 TS-99 PERF-11 composition adds at most 0.25 ms per unit": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider tests/perf/test_perf_11_composition_overhead.py::test_perf_11_composition_adds_at_most_a_quarter_millisecond_per_unit",
-        ("tests/perf/test_perf_11_composition_overhead.py::test_perf_11_composition_adds_at_most_a_quarter_millisecond_per_unit",),
-    ),
+    # "#597 TS-99 PERF-11 composition adds at most 0.25 ms per unit" left with #597's fix:
+    # the readiness decision runs in SQL, the aggregate hook's per-pass run-wide count reads
+    # are folded into one ready read, the gate's evidence read is indexed (Cohort 34), and
+    # PERF-11 runs as the budget + no-growth guard with its `writtenahead` marker off.
     # "#620 TS-143 name-primary V3 matching, roster names, Cohort 33" left with #620's fix.
-    # --- TS-150 (#637), M-HELP: manuals page, grounded answers-only Q&A, the log ----------
-    #
-    # Keyed `symbols` on the assistant AND #629's route table (TC-HELP-01/03 and C01 read the
-    # routes). #636 depends on #629, so in practice this resolves with #636. The invented names
-    # live in `tests/support/help_vocabulary.py`; a rename there moves this key with it.
-    "#636 TS-150 M-HELP manuals and grounded Q&A": (
-        "symbols",
-        _HELP_BLOCKER_TARGET,
-        (
-            "tests/integration/help/test_ts150_help_manuals_and_qa.py::test_tc_help_01_every_packaged_manual_renders_with_toc_search_and_stable_anchors",
-            "tests/integration/help/test_ts150_help_manuals_and_qa.py::test_tc_help_02_a_grounded_answer_cites_the_recorded_grounding_sections",
-            "tests/integration/help/test_ts150_help_manuals_and_qa.py::test_tc_help_02_b_a_no_grounding_question_gets_the_explicit_not_found_answer",
-            "tests/integration/help/test_ts150_help_manuals_and_qa.py::test_tc_help_03_one_read_only_endpoint_and_an_action_question_changes_nothing",
-            "tests/integration/help/test_ts150_help_manuals_and_qa.py::test_tc_help_04_a_student_question_reaches_the_model_with_no_student_data",
-            "tests/integration/help/test_ts150_help_latency.py::test_tc_help_05_p95_answer_latency_and_retrieval_within_budget",
-            "tests/contract/help/test_ct_help_clauses.py::test_tc_help_c01_one_read_only_endpoint",
-            "tests/contract/help/test_ct_help_clauses.py::test_tc_help_c02_citations_resolve_and_not_found_is_explicit",
-            "tests/contract/help/test_ct_help_clauses.py::test_tc_help_c03_no_student_data_in_any_request",
-            "tests/contract/help/test_ct_help_clauses.py::test_tc_help_c04_writes_only_its_own_log",
-            "tests/contract/help/test_ct_help_clauses.py::test_tc_help_c05_the_log_records_each_exchange_exactly",
-            "tests/security/help/test_sec_25_help_injection.py::test_sec_25_an_injected_question_writes_nothing_and_gets_a_prose_answer",
-            "tests/security/help/test_sec_25_help_injection.py::test_sec_25_an_injection_nested_in_a_manual_passage_writes_nothing",
-        ),
-    ),
-    # --- TS-143 (#619), name-primary identity --------------------------------------------
-    #
-    # Keyed `command` on the design-named migration (`ingest_roster_names`, Cohort 33, owner
-    # `aeh.ingest`) being registered: the design declares no symbol for the matcher or the
-    # roster loader, and the migration lands in the same story (#620) as everything these
-    # cases assert. SystemExit rather than assert, so `python -O` cannot make it pass.
-    "#620 TS-143 name-primary V3 matching, roster names, Cohort 33": (
-        "command",
-        "python -c \"import aeh.ingest; from aeh.store import TIER_MIGRATIONS, Tier; "
-        "raise SystemExit(0 if any(m.name == 'ingest_roster_names' "
-        "for m in TIER_MIGRATIONS[Tier.COHORT]) else 1)\"",
-        (
-            "tests/integration/ingest/test_ts143_name_identity.py",
-            "tests/contract/ingest/test_ct_ingest_23_name_identity.py",
-        ),
-    ),
+    # A keep-both merge re-added the entry (the same artifact #626's entry hit); with #620
+    # merged and its two cases running unmarked, the re-added entry only fires the gate.
+    # "#636 TS-150 M-HELP manuals and grounded Q&A" left with #636's fix: the assistant, the
+    # manuals library and the route reads exist, so the TC-HELP cases dropped their markers.
     "#155 check_traceability --contracts-only passes the real pair (TS-82)": (
         "command",
         "python .claude/skills/create-test-plan/scripts/check_traceability.py "
@@ -1418,31 +1373,16 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # --- #639, the SPA cases (TC-UI-01..07, TC-UI-C01..C06, PERF-19, TC-CONSOLE-40/41 re-pointed) --
     #
     # The layout is invented in `tests/support/spa.py` (the design declares no M-UI interface).
-    # #634 is keyed `path` on the committed bundle's index.html: unresolved today, resolved the
-    # moment the bundle is committed, and free to check.
+    # #634's entry (the committed bundle, keyed `path` on its index.html) was dropped when #634
+    # landed and the bundle was committed; its cases were re-checked green unmarked at the drop.
     #
     # #635 and #638 deliver no Python name and no new file whose path the design fixes, and a
     # `command` running their browser cases would launch a browser on every fast-tier run and read
     # an E6 *skip* (exit 0) as "resolved". So both are keyed on a millisecond static probe over the
     # bundle for the wording each story is the first to ship, quoted from the design: FR-UI-07's
     # recovery text (#635) and FR-UI-06's answers-only affordance (#638). The tradeoff, stated: if
-    # #634 ships either phrase early, its entry fires before the story lands — re-check the cases
-    # green before unmarking, never unmark on the notice alone.
-    "#634 M-UI foundation: the committed SPA bundle (TC-UI-01/02, C01, C06, TC-CONSOLE-40/41)": (
-        "path",
-        "src/aeh/console_assets/spa/index.html",
-        (
-            "tests/artifact/test_spa_bundle_gate.py::test_tc_ui_01_a_the_committed_bundle_is_present_non_empty_and_ships_as_package_data",
-            "tests/artifact/test_spa_bundle_gate.py::test_tc_ui_01_b_tc_ui_c01_the_bundle_names_no_external_origin",
-            "tests/artifact/test_spa_bundle_gate.py::test_tc_console_40_spa_arm_no_service_worker_registration_anywhere_in_the_bundle",
-            "tests/artifact/test_spa_bundle_gate.py::test_tc_ui_c06_the_bundle_has_committed_source_a_pinned_toolchain_and_one_token_file",
-            "tests/browser/spa/test_spa_rebuild.py::test_tc_ui_01_c_tc_ui_c06_a_rebuild_from_committed_source_is_byte_identical",
-            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_02_the_hub_shows_every_destination_with_live_state_and_no_dead_link",
-            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_c01_a_session_over_the_hub_and_every_destination_requests_one_origin",
-            "tests/browser/spa/test_spa_hub_screens.py::test_tc_console_40_spa_a_session_over_the_react_app_leaves_no_storage_or_worker",
-            "tests/browser/spa/test_spa_hub_screens.py::test_tc_console_41_spa_the_react_app_requests_nothing_from_another_origin",
-        ),
-    ),
+    # an earlier story ships either phrase, its entry fires before the story lands — re-check the
+    # cases green before unmarking, never unmark on the notice alone.
     "#635 M-UI lifecycle screens (TC-UI-03/04/05/07, C02..C05, PERF-19)": (
         "command",
         'python -m tests.support.spa contains "check that the console service is running"',
@@ -1467,59 +1407,29 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # --- TS-140 (#613), packaging flips + the operator-doc sweep ----------------------------
     #
     # #614's entry (the four standard dependencies, extras retired, operator docs reduced) was
-    # dropped when #614 landed. The SPA-bundle arms wait on M-UI's committed bundle, not on #614:
-    # the package-data glob must reach it and the clean venv must carry it. Keyed `command` on the
-    # fast static arm; TC-PIPE-12's clean-venv case rides on it rather than its own command
-    # because it is `slow` (a real venv and a real `pip install`) — re-run it by hand when this fires.
-    "#634 TS-140 the SPA bundle ships as package data (TC-STORE-26 new arm, TC-PIPE-12)": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider -p no:randomly "
-        "tests/unit/pipe/test_tc_store_26_packaging_declaration.py::test_tc_store_26_the_package_data_covers_the_spa_bundle_directory",
-        (
-            "tests/unit/pipe/test_tc_store_26_packaging_declaration.py::test_tc_store_26_the_package_data_covers_the_spa_bundle_directory",
-            "tests/smoke/test_tc_pipe_12_clean_venv_install.py::test_tc_pipe_12_the_installed_package_carries_the_spa_bundle",
-        ),
-    ),
+    # dropped when #614 landed. #634's entry (the SPA-bundle arms: the package-data glob must
+    # reach the bundle and the clean venv must carry it; TC-PIPE-12's clean-venv case rode on
+    # the fast static arm because it is `slow` — a real venv and a real `pip install`) was
+    # dropped when #634 landed and the bundle was committed; its cases were re-checked green
+    # unmarked at the drop.
     # --- TS-147 (#628), M-CONSOLE's JSON API and same-origin SPA (FR-CONSOLE-45) ------------
     #
     # The names are `tests/support/console_api_vocabulary.py`'s. #629 landed the route table,
     # the bundle path and the `spa_dir=` seam, and its entry was dropped with its markers.
-    # The shipped-bundle arm needs the built SPA at the package-data path, which #634 ships
-    # (#629's own criterion: "the bundle itself arrives with #634"). Keyed on the file's
-    # existence, so it fires when the bundle lands, whichever of #629/#634 is last.
-    "#634 TS-147 TC-CONSOLE-53(a) the shipped SPA bundle is served from package data": (
-        "command",
-        "python -c \"import sys, aeh.console as c; "
-        "sys.exit(0 if (c.SPA_BUNDLE_DIR / 'index.html').is_file() else 1)\"",
-        ("tests/integration/console/test_tc_console_53_api_one_origin.py::test_tc_console_53_a_the_shipped_bundle_is_served_and_names_no_other_origin",),
-    ),
+    # #634's entry (the shipped-bundle arm, keyed on the built SPA's existence at the
+    # package-data path — #629's own criterion: "the bundle itself arrives with #634") was
+    # dropped when #634 landed and the bundle was committed; the arm was re-checked green
+    # unmarked at the drop.
     # --- TS-144 (#621), M-PKG rubric methods ----------------------------------------------
     #
-    # #627 (depends on #622): `aeh package export`. Keyed on the shipped-sample round trip,
-    # which needs only the export command — the fixture round trip also needs #622, which
-    # #627 cannot land without.
-    "#627 TS-144 aeh package export round-trips through build (TC-PKG-37)": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider tests/integration/pkg/test_tc_pkg_37_export_round_trip.py::test_tc_pkg_37_a_shipped_sample_round_trips_through_export",
-        (
-            "tests/integration/pkg/test_tc_pkg_37_export_round_trip.py::test_tc_pkg_37_an_exported_spec_rebuilds_the_same_package",
-            "tests/integration/pkg/test_tc_pkg_37_export_round_trip.py::test_tc_pkg_37_a_shipped_sample_round_trips_through_export",
-        ),
-    ),
+    # The "#627 aeh package export" entry left with #627: the export command landed, and the
+    # two round-trip arms of `test_tc_pkg_37_export_round_trip.py` run green unmarked — the
+    # fixture differential, the shipped-sample round trip and the build guard all pass.
     # --- TS-148 (#633), console coverage: parity census, roster editor, run start, exports --
     #
     # The names are invented in `tests/support/console_api_vocabulary.py` (TS-148 section): each
     # key probes the route-table label or inventory name its story is asked to add, so a rename
     # there moves the key with it. The `_control_` cases in these files are not marked (green).
-    "#631 TS-148 TC-CONSOLE-56/57 run start, results views and exports match the CLI": (
-        "command",
-        "python -c \"import sys; sys.path.insert(0, 'src'); import aeh.console as c; reads = {getattr(r, 'read', None) for r in "
-        "c.API_ROUTES}; sys.exit(0 if {'run start preview', 'results export'} <= reads else 1)\"",
-        (
-            "tests/integration/console/test_ts148_console_coverage.py::test_tc_console_56_the_run_start_banner_estimate_and_confirmation_match_the_cli",
-            "tests/integration/console/test_ts148_console_coverage.py::test_tc_console_57_exports_are_byte_identical_and_views_match_the_cli",
-        ),
-    ),
     "#632 TS-148 TC-CONSOLE-54 the CLI/console parity census": (
         "symbols",
         "aeh.console:CLI_CONSOLE_PATHS,aeh.console:DEBUGGING_ONLY_COMMANDS",

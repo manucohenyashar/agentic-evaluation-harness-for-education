@@ -24,6 +24,7 @@ Files:
     rollups.py       class rollups, the separated rollup and rollup findings
     views.py         the per-criterion view: a composite presented as one line
     exports.py       the school-facing export: one PDF per student and a marks CSV
+    results.py       the run's results records and rollup, shared by the console views and the CLI
     signals.py       the grading stage's signals and alerts
 
 Detailed design notes (the full original module description): `docs/code-notes/grade.md`.
@@ -83,6 +84,7 @@ from .amendments import AmendmentMixin
 from .reporting import ReportingMixin
 from .service import GradingService, open_grade
 from .exports import export_grade_artifacts
+from .results import run_class_view, run_grade_records, run_results
 from .signals import evaluate_grade_alerts, GradeAlert, record_grade_signals
 
 
@@ -127,5 +129,8 @@ __all__ = [
     "record_grade_signals",
     "resolve_grade",
     "rollup_findings",
+    "run_class_view",
+    "run_grade_records",
+    "run_results",
     "separated_rollup",
 ]

@@ -158,6 +158,30 @@ def triage_finding(match: IdentityMatch, name_present: bool) -> str:
             f"(candidates: {list(match.candidates)})")
 
 
+def pseudonymize_name(text: str, name: Any, ref: Any) -> str:
+    """The text with every occurrence of the student's roster display name replaced by the
+    student's pseudonymous `student_ref` (NFR-PROV-08: a model request carries the ref, never
+    the name). The boundary helper both assemblers share — `M-JUDGE` for the scoring request
+    and `M-EXTRACT` for the extraction request — because a name a student writes anywhere on
+    the paper (a signature, a turn of phrase) travels in the stored transcript, and every
+    request built from that transcript must carry the ref in its place. `aeh.ingest` owns the
+    identity rules, so both `aeh.extract` and `aeh.judge` import it here without a cycle
+    (`aeh.judge` already imports `aeh.extract`, so the helper cannot live there).
+
+    A call with no name (a ref-only or nameless roster row, the pre-#620 shape — every unit
+    `M-ORCH` leases before the roster names a student) passes the text through unchanged, so
+    today's bytes assemble byte-identically. The comparison is exact, not normalized: a
+    roster's display name is the operator's own spelling, and the transcription that put the
+    name in the transcript read it from the same paper the roster was typed from. Name
+    variants the roster does not hold are out of scope by design (`judge.py` §3.2 rejects
+    free-text redaction); the `Student:` head, the one place the spelling is unreliable, is
+    `redact_identity_head`'s job.
+    """
+    if isinstance(text, str) and isinstance(name, str) and name and ref and name in text:
+        return text.replace(name, str(ref))
+    return text
+
+
 def redact_identity_head(markdown: str, student_ref: str | None = None) -> str:
     """The transcript with every `Student:` head's value replaced, so the child's written name
     never reaches a model request (NFR-PROV-04, CT-INGEST-23). The value becomes the

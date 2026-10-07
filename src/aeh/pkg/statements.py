@@ -41,6 +41,9 @@ PKG_STATEMENTS.update({
     "count_package": Statement(
         "SELECT COUNT(*) AS n FROM package WHERE package_id = :p"
     ),
+    "select_published_by": Statement(
+        "SELECT published_by FROM package_version WHERE package_version_id = :v"
+    ),
     "pkg_revision_copy_criterion": Statement(
         # The copy is VERBATIM — every column the M-PKG module defines on the table
         # (#230): a revision that drops criterion fields is mutation by omission, and
@@ -569,6 +572,13 @@ PKG_STATEMENTS.update({
     ),
     "update_criterion_construct_tag": Statement(
         "UPDATE criterion SET construct_tag = :value WHERE package_version_id = :v "
+        "AND criterion_id = :criterion_id"
+    ),
+    # `FR-PKG-27`: the spec export carries a stored band justification (`FR-SETUP-04`) so a
+    # package rebuilt from its own export keeps the provenance column; drafts only, through
+    # `update_criterion_field`'s guard like every field here.
+    "update_criterion_band_justification": Statement(
+        "UPDATE criterion SET band_justification = :value WHERE package_version_id = :v "
         "AND criterion_id = :criterion_id"
     ),
     "update_band_label": Statement(

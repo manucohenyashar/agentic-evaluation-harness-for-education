@@ -64,9 +64,12 @@ def _score_units_for(store: Any, fixture_submissions: Sequence[str]) -> list[Any
     The drivers re-score judgments that have already been made, so the units are the
     `done` ones — the statement says so — and `Orchestrator.lease`, which claims PENDING
     work, cannot hand them over. They are read back instead, into the shipped `WorkUnit`:
-    same fields, same values the claim select filled, `student_name` and `submission_text`
-    left `None` exactly as a lease leaves them (the assembler resolves the words;
-    `FR-ORCH-04`'s reconciliation).
+    same fields, same values the claim select filled, `submission_text` left `None`
+    exactly as a lease leaves it (the assembler resolves the words; `FR-ORCH-04`'s
+    reconciliation), and `student_name` the roster name the claim select resolves (#593):
+    a lease leaves a NAMED unit when the roster holds one, and a rebuild without the
+    name assembles an unpseudonymized transcript where the judged run sent the ref —
+    the recorded-fixture miss `_score_units_for` exists to prevent.
 
     That fidelity is the whole point. `assemble` builds the request from these fields, the
     recorded-fixture key IS the request, and a unit rebuilt with one field different
@@ -104,7 +107,7 @@ def _score_units_for(store: Any, fixture_submissions: Sequence[str]) -> list[Any
                 run_id=row["run_id"],
                 stage=row["stage"],
                 student_ref=row["student_ref"],
-                student_name=None,
+                student_name=row["student_name"],
                 submission_id=row["submission_id"],
                 criterion_id=row["criterion_id"],
                 submission_text=None,

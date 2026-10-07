@@ -208,6 +208,12 @@ _CONSOLE_BARE_MIGRATION_IMPORTS: frozenset[str] = frozenset(
 #:
 #: - `aeh.store` — the seam itself: reads and control-row writes go through the tier handles.
 #: - `aeh.conf` — config types (`CohortRef`, `ModelRef`, `resolve_run_config`).
+#: - `aeh.conf.decision_engine` — `decision_engine_setting`, the helper the hub's live read
+#:   goes through to name the engine in force (`jev`/`off`, FR-UI-02, #634): read-only
+#:   configuration vocabulary, read through the same helper the resolver uses (FR-CONF-29)
+#:   so the hub and a started run cannot disagree about an unset `HARNESS_DECISION_ENGINE`.
+#:   Not re-exported from `aeh.conf`'s `__init__`, so the submodule edge is declared
+#:   directly rather than widened on the package's public surface.
 #: - `aeh.review` — the review constants the queue renders (`REVIEW_DEFAULT_BANDS`, the
 #:   blind-reserve minutes): read-only vocabulary, `M-REVIEW`'s declared shape.
 #: - `aeh.grade`, `aeh.orch`, `aeh.pkg`, `aeh.det` — the domain owners §11.8's control
@@ -225,9 +231,21 @@ _CONSOLE_BARE_MIGRATION_IMPORTS: frozenset[str] = frozenset(
 #:   `setup_service_for_store`), and "start run" hands the run to `M-PIPE` on a server-owned
 #:   thread (`start_run_in_background`, `NFR-CONSOLE-08`). Both are imported inside the
 #:   action that needs them, never at module scope.
+#: - `aeh.pipeline.runtime` — #631. The run-start preview resolves the provider the
+#:   started run would use through M-PIPE's own resolver (`_provider_for`), so the
+#:   estimate is priced on the same transport the run spends on — a resolver the console
+#:   would otherwise hold a drifting copy of.
+#: - `aeh.help`, `aeh.prov`, `aeh.conf.qa_model` — #636, declared contract amendment.
+#:   `FR-HELP-02`'s ask read is the console's third transport use: `help_read.py` (a console
+#:   subpackage module, so these are module-scope imports of it, not of console.py itself)
+#:   builds the grounded assistant (`aeh.help`) on a provider (`aeh.prov`) whose QA model is
+#:   resolved by the FR-CONF-30 rule (`aeh.conf.qa_model`). The console still starts with no
+#:   QA model: the assistant is constructed lazily at the first ask (`CT-HELP-02`'s
+#:   precondition), never at import.
 _CONSOLE_SYMBOL_IMPORT_MODULES: frozenset[str] = frozenset(
-    {"aeh.conf", "aeh.det", "aeh.grade", "aeh.orch", "aeh.pipeline", "aeh.pkg", "aeh.review",
-     "aeh.setup", "aeh.stats", "aeh.store"}
+    {"aeh.conf", "aeh.conf.decision_engine", "aeh.conf.qa_model", "aeh.det", "aeh.grade",
+     "aeh.help", "aeh.orch", "aeh.pipeline", "aeh.pipeline.runtime", "aeh.pkg", "aeh.prov",
+     "aeh.review", "aeh.setup", "aeh.stats", "aeh.store"}
 )
 
 

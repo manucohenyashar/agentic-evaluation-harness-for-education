@@ -12,14 +12,12 @@ the page-picture decoder and the TypeSafe SDK move from the `live-ingest` / `jev
 into the core dependency list, and the extras are retired. The *import* boundary does not move:
 the four stay lazy-imported, which is `TC-PIPE-12`'s and `TC-INGEST-01`'s business, not this file's.
 
-**Which arms are red, and why.** Written ahead of #614 (the packaging story):
-
-* the dependency-set arm and the no-extras arm are `writtenahead`, keyed to **#614** — today the
-  core list is `[]` and both extras exist;
-* the SPA-bundle coverage arm is `writtenahead`, keyed to **#634** — the bundle (M-UI's committed
-  build) does not exist yet, and #614 cannot make it exist;
-* the build-system, entry-point and `console_assets/*` arms are unchanged and stay green: they
-  were true before the delta and must stay true after it.
+**Which arms were red, and why.** Written ahead of #614 (the packaging story) and of #634 (the
+bundle): the dependency-set and no-extras arms waited on #614 — the core list was `[]` and both
+extras existed — and the SPA-bundle coverage arm waited on #634, which #614 could not make true.
+Both stories have landed, the markers are off and their `WRITTEN_AHEAD_BLOCKERS` entries are out;
+the build-system, entry-point and `console_assets/*` arms were unchanged throughout and stayed
+green.
 
 **The `>=` clauses are asserted as declared strings**, not parsed as version ranges: the plan
 pins `pypdf>=6.0`, and a test that parsed and compared would pass for `pypdf>=6.1` — a different
@@ -154,7 +152,6 @@ def _covered(relative: str, globs: list[str]) -> bool:
     return False
 
 
-@pytest.mark.writtenahead
 def test_tc_store_26_the_package_data_covers_the_spa_bundle_directory() -> None:
     """New arm (operator plan §5.0): `console_assets/*` covers the SPA bundle directory too.
 

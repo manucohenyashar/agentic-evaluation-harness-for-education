@@ -446,10 +446,25 @@ class DomainEffectsMixin:
         if cohort_id not in self._cohort_keys():
             # Opening an unknown cohort would CREATE its tier file.
             return f"no cohort {cohort_id!r} is stored; nothing was started", False
+        if not run_id and self._package_of(package_version) == "":
+            # The same never-create rule as the cohort's, on the package tier: the start
+            # opens the version's Tier P file to validate its grade policy, and an
+            # unknown version's file would be created by the open — an API error must
+            # leave no partial run-start rows, not even a new store file.
+            return (
+                f"no package version {package_version!r} is stored; nothing was started",
+                False,
+            )
         config = params.get("config")
-        if not isinstance(config, dict):
-            config = effective_config(dict(getattr(self, "run_config", None) or {}))
         try:
+            if not isinstance(config, dict):
+                # The run's configuration, composed exactly as the run-start screen's
+                # preview read composed it: the request's per-run profile (FR-CONSOLE-43 —
+                # a console process cannot run under `cloud-hosted` itself) and threshold
+                # (FR-CONF-32) are the same explicit settings every other path writes.
+                from .run_start import compose_run_start_config
+
+                config = compose_run_start_config(self, params)
             started, thread = start_run_in_background(
                 self._store, cohort_id=cohort_id, package_version_id=package_version,
                 config=config, run_id=run_id)

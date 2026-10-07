@@ -159,15 +159,17 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any,
     `fallback=True` at exactly two verdicts is `FR-PIPE-05`: a terminal failure left an even
     panel, and an even panel is never aggregated as one.
     """
-    cells = orch.ready_cells(handle.run_id, "aggregate")
-    if not cells:
+    ready = orch.ready_cells_with_units(handle.run_id, "aggregate")
+    if not ready:
         # Most passes have no cell ready: the run-wide count reads below are only needed for
         # cells this pass aggregates (NFR-PIPE-02, #597).
         return StageTrace("aggregate", units=0, done=0, detail=())
-    counts = orch.cell_unit_counts(handle.run_id, STAGE_SCORE)
-    # The ledger's own quarantine count (#524): a missing verdict is not a quarantine, and an
-    # even panel with nothing quarantined is a defect that must pause (TC-PIPE-23(c)).
-    quarantines = orch.cell_quarantined_counts(handle.run_id, STAGE_SCORE)
+    # One read returns the ready cells AND their score-stage unit figures, so the two
+    # run-wide GROUP BY reads this hook used to issue per pass (the same statement, twice —
+    # `cell_unit_counts`, then `cell_quarantined_counts` over it) are gone (NFR-PIPE-02,
+    # #597). The cells are the read's own, so each lookup below is total.
+    cells = [cell.key for cell in ready]
+    units_by_key = {cell.key: cell for cell in ready}
     # `FR-PIPE-04` step 3 spells `aggregate(..., breaker_tripped=..., fallback=...)`, and the
     # flag is not cosmetic: a criterion whose breaker latched must score `provisional` /
     # `ungradeable_by_panel` rather than `auto` / `final` (`FR-ORCH-13`, `CT-ORCH-16`). The
@@ -194,7 +196,7 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any,
             signals = gate.verify(handle.run_id, cell.submission_id, cell.criterion_id)
             verdicts = verdicts_for(
                 handle.cohort, handle.run_id, cell.submission_id, cell.criterion_id)
-            terminal_units = counts.get(cell, (len(verdicts), len(verdicts)))[0]
+            terminal_units = units_by_key[cell].terminal
             if not verdicts:
                 # Every score unit of this cell is terminal and none produced a verdict — they
                 # were all quarantined. `aggregate` refuses an empty panel outright
@@ -220,7 +222,7 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any,
                 catalog, view, handle.package_version_id, cell.criterion_id)
             baseline, history = ((None, None) if store is None
                                  else _escalation_inputs(store, handle, catalog, criterion))
-            quarantined = quarantines.get(cell, 0)
+            quarantined = units_by_key[cell].quarantined
             if len(verdicts) % 2 == 0 and len(verdicts) > 2 and quarantined > 0:
                 # FR-PIPE-18 / CT-PIPE-12 (#524, ADR-34): quarantine left a widened panel even.
                 # Ask M-ORCH for one replacement arm and leave the cell unaggregated; when the

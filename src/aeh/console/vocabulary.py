@@ -40,6 +40,20 @@ PRE_LOCK_ACTIONS: frozenset[str] = frozenset(
 )
 
 
+#: The run-start screen's read (FR-CONSOLE-43, #631): the profile banner and the cost
+#: estimate behind the one confirmation. The run's profile is named per request
+#: (`profile`), because a console process cannot run under `cloud-hosted` itself
+#: (CT-CONSOLE-05).
+RUN_START_PREVIEW_READ = "run start preview"
+
+#: The results views' reads (FR-CONSOLE-44, #631): the class rollup, the per-student
+#: records, and the school-facing export's bytes — each through the door the `aeh
+#: results` subcommands call, so the two surfaces are one implementation.
+RESULTS_CLASS_READ = "results class"
+RESULTS_STUDENT_READ = "results student"
+RESULTS_EXPORT_READ = "results export"
+
+
 #: The per-action field contract (§11.8's Effect column): the store fields each action may
 #: write, as dotted `table.field` names. `perform` writes no field outside this map, which is
 #: what makes the dynamic sweep decisive.
