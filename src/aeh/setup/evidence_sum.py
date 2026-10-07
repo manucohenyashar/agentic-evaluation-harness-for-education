@@ -75,6 +75,10 @@ def _parse_aspect(criterion_id: str, raw: Any) -> tuple[str, float, tuple[str, .
         raise SetupError(f"aspect {name!r}: an aspect is worth more than nothing "
                          f"(got {points}).")
     levels = tuple(str(level).strip() for level in (raw.get("levels") or ()))
+    if len(levels) == 1 or any(not level for level in levels):
+        raise SetupError(f"aspect {name!r}: levels describe at least the absent and present "
+                         "cases, each in words — or leave them out to derive both from the "
+                         "aspect's name (FR-SETUP-19).")
     for text in (name, *levels):
         offense = text_offense(text)
         if offense is not None:
@@ -95,7 +99,7 @@ class EvidenceSumMixin:
         aspect. Rebuilding a pending draft replaces it; a pending `general` card for the same
         id is superseded — the teacher chose another method."""
         v = self._require_draft_version()
-        self._method_question(v, question_id)
+        question = self._method_question(v, question_id)
         parsed = [_parse_aspect(criterion_id, raw) for raw in aspects]
         names = [name.lower() for name, _points, _levels in parsed]
         if not parsed or len(set(names)) != len(names):
@@ -119,6 +123,13 @@ class EvidenceSumMixin:
         if earlier is not None and earlier["status"] == CONFIRMED:
             raise SetupOrderError(f"evidence-sum criterion {criterion_id!r} is already "
                                   "confirmed.")
+        question_max = float(question.get("max_points") or 0.0)
+        total = sum(a.points for a in built)
+        if question_max > 0 and built and not promotions and not math.isclose(total,
+                                                                               question_max):
+            # Advisory, not a refusal: the teacher may split a question across criteria.
+            LOGGER.warning("evidence-sum criterion %s: its aspects sum to %g, the question "
+                           "%s is worth %g", criterion_id, total, question_id, question_max)
         draft = EvidenceSumDraft(criterion_id=criterion_id, question_id=question_id,
                                  aspects=tuple(built), promotions=tuple(promotions),
                                  confirmed=False, confirmed_by=None)

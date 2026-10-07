@@ -19,7 +19,7 @@ from typing import Any, Mapping, Sequence
 
 from aeh.pkg import PackageVersionId
 
-from .settings import DEFAULT_RUBRIC_METHOD, RUBRIC_METHOD_CHOICES
+from .settings import DEFAULT_RUBRIC_METHOD, RUBRIC_METHOD_CHOICES, _now
 from .errors import SetupError, SetupOrderError
 from .records import ProposedBand, RubricMethodChoice
 from .readback import _descriptor_offense as text_offense
@@ -117,6 +117,19 @@ class MethodDraftsMixin:
                                         default=method == DEFAULT_RUBRIC_METHOD)
                      for method, label in RUBRIC_METHOD_CHOICES)
 
+    def withdraw_rubric_method(self, criterion_id: str) -> bool:
+        """Withdraw a pending `general` card or evidence-sum draft for `criterion_id`: the
+        teacher chose per-band descriptions (`bands`) instead, so the pending record stops
+        holding publish (`FR-SETUP-18`: "or edits it into one of the declared methods"). The
+        banded criterion is then entered like any other. Returns whether anything was
+        pending; a confirmed method is never withdrawn — its criterion is in the package."""
+        v = self._require_draft_version()
+        recorded_at = _now()
+        withdrawn = False
+        for prefix in (GENERAL_STEP_PREFIX, EVIDENCE_SUM_STEP_PREFIX):
+            withdrawn = self._supersede(v, prefix + criterion_id, recorded_at) or withdrawn
+        return withdrawn
+
     # -- the pending records ---------------------------------------------------------------
 
     def _method_record(self, v: PackageVersionId, step_id: str) -> dict | None:
@@ -202,14 +215,15 @@ class MethodDraftsMixin:
                 f"criterion id(s) {', '.join(taken)} already exist in version {v!r}; a "
                 "rubric-method criterion is a new criterion with an unused id.")
 
-    def _supersede(self, v: PackageVersionId, step_id: str, recorded_at: str) -> None:
+    def _supersede(self, v: PackageVersionId, step_id: str, recorded_at: str) -> bool:
         """Mark the other method's pending record for the same criterion superseded: the
         teacher chose a different method, so its card no longer holds the gate. A confirmed
         record is not touched — its criterion exists, and `_require_unused_ids` refuses."""
         record = self._method_record(v, step_id)
-        if record is not None and record["status"] == PENDING:
-            self._write_method_record(v, step_id, SUPERSEDED, record["payload"],
-                                      recorded_at)
+        if record is None or record["status"] != PENDING:
+            return False
+        self._write_method_record(v, step_id, SUPERSEDED, record["payload"], recorded_at)
+        return True
 
     def _record_method_classification(self, v: PackageVersionId, criterion_id: str,
                                       classification: str, recorded_at: str) -> None:

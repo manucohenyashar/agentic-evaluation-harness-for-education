@@ -168,3 +168,10 @@ marks the other method's pending record `superseded`).
 
 Ordering caveat: `read_back_rubric` refuses a draft that already carries criteria it did not
 stage, so method criteria are confirmed after the read back.
+
+`withdraw_rubric_method(id)` marks either pending record superseded, so a teacher who chose
+`general` or a checklist and then prefers per-band descriptions is not held at the gate.
+Known limit: confirmation writes its rows through M-PKG's per-call transactions (there is no
+batch write for a method criterion), so a store failure mid-confirmation can leave a partial
+criterion that M-PKG cannot remove; the checks run before the first write to make a rule
+failure there impossible.
