@@ -1344,6 +1344,7 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "python -m pytest -q -p no:cacheprovider tests/perf/test_perf_11_composition_overhead.py::test_perf_11_composition_adds_at_most_a_quarter_millisecond_per_unit",
         ("tests/perf/test_perf_11_composition_overhead.py::test_perf_11_composition_adds_at_most_a_quarter_millisecond_per_unit",),
     ),
+    # "#620 TS-143 name-primary V3 matching, roster names, Cohort 33" left with #620's fix.
     # --- TS-150 (#637), M-HELP: manuals page, grounded answers-only Q&A, the log ----------
     #
     # Keyed `symbols` on the assistant AND #629's route table (TC-HELP-01/03 and C01 read the

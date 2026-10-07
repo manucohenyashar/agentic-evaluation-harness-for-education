@@ -460,7 +460,7 @@ INGEST_STATEMENTS: dict[str, Statement] = {
         "student_ref = :student_ref WHERE submission_id = :submission_id"
     ),
     "select_roster": Statement(
-        "SELECT student_ref FROM roster WHERE cohort_id = :cohort_id"
+        "SELECT student_ref, full_name FROM roster WHERE cohort_id = :cohort_id"
     ),
     # -- V4 (FR-INGEST-25..28) -------------------------------------------------------------------------
     # The scans already read into a document, for the intake command's re-run guard (B4).

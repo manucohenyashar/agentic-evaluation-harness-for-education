@@ -10,6 +10,7 @@ from typing import Any
 
 from aeh.extract import document_bytes
 from aeh.ingest import INGEST_STATEMENTS
+from aeh.ingest.identity import redact_identity_head
 from aeh.orch import STAGE_EXTRACT, _cohort_keys_on_filesystem
 from aeh.pkg import PackageCatalog
 from aeh.prov import PromptPayload
@@ -307,6 +308,10 @@ def assemble(unit: Any, *, store: Any = None) -> ScoringRequest:
         transcript = ""
 
     transcript = _pseudonymize(transcript, student_name, student_ref)
+    # The paper's `Student:` head carries the written name (#620, ADR-38), which no roster
+    # string match is guaranteed to catch (case, accents, order): the head's value becomes the
+    # ref — what it held before names — or a placeholder (NFR-PROV-04, CT-INGEST-23).
+    transcript = redact_identity_head(transcript, str(student_ref) or None)
     evidence = _pseudonymized_spans(evidence, student_name, student_ref)
     dependency_evidence = tuple(
         DependencyEvidence(

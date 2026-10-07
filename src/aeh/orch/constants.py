@@ -47,6 +47,14 @@ SWEEP1_ADMITTED_INGEST_STATUSES: frozenset[str] = frozenset(
 )
 
 
+#: The V3 outcomes that hold a paper for identity triage (FR-INGEST-39, CT-INGEST-23, #620).
+#: Such a paper gets no scoring work of ANY stage — the deterministic stage's admit-all exception
+#: included — because its score would land under no student, or the wrong one. Keyed on the
+#: identity column, not on `quarantined`: a paper refused before V3 (unreadable at V0/V1) keeps
+#: its deterministic unit (TC-ORCH-25 pins re-ingest adding exactly two units).
+IDENTITY_TRIAGE_V3_OUTCOMES: frozenset[str] = frozenset({"ambiguous", "unmatched"})
+
+
 #: Where the base enumeration's depths come from (`FR-SETUP-08`): base scoring depth 1
 #: for `atomic`/`atomic_with_gate` criteria and 3 for `holistic` ones. Unknown scoring
 #: models enumerate at depth 1 — the conservative base — and a package introducing a new
