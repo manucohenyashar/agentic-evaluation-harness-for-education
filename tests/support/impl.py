@@ -1276,12 +1276,11 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # itself arrives with #364, and a module-kind probe would fire the gate for these cases on
     # the day the module lands rather than on the day `recover` does.
     #
-    # TC-PIPE-07's arm (c) - the review-window regrade - is NOT among these: it needs a grade
-    # policy surface this author did not verify, and #377 is the cautionary tale for asserting
-    # against an unverified one. TC-PIPE-08/11/12 and TC-SMOKE-12 are blocked on F-DEV-PIPE.
-    # The "#365 TS-84 M-PIPE recover (TC-PIPE-07 arms a, b, d)" entry left with #365:
+    # TC-PIPE-08/11/12 and TC-SMOKE-12 are blocked on F-DEV-PIPE. The
+    # "#365 TS-84 M-PIPE recover (TC-PIPE-07 arms a, b, d)" entry left with #365:
     # `aeh.pipeline:recover` landed, so its three arms lost the marker and rejoined
-    # the gate. Arm (c), the review-window regrade, was never in the entry.
+    # the gate. Arm (c), the review-window regrade, was never in the entry; it has now
+    # landed green with #378's decided rule (recovery does not touch the window).
     # --- TS-82 (#155), the blast-radius rule ------------------------------------------------
     #
     # `harness.blast_radius` is the command test plan 4.7 and 6.12 name, and no story in the
