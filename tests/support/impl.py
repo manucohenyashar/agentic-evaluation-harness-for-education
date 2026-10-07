@@ -1526,16 +1526,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # The names are invented in `tests/support/console_api_vocabulary.py` (TS-148 section): each
     # key probes the route-table label or inventory name its story is asked to add, so a rename
     # there moves the key with it. The `_control_` cases in these files are not marked (green).
-    "#630 TS-148 TC-CONSOLE-55 the roster editor writes the CLI's rows": (
-        "command",
-        "python -c \"import sys; sys.path.insert(0, 'src'); import aeh.console as c; sys.exit(0 if any("
-        "getattr(r, 'control', None) == 'create cohort' for r in c.API_ROUTES) else 1)\"",
-        (
-            "tests/integration/console/test_ts148_console_coverage.py::test_tc_console_55_a_a_names_only_paste_creates_the_cli_cohort",
-            "tests/integration/console/test_ts148_console_coverage.py::test_tc_console_55_b_names_and_ids_create_the_cli_cohort",
-            "tests/integration/console/test_ts148_console_coverage.py::test_tc_console_55_c_d_a_roster_without_names_is_refused_and_writes_nothing",
-        ),
-    ),
     "#631 TS-148 TC-CONSOLE-56/57 run start, results views and exports match the CLI": (
         "command",
         "python -c \"import sys; sys.path.insert(0, 'src'); import aeh.console as c; reads = {getattr(r, 'read', None) for r in "

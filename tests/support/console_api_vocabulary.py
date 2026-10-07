@@ -450,10 +450,10 @@ PARITY_ISSUE = "#632"
 PARITY_PATHS = "CLI_CONSOLE_PATHS"
 DEBUGGING_ONLY = "DEBUGGING_ONLY_COMMANDS"
 
-#: The roster editor's route, found by its ``control`` label, never by path. NOT one of the
-#: fifteen `CONTROL_SURFACE_ACTIONS` and not `NON_CONTROL_MUTATIONS`' upload: `TC-CONSOLE-C30`
-#: flags it as an orphan until #630 decides how cohort creation meets `CT-CONSOLE-30` (a plan
-#: finding, reported on #633's PR — this file does not paper over it).
+#: The roster editor's route, found by its ``control`` label, never by path. #630 made it an
+#: enumerated control action (the sixteenth `CONTROL_SURFACE_ACTIONS` entry, FR-CONSOLE-42),
+#: which is how cohort creation meets `CT-CONSOLE-30`: the census admits it as a control row,
+#: not as a second `NON_CONTROL_MUTATIONS` exception.
 ROSTER_CONTROL = "create cohort"
 
 #: The run-start screen's read and the profile the request names. The console process cannot

@@ -16,6 +16,7 @@ What the console adds is what a teacher typing into a grid needs and a file read
 
 from __future__ import annotations
 
+import sqlite3
 from typing import Any, Mapping
 
 from aeh.orch import (
@@ -45,6 +46,13 @@ CONSENT_CLASS_MEANINGS: dict[str, str] = {
 
 #: The cells of one pasted line, in order. The ID cell may be absent.
 PASTE_COLUMNS = ("first_name", "last_name", "student_ref")
+
+#: Cells that name a column rather than a student; a pasted first line holding one is a header.
+_HEADER_WORDS = frozenset({
+    "first", "first name", "firstname", "given name", "last", "last name", "lastname",
+    "surname", "family name", "name", "names", "full name", "full_name", "student",
+    "student name", "id", "student id", "student_id", "student_ref", "ref",
+})
 
 #: The most rows one editor submission may carry; a larger paste is a mistake, not a class.
 MAX_EDITOR_ROWS = 2000
@@ -76,23 +84,44 @@ def parse_paste(text: str) -> list[dict[str, str]]:
     """A pasted block as editor rows: one per non-blank line, tab-separated cells.
 
     One cell is the whole name (`"Amara Okafor"`); two are first and last name; three add the
-    student ID. A line with more cells is refused naming its row rather than guessed at."""
+    student ID. Anything this reader cannot split unambiguously is refused naming its line (as
+    the teacher sees it, blank lines counted) rather than turned into a different student: more
+    than three cells, an empty first-name cell, a comma-separated line (the ID would land
+    inside the name — the CLI's line reader refuses it too), and a first line that is a header.
+    """
     rows: list[dict[str, str]] = []
-    lines = [line for line in str(text).replace("\r\n", "\n").replace("\r", "\n").split("\n")
-             if line.strip()]
+    lines = str(text).replace("\r\n", "\n").replace("\r", "\n").split("\n")
     for number, line in enumerate(lines, start=1):
+        if not line.strip():
+            continue
         cells = [cell.strip() for cell in line.split("\t")]
         while cells and not cells[-1]:
             cells.pop()
-        if len(cells) > len(PASTE_COLUMNS):
-            raise CohortSetupError(
-                f"pasted row {number} has {len(cells)} cells; expected first name, last name "
-                f"and an optional student ID. Nothing was written.")
+        _check_pasted_line(number, cells, first=not rows)
         if len(cells) == 1:
             rows.append({"full_name": cells[0]})
         else:
             rows.append(dict(zip(PASTE_COLUMNS, cells)))
     return rows
+
+
+def _check_pasted_line(number: int, cells: list[str], *, first: bool) -> None:
+    if len(cells) > len(PASTE_COLUMNS):
+        raise CohortSetupError(
+            f"pasted line {number} has {len(cells)} cells; expected first name, last name and "
+            "an optional student ID. Nothing was written.")
+    if len(cells) > 1 and not cells[0]:
+        raise CohortSetupError(
+            f"pasted line {number} has no first name in its first cell — {NAME_REQUIREMENT}. "
+            "Nothing was written.")
+    if len(cells) == 1 and "," in cells[0]:
+        raise CohortSetupError(
+            f"pasted line {number} holds commas; paste from a spreadsheet (cells separated by "
+            "tabs) or one full name per line. Nothing was written.")
+    if first and any(cell.lower() in _HEADER_WORDS for cell in cells):
+        raise CohortSetupError(
+            f"pasted line {number} ({' | '.join(cells)}) looks like a column header and would "
+            "become a student; leave the header row out of the paste. Nothing was written.")
 
 
 def editor_entries(rows: Any) -> list[RosterEntry]:
@@ -106,8 +135,13 @@ def editor_entries(rows: Any) -> list[RosterEntry]:
         raise CohortSetupError(
             f"the roster has {len(rows)} rows; at most {MAX_EDITOR_ROWS} are accepted at once. "
             "Nothing was written.")
-    entries = [RosterEntry(full_name=_full_name(row), student_ref=_ref(row)) for row in rows]
-    nameless = [number for number, entry in enumerate(entries, start=1) if not entry.full_name]
+    # A wholly blank row (the grid's trailing empty line) is skipped, as the CLI's CSV reader
+    # skips one; rows keep the numbers the editor shows.
+    numbered = [(number, RosterEntry(full_name=_full_name(row), student_ref=_ref(row)))
+                for number, row in enumerate(rows, start=1)
+                if any(str(value or "").strip() for value in row.values())]
+    entries = [entry for _number, entry in numbered]
+    nameless = [number for number, entry in numbered if not entry.full_name]
     if entries and len(nameless) == len(entries):
         raise CohortSetupError(
             f"the roster lists student IDs only and no names — {NAME_REQUIREMENT}. Nothing was "
@@ -157,6 +191,10 @@ def create_cohort_effect(store: Any, params: Mapping[str, Any]) -> tuple[str, bo
         summary = create_cohort(store, cohort_id, str(consent_class), entries)
     except CohortSetupError as refusal:
         return f"create cohort refused: {refusal}", False
+    except sqlite3.DatabaseError as error:
+        # An unreadable existing cohort file: the store's own refusal, reported, never a 500.
+        return (f"create cohort refused: the cohort's file could not be read "
+                f"({type(error).__name__}: {error}). Nothing was written.", False)
     return (
         f"cohort {summary.cohort_id} created ({summary.consent_class}) with "
         f"{summary.roster_size} student(s) through M-ORCH's create_cohort — the rows "
