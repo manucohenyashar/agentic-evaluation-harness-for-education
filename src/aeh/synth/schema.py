@@ -100,6 +100,15 @@ SYNTH_STATEMENTS: dict[str, Statement] = {
         "AND r.student_ref = s.student_ref "
         "WHERE s.submission_id = :submission_id"
     ),
+    # FR-PIPE-17 / #523: an MC-only paper's template narrative is built from its scored
+    # deterministic results, so the worker reads the run's `criterion_score` rows — the
+    # same rows M-DET's pass-through wrote (FR-AGG-10). Filtered per question in Python;
+    # the statement stays one declared text (FR-STORE-08).
+    "select_mc_scores": Statement(
+        "SELECT criterion_id, band,"
+        " points AS mc_points FROM criterion_score"
+        " WHERE run_id = :run_id AND submission_id = :submission_id"
+    ),
     "select_narratives": Statement(
         "SELECT narrative_id, run_id, submission_id, level, question_id, text, "
         "citations, score_claim_flag FROM narrative "

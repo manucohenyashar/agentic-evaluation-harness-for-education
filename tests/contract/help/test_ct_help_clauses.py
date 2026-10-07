@@ -29,7 +29,6 @@ pytestmark = [pytest.mark.contract]
 _ASKED = (hv.GROUNDED_T, hv.NOT_FOUND_T, hv.ACTION_T, hv.STUDENT_T, hv.INJECTION_T)
 
 
-@pytest.mark.writtenahead
 def test_tc_help_c01_one_read_only_endpoint(tmp_path, tmp_data_dir):
     """CT-HELP-01: `ask(question) -> {answer, citations[]}` is the only operation; one help route,
     a read; the answer carries those two fields and nothing operational."""
@@ -52,7 +51,6 @@ def test_tc_help_c01_one_read_only_endpoint(tmp_path, tmp_data_dir):
     assert not problems, "\n".join(problems)
 
 
-@pytest.mark.writtenahead
 def test_tc_help_c02_citations_resolve_and_not_found_is_explicit(tmp_path, tmp_data_dir):
     """CT-HELP-02 (P0): every citation of every answer resolves to a real anchor; the
     no-grounding question returns no citation and never the model's unsourced reply."""
@@ -75,7 +73,6 @@ def test_tc_help_c02_citations_resolve_and_not_found_is_explicit(tmp_path, tmp_d
     assert not problems, "\n".join(problems)
 
 
-@pytest.mark.writtenahead
 def test_tc_help_c03_no_student_data_in_any_request(tmp_path, tmp_data_dir):
     """CT-HELP-03 (P0): over a seeded store, no request for any question carries a store-derived
     identifier; a named student's name appears only inside the question that named her."""
@@ -93,7 +90,6 @@ def test_tc_help_c03_no_student_data_in_any_request(tmp_path, tmp_data_dir):
     assert not problems, "\n".join(problems)
 
 
-@pytest.mark.writtenahead
 def test_tc_help_c04_writes_only_its_own_log(tmp_path, tmp_data_dir):
     """CT-HELP-04: five asks over a seeded store; across every tier (every table of every SQLite
     file, every blob) exactly one Tier D table changed, by exactly five rows."""
@@ -107,7 +103,6 @@ def test_tc_help_c04_writes_only_its_own_log(tmp_path, tmp_data_dir):
     assert not problems, "\n".join(problems)
 
 
-@pytest.mark.writtenahead
 def test_tc_help_c05_the_log_records_each_exchange_exactly(tmp_path, tmp_data_dir):
     """CT-HELP-05: one entry per exchange, carrying exactly `QA_LOG_KEYS`, whose values are the
     exchange's own: the question verbatim, the answer's anchors, the model asked, the recorded

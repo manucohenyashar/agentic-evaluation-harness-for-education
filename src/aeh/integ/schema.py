@@ -104,6 +104,28 @@ TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
 ))
 
 
+# --- #597 (NFR-PIPE-02, Tier C, migration 34): the gate's remaining unindexed child read ----
+#
+# `read_cell_evidence_in_run` is the one per-cell read #363's sweep left unserved: the join
+# drives from `work_unit`'s `idx_wu_cell` seek and then needs, per evidence row, the rows
+# whose `work_id` matches — and `evidence.work_id` had no index, so SQLite scanned the whole
+# `evidence` table per cell. The gate runs per cell, so the scan is per cell, and the table
+# grows with the run: 0.92 ms per read at 40 submissions (960 evidence rows) against 0.05 at
+# 10, which is the "per-unit cost grows with class size" PERF-11 measures and the same
+# defect shape the verdict column's `idx_verdict_work` above fixed. The index is the whole
+# change: the statement already binds `work_id` to the unit's own row.
+_INTEG_EVIDENCE_WORK_INDEX: tuple[Statement, ...] = (
+    Statement("CREATE INDEX idx_evidence_work ON evidence (work_id)"),
+)
+
+TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
+    TIER_MIGRATIONS[Tier.COHORT] + (
+        Migration(version=34, name="integ_evidence_work_index",
+                  statements=_INTEG_EVIDENCE_WORK_INDEX),
+    ), key=lambda m: m.version
+))
+
+
 INTEG_STATEMENTS: dict[str, Statement] = {
     # --- #363 (FR-INTEG-09): `StoreExtractionView`'s five reads ------------------------------
     "read_cell_evidence": Statement(

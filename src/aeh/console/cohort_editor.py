@@ -24,6 +24,7 @@ from aeh.orch import (
     NAME_REQUIREMENT,
     CohortSetupError,
     RosterEntry,
+    add_to_roster,
     check_cohort_id,
     create_cohort,
 )
@@ -203,9 +204,35 @@ def create_cohort_effect(store: Any, params: Mapping[str, Any]) -> tuple[str, bo
     )
 
 
+def add_students_effect(store: Any, params: Mapping[str, Any]) -> tuple[str, bool]:
+    """Carry out `add students` on a real store: the roster editor loading late students into an
+    existing cohort, through M-ORCH's `add_to_roster` — the door `aeh cohort add-students` opens.
+    Everything is checked before the cohort's file is written, so a refusal adds nobody."""
+    try:
+        cohort_id = check_cohort_id(params.get("cohort_id"))
+        rows = params.get("rows")
+        if rows is None and params.get("paste") is not None:
+            rows = parse_paste(str(params["paste"]))
+        entries = editor_entries(rows if rows is not None else [])
+        # `add_to_roster` refuses an unknown cohort and a reference already on the roster, naming
+        # it, so a replayed submission writes nothing (FR-CONSOLE-02).
+        summary = add_to_roster(store, cohort_id, entries)
+    except CohortSetupError as refusal:
+        return f"add students refused: {refusal}", False
+    except sqlite3.DatabaseError as error:
+        return (f"add students refused: the cohort's file could not be read "
+                f"({type(error).__name__}: {error}). Nothing was written.", False)
+    return (
+        f"cohort {summary.cohort_id}'s roster extended to {summary.roster_size} student(s) "
+        "through M-ORCH's add_to_roster — the rows `aeh cohort add-students` writes",
+        True,
+    )
+
+
 __all__ = [
     "CREATE_COHORT_ACTION",
     "STUDENT_ID_OPTIONAL",
+    "add_students_effect",
     "create_cohort_effect",
     "editor_entries",
     "parse_paste",

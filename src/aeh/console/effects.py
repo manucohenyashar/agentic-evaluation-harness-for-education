@@ -181,6 +181,12 @@ class DomainEffectsMixin:
             from .cohort_editor import create_cohort_effect
 
             return create_cohort_effect(self._store, params)
+        if action == "add students":
+            from .cohort_editor import add_students_effect
+
+            return add_students_effect(self._store, params)
+        if action == "recover runs":
+            return self._recover_effect(params)
         if action == "set review window":
             return self._set_review_window_effect(params)
         if action == "amend a finalized grade":
@@ -446,10 +452,25 @@ class DomainEffectsMixin:
         if cohort_id not in self._cohort_keys():
             # Opening an unknown cohort would CREATE its tier file.
             return f"no cohort {cohort_id!r} is stored; nothing was started", False
+        if not run_id and self._package_of(package_version) == "":
+            # The same never-create rule as the cohort's, on the package tier: the start
+            # opens the version's Tier P file to validate its grade policy, and an
+            # unknown version's file would be created by the open — an API error must
+            # leave no partial run-start rows, not even a new store file.
+            return (
+                f"no package version {package_version!r} is stored; nothing was started",
+                False,
+            )
         config = params.get("config")
-        if not isinstance(config, dict):
-            config = effective_config(dict(getattr(self, "run_config", None) or {}))
         try:
+            if not isinstance(config, dict):
+                # The run's configuration, composed exactly as the run-start screen's
+                # preview read composed it: the request's per-run profile (FR-CONSOLE-43 —
+                # a console process cannot run under `cloud-hosted` itself) and threshold
+                # (FR-CONF-32) are the same explicit settings every other path writes.
+                from .run_start import compose_run_start_config
+
+                config = compose_run_start_config(self, params)
             started, thread = start_run_in_background(
                 self._store, cohort_id=cohort_id, package_version_id=package_version,
                 config=config, run_id=run_id)
@@ -491,6 +512,36 @@ class DomainEffectsMixin:
         return (
             f"package version {package_version} exported through M-PKG to {dest.name} "
             f"(content hash {getattr(report, 'content_hash', '?')[:12]})",
+            True,
+        )
+
+    def _recover_effect(self, params: dict[str, Any]) -> tuple[str, bool]:
+        """`recover runs` (`FR-CONSOLE-41`, #632): M-PIPE's `recover` — the door `aeh recover`
+        opens — reclaiming expired leases, resuming open runs and settling the grades whose
+        review window lapsed. It is idempotent by construction (a clean store's report is empty
+        and writes nothing), so a double-clicked post recovers nothing twice."""
+        from aeh.pipeline.driver import recover
+
+        if getattr(self._store, "data_dir", None) is None:
+            return "no store is attached; nothing was recovered", False
+        try:
+            report = recover(self._store)
+        except Exception as exc:  # noqa: BLE001 — a refusal is the honest outcome
+            return (
+                f"M-PIPE refused the recovery: {exc} — nothing was recovered",
+                False,
+            )
+        resumed, regraded = len(report.runs_resumed), len(report.runs_regraded)
+        if not (report.leases_reclaimed or resumed or regraded):
+            return (
+                "recovery ran through M-PIPE and had nothing to do: no expired lease, no "
+                "open run waiting to resume, no review window lapsed while the process was "
+                "down",
+                False,
+            )
+        return (
+            f"recovery ran through M-PIPE's recover: {report.leases_reclaimed} lease(s) "
+            f"reclaimed, {resumed} run(s) resumed, {regraded} regraded",
             True,
         )
 

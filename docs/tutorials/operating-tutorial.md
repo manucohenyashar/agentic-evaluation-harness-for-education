@@ -64,6 +64,24 @@ Use the values it prints for you. The three demo students are not the sample ans
 
 The **console** is the system's web page. It runs on the same computer you are sitting at and can only be reached from that computer. That is deliberate: it has no login, so it refuses to listen to anyone else.
 
+### The console is the operator surface; the terminal is for debugging
+
+This tutorial teaches the console first, on purpose: no operator or teacher workflow requires the terminal (NFR-CONSOLE-09). Every `aeh` terminal command has a home here, or is a debugging tool the console's own help page lists with the reason — the system keeps that inventory and fails a check if a new command appears without one. The commands, and what each is for:
+
+| Command | What it is for | Where you do it instead |
+|---|---|---|
+| `aeh run` | Drive a cohort's run to completion | The console's **Start run** control (section 5) |
+| `aeh recover` | Reclaim leases, resume and settle grades after a crash | The console's **Recover** control (section 5) |
+| `aeh console` | Recover, then serve this console | The console is already running |
+| `aeh cohort create` | Make a cohort with its consent class and roster | The console's **Create cohort** control (section 5) |
+| `aeh cohort add-students` | Extend a cohort's roster | The console's **Add students** control (section 5) |
+| `aeh cohort show` | Print one cohort's consent class and roster size | The **Cohort** page (section 4.1) |
+| `aeh package build` | Build a package from a spec file | **Publish** on the Package screens (section 4.1) |
+| `aeh package export` | Write the spec file for rebuilding or diffing | The console's **Export** delivers the school-facing package |
+| `aeh ingest` | Read test papers and answer sheets through the intake checks | The console's **Upload scans** control (section 5) |
+| `aeh results show` | Print per-student records and the class rollup as JSON | The **Results** page (section 4.1) |
+| `aeh results export` | Write the marks CSV and one PDF per student | The console's **Export** control (section 5) |
+
 ### 3.1 Start it
 
 Open a terminal in the project folder, activate the project's Python environment, and run:
@@ -206,6 +224,8 @@ Repeating a command: an identical **amendment** or **review action** is safe (th
 
 The name goes after `/actions/`. "Checked" means it was run against a real data folder and the result below is what it really said. Fields not listed are not needed.
 
+> This rehearsal table predates the newest controls: the console also takes `create-cohort` (section 3's table), `recover-runs` and `add-students`, and their screens, which the manuals rewrite will fold in here. Until then, section 3's table is the full list.
+
 | Name | Fields | Checked result | Who / when |
 |---|---|---|---|
 | `approve-question-inventory` | `package_version` | With no package it refuses: *"names no stored package"*. The success path (confirming a draft package's question list) was not exercised; S3 does not show the list to confirm. | Teacher, setup |
@@ -246,7 +266,7 @@ Six phases. Phases 1 to 3 depend on engineering steps today; phases 4 to 6 you c
 
 **What the design says.** You give the system four PDFs (the test paper, your model answer, your rubric, and, optionally, 10 to 15 papers you already marked). It shows you its reading of the question list (page S3) and you confirm. You supply the multiple-choice answer keys (S4). You may check how it read your rubric, say which lines can be split, and describe how the grade is calculated (S5). Only S3 and S4 block the run. Nothing about the rubric, weights or number of lines can be changed once the package is locked.
 
-**What exists today.** Nothing you can click reads your PDFs yet. Instead the engineer writes the test down in a short text file (the questions, model answers, rubric lines with their bands, the multiple-choice keys and the grade boundaries) and builds it with one command, `aeh package build` (deployment tutorial, section 8.2). `docs/live-tests/config/ps9-forces-01.package.toml` is the sample physics test written this way. Page S3 then shows the question list for you to check, at `/setup/inventory?package_id=<the test name>` (checked). Page S4 still does not read the keys back (*"Answer keys read back from the package: 0"*), so check the keys in the file itself. S5 shows its five optional cards.
+**What exists today.** Nothing you can click reads your PDFs yet. Instead the engineer writes the test down in a short text file (the questions, model answers, rubric lines with their bands, the multiple-choice keys and the grade boundaries) and builds it with one command, `aeh package build` (deployment tutorial, section 8.2). Writing that file is the engineer's debugging path, not the teacher's: the system creates the valid package file itself from the state the teacher confirms in setup, and a published version's file can be written out again by `aeh package export` (deployment tutorial, section 8.2). `docs/live-tests/config/ps9-forces-01.package.toml` is the sample physics test written the engineer's way. Page S3 then shows the question list for you to check, at `/setup/inventory?package_id=<the test name>` (checked). Page S4 still does not read the keys back (*"Answer keys read back from the package: 0"*), so check the keys in the file itself. S5 shows its five optional cards.
 
 **What you do.** Hand the engineer the three setup PDFs for your test (`docs/live-tests/sample-materials/pdf/<TEST>/01-test-paper.pdf`, `02-model-answer.pdf`, `03-rubric.pdf`). Ask the engineer to read the question list and the answer keys out of the package to you (or print them) so you can confirm them against your paper. Open `/packages?package_version=<version>` to see that the package exists.
 

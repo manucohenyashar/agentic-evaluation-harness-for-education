@@ -155,6 +155,15 @@ HLD_CONTROL_ACTIONS: tuple[str, ...] = (
 #: an orphan route. Transcribed from the delta, not from the implementation.
 DELTA_CONTROL_ACTIONS: dict[str, str] = {
     "create cohort": "FR-CONSOLE-42",
+    # `FR-CONSOLE-41` (#632): recover is one of the operations the CLI offers that must be
+    # reachable from the console, as a control row through M-PIPE's `recover` (the CLI's own
+    # door) — never a route beside the enumeration.
+    "recover runs": "FR-CONSOLE-41",
+    # `FR-CONSOLE-42` (#632): the roster editor also loads late students into an existing
+    # cohort, through M-ORCH's `add_to_roster` (the CLI's own door); a separate enumerated row
+    # rather than a widened `create cohort`, whose replay guarantee is refusing an existing
+    # cohort (`FR-CONSOLE-02`).
+    "add students": "FR-CONSOLE-42",
 }
 
 #: The whole enumerated write surface `FR-CONSOLE-32` pins: §11.8's fifteen plus the delta's.

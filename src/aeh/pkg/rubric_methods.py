@@ -125,6 +125,16 @@ class RubricMethodsMixin:
         (ordinal order), `recorded_at`, `confirmed_by`, `confirmed_at` — or None."""
         return self._derivations(v).get(criterion_id)
 
+    def declared_scoring(self, v: PackageVersionId, criterion_id: str) -> str | None:
+        """The criterion's declared scoring model (`CT-SETUP-05`), or None when the row carries
+        none. The reading lives here, on the package side, because the spec export
+        (`FR-PKG-27`) re-emits the declaration and `CT-AGG-09` keeps every scoring-model read
+        in `aeh.pkg` — a consumer that can read it can branch on it."""
+        for row in self.criteria(v):
+            if _row_field(row, "criterion_id") == criterion_id:
+                return _row_field(row, "scoring_model")
+        return None
+
     def _derivations(self, v: PackageVersionId) -> dict[str, dict]:
         found: dict[str, dict] = {}
         for row in self._handle.query(PKG_STATEMENTS["select_criterion_derivations"], v=v):

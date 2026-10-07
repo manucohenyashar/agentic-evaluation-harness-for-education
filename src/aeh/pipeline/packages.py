@@ -2,7 +2,10 @@
 
 Before this, a package could only be built by library calls (`docs/live-tests/sample-materials/
 verify_sample_materials.py` was the working example), and the teacher's setup flow behind the
-console holds no model. This is the operator's path: a TOML file states the questions, the
+console holds no model. The teacher's path is the console's setup flow, which publishes the
+package directly from its confirmed state (`M-SETUP`, `FR-PKG-27`); the spec TOML is a
+system-emitted export (`aeh.pipeline.spec_export`), and this command remains as its
+debugging/export inverse (Q-O6). A TOML file states the questions, the
 rubric lines with their bands, the multiple-choice keys and the grade boundaries, and one command
 builds the version through `M-PKG`'s own API and publishes it. `M-PKG` enforces its structural
 rules (an even, contiguous band set; monotone points; distinct boundaries). Everything else a
@@ -75,6 +78,14 @@ def read_package_spec(path: str | Path) -> dict[str, Any]:
 SCORING_MODELS: tuple[str, ...] = ("atomic", "atomic_with_gate", "holistic")
 
 
+def _evaluation_modes() -> tuple[str, ...]:
+    """`M-PKG`'s declared evaluation modes (`FR-PKG-22`), read from the vocabulary module rather
+    than restated: a widened vocabulary must not leave the spec checker behind."""
+    from aeh.pkg.vocabulary import EVALUATION_MODES
+
+    return EVALUATION_MODES
+
+
 def _fail(message: str) -> PackageSpecError:
     return PackageSpecError(f"{message} Nothing was created.")
 
@@ -144,6 +155,112 @@ class PackagePlan:
     review_window_hours: int | None
 
 
+def _criterion_method(table: Mapping[str, Any], cid: str, where: str) -> str:
+    """The line's declared rubric method (`FR-PKG-24`), `bands` when omitted: every spec before
+    the export vocabulary meant a bands criterion, and still does. Membership is exact —
+    M-PKG refuses anything else at the write, and the checker refuses it here, by name."""
+    method = _text(table, "score_method", where, required=False) or "bands"
+    if method not in ("bands", "evidence_sum", "general"):
+        raise _fail(f"{where} {cid!r}: score_method {method!r} is not one of "
+                    "bands, evidence_sum, general (FR-PKG-24).")
+    return method
+
+
+def _passthrough_fields(table: Mapping[str, Any], where: str) -> dict[str, Any]:
+    """The optional criterion columns the export carries back (`FR-PKG-27`): a rebuilt package
+    keeps them, so its rows stay identical to the original's. Type-checked here; M-PKG refuses
+    a value outside its own vocabulary at the write."""
+    evaluation_mode = _text(table, "evaluation_mode", where, required=False) or None
+    if evaluation_mode is not None and evaluation_mode not in _evaluation_modes():
+        raise _fail(f"{where}: evaluation_mode {evaluation_mode!r} is not one of "
+                    f"{', '.join(_evaluation_modes())} (FR-PKG-22).")
+    return {
+        "evaluation_mode": evaluation_mode,
+        "construct_tag": _text(table, "construct_tag", where, required=False),
+        "band_justification": _text(table, "band_justification", where, required=False)
+        or None,
+    }
+
+
+def _depends(cid: str, table: Mapping[str, Any], ids: list[str], where: str) -> tuple[str, ...]:
+    """The line's `depends_on`, as a tuple of ids the spec itself lists (`FR-PKG-05`)."""
+    depends = table.get("depends_on", [])
+    if not isinstance(depends, list) or not all(isinstance(d, str) for d in depends):
+        raise _fail(f"{where}: 'depends_on' is a list of criterion ids, such as [\"C3\"].")
+    unknown = [d for d in depends if d not in ids or d == cid]
+    if unknown:
+        raise _fail(f"{where}: depends_on {unknown} names no other criterion in the spec.")
+    return tuple(depends)
+
+
+def _judged_line(
+    cid: str, qid: str, translated: list[tuple[int, str, float, str]], scoring: str,
+    depends: tuple[str, ...], table: Mapping[str, Any], method: str,
+    ids: list[str], declared_methods: Mapping[str, str],
+) -> dict:
+    """A judged line that carries a band set: a `bands` criterion, a `general` criterion's
+    confirmed set, or a composite's 2-band aspect. The aspect's `component_of` names an
+    `evidence_sum` criterion elsewhere in the spec — checked here, so the export's shape
+    refuses before anything is written (`FR-PKG-24`, `CT-PKG-21`)."""
+    where = f"criterion {cid!r}"
+    component_of = _text(table, "component_of", where, required=False) or None
+    if component_of is not None:
+        if method == "general":
+            raise _fail(f"{where} is general, and a general criterion is standalone: it "
+                        f"cannot be an aspect of {component_of!r} (CT-PKG-21).")
+        if component_of == cid:
+            raise _fail(f"{where} cannot be its own aspect.")
+        if component_of not in ids or declared_methods.get(component_of) != "evidence_sum":
+            raise _fail(f"{where}: component_of {component_of!r} names no evidence_sum "
+                        "criterion in the spec.")
+        if len(translated) != 2:
+            raise _fail(f"{where} is an aspect of {component_of!r}, and an aspect is exactly "
+                        "two bands (absent / present), not "
+                        f"{len(translated)}.")
+    fields = {
+        "id": cid, "question": qid, "kind": "open", "bands": translated,
+        "scoring": scoring, "depends_on": depends,
+        "evidence_type": _text(table, "evidence_type", where, required=False)
+        or DEFAULT_EVIDENCE_TYPE,
+        "max_points": max(points for _, _, points, _ in translated),
+        "score_method": method if method != "bands" else None,
+        "component_of": component_of,
+        "derivation_description": None,
+    }
+    fields.update(_passthrough_fields(table, where))
+    return fields
+
+
+def _composite(cid: str, qid: str, scoring: str, depends: tuple[str, ...],
+               table: Mapping[str, Any]) -> dict:
+    """An `evidence_sum` criterion: a grouping record over its aspects. It carries no band set
+    and no key (`CT-PKG-21`) — the export emits its points, which are the sum of its aspects'
+    maxima (`FR-PKG-25`)."""
+    where = f"criterion {cid!r}"
+    if "bands" in table:
+        raise _fail(f"{where} is evidence_sum, and a composite carries no bands — its "
+                    "aspects do (FR-PKG-24). List the aspects as their own two-band lines "
+                    "with component_of naming this id.")
+    if "key" in table:
+        raise _fail(f"{where} is evidence_sum, and a composite carries no key (CT-PKG-21).")
+    # `.get`, not a subscript: this is the operator's spec line, not the store's band column,
+    # and TC-PKG-C05's static half scans subscripts to keep that column single-canonical.
+    declared_points = table.get("points")
+    if declared_points is None:
+        raise _fail(f"{where}: 'points' is required (the composite's max is the sum of its "
+                    "aspects' maxima, FR-PKG-25).")
+    fields = {
+        "id": cid, "question": qid, "kind": "open", "bands": [],
+        "scoring": scoring, "depends_on": depends,
+        "evidence_type": None,
+        "max_points": _number(declared_points, f"{where}: 'points'"),
+        "score_method": "evidence_sum", "component_of": None,
+        "derivation_description": None,
+    }
+    fields.update(_passthrough_fields(table, where))
+    return fields
+
+
 def plan_package(spec: Mapping[str, Any], packages_dir: Path) -> PackagePlan:
     """Check the whole spec and translate it, touching nothing. Everything a published package
     could not later correct is refused here, because publication is permanent:
@@ -154,6 +271,9 @@ def plan_package(spec: Mapping[str, Any], packages_dir: Path) -> PackagePlan:
     * bands without explicit `points` (a best-first list would otherwise score backwards), and a
       `scoring` outside `M-PKG`'s vocabulary;
     * `depends_on` that is not a list of other lines in the spec;
+    * a rubric method outside the closed set, an `evidence_sum` composite that carries bands or
+      a key or no `points`, and an aspect that is not exactly two bands naming an `evidence_sum`
+      line in the spec (`FR-PKG-24`, `CT-PKG-21`) — the vocabulary the spec export emits;
     * any field of the wrong type, named.
     """
     if not isinstance(spec, Mapping):
@@ -193,6 +313,8 @@ def plan_package(spec: Mapping[str, Any], packages_dir: Path) -> PackagePlan:
     ids = [_text(t, "id", "a [[criterion]]") for t in raw_criteria]
     if len(set(ids)) != len(ids):
         raise _fail("two [[criterion]] entries share an id.")
+    declared_methods = {i: _criterion_method(t, i, "a [[criterion]]") for i, t in
+                        zip(ids, raw_criteria)}
     for cid, table in zip(ids, raw_criteria):
         where = f"criterion {cid!r}"
         qid = _text(table, "question", where)
@@ -204,6 +326,9 @@ def plan_package(spec: Mapping[str, Any], packages_dir: Path) -> PackagePlan:
         if has_key and has_bands:
             raise _fail(f"{where} has both a 'key' and 'bands'; a line is one or the other.")
         if has_key:
+            if declared_methods[cid] != "bands":
+                raise _fail(f"{where} has a key, so its score_method is 'bands', not "
+                            f"{declared_methods[cid]!r}.")
             key = table["key"]
             key_ids = [key] if isinstance(key, str) else key
             if not isinstance(key_ids, list) or not key_ids or not all(
@@ -219,6 +344,13 @@ def plan_package(spec: Mapping[str, Any], packages_dir: Path) -> PackagePlan:
                              "max_points": _number(table.get("points", 1), f"{where}: 'points'"),
                              "options": [(o["option_id"], o["label"])
                                          for o in question["options"]]})
+            continue
+        scoring = _text(table, "scoring", where, required=False) or "holistic"
+        if scoring not in SCORING_MODELS:
+            raise _fail(f"{where}: scoring {scoring!r} is not one of {', '.join(SCORING_MODELS)}.")
+        depends = _depends(cid, table, ids, where)
+        if declared_methods[cid] == "evidence_sum":
+            criteria.append(_composite(cid, qid, scoring, depends, table))
             continue
         if not has_bands:
             raise _fail(f"{where} needs either a 'key' (multiple choice) or 'bands' (judged).")
@@ -238,22 +370,21 @@ def plan_package(spec: Mapping[str, Any], packages_dir: Path) -> PackagePlan:
             translated.append((ordinal, _text(band, "name", bwhere),
                                _number(band.get("points"), f"{bwhere}: 'points'"),
                                _text(band, "descriptor", bwhere, required=False)))
-        scoring = _text(table, "scoring", where, required=False) or "holistic"
-        if scoring not in SCORING_MODELS:
-            raise _fail(f"{where}: scoring {scoring!r} is not one of {', '.join(SCORING_MODELS)}.")
-        depends = table.get("depends_on", [])
-        if not isinstance(depends, list) or not all(isinstance(d, str) for d in depends):
-            raise _fail(f"{where}: 'depends_on' is a list of criterion ids, such as [\"C3\"].")
-        unknown = [d for d in depends if d not in ids or d == cid]
-        if unknown:
-            raise _fail(f"{where}: depends_on {unknown} names no other criterion in the spec.")
-        criteria.append({
-            "id": cid, "question": qid, "kind": "open", "bands": translated,
-            "scoring": scoring, "depends_on": tuple(depends),
-            "evidence_type": _text(table, "evidence_type", where, required=False)
-            or DEFAULT_EVIDENCE_TYPE,
-            "max_points": max(points for _, _, points, _ in translated),
-        })
+        method = declared_methods[cid]
+        if method == "general":
+            derivation = _text(table, "derivation_description", where)
+            criteria.append({
+                "id": cid, "question": qid, "kind": "open", "bands": translated,
+                "scoring": scoring, "depends_on": depends,
+                "evidence_type": _text(table, "evidence_type", where, required=False)
+                or DEFAULT_EVIDENCE_TYPE,
+                "max_points": max(points for _, _, points, _ in translated),
+                "score_method": method, "component_of": None,
+                "derivation_description": derivation,
+                **_passthrough_fields(table, where)})
+            continue
+        criteria.append(_judged_line(cid, qid, translated, scoring, depends,
+                                     table, method, ids, declared_methods))
     ungraded = [q["question_id"] for q in questions
                 if q["question_id"] not in {c["question"] for c in criteria}]
     if ungraded:
@@ -310,7 +441,7 @@ def build_package(store: Any, spec: Mapping[str, Any]) -> BuiltPackage:
             if q["model_answer"]:
                 catalog.update_question_field(version, q["question_id"], "reference_solution",
                                               q["model_answer"])
-        write_spec_criteria(catalog, version, plan.criteria)
+        write_spec_criteria(catalog, version, plan.criteria, plan.approved_by)
         if plan.grades:
             catalog.set_boundaries(version, list(plan.grades))
         if plan.review_window_hours is not None:

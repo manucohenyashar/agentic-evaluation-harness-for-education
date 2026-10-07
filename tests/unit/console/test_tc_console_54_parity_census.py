@@ -10,8 +10,9 @@ that failure is the feature."
 | control: planted subcommand | the census oracle itself, against a parser with one extra subcommand: it reports that subcommand as silently unrepresented (green today) |
 | control: walk | the leaf walk reaches the nested groups (`cohort create`, `package build`), not just the top level (green today) |
 
-**Written ahead of #632** (the inventory). The two inventory names are invented in
-`tests/support/console_api_vocabulary.py` (`CLI_CONSOLE_PATHS`, `DEBUGGING_ONLY_COMMANDS`).
+**Landed by #632**: the inventory lives in `aeh.console.parity` (`CLI_CONSOLE_PATHS`,
+`DEBUGGING_ONLY_COMMANDS`); the two names were invented in `tests/support/console_api_vocabulary.py`
+before the implementation existed, and the implementation adopted them.
 
 **Not implemented as specified, stated:** NFR-CONSOLE-09's documentation rewrite (onboarding
 and manuals written to the console-primary split) is prose quality, judged by #632's reviewer;
@@ -41,7 +42,6 @@ def _parser():
     return _build_parser()
 
 
-@pytest.mark.writtenahead
 def test_tc_console_54_every_aeh_subcommand_has_a_console_path_or_a_debugging_only_reason():
     routes, console_paths, debugging_only = require(
         CONSOLE_MODULE, ROUTE_TABLE, PARITY_PATHS, DEBUGGING_ONLY, issue=PARITY_ISSUE)
@@ -52,7 +52,6 @@ def test_tc_console_54_every_aeh_subcommand_has_a_console_path_or_a_debugging_on
         "(FR-CONSOLE-41):\n  " + "\n  ".join(problems))
 
 
-@pytest.mark.writtenahead
 def test_tc_console_54_the_teacher_operations_have_console_paths_not_debugging_listings():
     """FR-CONSOLE-41 names the operations a teacher needs from the console: cohort creation and
     roster loading, loading papers, run start, recover, results and export (`cohort show` is a

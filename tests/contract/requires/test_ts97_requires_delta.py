@@ -56,7 +56,11 @@ S1_C1 = "I did not get to th"
 
 #: M-ORCH's surface a composition layer is entitled to (CT-ORCH-22..26 and the base lifecycle).
 COMPOSITION_SURFACE = {
-    "__init__", "run_handle", "progress", "ready_cells", "cell_unit_counts", "cell_quarantined_counts",
+    "__init__", "run_handle", "progress", "ready_cells",
+    # #597 (NFR-PIPE-02): the aggregate hook reads the ready cells and their per-cell unit
+    # figures from one door — the two run-wide GROUP BY reads it used to issue per pass are
+    # folded into the ready read itself.
+    "ready_cells_with_units", "cell_unit_counts", "cell_quarantined_counts",
     "mark_cell_phase", "enqueue_escalation", "enqueue_replacement_arm", "resume", "pause", "runs",
     "submissions", "tripped_breakers", "escalation_budget_state", "record_pause_reason",
     "has_queued_resume", "cohort_ref", "create_run", "start", "sweep_expired_leases",

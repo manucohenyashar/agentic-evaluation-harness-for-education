@@ -22,7 +22,6 @@ import importlib
 import importlib.util
 from typing import Any
 
-from tests.support.help_vocabulary import BLOCKER_TARGET as _HELP_BLOCKER_TARGET
 from tests.support.extract_vocabulary import (
     ASSEMBLE as _EXTRACT_ASSEMBLE,
     PROMPT_FIELDS as _EXTRACT_PROMPT_FIELDS,
@@ -1314,12 +1313,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "python -m pytest -q -p no:cacheprovider tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_20_a_prime_the_baseline_reaches_the_runs_version_through_its_writer",
         ("tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_20_a_prime_the_baseline_reaches_the_runs_version_through_its_writer",),
     ),
-    # #523 (needs-attention): an MCQ-only submission is offered to M-SYNTH but gets no narrative.
-    "#523 TS-134 TC-PIPE-22 an MCQ-only paper is narrated": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_22_an_mcq_only_paper_is_offered_to_synthesis_and_narrated",
-        ("tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_22_an_mcq_only_paper_is_offered_to_synthesis_and_narrated",),
-    ),
+    # "#523 TS-134 TC-PIPE-22 an MCQ-only paper is narrated" left with #523's fix: the
+    # worker's MC-only branch narrates a multiple-choice-only submission from its scored
+    # deterministic results by template, with no model call, so the case rejoined the gate.
     # "#524 TS-134 TC-PIPE-23 even panel after quarantine" left with #524's fix: the run no
     # longer completes around a cell awaiting aggregation, the refused row stands on the odd
     # panel, and the quarantine count is the ledger's, so the three arms rejoined the gate.
@@ -1335,55 +1331,15 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # "unowned: S3 shows the proposed inventory as editable rows (TS-91 TC-CONSOLE-45)" left with #599's fix.
     # "unowned: the blind-flow plan names no removed table (TS-91 TC-CONSOLE-45)" left with #601's fix.
     # "unowned: a console review accept records a label (TS-91 TC-CONSOLE-44 row 8)" left with #598's fix.
-    # #597 (design 1.9.1 §5.4 R30): M-PIPE's hooks cost 3.8 ms/unit at 10 submissions after
-    # #597's first change (5.3 before), against NFR-PIPE-02's 0.25 ms. The rest is readiness
-    # rescans per pass and the owners' per-cell work; #597 is needs-attention on the budget.
-    "#597 TS-99 PERF-11 composition adds at most 0.25 ms per unit": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider tests/perf/test_perf_11_composition_overhead.py::test_perf_11_composition_adds_at_most_a_quarter_millisecond_per_unit",
-        ("tests/perf/test_perf_11_composition_overhead.py::test_perf_11_composition_adds_at_most_a_quarter_millisecond_per_unit",),
-    ),
+    # "#597 TS-99 PERF-11 composition adds at most 0.25 ms per unit" left with #597's fix:
+    # the readiness decision runs in SQL, the aggregate hook's per-pass run-wide count reads
+    # are folded into one ready read, the gate's evidence read is indexed (Cohort 34), and
+    # PERF-11 runs as the budget + no-growth guard with its `writtenahead` marker off.
     # "#620 TS-143 name-primary V3 matching, roster names, Cohort 33" left with #620's fix.
-    # --- TS-150 (#637), M-HELP: manuals page, grounded answers-only Q&A, the log ----------
-    #
-    # Keyed `symbols` on the assistant AND #629's route table (TC-HELP-01/03 and C01 read the
-    # routes). #636 depends on #629, so in practice this resolves with #636. The invented names
-    # live in `tests/support/help_vocabulary.py`; a rename there moves this key with it.
-    "#636 TS-150 M-HELP manuals and grounded Q&A": (
-        "symbols",
-        _HELP_BLOCKER_TARGET,
-        (
-            "tests/integration/help/test_ts150_help_manuals_and_qa.py::test_tc_help_01_every_packaged_manual_renders_with_toc_search_and_stable_anchors",
-            "tests/integration/help/test_ts150_help_manuals_and_qa.py::test_tc_help_02_a_grounded_answer_cites_the_recorded_grounding_sections",
-            "tests/integration/help/test_ts150_help_manuals_and_qa.py::test_tc_help_02_b_a_no_grounding_question_gets_the_explicit_not_found_answer",
-            "tests/integration/help/test_ts150_help_manuals_and_qa.py::test_tc_help_03_one_read_only_endpoint_and_an_action_question_changes_nothing",
-            "tests/integration/help/test_ts150_help_manuals_and_qa.py::test_tc_help_04_a_student_question_reaches_the_model_with_no_student_data",
-            "tests/integration/help/test_ts150_help_latency.py::test_tc_help_05_p95_answer_latency_and_retrieval_within_budget",
-            "tests/contract/help/test_ct_help_clauses.py::test_tc_help_c01_one_read_only_endpoint",
-            "tests/contract/help/test_ct_help_clauses.py::test_tc_help_c02_citations_resolve_and_not_found_is_explicit",
-            "tests/contract/help/test_ct_help_clauses.py::test_tc_help_c03_no_student_data_in_any_request",
-            "tests/contract/help/test_ct_help_clauses.py::test_tc_help_c04_writes_only_its_own_log",
-            "tests/contract/help/test_ct_help_clauses.py::test_tc_help_c05_the_log_records_each_exchange_exactly",
-            "tests/security/help/test_sec_25_help_injection.py::test_sec_25_an_injected_question_writes_nothing_and_gets_a_prose_answer",
-            "tests/security/help/test_sec_25_help_injection.py::test_sec_25_an_injection_nested_in_a_manual_passage_writes_nothing",
-        ),
-    ),
-    # --- TS-143 (#619), name-primary identity --------------------------------------------
-    #
-    # Keyed `command` on the design-named migration (`ingest_roster_names`, Cohort 33, owner
-    # `aeh.ingest`) being registered: the design declares no symbol for the matcher or the
-    # roster loader, and the migration lands in the same story (#620) as everything these
-    # cases assert. SystemExit rather than assert, so `python -O` cannot make it pass.
-    "#620 TS-143 name-primary V3 matching, roster names, Cohort 33": (
-        "command",
-        "python -c \"import aeh.ingest; from aeh.store import TIER_MIGRATIONS, Tier; "
-        "raise SystemExit(0 if any(m.name == 'ingest_roster_names' "
-        "for m in TIER_MIGRATIONS[Tier.COHORT]) else 1)\"",
-        (
-            "tests/integration/ingest/test_ts143_name_identity.py",
-            "tests/contract/ingest/test_ct_ingest_23_name_identity.py",
-        ),
-    ),
+    # A keep-both merge re-added the entry (the same artifact #626's entry hit); with #620
+    # merged and its two cases running unmarked, the re-added entry only fires the gate.
+    # "#636 TS-150 M-HELP manuals and grounded Q&A" left with #636's fix: the assistant, the
+    # manuals library and the route reads exist, so the TC-HELP cases dropped their markers.
     "#155 check_traceability --contracts-only passes the real pair (TS-82)": (
         "command",
         "python .claude/skills/create-test-plan/scripts/check_traceability.py "
@@ -1474,39 +1430,20 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # unmarked at the drop.
     # --- TS-144 (#621), M-PKG rubric methods ----------------------------------------------
     #
-    # #627 (depends on #622): `aeh package export`. Keyed on the shipped-sample round trip,
-    # which needs only the export command — the fixture round trip also needs #622, which
-    # #627 cannot land without.
-    "#627 TS-144 aeh package export round-trips through build (TC-PKG-37)": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider tests/integration/pkg/test_tc_pkg_37_export_round_trip.py::test_tc_pkg_37_a_shipped_sample_round_trips_through_export",
-        (
-            "tests/integration/pkg/test_tc_pkg_37_export_round_trip.py::test_tc_pkg_37_an_exported_spec_rebuilds_the_same_package",
-            "tests/integration/pkg/test_tc_pkg_37_export_round_trip.py::test_tc_pkg_37_a_shipped_sample_round_trips_through_export",
-        ),
-    ),
+    # The "#627 aeh package export" entry left with #627: the export command landed, and the
+    # two round-trip arms of `test_tc_pkg_37_export_round_trip.py` run green unmarked — the
+    # fixture differential, the shipped-sample round trip and the build guard all pass.
     # --- TS-148 (#633), console coverage: parity census, roster editor, run start, exports --
     #
     # The names are invented in `tests/support/console_api_vocabulary.py` (TS-148 section): each
     # key probes the route-table label or inventory name its story is asked to add, so a rename
     # there moves the key with it. The `_control_` cases in these files are not marked (green).
-    "#631 TS-148 TC-CONSOLE-56/57 run start, results views and exports match the CLI": (
-        "command",
-        "python -c \"import sys; sys.path.insert(0, 'src'); import aeh.console as c; reads = {getattr(r, 'read', None) for r in "
-        "c.API_ROUTES}; sys.exit(0 if {'run start preview', 'results export'} <= reads else 1)\"",
-        (
-            "tests/integration/console/test_ts148_console_coverage.py::test_tc_console_56_the_run_start_banner_estimate_and_confirmation_match_the_cli",
-            "tests/integration/console/test_ts148_console_coverage.py::test_tc_console_57_exports_are_byte_identical_and_views_match_the_cli",
-        ),
-    ),
-    "#632 TS-148 TC-CONSOLE-54 the CLI/console parity census": (
-        "symbols",
-        "aeh.console:CLI_CONSOLE_PATHS,aeh.console:DEBUGGING_ONLY_COMMANDS",
-        (
-            "tests/unit/console/test_tc_console_54_parity_census.py::test_tc_console_54_every_aeh_subcommand_has_a_console_path_or_a_debugging_only_reason",
-            "tests/unit/console/test_tc_console_54_parity_census.py::test_tc_console_54_the_teacher_operations_have_console_paths_not_debugging_listings",
-        ),
-    ),
+    #
+    # The "#632 TS-148 TC-CONSOLE-54 the CLI/console parity census" entry left with #632: the
+    # inventory landed (`aeh.console.parity`, plus the `recover runs` and `add students` control
+    # rows its teacher-operations arm required), and the two census cases run green unmarked.
+    # The census's failure path is live in the fast tier: a future `aeh` subcommand without a
+    # console path or a debugging-only reason fails `TEST_CMD` until someone decides.
 }
 
 

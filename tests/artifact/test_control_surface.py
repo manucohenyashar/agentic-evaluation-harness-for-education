@@ -231,9 +231,30 @@ _CONSOLE_BARE_MIGRATION_IMPORTS: frozenset[str] = frozenset(
 #:   `setup_service_for_store`), and "start run" hands the run to `M-PIPE` on a server-owned
 #:   thread (`start_run_in_background`, `NFR-CONSOLE-08`). Both are imported inside the
 #:   action that needs them, never at module scope.
+#: - `aeh.pipeline.runtime` — #631. The run-start preview resolves the provider the
+#:   started run would use through M-PIPE's own resolver (`_provider_for`), so the
+#:   estimate is priced on the same transport the run spends on — a resolver the console
+#:   would otherwise hold a drifting copy of.
+#: - `aeh.pipeline.cli` — #632, `FR-CONSOLE-41`. The parity census reads the CLI's own
+#:   parser (`_build_parser`) so the inventory is generated from the subcommands that
+#:   exist, not from a transcribed copy that could drift from it; imported inside
+#:   `parity_inventory`, never at module scope.
+#: - `aeh.pipeline.driver` — #632, `FR-CONSOLE-41`. The "recover runs" control delegates
+#:   to M-PIPE's `recover` — the same one-implementation rule "start run" follows with
+#:   `start_run_in_background`; imported inside the effect that needs it, never at
+#:   module scope.
+#: - `aeh.help`, `aeh.prov`, `aeh.conf.qa_model` — #636, declared contract amendment.
+#:   `FR-HELP-02`'s ask read is the console's third transport use: `help_read.py` (a console
+#:   subpackage module, so these are module-scope imports of it, not of console.py itself)
+#:   builds the grounded assistant (`aeh.help`) on a provider (`aeh.prov`) whose QA model is
+#:   resolved by the FR-CONF-30 rule (`aeh.conf.qa_model`). The console still starts with no
+#:   QA model: the assistant is constructed lazily at the first ask (`CT-HELP-02`'s
+#:   precondition), never at import.
 _CONSOLE_SYMBOL_IMPORT_MODULES: frozenset[str] = frozenset(
-    {"aeh.conf", "aeh.conf.decision_engine", "aeh.det", "aeh.grade", "aeh.orch",
-     "aeh.pipeline", "aeh.pkg", "aeh.review", "aeh.setup", "aeh.stats", "aeh.store"}
+    {"aeh.conf", "aeh.conf.decision_engine", "aeh.conf.qa_model", "aeh.det", "aeh.grade",
+     "aeh.help", "aeh.orch", "aeh.pipeline", "aeh.pipeline.cli", "aeh.pipeline.driver",
+     "aeh.pipeline.runtime", "aeh.pkg", "aeh.prov", "aeh.review", "aeh.setup",
+     "aeh.stats", "aeh.store"}
 )
 
 
