@@ -2,10 +2,10 @@ import { Screen } from "../components/Screen";
 import { DESTINATIONS } from "../destinations";
 
 /**
- * The eight destination screens' foundation: each loads in one click from the hub and carries
- * its `main` landmark and level-1 heading (the DOM contract in `tests/support/spa.py`). Their
- * working content is the lifecycle stories' work — the hub's home is `Hub.tsx`, and the Q&A
- * panel arrives with the manuals story.
+ * The destination screens: each loads in one click from the hub and carries its `main`
+ * landmark and level-1 heading (the DOM contract in `tests/support/spa.py`). Their working
+ * content is the lifecycle stories' work — the hub's home is `Hub.tsx`, and the Q&A panel is
+ * `Help.tsx` (the manuals story, FR-UI-06).
  */
 const NOTES = new Map(DESTINATIONS.map((destination) => [destination.path, destination.note]));
 
@@ -26,7 +26,6 @@ export const RunStart = destinationScreen("/run", "Start a run");
 export const Monitor = destinationScreen("/monitor", "Monitor run");
 export const Review = destinationScreen("/review", "Review queue");
 export const Results = destinationScreen("/results", "Results");
-export const Help = destinationScreen("/help", "Manuals & help");
 export const SystemStatus = destinationScreen("/status", "System status");
 
 export function NotFound() {
