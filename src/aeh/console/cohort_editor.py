@@ -18,14 +18,14 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from aeh.orch.cohorts import (
+from aeh.orch import (
     CONSENT_CLASSES,
+    NAME_REQUIREMENT,
     CohortSetupError,
     RosterEntry,
     check_cohort_id,
     create_cohort,
 )
-from aeh.orch.roster_entries import NAME_REQUIREMENT
 
 #: The control action the editor writes through (`CONTROL_SURFACE_ACTIONS`).
 CREATE_COHORT_ACTION = "create cohort"
