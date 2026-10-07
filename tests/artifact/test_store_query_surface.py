@@ -299,9 +299,15 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.orch.escalation:474",
     "aeh.orch.escalation:427",
     "aeh.orch.escalation:556",
-    "aeh.orch.composition:44",
+    # #597's re-pin: the readiness redesign's docstring growth above `mark_cell_phase`'s
+    # upsert moved the site 44 -> 49. `ready_cells_with_units` adds no execute site — its
+    # read goes through `handle.query`, which is not an execute method — so the site is the
+    # same statement, re-read from the walker rather than hand-shifted. The costs sites
+    # follow #667's edits on main (240/241).
+    "aeh.orch.composition:49",
     "aeh.orch.costs:240",
     "aeh.orch.costs:241",
+
     # `record_pause_reason` (#365): the one write that annotates an already-paused run
     # without flipping its state. `pause()` deliberately changes nothing on a paused run,
     # so a run recovery REFUSED to resume - a profile switch, FR-CONF-15 - would keep a

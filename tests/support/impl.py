@@ -1332,14 +1332,10 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # "unowned: S3 shows the proposed inventory as editable rows (TS-91 TC-CONSOLE-45)" left with #599's fix.
     # "unowned: the blind-flow plan names no removed table (TS-91 TC-CONSOLE-45)" left with #601's fix.
     # "unowned: a console review accept records a label (TS-91 TC-CONSOLE-44 row 8)" left with #598's fix.
-    # #597 (design 1.9.1 §5.4 R30): M-PIPE's hooks cost 3.8 ms/unit at 10 submissions after
-    # #597's first change (5.3 before), against NFR-PIPE-02's 0.25 ms. The rest is readiness
-    # rescans per pass and the owners' per-cell work; #597 is needs-attention on the budget.
-    "#597 TS-99 PERF-11 composition adds at most 0.25 ms per unit": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider tests/perf/test_perf_11_composition_overhead.py::test_perf_11_composition_adds_at_most_a_quarter_millisecond_per_unit",
-        ("tests/perf/test_perf_11_composition_overhead.py::test_perf_11_composition_adds_at_most_a_quarter_millisecond_per_unit",),
-    ),
+    # "#597 TS-99 PERF-11 composition adds at most 0.25 ms per unit" left with #597's fix:
+    # the readiness decision runs in SQL, the aggregate hook's per-pass run-wide count reads
+    # are folded into one ready read, the gate's evidence read is indexed (Cohort 34), and
+    # PERF-11 runs as the budget + no-growth guard with its `writtenahead` marker off.
     # "#620 TS-143 name-primary V3 matching, roster names, Cohort 33" left with #620's fix.
     # A keep-both merge re-added the entry (the same artifact #626's entry hit); with #620
     # merged and its two cases running unmarked, the re-added entry only fires the gate.
