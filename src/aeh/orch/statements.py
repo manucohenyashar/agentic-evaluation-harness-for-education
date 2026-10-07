@@ -125,11 +125,20 @@ ORCH_STATEMENTS: dict[str, Statement] = {
     # order cache: the sorted result is derived once and drained front to back, so a
     # one-at-a-time poll late in a large run serves its head instead of re-reading and
     # re-sorting the whole pending set.
+    # The roster join (#593, NFR-PROV-08): the claimed row carries the student's roster
+    # display name beside the ref, so the boundary (`M-JUDGE`'s assembler) HAS a name to
+    # replace. LEFT join on the roster's own key — a ref the roster does not hold, or
+    # holds namelessly (a pre-migration row), yields NULL, and the assembler passes the
+    # request through unchanged. A ref-only or nameless roster is the pre-#620 shape and
+    # must keep assembling today's bytes.
     "select_run_claimable": Statement(
         "SELECT w.work_id, w.run_id, w.stage, w.submission_id, w.criterion_id, "
-        "w.judge_id, w.origin, w.attempts AS attempt, s.student_ref AS student_ref "
+        "w.judge_id, w.origin, w.attempts AS attempt, s.student_ref AS student_ref, "
+        "r.full_name AS student_name "
         "FROM work_unit w "
         "JOIN submission s ON s.submission_id = w.submission_id "
+        "LEFT JOIN roster r ON r.cohort_id = s.cohort_id "
+        "AND r.student_ref = s.student_ref "
         "WHERE w.run_id = :run_id AND w.status = 'pending' AND w.stage = :stage "
         "ORDER BY w.work_id"
     ),

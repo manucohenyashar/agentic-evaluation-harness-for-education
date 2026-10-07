@@ -236,10 +236,15 @@ class Orchestrator(RunLifecycleMixin, CostsMixin, EnumerationMixin, LeasingMixin
         """Turn a claimed ledger row into the `WorkUnit` handed to a worker.
 
         The claim select carries `student_ref` (the identity the assembler needs) and
-        aliases `attempts AS attempt` to the type's field; `student_name` and
-        `submission_text` are `None` — the ledger holds neither, and their resolution
-        is assembly's act (`M-EXTRACT`), not the lease's. The name-agnostic row reads
-        keep the helper honest across the two selects that feed it.
+        aliases `attempts AS attempt` to the type's field; it also carries the roster
+        display name as `student_name` (#593): the boundary at `M-JUDGE` replaces the
+        name with the ref in every text field of the request, and it can only do that
+        when the lease hands it one — the pre-#620 selects' rows read nameless and
+        carry None. `submission_text` is still None: the ledger holds no text, and
+        its resolution is assembly's act (`M-EXTRACT`), not the lease's. The
+        name-agnostic row reads keep the helper honest across the selects that feed
+        it (the estimate select deliberately projects no name: the cost seam never
+        assembles a request).
         """
         keys = set(row.keys())
         return WorkUnit(
@@ -247,7 +252,7 @@ class Orchestrator(RunLifecycleMixin, CostsMixin, EnumerationMixin, LeasingMixin
             run_id=row["run_id"],
             stage=row["stage"],
             student_ref=row["student_ref"] if "student_ref" in keys else "",
-            student_name=None,
+            student_name=row["student_name"] if "student_name" in keys else None,
             submission_id=row["submission_id"],
             criterion_id=row["criterion_id"],
             submission_text=None,

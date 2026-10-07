@@ -2,17 +2,26 @@
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 from typing import Any, Sequence
 
 from aeh.ingest import INGEST_STATEMENTS
-from aeh.ingest.identity import redact_identity_head
+from aeh.ingest.identity import pseudonymize_name, redact_identity_head
 from aeh.orch import _cohort_keys_on_filesystem
 from aeh.pkg import PackageCatalog
 
 from .schema import EXTRACT_STATEMENTS
 from .settings import DEFAULT_EVIDENCE_TYPE
-from .records import Criterion, _dependency_entry, ExtractionRequest, _question_of, SubmissionRef
+from .records import (
+    Criterion,
+    DependencyEvidence,
+    ExtractionSpan,
+    _dependency_entry,
+    ExtractionRequest,
+    _question_of,
+    SubmissionRef,
+)
 
 
 #: Per-store memo of the pinned criteria (#516, CT-PKG-15: a package version is loaded once
@@ -197,6 +206,12 @@ def assemble_request(
             )
         head = _current_document(store, submission_id)
         transcript = document_bytes(store, head).decode("utf-8")
+    # The pseudonymization boundary (#593, NFR-PROV-08): the request this builds goes to a
+    # model, so the roster name the lease resolved travels as the ref — in the transcript the
+    # student wrote (a signature, for instance) and in every dependency span's text slice of
+    # it. Same rule, same helper, as `M-JUDGE`'s assembler.
+    name = getattr(unit, "student_name", None)
+    ref = getattr(unit, "student_ref", None)
     text, evidence_type, pinned_question = ("", "", None)
     if store is not None:
         text, evidence_type, pinned_question = _criterion_of_run(
@@ -209,7 +224,7 @@ def assemble_request(
         criterion=Criterion(criterion_id=criterion_id, text=text, evidence_type=evidence_type),
         question=_question_of(question if question is not None else pinned_question),
         dependency_evidence=tuple(
-            _dependency_entry(entry)
+            _pseudonymized_entry(_dependency_entry(entry), name, ref)
             for entry in (dependency_evidence or ())
         ),
         # The paper's `Student:` head carries the child's written name; the request
@@ -217,6 +232,34 @@ def assemble_request(
         # are parsed against the stored document, never this copy.
         submission=SubmissionRef(
             submission_id=submission_id,
-            transcript=redact_identity_head(transcript, getattr(unit, "student_ref", None)),
+            transcript=redact_identity_head(pseudonymize_name(transcript, name, ref),
+                                            getattr(unit, "student_ref", None)),
         ),
     )
+
+
+def _pseudonymized_entry(entry: Any, name: Any, ref: Any) -> Any:
+    """A dependency entry whose spans' text slices carry the ref where the roster name was.
+
+    `spans travel VERBATIM` holds for the schema (`TC-EXTRACT-C04`): the offsets are
+    untouched and only the `text` a model would read changes — exactly what
+    `M-JUDGE`'s span replacement does. A span that carries no name is passed on as the
+    same object, so the common dependency request assembles byte-identically.
+    """
+    spans = []
+    changed = False
+    for span in entry.spans:
+        if isinstance(span, dict) and isinstance(span.get("text"), str):
+            clean = pseudonymize_name(span["text"], name, ref)
+            if clean != span["text"]:
+                span = {**span, "text": clean}
+                changed = True
+        elif isinstance(span, ExtractionSpan):
+            clean = pseudonymize_name(span.text, name, ref)
+            if clean != span.text:
+                span = dataclasses.replace(span, text=clean)
+                changed = True
+        spans.append(span)
+    if not changed:
+        return entry
+    return DependencyEvidence(criterion_id=entry.criterion_id, spans=tuple(spans))
