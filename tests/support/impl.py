@@ -1314,12 +1314,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "python -m pytest -q -p no:cacheprovider tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_20_a_prime_the_baseline_reaches_the_runs_version_through_its_writer",
         ("tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_20_a_prime_the_baseline_reaches_the_runs_version_through_its_writer",),
     ),
-    # #523 (needs-attention): an MCQ-only submission is offered to M-SYNTH but gets no narrative.
-    "#523 TS-134 TC-PIPE-22 an MCQ-only paper is narrated": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_22_an_mcq_only_paper_is_offered_to_synthesis_and_narrated",
-        ("tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_22_an_mcq_only_paper_is_offered_to_synthesis_and_narrated",),
-    ),
+    # "#523 TS-134 TC-PIPE-22 an MCQ-only paper is narrated" left with #523's fix: the
+    # worker's MC-only branch narrates a multiple-choice-only submission from its scored
+    # deterministic results by template, with no model call, so the case rejoined the gate.
     # "#524 TS-134 TC-PIPE-23 even panel after quarantine" left with #524's fix: the run no
     # longer completes around a cell awaiting aggregation, the refused row stands on the odd
     # panel, and the quarantine count is the ledger's, so the three arms rejoined the gate.

@@ -578,8 +578,9 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # isolation check on the payload-less document fallback, again with #98's
     # score-claim ladder and pattern list landing above the write, again with the
     # reviewer's pattern-tightening disclosures expanding the comments above it;
-    # same statement, re-pinned from the walker each time.)
-    "aeh.synth.worker:269",
+    # again with #523's MC-only helpers landing in the resolution section above the
+    # write — same statement, re-pinned from the walker each time.)
+    "aeh.synth.worker:324",
     # The grade sites are #104's line numbers (the module's own write surface, every
     # one from GRADE_STATEMENTS or a raw fixture DDL string, keyword-parameterized):
     # `compute_all`'s five pass writes (demote/insert/settle/queue-row/queue-clear),
