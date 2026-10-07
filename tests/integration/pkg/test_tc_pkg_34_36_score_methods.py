@@ -53,7 +53,7 @@ from aeh.store import (
 )
 from tests.support import rubric_methods as rm
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = pytest.mark.integration
 
 REPO = Path(__file__).resolve().parents[3]
 

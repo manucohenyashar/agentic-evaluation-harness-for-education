@@ -73,3 +73,30 @@ def _declared_evaluation_mode(criterion: Any) -> str:
 #: The exemplar provenance vocabulary (ADR-4). `real_verbatim` is the canonical value
 #: for a real student response used verbatim — the export gate's one test.
 PROVENANCE_VOCABULARY: tuple[str, ...] = ("synthetic", "paraphrased", "real_verbatim")
+
+
+#: The closed rubric-method vocabulary (`FR-PKG-24`, ADR-39), in the order the design
+#: states it. The column's CHECK (Package migration 15) is the database backstop; this
+#: tuple is what refusals name. Checklist and single-point rubrics are NOT members:
+#: they are `evidence_sum` and `bands` respectively, and the set stays closed.
+SCORE_METHODS: tuple[str, ...] = ("bands", "evidence_sum", "general")
+
+#: A criterion that declares no method is a `bands` criterion — the column default, and
+#: the only method every package before migration 15 could express.
+DEFAULT_SCORE_METHOD = "bands"
+
+
+def declared_score_method(score_method: str | None, criterion_id: str) -> str:
+    """The method a criterion write declares, or the default. Membership is exact — no case
+    folding, no trimming — so `BANDS` or `""` is refused here, by name, rather than by the
+    column's CHECK with a bare IntegrityError that names no requirement."""
+    if score_method is None:
+        return DEFAULT_SCORE_METHOD
+    if score_method not in SCORE_METHODS:
+        raise PackageError(
+            f"criterion {criterion_id!r} declares score_method {score_method!r}, which is "
+            f"not one of the closed set {{{', '.join(SCORE_METHODS)}}} (FR-PKG-24). A "
+            "checklist is evidence_sum and a single-point rubric is bands; no other "
+            "method exists."
+        )
+    return score_method
