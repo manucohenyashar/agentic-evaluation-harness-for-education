@@ -54,7 +54,7 @@ from tests.support.conf_builders import edge_panel
 from tests.support.extract_vocabulary import sampling_params, verdict_completion
 from tests.support.judge_run import verdict_rows, warm_judged_modules, work_unit_row
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 SUBMISSIONS = ("s-45-a", "s-45-b")
 PANEL = 3
