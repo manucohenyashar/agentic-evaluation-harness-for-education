@@ -87,6 +87,19 @@ SYNTH_STATEMENTS: dict[str, Statement] = {
         "FROM document d LEFT JOIN submission s ON s.submission_id = d.submission_id "
         "WHERE d.document_id = :document_id"
     ),
+    # The roster join (#668, NFR-PROV-08): the evidence reads resolve the submission's
+    # roster display name beside its ref, so the boundary HAS a name to replace — the
+    # same shape `M-ORCH`'s claim select joins for M-JUDGE (#593). LEFT join on the
+    # roster's own key: a ref the roster does not hold, or holds namelessly (a
+    # pre-migration row), yields NULL and the assembly passes the text through
+    # unchanged, byte-identically (the pre-#620 shape keeps its bytes).
+    "select_synth_roster_name": Statement(
+        "SELECT r.full_name AS student_name, s.student_ref AS student_ref "
+        "FROM submission s "
+        "LEFT JOIN roster r ON r.cohort_id = s.cohort_id "
+        "AND r.student_ref = s.student_ref "
+        "WHERE s.submission_id = :submission_id"
+    ),
     # FR-PIPE-17 / #523: an MC-only paper's template narrative is built from its scored
     # deterministic results, so the worker reads the run's `criterion_score` rows — the
     # same rows M-DET's pass-through wrote (FR-AGG-10). Filtered per question in Python;

@@ -194,10 +194,29 @@ def test_the_delta_control_actions_are_the_requirements_that_add_them(repo_root)
     assert "none is added without being an enumerated control row" in delta, (
         "CT-CONSOLE-30 no longer requires a new API mutation to be an enumerated control row"
     )
-    assert DELTA_CONTROL_ACTIONS == {"create cohort": "FR-CONSOLE-42"}, (
+    # #632 added `recover runs` and `add students`. Both are the parity census's own doing
+    # (`TC-CONSOLE-54`): the teacher-operations arm requires `aeh recover` and `aeh cohort
+    # add-students` to have console paths, and `CT-CONSOLE-30` admits a console mutation only
+    # as an enumerated control row. `recover` is named verbatim in FR-CONSOLE-41's list of
+    # operations reachable from the console; `add students` is FR-CONSOLE-42's roster editor
+    # pointed at an existing cohort (kept apart from `create cohort` because `create_cohort`
+    # refuses an existing cohort — a replayed submission writes nothing, `FR-CONSOLE-02`).
+    assert DELTA_CONTROL_ACTIONS == {
+        "create cohort": "FR-CONSOLE-42",
+        "recover runs": "FR-CONSOLE-41",
+        "add students": "FR-CONSOLE-42",
+    }, (
         "a delta control action was added or removed: that is a design decision, cite it here"
     )
     assert "| fr-console-42 | the console shall create a cohort and load its roster" in delta
+    # FR-CONSOLE-41's requirement text names recover among the operations that must be
+    # reachable from the console — the citation `recover runs` claims.
+    assert ("| fr-console-41 | every operation the cli offers to a teacher or operator shall "
+            "be reachable from the console: package setup, cohort creation, roster loading, "
+            "run start, recover, monitor, review, results and export" in delta), (
+        "FR-CONSOLE-41 no longer names recover among the console-reachable operations, so the "
+        "`recover runs` control row has lost the requirement that adds it"
+    )
 
 
 def test_the_knob_defaults_transcribe_the_design_configuration_line(repo_root):

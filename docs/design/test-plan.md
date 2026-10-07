@@ -2674,6 +2674,13 @@ until green" unless the reviewer and the grounds are named, so:
 | TC-REG-05 | FR-CONFORM-01, FR-CONFORM-08 | Per-criterion score distributions of `F-FROZEN` on each backend | The whole team, at release. A shift with an unchanged package is build substitution (`FR-CONFORM-08`), not a baseline to update |
 | TC-REG-06 | FR-ORCH-01 | The `work_id` reference values | Nobody may accept a diff casually: a changed `work_id` means every stored result for that shape is now unreachable. Requires an explicit migration note |
 
+**Inline defect regressions.** Per the policy above, a defect fixed with no prior `TC-*` coverage
+gains its case here, in the PR that fixes it:
+
+| ID | Req | Case | Expected |
+|---|---|---|---|
+| TC-REG-14 | NFR-PROV-08 (#668; the R21 shape #593 fixed in `M-JUDGE` and `M-EXTRACT`, found by #593's reviewer as an `M-SYNTH` follow-up) | A run on the `edge-local` profile whose roster names the student (`Zelda Quartermaine`, ref `ref-SYN-001`); the stored script carries the name in its body beneath a `Student:` head that carries the ref, and one evidence unit's span payload carries it too. `M-SYNTH` synthesizes the question's L1 narrative against a capturing provider | The captured request payload carries no roster name and does carry the `student_ref` — asserted over the payload at the transport seam, not the report (`M-SYNTH` takes no profile branch, so the edge-local run is the all-profiles assertion). The `Student:`-head redaction stays the first layer; the body/span replacement routes through `aeh.ingest.identity.pseudonymize_name`, the one boundary helper |
+
 **Permanent contract baselines.** Separate from the artifact baselines above, because they are not
 snapshots and **no diff to them is ever acceptable**: each is a named regression entry for one of the
 18 safety-property clauses of design §4.7, kept permanently and release-gating per §4.8 item 11. A
