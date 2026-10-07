@@ -189,7 +189,6 @@ def test_tc_console_53_a_the_spa_and_its_assets_come_from_this_origin_with_their
     network_guard.assert_no_network()
 
 
-@pytest.mark.writtenahead
 def test_tc_console_53_a_the_shipped_bundle_is_served_and_names_no_other_origin(
     store, network_guard
 ):
