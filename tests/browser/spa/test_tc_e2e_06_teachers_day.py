@@ -28,8 +28,10 @@ answered with, because the synthesis prompt carries the store's own minted submi
 id (``synth.prompt_for``) — no recording taken in another store can satisfy it.
 Everything else is strict replay; any other fixture miss raises (CT-PROV-08), so a
 journey step that stops being replayable is a loud error, not a silent divergence.
-The fallback is bound by patching the pipeline's ``_provider_for`` import sites (the
-one egress seam, CT-PROV-15) — disclosed in the PR.
+The fallback is bound by patching the pipeline's ``_provider_for`` bindings — the
+module-level import sites (``background``, ``cli``) plus ``runtime`` itself, which
+``ingest_files`` re-imports from at call time (the one egress seam, CT-PROV-15) —
+disclosed in the PR.
 
 **Other disclosed divergences** (each deliberate, each named in the PR):
 
@@ -46,6 +48,14 @@ one egress seam, CT-PROV-15) — disclosed in the PR.
 * ``dev-ci`` is the twins' profile: the console refuses ``cloud-hosted`` outright, and
   dev-ci + ``HARNESS_FIXTURE_DIR`` is the one combination ``_provider_for`` answers
   with the fixture provider.
+* Each surface mints its own run id (``create_run`` mints ``run-<uuid4>``; no pending
+  run exists when the day starts), so both twins' ids are DISCOVERED — the console's
+  from its background-thread table, the CLI's from its run table — never assumed.
+* The ask-for-help leg's transport is a stub: the QA prompt is a shape no replay
+  fixture can carry (only synthesis may miss), so ``help_read.provider_for`` is bound
+  to a stub ``complete`` — retrieval stays local (M-HELP), the ask stays on the
+  machine's side of the boundary, and its exchange log still writes through the real
+  store path.
 
 Written ahead of implementation (test-plan §8.2): red until the committed bundle's
 lifecycle screens (#635), the console reads (#631), the Q&A panel (#638), the help
@@ -125,17 +135,19 @@ def _patch_provider_sites(monkeypatch: pytest.MonkeyPatch, fixture_dir: Path) ->
     """Bind the twins' model boundary at the pipeline's ``_provider_for`` seam.
 
     ``dev-ci`` + ``HARNESS_FIXTURE_DIR`` answers the plain replayer; the twins need the
-    synthesis-only fallback on top (module docstring). Every import site the pipeline
-    binds is patched — the console's background run (``background``), ``aeh ingest`` /
-    ``aeh run`` (``cli``) and the twins' direct ``ingest_files`` (``intake``) — so both
-    journeys cross the same boundary no matter which surface starts them.
+    synthesis-only fallback on top (module docstring). Every binding the pipeline reads
+    is patched: ``background`` and ``cli`` import ``_provider_for`` at module level from
+    ``.runtime``, so they each need their own attribute replaced; ``intake`` imports the
+    name only inside ``ingest_files``, from ``.runtime`` at call time — patching
+    ``runtime`` covers the twins' direct ``ingest_files``. (``intake`` itself has no
+    ``_provider_for`` attribute to patch.)
     """
-    from aeh.pipeline import background, cli, intake
+    from aeh.pipeline import background, cli, runtime
 
     def synthetic_provider(run_config: object):
         return jw.ReplayWithSynthFallback(fixture_dir)
 
-    for site in (background, cli, intake):
+    for site in (background, cli, runtime):
         monkeypatch.setattr(site, "_provider_for", synthetic_provider)
 
 
@@ -210,6 +222,17 @@ def _console_cohort(store) -> None:
                 c=jw.COHORT_ID, s=student.student_ref)
 
 
+def _minted_run_id(store, whose: str) -> str:
+    """The run id M-ORCH minted on this surface, read from the run table — never
+    assumed: `create_run` mints `run-<uuid4>` on both surfaces."""
+    handle = store.cohort(jw.COHORT_ID)
+    rows = handle.query("SELECT run_id FROM run")
+    assert len(rows) == 1, (
+        f"TC-E2E-06: {whose} run table holds {len(rows)} run(s); the day's journey "
+        "starts exactly one")
+    return str(rows[0]["run_id"])
+
+
 def _await_terminal(handle, run_id: str) -> str:
     """Poll the run row until a terminal phase; time-boxed by the env knob."""
     deadline = time.monotonic() + RUN_TIMEOUT_S
@@ -233,6 +256,8 @@ def test_tc_e2e_06_teachers_day_journey(
     scratch = tmp_path_factory.mktemp("teachers-day")
     fixture_dir = scratch / "recordings"
     for key, value in (
+        ("HARNESS_PROFILE", "dev-ci"),  # pinned: env wins over cfg (conf.sources), so a
+        # stray profile in the developer's env would silently re-profile the twins
         ("HARNESS_FIXTURE_DIR", str(fixture_dir)),
         ("HARNESS_INGEST_DPI", "72"),
         ("HARNESS_INGEST_V4_SEMANTIC_FLOOR", "0.0"),
@@ -300,7 +325,7 @@ def test_tc_e2e_06_teachers_day_journey(
             scratch / "cli-pdfs", pages_by_student, assessment_pages)
         _cli_ingest(cli_dir, version, assessment, sheets, cfg_path, monkeypatch)
         _cli_run(cli_dir, version, cfg_path, monkeypatch)
-        _review_and_finalize(cli_store)
+        _review_and_finalize(cli_store, _minted_run_id(cli_store, "the CLI twin's"))
     finally:
         _close(cli_store)
 
@@ -363,8 +388,17 @@ def _serve_and_drive(store, console_dir: Path, cfg: dict, version: str,
     whole window sits inside the loopback census (CT-PROV-15): every connect target the
     console process makes is loopback, and the caller asserts nothing else afterwards.
     """
-    from aeh.console import serve_console
+    from aeh.console import help_read, serve_console
     from tests.support.console_api_vocabulary import on_loopback
+
+    # The ask leg's transport (module docstring): the QA model resolves to the effective
+    # panel's first judge (FR-CONF-30, dev-ci → panel[0]), whose real transport is
+    # OpenRouter — bound here to the stub instead, before the server can build its
+    # assistant (built on the first ask and held).
+    def _help_provider(_model_ref: object) -> _HelpReplay:
+        return _HelpReplay()
+
+    monkeypatch.setattr(help_read, "provider_for", _help_provider)
 
     server = serve_console(store=store, cfg=cfg)
     with on_loopback(server, network_guard) as (port, _census):
@@ -415,18 +449,38 @@ def _serve_and_drive(store, console_dir: Path, cfg: dict, version: str,
                 assert not spa.changed_tables(before, after), (
                     "TC-E2E-06: opening the run-start screen wrote rows — a no-op until "
                     "confirmed (TC-UI-05)")
-                # the confirm is a dialog; confirming posts the console's own control
-                dialog = _confirm_dialog(page)
+                # the start control opens the confirmation; confirming it — a click on
+                # the dialog's own named button, TC-UI-05's idiom — posts the console's
+                # own control
+                dialog = _confirm_start(page)
                 assert dialog is not None, (
                     "TC-E2E-06: starting a run without a confirmation dialog — the "
                     "journey's confirm step (NFR-SYS-17) is not on the screen")
-                dialog.accept()
-                # the SPA posts 'start run'; the run drives in the console's background
+                named = dialog.get_by_role("button", name=_START_ACTION)
+                confirm = [named.nth(i) for i in range(named.count())
+                           if not _CANCEL.search(named.nth(i).inner_text())]
+                assert confirm, (
+                    "TC-E2E-06: the confirmation has no button naming the start action")
+                confirm[0].click()
+                # the SPA posts 'start run'; the run drives in the console's background,
+                # keyed by the id M-ORCH minted — discover it, never assume one
+                deadline = time.monotonic() + 60
+                threads: dict = dict(getattr(server.app, "_run_threads", {}))
+                while not threads and time.monotonic() < deadline:
+                    page.wait_for_timeout(200)
+                    threads = dict(getattr(server.app, "_run_threads", {}))
+                assert threads, (
+                    "TC-E2E-06: confirming the start never reached the console's "
+                    "background — the control started no run")
+                assert len(threads) == 1, (
+                    f"TC-E2E-06: the console's background holds {len(threads)} runs; "
+                    "the day's journey starts exactly one")
+                run_id = next(iter(threads))
                 handle = store.cohort(jw.COHORT_ID)
-                status = _await_terminal(handle, jw.RUN_ID)
+                status = _await_terminal(handle, run_id)
                 assert status == "complete", (
                     f"TC-E2E-06: the console twin's run did not complete: {status}")
-                for thread in list(getattr(server.app, "_run_threads", {}).values()):
+                for thread in threads.values():
                     thread.join(timeout=60)
                 # -- monitor ---------------------------------------------------------
                 _go(page, origin, "monitor")
@@ -446,7 +500,7 @@ def _serve_and_drive(store, console_dir: Path, cfg: dict, version: str,
 
                 status, outcome = post_json(
                     port, "/api/v1/actions/finalize-batch",
-                    {"run_id": jw.RUN_ID, "actor": "teacher"})
+                    {"run_id": run_id, "actor": "teacher"})
                 assert status == 200 and not refused(status, outcome), (
                     f"TC-E2E-06: the console's finalize-batch control refused: "
                     f"{status} {outcome!r}")
@@ -458,7 +512,7 @@ def _serve_and_drive(store, console_dir: Path, cfg: dict, version: str,
                 # walkthrough's step 11 reads back
                 status, _headers, csv_bytes = get_bytes(
                     port, "/api/v1/results/export",
-                    {"run_id": jw.RUN_ID, "format": "csv", "revision": "1"})
+                    {"run_id": run_id, "format": "csv", "revision": "1"})
                 assert status == 200 and csv_bytes, (
                     f"TC-E2E-06: the results-export read returned {status}, "
                     f"{len(csv_bytes) if csv_bytes else 0} bytes of CSV")
@@ -466,7 +520,7 @@ def _serve_and_drive(store, console_dir: Path, cfg: dict, version: str,
                 first = jw.STUDENTS[0]
                 status, _headers, pdf_bytes = get_bytes(
                     port, "/api/v1/results/export",
-                    {"run_id": jw.RUN_ID, "format": "pdf", "revision": "1",
+                    {"run_id": run_id, "format": "pdf", "revision": "1",
                      "student_ref": first.student_ref})
                 assert status == 200 and pdf_bytes[:5] == b"%PDF-", (
                     f"TC-E2E-06: the per-student PDF export read returned {status}, "
@@ -490,6 +544,9 @@ def _serve_and_drive(store, console_dir: Path, cfg: dict, version: str,
 
 _PACKAGE_ID = "RUBRIC-METHODS"
 _TERMINAL_WORD = re.compile(r"complete|finished|done", re.I)
+#: The run-start control and its confirmation, named as TC-UI-05's vocabulary keys them.
+_START_ACTION = re.compile(r"^\s*start", re.I)
+_CANCEL = re.compile(r"cancel|back|no\b|keep|close|dismiss|^\s*[x×]\s*$", re.I)
 
 
 def _go(page, origin: str, destination: str) -> None:
@@ -497,14 +554,47 @@ def _go(page, origin: str, destination: str) -> None:
     spa.wait_for_screen(page)
 
 
-def _confirm_dialog(page):
-    """The confirm dialog a start offers, or None (design-keyed: confirmations are
-    dialogs — ``spa.py``'s quoted vocabulary)."""
+def _confirm_start(page):
+    """Click the run-start control and return its confirmation dialog, or None.
+
+    TC-UI-05's idiom: the action is a *button* on the screen, and the confirmation it
+    opens is a dialog the test waits for — confirming is a click on the dialog's own
+    named button (never ``Locator.accept()``, which exists only on the native
+    ``page.on("dialog")`` object)."""
+    buttons = page.locator("main").get_by_role("button", name=_START_ACTION)
+    enabled = [buttons.nth(i) for i in range(buttons.count())
+               if buttons.nth(i).is_enabled()]
+    assert enabled, (
+        "TC-E2E-06: the run-start screen offers no enabled start control — the "
+        "journey's confirm step (NFR-SYS-17) is not on the screen")
+    enabled[0].click()
+    dialog = page.get_by_role("dialog").or_(page.get_by_role("alertdialog"))
     try:
-        page.get_by_role("dialog").first.wait_for(state="visible", timeout=5_000)
-        return page.get_by_role("dialog").first
+        dialog.first.wait_for(state="visible", timeout=5_000)
     except Exception:
         return None
+    return dialog.first
+
+
+class _HelpReplay:
+    """The ask leg's transport: a stub ``complete`` the HelpAssistant drives.
+
+    The manuals' retrieval is local (M-HELP); only the one prose call needs answering,
+    and no replay fixture can carry it — the QA prompt is a new shape the capture never
+    recorded (only synthesis is allowed to miss, module docstring). So the leg binds a
+    stub instead of a network transport: the ask stays on the machine's side of the
+    boundary (CT-PROV-15) and its log still writes through the real M-HELP store path.
+    Disclosed in the PR."""
+
+    def complete(self, prompt: object, model_ref: object, params: object):
+        from aeh.prov import Completion
+
+        return Completion(
+            text="Open the Results screen for a student's grades; the export there "
+                 "writes the marks CSV and the per-student PDFs into the data folder.",
+            tokens_in=10, tokens_out=5, latency_ms=1,
+            resolved_build=getattr(model_ref, "build_id", ""),
+            cached_prefix_tokens=0, cost=None)
 
 
 def _ask_help(port: int) -> tuple[int, object]:
@@ -516,16 +606,20 @@ def _ask_help(port: int) -> tuple[int, object]:
         {"q": "How do I read a student's results and send them home?"})
 
 
-def _work_review_queue(store) -> None:
+def _work_review_queue(store, run_id: str) -> None:
     """The review leg's band decisions, through the M-REVIEW library the console's
     review screen and the CLI's review door both call — on BOTH twins, so the stores
     carry the same review actions (module docstring)."""
     from aeh.review import open_review
 
-    review = open_review(store.data_dir, run_id=jw.RUN_ID, actor="teacher")
+    review = open_review(store.data_dir, run_id=run_id, actor="teacher")
     try:
-        review.build_queue(jw.RUN_ID, 30)
-        for item in review.queue(jw.RUN_ID):  # typically empty; the leg still runs
+        review.build_queue(run_id, 30)
+        for item in review.queue(run_id):
+            # Populated in this world, never empty: one extraction family means
+            # extractor_disagreement is None, which counts adverse fail-closed — the
+            # hard cap (0.40) sits under the 0.90 holistic threshold, so every
+            # multi-verdict cell routes "queued" here.
             if hasattr(item, "score_id"):
                 review.act(item, "accept")
             else:  # a collapsed group is accepted as one band decision
@@ -534,14 +628,14 @@ def _work_review_queue(store) -> None:
         review.close()
 
 
-def _review_and_finalize(store) -> None:
+def _review_and_finalize(store, run_id: str) -> None:
     """The CLI twin's review and finalize legs: the same queue walk, then the batch
     settle through `GradingService` — the library the console's `finalize batch`
     control performs (the twins finalize through the same code)."""
     from aeh.grade import GradingService
 
-    _work_review_queue(store)
-    GradingService(store).finalize_batch(jw.RUN_ID, actor="teacher")
+    _work_review_queue(store, run_id)
+    GradingService(store).finalize_batch(run_id, actor="teacher")
 
 
 def _cli_cohort(scratch: Path, monkeypatch: pytest.MonkeyPatch) -> None:
