@@ -276,10 +276,19 @@ The parts that are structural rather than cosmetic:
   writes a new revision and preserves the original timestamp rather than mutating what was
   delivered.
 
-Technology is the boring option on purpose: one process serving server-rendered HTML over
-loopback, reading the same SQLite files the harness writes, no build step, no client
-framework, assets vendored locally. A CDN reference is a console that renders blank at a
+Technology is the boring option on purpose: one process on loopback, reading the same SQLite
+files the harness writes, serving a JSON API and the console's built single-page bundle from
+its own origin — the bundle ships as package data, so an install needs no toolchain and
+render time makes no external request. A CDN reference is a console that renders blank at a
 school with no internet — the deployment this system exists for.
+
+**The console is the operator surface; the terminal is the debugging surface**
+(NFR-CONSOLE-09). Documentation and onboarding are written to that split: no operator or
+teacher workflow requires the terminal. The parity is an inventory, not a slogan — every
+`aeh` subcommand either has a console path (e.g. `aeh recover` is the terminal view of the
+console's recover control) or is listed in the console's debugging-only help
+(`GET /api/v1/cli-help`) with the reason it has none. A subcommand added later without such
+a decision fails the parity census (`TC-CONSOLE-54`, FR-CONSOLE-41).
 
 Two scope statements the design insists on stating rather than letting a reader discover.
 **Ambiguity elicitation is a real touchpoint this version does not implement**; the wizard

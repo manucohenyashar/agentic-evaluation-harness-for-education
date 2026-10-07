@@ -6,8 +6,10 @@ import json
 import sqlite3
 from typing import Any
 
-from aeh.ingest.identity import redact_identity_head
+from aeh.det.constants import BAND_CORRECT
+from aeh.ingest.identity import pseudonymize_name, redact_identity_head
 from aeh.orch import ORCH_MAX_ATTEMPTS, ORCH_STATEMENTS, _cohort_keys_on_filesystem, _env_int
+from aeh.orch.work_units import _row_evaluation_mode
 from aeh.pkg import PackageCatalog, is_composite
 from aeh.prov import PromptPayload, ProviderError, SamplingParams
 
@@ -24,6 +26,11 @@ from .settings import (
     SYNTH_MAX_OUTPUT_TOKENS,
     SYNTH_SAMPLE_RATE,
     TEST_SENTINEL,
+)
+from .mc_narrative import (
+    McItemResult,
+    mc_question_narrative,
+    mc_submission_narrative,
 )
 from .score_claims import has_score_claim
 from .records import (
@@ -113,7 +120,68 @@ class SynthesisWorker:
                 grouped.setdefault(question_id, []).append(row["criterion_id"])
         return {q: tuple(ids) for q, ids in sorted(grouped.items())}
 
+    def _mc_only_paper(self, catalog: Any, version: Any) -> bool:
+        """Whether the run's package narrates from multiple-choice results alone (FR-PIPE-17,
+        #523's decision): every criterion an L1 could anchor to is deterministic, so no
+        question of this paper can ever carry a judged verdict and the judged path below
+        would decline the submission for want of one. A composite is deliberately outside
+        the rows checked — its aspects stand in for it and `_questions` groups none of
+        it — so the paper is mixed exactly when a non-composite criterion is judged, and
+        mixed papers keep the judged path exactly as it was."""
+        rows = [row for row in catalog.criteria(version) if not is_composite(row)]
+        return bool(rows) and all(
+            _row_evaluation_mode(row) == "deterministic" for row in rows
+        )
+
+    def _mc_items(self, cohort: Any, run_id: str, submission_id: str,
+                  criterion_ids: tuple[str, ...], catalog: Any,
+                  version: Any) -> "tuple[McItemResult, ...] | None":
+        """One question's scored multiple-choice results, or None when any of its criteria
+        has no score row.
+
+        A missing row is the deterministic face of `_question_complete` (FR-SYNTH-06):
+        the deterministic stage has not scored the criterion, so there is no result to
+        build a narrative from and none may be described as whole. An unresolved
+        selection IS a scored result — M-DET wrote its band and its zero — so it is
+        carried and the sentence says so."""
+        rows = cohort.query(
+            SYNTH_STATEMENTS["select_mc_scores"],
+            run_id=run_id,
+            submission_id=submission_id,
+        )
+        by_criterion = {row["criterion_id"]: row for row in rows}
+        items: list[McItemResult] = []
+        for criterion_id in criterion_ids:
+            row = by_criterion.get(criterion_id)
+            if row is None:
+                return None
+            # `mc_points` is the STORED SCORE (`criterion_score.points`, the same column
+            # M-DET's rederivation reads under its own alias), not the band table's
+            # points — the rubric is priced only through M-PKG's canonical mapping.
+            items.append(
+                McItemResult(
+                    criterion_id=criterion_id,
+                    band=row["band"],
+                    points=float(row["mc_points"] or 0.0),
+                    full_points=catalog.points_for_band(criterion_id, BAND_CORRECT),
+                )
+            )
+        return tuple(items)
+
     # -- the reads a request is assembled from ----------------------------------------------
+
+    def _roster_identity(self, cohort: Any, submission_id: str) -> "tuple[Any, Any]":
+        """The submission's roster display name and `student_ref`, as `(name, ref)` — the
+        inputs `pseudonymize_name` replaces the name with the ref over (NFR-PROV-08, #593's
+        boundary rule). The join is the one `M-ORCH`'s claim select resolves for `M-JUDGE`:
+        a ref the roster does not hold, or holds namelessly (the pre-#620 shape), yields
+        `None` and every text passes through unchanged, byte-identically."""
+        rows = cohort.query(
+            SYNTH_STATEMENTS["select_synth_roster_name"], submission_id=submission_id
+        )
+        if not rows:
+            return None, None
+        return rows[0]["student_name"], rows[0]["student_ref"]
 
     def _verdicts(self, cohort: Any, units: list[dict],
                   criterion_id: str) -> tuple[CriterionVerdict, ...]:
@@ -140,7 +208,15 @@ class SynthesisWorker:
                   submission_id: str) -> tuple[str, ...]:
         """The question's evidence: each criterion's evidence rows decoded from their stored spans,
         or the document's Markdown when a row has no span payload. That fallback only reads a
-        document that belongs to this submission."""
+        document that belongs to this submission.
+
+        Every text is name-free before it joins a request (`NFR-PROV-08`, #668): the
+        rostered name the student wrote in the body — or that `M-EXTRACT` sliced into a
+        span — is replaced by the `student_ref` through the ONE boundary helper,
+        `pseudonymize_name` (#593), the same rule `M-JUDGE`'s and `M-EXTRACT`'s
+        assemblers apply. The `Student:` head redaction stays as the first layer (the
+        head's spelling is unreliable); the body/span pseudonymization is the second."""
+        student_name, student_ref = self._roster_identity(cohort, submission_id)
         texts: list[str] = []
         seen_documents: set[str] = set()
         for unit in units:
@@ -150,7 +226,10 @@ class SynthesisWorker:
                 SYNTH_STATEMENTS["select_synth_evidence"], work_id=unit["work_id"]
             ):
                 if row["payload"] is not None:
-                    texts.extend(_payload_span_texts(row["payload"]))
+                    texts.extend(
+                        pseudonymize_name(text, student_name, student_ref)
+                        for text in _payload_span_texts(row["payload"])
+                    )
                     continue
                 document_id = row["document_id"]
                 if not document_id or document_id in seen_documents:
@@ -167,10 +246,15 @@ class SynthesisWorker:
                     )
                     continue
                 if documents[0]["markdown"]:
-                    # The `Student:` head's written name never reaches the narrative model
-                    # (NFR-PROV-04, CT-INGEST-23, #620): the resolved ref stands in for it.
-                    texts.append(redact_identity_head(documents[0]["markdown"],
-                                                      documents[0]["student_ref"]))
+                    # Two layers: the `Student:` head's written name never reaches the
+                    # narrative model (`NFR-PROV-04`, CT-INGEST-23, #620) — the resolved
+                    # ref stands in for it — and the rostered name the body carries is
+                    # pseudonymized with the roster join above (#668).
+                    texts.append(pseudonymize_name(
+                        redact_identity_head(documents[0]["markdown"],
+                                             documents[0]["student_ref"]),
+                        student_name, student_ref,
+                    ))
         return tuple(texts)
 
     def _question_complete(self, cohort: Any, units: list[dict],
@@ -328,6 +412,39 @@ class SynthesisWorker:
             return SynthesisResult(
                 work_id=row["narrative_id"], question_id=question_id, text=row["text"]
             )
+        # FR-PIPE-17, #523's decision: on a paper whose criteria are all deterministic,
+        # the L1 narrative is the template sentence built from the scored MC results —
+        # no model call, because there is no judged verdict for a model to narrate and
+        # the results alone are what the student gets back. Incomplete stays refused
+        # (FR-SYNTH-06): a criterion the deterministic stage has not scored yet means
+        # no narrative, not a partial one.
+        if self._mc_only_paper(catalog, run_row["package_version_id"]):
+            items = self._mc_items(
+                cohort, run_id, submission_id, criterion_ids,
+                catalog, run_row["package_version_id"],
+            )
+            if items is None:
+                raise ValueError(
+                    f"question {question_id!r} is incomplete for submission "
+                    f"{submission_id!r} — the deterministic stage has not scored every "
+                    f"criterion, and a multiple-choice-only paper's narrative is built "
+                    f"from its scored results alone (FR-SYNTH-06; FR-PIPE-17, #523)."
+                )
+            text = mc_question_narrative(question_id, items)
+            self._store_narrative(
+                cohort,
+                run_id=run_id,
+                submission_id=submission_id,
+                level=LEVEL_L1,
+                question_id=question_id,
+                text=text,
+                citations=criterion_ids,
+            )
+            return SynthesisResult(
+                work_id=narrative_work_id(run_id, submission_id, LEVEL_L1, question_id),
+                question_id=question_id,
+                text=text,
+            )
         units = [
             dict(row)
             for row in cohort.query(
@@ -377,7 +494,12 @@ class SynthesisWorker:
     def synthesize_submission(self, run_id: str, submission_id: str) -> SynthesisReport:
         """Run both levels for one submission: an L1 narrative for each complete question, then one
         L2 narrative composed from the L1 narratives only (FR-SYNTH-01). Returns the report
-        operators read."""
+        operators read.
+
+        On a paper whose criteria are all deterministic, both levels are template
+        sentences over the scored multiple-choice results, with no model call
+        (FR-PIPE-17, #523's decision): the submission the judged path would decline for
+        want of a verdict is narrated anyway."""
         cohort, run_row = self._resolve_run(run_id)
         catalog = self._catalog(run_row)
         questions = self._questions(catalog, run_row["package_version_id"])
@@ -393,8 +515,33 @@ class SynthesisWorker:
         self._rejected_score_claims = 0
 
         failures = 0
+        mc_only = self._mc_only_paper(catalog, run_row["package_version_id"])
+        narrated_items: list[McItemResult] = []
         for question_id, criterion_ids in questions.items():
             stored = self._stored(cohort, run_id, submission_id)
+            # FR-PIPE-17, #523's decision: an MC-only paper's L1 narrative is the
+            # template sentence over its scored results — no provider call, because no
+            # judged verdict exists for one to narrate. The items are collected even
+            # when the row already stands, so a retried call's L2 still covers them.
+            if mc_only:
+                items = self._mc_items(
+                    cohort, run_id, submission_id, criterion_ids,
+                    catalog, run_row["package_version_id"],
+                )
+                if items is None:
+                    continue  # the gate: not scored yet, nothing described as whole
+                if (LEVEL_L1, question_id) not in stored:
+                    self._store_narrative(
+                        cohort,
+                        run_id=run_id,
+                        submission_id=submission_id,
+                        level=LEVEL_L1,
+                        question_id=question_id,
+                        text=mc_question_narrative(question_id, items),
+                        citations=criterion_ids,
+                    )
+                narrated_items.extend(items)
+                continue
             if (LEVEL_L1, question_id) in stored:
                 continue  # the retried unit absorbs: the stored narrative stands
             units = [
@@ -419,30 +566,49 @@ class SynthesisWorker:
         # per-question prose, so the flagged row is withheld from composition exactly
         # as it is withheld from display.
         stored = self._stored(cohort, run_id, submission_id)
-        l1_rows = [
-            row for (level, _question_id), row in sorted(stored.items())
-            if level == LEVEL_L1 and not row["score_claim_flag"]
-        ]
-        if l1_rows and (LEVEL_L2, TEST_SENTINEL) not in stored:
-            try:
-                request = L2Request(
-                    run_id=run_id,
-                    submission_id=submission_id,
-                    syntheses=tuple(row["text"] for row in l1_rows),
-                )
-                text, citations, flagged = self._call(prompt_for(request))
+        if mc_only:
+            # The MC-only paper's L2 is the same template discipline at the whole-paper
+            # level: one summary sentence over the narrated questions' results, still no
+            # model call — composing template sentences with a model would spend a call
+            # on words the results already determine (#523's decision). The flag stays 0
+            # because nothing re-runs the score-claim net over stored text — the one
+            # thing the template does state is the scored points — and the exemption is
+            # disclosed on the module (reviewer finding on #523).
+            if narrated_items and (LEVEL_L2, TEST_SENTINEL) not in stored:
                 self._store_narrative(
                     cohort,
                     run_id=run_id,
                     submission_id=submission_id,
                     level=LEVEL_L2,
                     question_id=TEST_SENTINEL,
-                    text=text,
-                    citations=citations,
-                    score_claim_flag=1 if flagged else 0,
+                    text=mc_submission_narrative(tuple(narrated_items)),
+                    citations=(),
                 )
-            except (ProviderError, ValueError):
-                failures += 1
+        else:
+            l1_rows = [
+                row for (level, _question_id), row in sorted(stored.items())
+                if level == LEVEL_L1 and not row["score_claim_flag"]
+            ]
+            if l1_rows and (LEVEL_L2, TEST_SENTINEL) not in stored:
+                try:
+                    request = L2Request(
+                        run_id=run_id,
+                        submission_id=submission_id,
+                        syntheses=tuple(row["text"] for row in l1_rows),
+                    )
+                    text, citations, flagged = self._call(prompt_for(request))
+                    self._store_narrative(
+                        cohort,
+                        run_id=run_id,
+                        submission_id=submission_id,
+                        level=LEVEL_L2,
+                        question_id=TEST_SENTINEL,
+                        text=text,
+                        citations=citations,
+                        score_claim_flag=1 if flagged else 0,
+                    )
+                except (ProviderError, ValueError):
+                    failures += 1
 
         return self._report(cohort, catalog, run_row, submission_id, failures)
 

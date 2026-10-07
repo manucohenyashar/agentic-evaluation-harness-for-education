@@ -2,10 +2,9 @@
 not-found answers (TC-HELP-02), the answers-only census (TC-HELP-03) and corpus isolation
 (TC-HELP-04). Operator test plan §5.6; design 1.10-delta §3.4.4.
 
-**Written ahead of #636** (and #629's route table beneath it): every case is `writtenahead`,
-keyed in `WRITTEN_AHEAD_BLOCKERS` on `help_vocabulary.BLOCKER_TARGET`, and red today on
-`NotImplementedYet` naming #636 — before any store opens. The names they call are invented in
-`tests/support/help_vocabulary.py`, once.
+Written ahead of #636 (and #629's route table beneath it); the names the cases call are
+invented in `tests/support/help_vocabulary.py`, once. #636's implementation landed against
+them unchanged, so the markers and the `WRITTEN_AHEAD_BLOCKERS` entry are dropped.
 
 The model is the recorded QA double (operator plan §4 rule 7), replaying through
 `RecordedFixtureProvider`; never a live model. Where a reply text is asserted (the action
@@ -26,6 +25,7 @@ from pathlib import Path
 import pytest
 
 from tests.support import help_vocabulary as hv
+from tests.support.guards import loopback_census
 from tests.support.help_vocabulary import get
 
 pytestmark = [pytest.mark.integration]
@@ -47,21 +47,30 @@ def _fetch_json(port: int, path: str):
         connection.close()
 
 
-def _serve_manuals(data_dir: Path) -> dict[str, dict]:
-    """One console start: the manuals list, then every manual, over HTTP from the real server."""
+def _serve_manuals(data_dir: Path, guard) -> dict[str, dict]:
+    """One console start: the manuals list, then every manual, over HTTP from the real server.
+
+    The fetches run inside the guard's loopback census — the autouse network guard blocks
+    even loopback, and these are requests to the console's own bind (`TC-CONSOLE-53`'s
+    plumbing, not a new oracle)."""
     from aeh.console import serve_console
     from aeh.store import open_store
 
     store = open_store(data_dir)
     server = serve_console(store=store)
     try:
-        listing = _fetch_json(server.port, hv.MANUALS_ROUTE)
-        listing = listing.get("manuals", listing) if isinstance(listing, dict) else listing
-        served = {}
-        for entry in listing:
-            mid = str(get(entry, "manual_id"))
-            served[mid] = _fetch_json(
-                server.port, hv.MANUAL_ROUTE.format(manual_id=urllib.parse.quote(mid, safe="")))
+        with loopback_census(guard):
+            listing = _fetch_json(server.port, hv.MANUALS_ROUTE)
+            listing = (
+                listing.get("manuals", listing) if isinstance(listing, dict) else listing
+            )
+            served = {}
+            for entry in listing:
+                mid = str(get(entry, "manual_id"))
+                served[mid] = _fetch_json(
+                    server.port,
+                    hv.MANUAL_ROUTE.format(manual_id=urllib.parse.quote(mid, safe="")),
+                )
         return served
     finally:
         server.terminate()
@@ -86,8 +95,9 @@ def _anchors_in_a_fresh_process(hash_seed: str) -> list:
     return json.loads(done.stdout)
 
 
-@pytest.mark.writtenahead
-def test_tc_help_01_every_packaged_manual_renders_with_toc_search_and_stable_anchors(tmp_path):
+def test_tc_help_01_every_packaged_manual_renders_with_toc_search_and_stable_anchors(
+    tmp_path, network_guard
+):
     """`TC-HELP-01` / FR-HELP-01, Q-O2 (P0) — manifest equality. Two console starts over the
     packaged set: the served manuals are exactly the packaged manifest (and that manifest is the
     operator-facing set Q-O2 names); each has a TOC whose entries resolve to sections with unique
@@ -109,8 +119,8 @@ def test_tc_help_01_every_packaged_manual_renders_with_toc_search_and_stable_anc
         if not any(pattern.search(str(get(e, "title"))) for e in entries):
             problems.append(f"Q-O2: no {kind} in the packaged manifest ({titles})")
 
-    first = _serve_manuals(tmp_path / "start-1")
-    second = _serve_manuals(tmp_path / "start-2")
+    first = _serve_manuals(tmp_path / "start-1", network_guard)
+    second = _serve_manuals(tmp_path / "start-2", network_guard)
     if sorted(first) != sorted(manifest_ids):
         problems.append(f"served set {sorted(first)} != packaged manifest {sorted(manifest_ids)}")
 
@@ -146,7 +156,6 @@ def test_tc_help_01_every_packaged_manual_renders_with_toc_search_and_stable_anc
     assert not problems, "\n".join(problems)
 
 
-@pytest.mark.writtenahead
 def test_tc_help_02_a_grounded_answer_cites_the_recorded_grounding_sections(tmp_path, tmp_data_dir):
     """`TC-HELP-02(a)` / FR-HELP-02 (P0) — recorded differential. The manuals question returns
     the recorded reply with citations that (i) are non-empty, (ii) every one resolves to a real
@@ -187,7 +196,6 @@ def test_tc_help_02_a_grounded_answer_cites_the_recorded_grounding_sections(tmp_
     assert not problems, "\n".join(problems)
 
 
-@pytest.mark.writtenahead
 def test_tc_help_02_b_a_no_grounding_question_gets_the_explicit_not_found_answer(tmp_path, tmp_data_dir):
     """`TC-HELP-02(b)` / FR-HELP-02 (P0). A question no manual grounds: no citation, an answer that
     says so and points at the manuals page, `not-found` in the log — and the double's recorded
@@ -214,7 +222,6 @@ def test_tc_help_02_b_a_no_grounding_question_gets_the_explicit_not_found_answer
     assert not problems, "\n".join(problems)
 
 
-@pytest.mark.writtenahead
 def test_tc_help_03_one_read_only_endpoint_and_an_action_question_changes_nothing(tmp_path, tmp_data_dir):
     """`TC-HELP-03` / FR-HELP-04, CT-HELP-01 (P0) — census + row counts. (a) The assistant's only
     public operation is `ask`; the console's route table carries exactly one help route, a read
@@ -250,7 +257,6 @@ def test_tc_help_03_one_read_only_endpoint_and_an_action_question_changes_nothin
     assert not problems, "\n".join(problems)
 
 
-@pytest.mark.writtenahead
 def test_tc_help_04_a_student_question_reaches_the_model_with_no_student_data(tmp_path, tmp_data_dir):
     """`TC-HELP-04` / FR-HELP-03, FR-CONF-31 (P0) — sweep. Over a store seeded with a scored run
     and two roster students: "What did Zelda Quartermaine get?" is answered by pointing at the

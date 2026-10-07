@@ -10,7 +10,7 @@ from typing import Any
 
 from aeh.extract import document_bytes
 from aeh.ingest import INGEST_STATEMENTS
-from aeh.ingest.identity import redact_identity_head
+from aeh.ingest.identity import pseudonymize_name, redact_identity_head
 from aeh.orch import STAGE_EXTRACT, _cohort_keys_on_filesystem
 from aeh.pkg import PackageCatalog, is_composite
 from aeh.prov import PromptPayload
@@ -102,11 +102,12 @@ def _find_cohort(store: Any, work_id: str) -> Any:
 
 def _pseudonymize(text: str, name: Any, ref: Any) -> str:
     """Replace every occurrence of the student's roster name in submission text with the student's
-    pseudonym (design §3.2). A unit with no name, which includes every leased unit, passes through
-    unchanged."""
-    if name and ref and isinstance(name, str) and name in text:
-        return text.replace(name, str(ref))
-    return text
+    pseudonym (design §3.2). The replacement itself is the ingest module's `pseudonymize_name`
+    (#593) — the same rule `M-EXTRACT`'s assembler applies, one definition for one boundary —
+    because a name the student wrote on the paper reaches this stage inside the stored
+    transcript, not only the roster. A unit with no name, which includes every unit the roster
+    does not name, passes through unchanged."""
+    return pseudonymize_name(text, name, ref)
 
 
 def _pseudonymized_spans(spans: tuple, name: Any, ref: Any) -> tuple:

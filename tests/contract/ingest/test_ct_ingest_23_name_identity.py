@@ -23,7 +23,11 @@ Two halves:
 
 `aeh.judge` is outside the source sweep on purpose: its `assemble` *receives* the roster name in
 order to replace it with the `student_ref` (SEC-19, TS-129), so reading a name is its legitimate
-job; that boundary is pinned behaviourally by `tests/e2e/test_ts129_jev_open_arms.py`.
+job; that boundary is pinned behaviourally by `tests/e2e/test_ts129_jev_open_arms.py`. The same
+holds of `M-SYNTH`'s `_evidence` since #668 — it reads the roster's `full_name` (the statement in
+`synth/schema.py`) only to pseudonymize the evidence texts it feeds the narrative request, and it
+is pinned behaviourally by `tests/security/synth/test_tc_reg_14_synth_name_privacy.py`; the two
+files of that boundary are exempted in place below, so the rest of the package stays swept.
 """
 
 from __future__ import annotations
@@ -75,6 +79,13 @@ REQUEST_BUILDERS = ("prov", "extract", "synth", "setup", "ingest/markup.py",
                     "ingest/assessment_match.py", "ingest/documents.py", "ingest/ingestor.py")
 
 _ROSTER_NAME = re.compile(r"\bfull_name\b")
+
+#: The redaction-boundary files inside the swept builders — `aeh.judge` is excluded at the
+#: list above for the same reason. Each *receives* the roster's `full_name` only to replace
+#: it with the `student_ref` (NFR-PROV-08): reading a name is their legitimate job, and each
+#: is pinned behaviourally, `M-JUDGE` by SEC-19 and `M-SYNTH` by TC-REG-14 (#668). Paths are
+#: relative to `SRC`; everything else in their packages stays swept.
+BOUNDARY_FILES = ("synth/schema.py", "synth/worker.py")
 
 
 # --- 1. the clause suite -----------------------------------------------------------------------
@@ -165,7 +176,10 @@ def _request_builder_files() -> list[Path]:
 
 
 def _roster_name_readers(texts: dict[str, str]) -> list[str]:
-    return sorted(name for name, text in texts.items() if _ROSTER_NAME.search(text))
+    return sorted(
+        name for name, text in texts.items()
+        if _ROSTER_NAME.search(text) and name.replace("\\", "/") not in BOUNDARY_FILES
+    )
 
 
 def test_tc_ingest_c23_no_request_builder_reads_the_roster_name():

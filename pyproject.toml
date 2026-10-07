@@ -49,7 +49,7 @@ where = ["src"]
 include = ["aeh*"]
 
 [tool.setuptools.package-data]
-aeh = ["console_assets/*"]
+aeh = ["console_assets/*", "console_assets/spa/**/*", "help_assets/manuals/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

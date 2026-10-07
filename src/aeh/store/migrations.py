@@ -426,6 +426,46 @@ _DURABLE_011: tuple[Statement, ...] = (
 )
 
 
+# --- Tier D, migration 13 (#636, `FR-HELP-04`): the Q&A assistant's exchange log --------------
+#
+# **Declared here rather than in `aeh.help`, deliberately** — the same ruling migration 11 made
+# for M-CALIB. By CLAUDE.md's ownership convention this belongs to M-HELP, but the module a
+# tier-chain link names must be imported before EVERY durable open, and the store-opening
+# worlds that never import `aeh.console` (the one importer `aeh.help` has) import only the
+# eleven contributors: the conform suite, the pipeline CLI, `TC-SMOKE-01`'s clean-environment
+# child. Under help-ownership every one of those opens refuses with
+# `IncompleteMigrationChainError` — the store, the lower layer, would require a console feature
+# module. The Q&A log is Tier D with no student data by construction (`FR-STORE-12` holds
+# trivially): no column carries cohort, roster, submission or grade data — the question is the
+# teacher's own words and the anchors name manual headings (`CT-HELP-03`).
+#
+# `exchange_id` is an implicit `rowid`: an `INSERT` without it takes the next one, so the log
+# reads oldest-first by `ORDER BY exchange_id` with no timestamp comparison and no clock-read
+# inside the write (`CT-STORE-18`: the order is stated in the statement).
+#
+# `cited_anchors` is the exchange's cited anchors as a JSON array of anchor strings — the same
+# strings the answer's citations carry. It is TEXT rather than a child table because the log is
+# append-only accountability: an exchange's citation list is written once, is never queried per
+# anchor, and a join would add structure to data that is only ever read whole (`CT-HELP-05`).
+_DURABLE_013: tuple[Statement, ...] = (
+    Statement(
+        """
+        CREATE TABLE qa_exchange (
+            exchange_id   INTEGER NOT NULL PRIMARY KEY,
+            question      TEXT    NOT NULL,
+            cited_anchors TEXT    NOT NULL,
+            model_ref     TEXT    NOT NULL,
+            tokens_in     INTEGER NOT NULL CHECK (tokens_in >= 0),
+            tokens_out    INTEGER NOT NULL CHECK (tokens_out >= 0),
+            latency_ms    REAL    NOT NULL CHECK (latency_ms >= 0),
+            outcome       TEXT    NOT NULL CHECK (outcome IN ('grounded', 'not-found')),
+            recorded_at   TEXT    NOT NULL
+        )
+        """
+    ),
+)
+
+
 class _VersionOrderedRegistry(dict):
     """Keeps each tier's migration chain in ascending version order, whatever order the owning
     modules are imported in. Owners append at import time, and import order cannot be controlled
@@ -443,6 +483,7 @@ TIER_MIGRATIONS: Mapping[Tier, tuple[Migration, ...]] = _VersionOrderedRegistry(
             Migration(1, "durable_tier_initial", _DURABLE_001),
             Migration(2, "durable_lease_clock", _DURABLE_002),
             Migration(11, "calib_dual_scored_roster", _DURABLE_011),
+            Migration(13, "help_qa_log", _DURABLE_013),
         ),
     }
 )
@@ -491,6 +532,8 @@ def current_schema_version(tier: Tier) -> int:
 #: tail. #363's `integ_read_indexes` moved Cohort 24→25 — `aeh.integ` holds it now.)
 COMPLETE_SCHEMA_VERSIONS: Mapping[Tier, int] = {
     Tier.PACKAGE: 16,
-    Tier.COHORT: 33,
-    Tier.DURABLE: 12,
+    Tier.COHORT: 34,
+    # #636's `help_qa_log` — the Q&A log table — is Durable 13, declared here per the
+    # migration-11 ruling above: a module the system runs without cannot own a chain link.
+    Tier.DURABLE: 13,
 }
