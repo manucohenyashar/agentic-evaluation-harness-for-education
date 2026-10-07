@@ -162,6 +162,16 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
     ),
     "export/import package": ("package_file.path",),
     "purge cohort": ("cohort.purged_at",),
+    # The delta's FR-CONSOLE-42 (roster editor, #630): Tier C cohort and roster rows only — a
+    # student's name is never a field a scoring prompt reads (NFR-PROV-04).
+    "create cohort": (
+        "cohort.cohort_id",
+        "cohort.consent_class",
+        "cohort.created_at",
+        "roster.cohort_id",
+        "roster.student_ref",
+        "roster.full_name",
+    ),
 }
 
 #: The three actions §11.8 places **before any scoring exists**, inside the §6.2 lock.

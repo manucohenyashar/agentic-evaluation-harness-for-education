@@ -30,7 +30,7 @@ from .grade_actions import GradeActionsMixin
 
 
 class ConsoleApp(StoreReadsMixin, ScreenRenderingMixin, SetupScreensMixin, RunScreensMixin, ResultsScreensMixin, QueuesMixin, ControlActionsMixin, DomainEffectsMixin, KeyCorrectionMixin, ReadViewsMixin, GradeActionsMixin):
-    """The console as a plain object: read views over the stores plus the fifteen control actions
+    """The console as a plain object: read views over the stores plus the enumerated control actions
     (§11.1, §11.8).
 
     It holds no pipeline state. Every screen is a query and every change is a stored row, so two

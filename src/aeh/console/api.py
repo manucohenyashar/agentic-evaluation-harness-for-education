@@ -3,7 +3,7 @@
 `API_ROUTES` is both the census `CT-CONSOLE-30` is checked against and the router the server
 dispatches `/api/` from: a route the table does not list does not exist. Every mutating row is
 built from `CONTROL_SURFACE_ACTIONS`, so the API cannot carry a mutation the enumeration does
-not — the API adds a transport, not a second write path. The one mutation beside the fifteen
+not — the API adds a transport, not a second write path. The one mutation beside the enumerated actions
 is the scan upload (`FR-CONSOLE-04`), which the server-rendered console already had.
 
 The SPA itself (M-UI) ships as package data at `SPA_BUNDLE_DIR` (#634); this module only says
@@ -80,6 +80,9 @@ def _build_routes() -> tuple[ApiRoute, ...]:
     reads = (
         ApiRoute("GET", f"{API_PREFIX}/controls", None, "controls"),
         ApiRoute("GET", f"{API_PREFIX}/screens", None, "screens"),
+        # FR-CONSOLE-42: the roster editor's columns, its "ID is optional" statement and the
+        # consent classes — the copy the SPA renders, so it restates no rule of its own.
+        ApiRoute("GET", f"{API_PREFIX}/roster-editor", None, "roster editor"),
     )
     controls = tuple(
         ApiRoute("POST", f"{API_PREFIX}/actions/{action_slug(action)}", action)

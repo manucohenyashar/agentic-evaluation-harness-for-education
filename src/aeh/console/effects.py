@@ -14,6 +14,7 @@ from aeh.grade import GradingService
 from aeh.pkg import PackageCatalog
 from aeh.review import StaleReviewItemError
 
+from .cohort_editor import CREATE_COHORT_ACTION, create_cohort_effect
 from .vocabulary import PRE_LOCK_ACTIONS
 from .queries import (
     _SELECT_SUBMISSION_EXISTS,
@@ -175,6 +176,8 @@ class DomainEffectsMixin:
                     "correction as done",
                     False,
                 )
+        if action == CREATE_COHORT_ACTION:
+            return create_cohort_effect(self._store, params)
         if action == "set review window":
             return self._set_review_window_effect(params)
         if action == "amend a finalized grade":

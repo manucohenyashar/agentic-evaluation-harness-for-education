@@ -130,7 +130,7 @@ MVP_ABSENT_TOUCHPOINT = "Answer ambiguity-elicitation questions"
 # — the seam is that it only reads stores and writes the enumerated control rows"*. That seam is
 # only assertable if the enumeration is fixed, which is why it is transcribed rather than read from
 # the implementation.
-CONTROL_SURFACE_ACTIONS: tuple[str, ...] = (
+HLD_CONTROL_ACTIONS: tuple[str, ...] = (
     "approve question inventory",
     "supply answer keys",
     "accept or correct rubric read-back",
@@ -147,6 +147,18 @@ CONTROL_SURFACE_ACTIONS: tuple[str, ...] = (
     "export/import package",
     "purge cohort",
 )
+
+#: The control actions the operator-requirements delta adds beside §11.8's fifteen, each with the
+#: requirement that makes it one. `CT-CONSOLE-30` (v2.0): *"no mutation exists in the API that the
+#: server-rendered console did not have, and none is added without being an enumerated control
+#: row"* — so FR-CONSOLE-42's cohort creation (the roster editor, #630) is an enumerated row, not
+#: an orphan route. Transcribed from the delta, not from the implementation.
+DELTA_CONTROL_ACTIONS: dict[str, str] = {
+    "create cohort": "FR-CONSOLE-42",
+}
+
+#: The whole enumerated write surface `FR-CONSOLE-32` pins: §11.8's fifteen plus the delta's.
+CONTROL_SURFACE_ACTIONS: tuple[str, ...] = HLD_CONTROL_ACTIONS + tuple(DELTA_CONTROL_ACTIONS)
 
 #: Design §3.19's route table, split by surface. `CT-CONSOLE-17`'s sweep needs the routes to know
 #: what "a reachable screen" means, and `CT-CONSOLE-16` asserts the provenance gate is one.

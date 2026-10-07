@@ -21,6 +21,7 @@ from .api import (
     controls_payload,
     match_route,
 )
+from .cohort_editor import roster_editor_payload
 from .errors import ConsoleBindRefused
 from .routes import SCREENS
 
@@ -47,6 +48,7 @@ def outcome_json(action: str, outcome: Any) -> bytes:
 _READS = {
     "controls": controls_payload,
     "screens": lambda: {"screens": dict(SCREENS)},
+    "roster editor": roster_editor_payload,
 }
 
 
