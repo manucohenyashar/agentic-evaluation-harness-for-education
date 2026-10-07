@@ -256,19 +256,22 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # #362 (FR-ORCH-28): `mark_cell_phase`'s upsert of the per-cell composition phase,
     # written through the caller's transaction so the phase and the work it stands for
     # commit together.
-    "aeh.orch.run_lifecycle:88",
+    # #664 (FR-PIPE-19): the model-pin recording in `create_run` and the pin-reader in
+    # `run_records` shifted the file's line numbers; the sites are the same statements
+    # as before, and the re-pin is line drift only.
+    "aeh.orch.run_lifecycle:99",
     "aeh.orch.enumeration:204",
     "aeh.orch.enumeration:213",
-    "aeh.orch.run_lifecycle:244",
-    "aeh.orch.run_lifecycle:238",
+    "aeh.orch.run_lifecycle:260",
+    "aeh.orch.run_lifecycle:255",
     "aeh.orch.run_lifecycle:249",
-    "aeh.orch.run_lifecycle:270",
-    "aeh.orch.run_lifecycle:282",
-    "aeh.orch.run_lifecycle:310",
-    "aeh.orch.run_lifecycle:430",
-    "aeh.orch.run_lifecycle:412",
-    "aeh.orch.run_lifecycle:454",
-    "aeh.orch.run_lifecycle:462",
+    "aeh.orch.run_lifecycle:281",
+    "aeh.orch.run_lifecycle:293",
+    "aeh.orch.run_lifecycle:321",
+    "aeh.orch.run_lifecycle:441",
+    "aeh.orch.run_lifecycle:423",
+    "aeh.orch.run_lifecycle:465",
+    "aeh.orch.run_lifecycle:473",
     "aeh.orch.leasing:234",
     "aeh.orch.leasing:253",
     "aeh.orch.leasing:265",
@@ -307,12 +310,12 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # so a run recovery REFUSED to resume - a profile switch, FR-CONF-15 - would keep a
     # stale reason that answers a different question. Declared statement,
     # keyword-parameterized, in the caller's transaction (FR-STORE-08).
-    "aeh.orch.run_lifecycle:550",
+    "aeh.orch.run_lifecycle:561",
     "aeh.orch.leasing:672",
     "aeh.orch.leasing:674",
     "aeh.orch.dispatch:449",
     "aeh.orch.reporting:369",
-    "aeh.orch.run_records:145",
+    "aeh.orch.run_records:210",
     # #612 (live OpenRouter enablement): cohort creation and roster widening write the
     # roster through ORCH_STATEMENTS, and ingest marks interrupted submissions
     # not_reached through INGEST_STATEMENTS - declared statements, keyword parameters,

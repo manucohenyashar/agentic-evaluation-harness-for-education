@@ -149,6 +149,81 @@ def _load_config_file(path: str | None) -> dict[str, Any]:
 #: panel members — they are the `judge_refs` `run_to_completion` already takes for extension arms.
 ESCALATION_JUDGES_KEY = "escalation_judge"
 
+
+#: The two CLI flags that pin a run's extract and synthesis identities (`FR-PIPE-19`), and
+#: the role each one fixes. The flag IS the role — there is no `--role` — because the two
+#: stages have different callers and an operator pinning an extractor is not asking to
+#: reseat the synthesizer.
+_PIN_FLAGS: tuple[tuple[str, str], ...] = (
+    ("--extractor", "extractor"),
+    ("--synthesizer", "synthesizer"),
+)
+
+
+def _parse_pin(raw: str, flag: str, role: str) -> Any:
+    """One `--extractor` / `--synthesizer` value as a `ModelRef` of the flag's own role.
+
+    The REF form is `provider|build_id[|quantization]` — the convention
+    `HARNESS_EXTRACT_SECOND_FAMILY_MODEL` documents. Splitting on `|` and nothing
+    else: a build id may itself contain `:` and `@` (weights paths and digest pins
+    do), so anything finer than the three `|` fields would mis-parse a legal ref. A
+    value with one or more than three parts — or an empty field, like a trailing `|`
+    — is refused, naming the flag and not echoing the value — a `build_id` is caller
+    data that can carry a credential in a query string (`NFR-CONF-02`).
+    """
+    from aeh.conf import ModelRef
+
+    parts = raw.split("|")
+    if len(parts) not in (2, 3) or not parts[0].strip() or not parts[1].strip() or (
+            len(parts) == 3 and not parts[2].strip()):
+        raise ValueError(
+            f"{flag} must be provider|build_id[|quantization] — the REF form "
+            f"HARNESS_EXTRACT_SECOND_FAMILY_MODEL documents — and this one has "
+            f"{len(parts)} '|'-separated part(s)."
+        )
+    quantization = parts[2].strip() if len(parts) == 3 else None
+    return ModelRef(
+        role=role,
+        provider=parts[0].strip(),
+        build_id=parts[1].strip(),
+        quantization=quantization or None,
+    )
+
+
+def _model_pins(args: Any, profile: str) -> dict[str, Any]:
+    """Parse and resolve the `--extractor` / `--synthesizer` pins (`FR-PIPE-19`).
+
+    A pin resolves through the same check the panel goes through — `_check_resolved`
+    (`CT-CONF-03`) — against the backend profile the effective configuration settled on
+    (`FR-CONF-14`): the profile decides WHICH build form counts, so a provider-pinned
+    slug is a perfectly resolved identity and still wrong on `edge-local`. Called before
+    the store opens, so an unresolvable ref is refused with exit 1 and creates no run
+    row — the same posture as the `_int_knob` checks (`TC-PIPE-35`).
+
+    Returns a possibly-empty mapping of role to `ModelRef`. Empty when neither flag was
+    given: `aeh recover`'s no-flag arm keeps every run's own recorded pin unchanged.
+    """
+    from aeh.conf.checks import _REQUIRED_BUILD_FORM, _check_resolved
+
+    pins: dict[str, Any] = {}
+    for flag, role in _PIN_FLAGS:
+        raw = getattr(args, flag.lstrip("-"), None)
+        if raw is None:
+            continue
+        pins[role] = _parse_pin(str(raw), flag, role)
+    if pins and profile not in _REQUIRED_BUILD_FORM:
+        # Same posture as `_provider_for`: the profile vocabulary is declared there, and
+        # a pin cannot be resolved against a profile that does not exist.
+        raise ValueError(
+            f"a --extractor / --synthesizer pin is resolved against the run's backend "
+            f"profile, and no backend profile is configured ({profile!r}); set "
+            f"HARNESS_PROFILE to one of {sorted(_REQUIRED_BUILD_FORM)}."
+        )
+    for role, ref in sorted(pins.items()):
+        flag = next(name for name, r in _PIN_FLAGS if r == role)
+        _check_resolved(ref, f"the {flag} pin", profile)
+    return pins
+
 def _is_live(provider: Any) -> bool:
     """Whether `provider` sends calls to a real model server (OpenRouter or a local one), where a
     derived judge name like `escalation-arm-4` is not a model anyone serves."""

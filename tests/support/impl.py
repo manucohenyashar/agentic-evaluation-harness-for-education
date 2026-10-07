@@ -1369,22 +1369,12 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/security/help/test_sec_25_help_injection.py::test_sec_25_an_injection_nested_in_a_manual_passage_writes_nothing",
         ),
     ),
-    # --- TS-143 (#619), name-primary identity --------------------------------------------
+    # --- TS-143 (#620), name-primary identity --------------------------------------------
     #
-    # Keyed `command` on the design-named migration (`ingest_roster_names`, Cohort 33, owner
-    # `aeh.ingest`) being registered: the design declares no symbol for the matcher or the
-    # roster loader, and the migration lands in the same story (#620) as everything these
-    # cases assert. SystemExit rather than assert, so `python -O` cannot make it pass.
-    "#620 TS-143 name-primary V3 matching, roster names, Cohort 33": (
-        "command",
-        "python -c \"import aeh.ingest; from aeh.store import TIER_MIGRATIONS, Tier; "
-        "raise SystemExit(0 if any(m.name == 'ingest_roster_names' "
-        "for m in TIER_MIGRATIONS[Tier.COHORT]) else 1)\"",
-        (
-            "tests/integration/ingest/test_ts143_name_identity.py",
-            "tests/contract/ingest/test_ct_ingest_23_name_identity.py",
-        ),
-    ),
+    # "#620 TS-143 name-primary V3 matching, roster names, Cohort 33" left with #620's fix;
+    # #664 drops the leftover registry entry the keep-both merge re-added — the two tests
+    # it named lost their `writtenahead` markers when #620 closed, so the entry only kept
+    # the harness gate red (the #626-entry precedent, commit 2622446).
     "#155 check_traceability --contracts-only passes the real pair (TS-82)": (
         "command",
         "python .claude/skills/create-test-plan/scripts/check_traceability.py "

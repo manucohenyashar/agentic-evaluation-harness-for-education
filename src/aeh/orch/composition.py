@@ -7,7 +7,7 @@ from typing import Any
 from .constants import STAGE_EXTRACT, STAGE_SCORE
 from .errors import CellPhaseError
 from .statements import ORCH_STATEMENTS
-from .run_records import _panel_build_ref_of
+from .run_records import _panel_build_ref_of, _model_pin_records_of
 from .executors import CELL_PHASES, CellKey, READY_HOOKS, RunHandle
 
 
@@ -69,6 +69,7 @@ class CompositionMixin:
             backend_profile=str(row["backend_profile"] or ""),
             started_at=str(row["started_at"] or ""),
             panel_build_ref=_panel_build_ref_of(row),
+            model_pins=_model_pin_records_of(row),
         )
 
     def cell_unit_counts(self, run_id: str, stage: str) -> dict["CellKey", tuple[int, int]]:

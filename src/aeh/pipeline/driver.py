@@ -67,6 +67,33 @@ def _stall_reason(orch: Any, run_id: str) -> str:
 # --- the driver -----------------------------------------------------------------------------
 
 
+def _refuse_pin_mismatch(orch: Any, given: dict[str, Any]) -> None:
+    """Refuse `aeh recover --extractor/--synthesizer` when a run froze a different pin
+    (FR-PIPE-19, TC-PIPE-36).
+
+    The identity compared is the full one the run froze — provider, build and
+    quantization, the same triple `aeh run`'s continuation check compares — so a flag
+    naming the same build under another provider or quantization is a mismatch too, not
+    a near miss recovery waves through. The refusal names BOTH builds — the run's frozen
+    one and the flag's — because an operator typing the flag to "set" a pin needs to see
+    which build the run actually recorded. Runs that recorded no pin never conflict
+    (`recover`'s docstring).
+    """
+    if not given:
+        return
+    for handle in orch.runs():
+        frozen = {pin[0]: pin for pin in handle.model_pins}
+        for role, ref in sorted(given.items()):
+            record = frozen.get(role)
+            if record is not None and (record[1], record[2], record[3]) != (
+                    ref.provider, ref.build_id, ref.quantization):
+                raise ValueError(
+                    f"run {handle.run_id} froze {role} pin build {record[2]!r} and this "
+                    f"command names {ref.build_id!r}: a run keeps the pin it froze "
+                    f"(FR-PIPE-19), so recovery is refused before it writes anything."
+                )
+
+
 def run_to_completion(
     store: Any,
     run_id: str,
@@ -294,7 +321,9 @@ def run_to_completion(
 # --- recovery (issue #365, FR-PIPE-07) ------------------------------------------------------
 
 
-def recover(store: Any, *, clock: Any = None) -> RecoveryReport:
+def recover(
+    store: Any, *, clock: Any = None, extractor: Any = None, synthesizer: Any = None,
+) -> RecoveryReport:
     """Reclaim expired leases, resume open runs, and settle grades whose review window lapsed while
     the process was down.
 
@@ -307,11 +336,25 @@ def recover(store: Any, *, clock: Any = None) -> RecoveryReport:
     next process start is where it gets noticed. Without this, a run graded under a window
     would sit provisional until somebody re-ran it by hand, which is the defect PR #339 found.
 
+    **The pins are validate-only here (`FR-PIPE-19`).** Recovery itself creates no run, and
+    every re-enumeration reads each run's recorded pin from its own run row — so a pin given
+    to `aeh recover` never substitutes for one; it is checked against what each run froze.
+    A flag naming a build a run's recorded pin does not hold is refused BEFORE the sweep —
+    the first write this pass can make (`TC-PIPE-36`). A run that recorded no pin does not
+    conflict with any flag: its units keep their own identity, and a flag cannot change
+    what the run already froze.
+
     Idempotent by construction: on a clean store the sweep reclaims nothing, `resume` is the
     documented no-op, and no complete run reports unsettled grades, so the report comes back
     empty and no row is written.
     """
     orchestrator = Orchestrator(store)
+    _refuse_pin_mismatch(
+        orchestrator, given={
+            role: ref for role, ref in
+            (("extractor", extractor), ("synthesizer", synthesizer)) if ref is not None
+        },
+    )
     sweep = orchestrator.sweep_expired_leases()
 
     # The profile this PROCESS is running, resolved the way every entry point resolves it

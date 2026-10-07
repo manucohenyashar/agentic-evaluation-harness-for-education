@@ -18,7 +18,8 @@ from .results import RunResult
 from .hooks import _FAULT_PREFIX
 from .driver import recover, run_to_completion
 from .runtime import (
-    _describe_provider, _escalation_judge_refs, _load_config_file, _open_store, _provider_for,
+    _describe_provider, _escalation_judge_refs, _load_config_file, _model_pins, _open_store,
+    _provider_for,
 )
 from .decision_engine import _decision_provider_for_run
 from .background import resume_runs_in_background
@@ -45,9 +46,26 @@ def _build_parser() -> Any:
     run_parser.add_argument("--cohort", required=True)
     run_parser.add_argument("--package-version", required=True)
     run_parser.add_argument("--config", default=None)
+    # FR-PIPE-19: the optional pins naming which extractor and synthesizer this run's
+    # stages use, `provider|build_id[|quantization]`. Recorded in the run's frozen
+    # config, so a replay pins the recorded corpus it replays (TC-SMOKE-12, RES-19).
+    run_parser.add_argument(
+        "--extractor", default=None, metavar="REF",
+        help="pin the extractor build: provider|build_id[|quantization]")
+    run_parser.add_argument(
+        "--synthesizer", default=None, metavar="REF",
+        help="pin the synthesizer build: provider|build_id[|quantization]")
 
     recover_parser = sub.add_parser("recover", help="reclaim leases, resume and settle grades")
     recover_parser.add_argument("--data-dir", required=True)
+    # FR-PIPE-19: validate-only — recovery creates no run, and each run keeps the pin it
+    # froze; a flag that disagrees with a recorded pin is refused before anything writes.
+    recover_parser.add_argument(
+        "--extractor", default=None, metavar="REF",
+        help="validate against the runs' frozen extractor pin")
+    recover_parser.add_argument(
+        "--synthesizer", default=None, metavar="REF",
+        help="validate against the runs' frozen synthesizer pin")
 
     console_parser = sub.add_parser("console", help="recover, then serve the operator console")
     console_parser.add_argument("--data-dir", required=True)
@@ -213,9 +231,17 @@ def main(argv: "Sequence[str] | None" = None) -> int:
         if args.command == "ingest":
             return _ingest_command(args)
         if args.command == "recover":
+            # FR-PIPE-19 / TC-PIPE-35: the pins are resolved and refused BEFORE the store
+            # opens — the same checked-before-the-store posture the knob checks above have,
+            # so an unresolvable ref leaves no data-folder skeleton behind. The effective
+            # configuration decides the profile: recovery reads no config file, so the
+            # environment wins exactly as it does on the run path.
+            pins = _model_pins(args, str(effective_config({}).get("HARNESS_PROFILE") or ""))
             store = _open_store(args.data_dir)
             try:
-                report = recover(store)
+                report = recover(
+                    store,
+                    extractor=pins.get("extractor"), synthesizer=pins.get("synthesizer"))
             finally:
                 store.close()
             print(json.dumps(_as_json(report), indent=2, sort_keys=True))
@@ -263,10 +289,14 @@ def main(argv: "Sequence[str] | None" = None) -> int:
         _int_knob(MAX_PASSES_ENV, None, minimum=1)
         _int_knob(PASS_SLEEP_MS_ENV, 0, minimum=0)
         config = effective_config(_load_config_file(args.config))
+        # FR-PIPE-19 / TC-PIPE-35: the pins are resolved against the profile the effective
+        # configuration settled on, BEFORE the store opens — an unresolvable ref exits 1
+        # and creates no run row, exactly like a malformed knob above.
+        pins = _model_pins(args, str(config.get("HARNESS_PROFILE") or ""))
         store = _open_store(args.data_dir)
         try:
             recover(store)
-            result = _run_command(store, args, config)
+            result = _run_command(store, args, config, pins)
         finally:
             store.close()
         print(json.dumps(_as_json(result), indent=2, sort_keys=True))
@@ -289,10 +319,20 @@ def main(argv: "Sequence[str] | None" = None) -> int:
         return EXIT_ERROR
 
 
-def _run_command(store: Any, args: Any, config: Mapping[str, Any]) -> RunResult:
-    """`aeh run`: find the run or create it, then drive it (FR-PIPE-08)."""
+def _run_command(
+    store: Any, args: Any, config: Mapping[str, Any], pins: Mapping[str, Any] | None = None,
+) -> RunResult:
+    """`aeh run`: find the run or create it, then drive it (FR-PIPE-08).
+
+    `pins` (`FR-PIPE-19`) is the `--extractor` / `--synthesizer` mapping, already
+    resolved against the effective profile. On a NEW run it is frozen into the row; on a
+    CONTINUING one it must match what the run froze, and a role the run recorded but the
+    operator did not flag is re-applied from the row — a run keeps the identities it
+    froze (`FR-CONF-15`'s posture, `TC-PIPE-36`).
+    """
     from aeh.conf import resolve_run_config
 
+    given = dict(pins or {})
     existing = [
         handle for handle in Orchestrator(store).runs()
         if handle.cohort_id == args.cohort
@@ -334,9 +374,16 @@ def _run_command(store: Any, args: Any, config: Mapping[str, Any]) -> RunResult:
                 f"backend it froze (FR-CONF-15). Set HARNESS_PROFILE to "
                 f"{handle.backend_profile!r} to continue it."
             )
+        # `FR-PIPE-19`: the same posture for the model pins. A flag naming a build the run
+        # did not freeze — or a flag at all for a role the run never pinned — would rebind
+        # the run's extract or synthesis identity, and re-pinning mid-run re-addresses
+        # enumerated work (the pin feeds `compute_work_id`'s extractor input). Refused
+        # before anything is driven; a role recorded but not flagged is re-applied below.
+        applied = _applied_pins(given, handle)
     else:
         run_id = orchestrator.create_run(
-            args.cohort, args.package_version, run_config)
+            args.cohort, args.package_version, run_config, model_pins=given or None)
+        applied = dict(given)
     # `create_run` leaves the run `pending`, and a pending run never reaches the completion
     # predicate: `_maybe_complete_run` fires only from `running`. Without this the command
     # dispatches every unit, spends every model call, and then returns `pending` with no
@@ -360,7 +407,48 @@ def _run_command(store: Any, args: Any, config: Mapping[str, Any]) -> RunResult:
     print(f"provider: {_describe_provider(provider)}")
     return run_to_completion(
         store, run_id, provider=provider, run_config=run_config,
-        decision_provider=decision_provider, judge_refs=judge_refs)
+        decision_provider=decision_provider, judge_refs=judge_refs,
+        extractor=applied.get("extractor"), synthesizer=applied.get("synthesizer"))
+
+
+def _applied_pins(given: Mapping[str, Any], handle: Any) -> dict[str, Any]:
+    """The pins this continuation drives with (`FR-PIPE-19`, `TC-PIPE-36`).
+
+    A flagged role must match the run's recorded pin exactly (provider, build and
+    quantization — the full identity the run froze, not just the part the hash reads);
+    a role recorded but not flagged is re-applied from the row, so a run continued
+    without flags keeps its frozen identities rather than falling back to the stage
+    defaults. A flag for a role the run never pinned is refused: re-pinning mid-run
+    would re-address the work the enumeration already wrote.
+    """
+    from aeh.conf import ModelRef
+
+    frozen = {pin[0]: pin for pin in handle.model_pins}
+    applied: dict[str, Any] = {}
+    for role in sorted(set(frozen) | set(given)):
+        record = frozen.get(role)
+        ref = given.get(role)
+        if record is not None and ref is not None:
+            if (ref.provider, ref.build_id, ref.quantization) != (
+                    record[1], record[2], record[3]):
+                raise ValueError(
+                    f"run {handle.run_id} froze {role} pin build {record[2]!r} and this "
+                    f"command's flag names {ref.build_id!r}; a run resumes with the "
+                    f"identities it froze (FR-PIPE-19, the FR-CONF-15 posture). Re-pin "
+                    f"only a run that has not started."
+                )
+            applied[role] = ref
+        elif record is not None:
+            applied[role] = ModelRef(
+                role=role, provider=record[1], build_id=record[2], quantization=record[3])
+        else:
+            raise ValueError(
+                f"run {handle.run_id} recorded no {role} pin and this command's flag "
+                f"names build {ref.build_id!r}: pinning a role mid-run would re-address "
+                f"the work already enumerated under the run's recorded identity. Create a "
+                f"new run to pin a different build (FR-PIPE-19)."
+            )
+    return applied
 
 
 def _as_json(value: Any) -> Any:
