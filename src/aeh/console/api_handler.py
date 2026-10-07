@@ -24,6 +24,7 @@ from .api import (
 )
 from .cohort_editor import roster_editor_payload
 from .errors import ConsoleBindRefused
+from .hub_state import hub_payload
 from .results_reads import results_class_read, results_export_read, results_student_read
 from .routes import SCREENS
 from .run_start import run_start_preview_read
@@ -53,21 +54,23 @@ def outcome_json(action: str, outcome: Any) -> bytes:
 
 
 #: The reads the API answers, by the name a read route carries. Each takes the running
-#: app and the request's query parameters. The first three are pure functions of the
-#: declared tables — no store is opened, so no read can create or touch a stored byte.
-#: The TS-148 reads (`run start preview`, the results views, the export) reach the
-#: running app's store and M-ORCH/M-GRADE's doors; the preview writes nothing (its
-#: cohort/package guards are read-only), and the export reads the bytes
+#: console, the console's app and the request's query parameters. The first three are pure
+#: functions of the declared tables — no store is opened, so no read can create or touch a
+#: stored byte. The hub read is a pure function of the console's own held state (its config,
+#: its served run); the TS-148 reads (`run start preview`, the results views, the export)
+#: reach the running app's store and M-ORCH/M-GRADE's doors; the preview writes nothing
+#: (its cohort/package guards are read-only), and the export reads the bytes
 #: `export_grade_artifacts` writes into a temporary directory. Each answers JSON, or a
 #: `FileAnswer` for the export's raw bytes.
 _READS = {
-    "controls": lambda _app, _query: controls_payload(),
-    "screens": lambda _app, _query: {"screens": dict(SCREENS)},
-    "roster editor": lambda _app, _query: roster_editor_payload(),
-    RUN_START_PREVIEW_READ: run_start_preview_read,
-    RESULTS_CLASS_READ: results_class_read,
-    RESULTS_STUDENT_READ: results_student_read,
-    RESULTS_EXPORT_READ: results_export_read,
+    "controls": lambda _console, _app, _query: controls_payload(),
+    "screens": lambda _console, _app, _query: {"screens": dict(SCREENS)},
+    "roster editor": lambda _console, _app, _query: roster_editor_payload(),
+    "hub": lambda console, _app, _query: hub_payload(console),
+    RUN_START_PREVIEW_READ: lambda _console, app, query: run_start_preview_read(app, query),
+    RESULTS_CLASS_READ: lambda _console, app, query: results_class_read(app, query),
+    RESULTS_STUDENT_READ: lambda _console, app, query: results_student_read(app, query),
+    RESULTS_EXPORT_READ: lambda _console, app, query: results_export_read(app, query),
 }
 
 
@@ -133,7 +136,7 @@ class ApiRequestsMixin:
         with the connection closed, so a failed read is answered, never a dropped socket."""
         reader = _READS[str(route.read)]
         try:
-            answer = reader(self._console.app, query)
+            answer = reader(self._console, self._console.app, query)
         except (ValueError, KeyError) as refusal:
             body = json.dumps({"error": str(refusal)}).encode("utf-8")
             self._respond(400, body, JSON_TYPE)

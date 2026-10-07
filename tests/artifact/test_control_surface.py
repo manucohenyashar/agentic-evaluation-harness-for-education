@@ -208,6 +208,12 @@ _CONSOLE_BARE_MIGRATION_IMPORTS: frozenset[str] = frozenset(
 #:
 #: - `aeh.store` — the seam itself: reads and control-row writes go through the tier handles.
 #: - `aeh.conf` — config types (`CohortRef`, `ModelRef`, `resolve_run_config`).
+#: - `aeh.conf.decision_engine` — `decision_engine_setting`, the helper the hub's live read
+#:   goes through to name the engine in force (`jev`/`off`, FR-UI-02, #634): read-only
+#:   configuration vocabulary, read through the same helper the resolver uses (FR-CONF-29)
+#:   so the hub and a started run cannot disagree about an unset `HARNESS_DECISION_ENGINE`.
+#:   Not re-exported from `aeh.conf`'s `__init__`, so the submodule edge is declared
+#:   directly rather than widened on the package's public surface.
 #: - `aeh.review` — the review constants the queue renders (`REVIEW_DEFAULT_BANDS`, the
 #:   blind-reserve minutes): read-only vocabulary, `M-REVIEW`'s declared shape.
 #: - `aeh.grade`, `aeh.orch`, `aeh.pkg`, `aeh.det` — the domain owners §11.8's control
@@ -230,8 +236,9 @@ _CONSOLE_BARE_MIGRATION_IMPORTS: frozenset[str] = frozenset(
 #:   estimate is priced on the same transport the run spends on — a resolver the console
 #:   would otherwise hold a drifting copy of.
 _CONSOLE_SYMBOL_IMPORT_MODULES: frozenset[str] = frozenset(
-    {"aeh.conf", "aeh.det", "aeh.grade", "aeh.orch", "aeh.pipeline", "aeh.pipeline.runtime",
-     "aeh.pkg", "aeh.review", "aeh.setup", "aeh.stats", "aeh.store"}
+    {"aeh.conf", "aeh.conf.decision_engine", "aeh.det", "aeh.grade", "aeh.orch",
+     "aeh.pipeline", "aeh.pipeline.runtime", "aeh.pkg", "aeh.review", "aeh.setup",
+     "aeh.stats", "aeh.store"}
 )
 
 

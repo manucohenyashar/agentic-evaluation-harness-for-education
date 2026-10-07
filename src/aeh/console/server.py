@@ -414,6 +414,11 @@ class ConsoleServer:
         return self._store
 
     @property
+    def run_id(self) -> str | None:
+        """The run the console serves, as `serve_console` was given it (`None` when none)."""
+        return self._run_id
+
+    @property
     def port(self) -> int:
         return int(self.socket.getsockname()[1])
 

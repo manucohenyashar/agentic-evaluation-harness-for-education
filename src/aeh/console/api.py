@@ -97,6 +97,9 @@ def _build_routes() -> tuple[ApiRoute, ...]:
         # FR-CONSOLE-42: the roster editor's columns, its "ID is optional" statement and the
         # consent classes — the copy the SPA renders, so it restates no rule of its own.
         ApiRoute("GET", f"{API_PREFIX}/roster-editor", None, "roster editor"),
+        # FR-UI-02: the home hub's live state — the package version, the served run's status
+        # and the engine in use — which the hub reads on load and polls.
+        ApiRoute("GET", f"{API_PREFIX}/hub", None, "hub"),
         # #631: the run-start screen's data behind its one confirmation (FR-CONSOLE-43) and
         # the results views, byte-identical with the CLI's (FR-CONSOLE-44, TC-CONSOLE-56/57).
         # Reads, not controls: the preview writes nothing, and the confirmation's write is

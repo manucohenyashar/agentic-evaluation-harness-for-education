@@ -2,8 +2,11 @@
 
 Synthesis runs in two levels. Level 1 (L1) writes one short narrative per question from that
 question's verdicts and evidence. Level 2 (L2) writes one narrative for the whole test from the
-L1 narratives only. A narrative must never state a score of its own, so every reply is checked
-against the score-claim patterns and flagged when it matches (FR-SYNTH-03).
+L1 narratives only. A narrative must never state a score of its own, so every model reply is
+checked against the score-claim patterns and flagged when it matches (FR-SYNTH-03). The one
+exemption is a paper whose criteria are all deterministic (#523): its narrative is a template
+over the scored multiple-choice results with no model call, so no reply exists to check — the
+figures it states are the stored scores themselves.
 
 Files:
     schema.py        the `narrative` table migration and the SQL statements this module runs
@@ -11,6 +14,7 @@ Files:
     score_claims.py  the score-claim patterns and the `has_score_claim` check
     records.py       the request, result and report types
     prompts.py       building the prompt and parsing the model's reply
+    mc_narrative.py  template sentences for a multiple-choice-only paper (no model call)
     worker.py        `SynthesisWorker`, which runs both levels for one submission
 
 Detailed design notes (the full original module description): `docs/code-notes/synth.md`.

@@ -1276,12 +1276,11 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # itself arrives with #364, and a module-kind probe would fire the gate for these cases on
     # the day the module lands rather than on the day `recover` does.
     #
-    # TC-PIPE-07's arm (c) - the review-window regrade - is NOT among these: it needs a grade
-    # policy surface this author did not verify, and #377 is the cautionary tale for asserting
-    # against an unverified one. TC-PIPE-08/11/12 and TC-SMOKE-12 are blocked on F-DEV-PIPE.
-    # The "#365 TS-84 M-PIPE recover (TC-PIPE-07 arms a, b, d)" entry left with #365:
+    # TC-PIPE-08/11/12 and TC-SMOKE-12 are blocked on F-DEV-PIPE. The
+    # "#365 TS-84 M-PIPE recover (TC-PIPE-07 arms a, b, d)" entry left with #365:
     # `aeh.pipeline:recover` landed, so its three arms lost the marker and rejoined
-    # the gate. Arm (c), the review-window regrade, was never in the entry.
+    # the gate. Arm (c), the review-window regrade, was never in the entry; it has now
+    # landed green with #378's decided rule (recovery does not touch the window).
     # --- TS-82 (#155), the blast-radius rule ------------------------------------------------
     #
     # `harness.blast_radius` is the command test plan 4.7 and 6.12 name, and no story in the
@@ -1315,12 +1314,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "python -m pytest -q -p no:cacheprovider tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_20_a_prime_the_baseline_reaches_the_runs_version_through_its_writer",
         ("tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_20_a_prime_the_baseline_reaches_the_runs_version_through_its_writer",),
     ),
-    # #523 (needs-attention): an MCQ-only submission is offered to M-SYNTH but gets no narrative.
-    "#523 TS-134 TC-PIPE-22 an MCQ-only paper is narrated": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_22_an_mcq_only_paper_is_offered_to_synthesis_and_narrated",
-        ("tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_22_an_mcq_only_paper_is_offered_to_synthesis_and_narrated",),
-    ),
+    # "#523 TS-134 TC-PIPE-22 an MCQ-only paper is narrated" left with #523's fix: the
+    # worker's MC-only branch narrates a multiple-choice-only submission from its scored
+    # deterministic results by template, with no model call, so the case rejoined the gate.
     # "#524 TS-134 TC-PIPE-23 even panel after quarantine" left with #524's fix: the run no
     # longer completes around a cell awaiting aggregation, the refused row stands on the odd
     # panel, and the quarantine count is the ledger's, so the three arms rejoined the gate.
@@ -1426,31 +1422,16 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # --- #639, the SPA cases (TC-UI-01..07, TC-UI-C01..C06, PERF-19, TC-CONSOLE-40/41 re-pointed) --
     #
     # The layout is invented in `tests/support/spa.py` (the design declares no M-UI interface).
-    # #634 is keyed `path` on the committed bundle's index.html: unresolved today, resolved the
-    # moment the bundle is committed, and free to check.
+    # #634's entry (the committed bundle, keyed `path` on its index.html) was dropped when #634
+    # landed and the bundle was committed; its cases were re-checked green unmarked at the drop.
     #
     # #635 and #638 deliver no Python name and no new file whose path the design fixes, and a
     # `command` running their browser cases would launch a browser on every fast-tier run and read
     # an E6 *skip* (exit 0) as "resolved". So both are keyed on a millisecond static probe over the
     # bundle for the wording each story is the first to ship, quoted from the design: FR-UI-07's
     # recovery text (#635) and FR-UI-06's answers-only affordance (#638). The tradeoff, stated: if
-    # #634 ships either phrase early, its entry fires before the story lands — re-check the cases
-    # green before unmarking, never unmark on the notice alone.
-    "#634 M-UI foundation: the committed SPA bundle (TC-UI-01/02, C01, C06, TC-CONSOLE-40/41)": (
-        "path",
-        "src/aeh/console_assets/spa/index.html",
-        (
-            "tests/artifact/test_spa_bundle_gate.py::test_tc_ui_01_a_the_committed_bundle_is_present_non_empty_and_ships_as_package_data",
-            "tests/artifact/test_spa_bundle_gate.py::test_tc_ui_01_b_tc_ui_c01_the_bundle_names_no_external_origin",
-            "tests/artifact/test_spa_bundle_gate.py::test_tc_console_40_spa_arm_no_service_worker_registration_anywhere_in_the_bundle",
-            "tests/artifact/test_spa_bundle_gate.py::test_tc_ui_c06_the_bundle_has_committed_source_a_pinned_toolchain_and_one_token_file",
-            "tests/browser/spa/test_spa_rebuild.py::test_tc_ui_01_c_tc_ui_c06_a_rebuild_from_committed_source_is_byte_identical",
-            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_02_the_hub_shows_every_destination_with_live_state_and_no_dead_link",
-            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_c01_a_session_over_the_hub_and_every_destination_requests_one_origin",
-            "tests/browser/spa/test_spa_hub_screens.py::test_tc_console_40_spa_a_session_over_the_react_app_leaves_no_storage_or_worker",
-            "tests/browser/spa/test_spa_hub_screens.py::test_tc_console_41_spa_the_react_app_requests_nothing_from_another_origin",
-        ),
-    ),
+    # an earlier story ships either phrase, its entry fires before the story lands — re-check the
+    # cases green before unmarking, never unmark on the notice alone.
     "#635 M-UI lifecycle screens (TC-UI-03/04/05/07, C02..C05, PERF-19)": (
         "command",
         'python -m tests.support.spa contains "check that the console service is running"',
@@ -1475,32 +1456,19 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # --- TS-140 (#613), packaging flips + the operator-doc sweep ----------------------------
     #
     # #614's entry (the four standard dependencies, extras retired, operator docs reduced) was
-    # dropped when #614 landed. The SPA-bundle arms wait on M-UI's committed bundle, not on #614:
-    # the package-data glob must reach it and the clean venv must carry it. Keyed `command` on the
-    # fast static arm; TC-PIPE-12's clean-venv case rides on it rather than its own command
-    # because it is `slow` (a real venv and a real `pip install`) — re-run it by hand when this fires.
-    "#634 TS-140 the SPA bundle ships as package data (TC-STORE-26 new arm, TC-PIPE-12)": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider -p no:randomly "
-        "tests/unit/pipe/test_tc_store_26_packaging_declaration.py::test_tc_store_26_the_package_data_covers_the_spa_bundle_directory",
-        (
-            "tests/unit/pipe/test_tc_store_26_packaging_declaration.py::test_tc_store_26_the_package_data_covers_the_spa_bundle_directory",
-            "tests/smoke/test_tc_pipe_12_clean_venv_install.py::test_tc_pipe_12_the_installed_package_carries_the_spa_bundle",
-        ),
-    ),
+    # dropped when #614 landed. #634's entry (the SPA-bundle arms: the package-data glob must
+    # reach the bundle and the clean venv must carry it; TC-PIPE-12's clean-venv case rode on
+    # the fast static arm because it is `slow` — a real venv and a real `pip install`) was
+    # dropped when #634 landed and the bundle was committed; its cases were re-checked green
+    # unmarked at the drop.
     # --- TS-147 (#628), M-CONSOLE's JSON API and same-origin SPA (FR-CONSOLE-45) ------------
     #
     # The names are `tests/support/console_api_vocabulary.py`'s. #629 landed the route table,
     # the bundle path and the `spa_dir=` seam, and its entry was dropped with its markers.
-    # The shipped-bundle arm needs the built SPA at the package-data path, which #634 ships
-    # (#629's own criterion: "the bundle itself arrives with #634"). Keyed on the file's
-    # existence, so it fires when the bundle lands, whichever of #629/#634 is last.
-    "#634 TS-147 TC-CONSOLE-53(a) the shipped SPA bundle is served from package data": (
-        "command",
-        "python -c \"import sys, aeh.console as c; "
-        "sys.exit(0 if (c.SPA_BUNDLE_DIR / 'index.html').is_file() else 1)\"",
-        ("tests/integration/console/test_tc_console_53_api_one_origin.py::test_tc_console_53_a_the_shipped_bundle_is_served_and_names_no_other_origin",),
-    ),
+    # #634's entry (the shipped-bundle arm, keyed on the built SPA's existence at the
+    # package-data path — #629's own criterion: "the bundle itself arrives with #634") was
+    # dropped when #634 landed and the bundle was committed; the arm was re-checked green
+    # unmarked at the drop.
     # --- TS-144 (#621), M-PKG rubric methods ----------------------------------------------
     #
     # #627 (depends on #622): `aeh package export`. Keyed on the shipped-sample round trip,
