@@ -62,7 +62,7 @@ from tests.support.composition_world import (
     method_blind_sweep,
 )
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 S1, S2, S3 = "s-27-1", "s-27-2", "s-27-3"
 SUBMISSIONS = (S1, S2, S3)

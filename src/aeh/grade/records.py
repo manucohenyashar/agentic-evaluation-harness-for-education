@@ -101,6 +101,20 @@ class ClassRollup:
 
 
 @dataclass(frozen=True)
+class CriterionLine:
+    """One presented line of a submission's per-criterion view (FR-GRADE-22). A standalone
+    criterion's line is its own awarded points over its maximum; a composite's line is the sum
+    of its aspects' awarded points over the sum of their maxima, naming the aspects beneath it
+    (`aspects`; empty for a standalone line). `awarded` is None while any input is unscored —
+    a partial sum is never presented as the composite's figure."""
+
+    criterion_id: str
+    awarded: float | None
+    max_points: float | None
+    aspects: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class CriterionBandFigure:
     """One criterion's band figures (FR-GRADE-14, TC-GRADE-14). The histogram is always a real
     count. `entropy` and `interior_rate` are None for deterministic criteria, never zero, because

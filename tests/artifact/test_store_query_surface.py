@@ -257,8 +257,8 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # written through the caller's transaction so the phase and the work it stands for
     # commit together.
     "aeh.orch.run_lifecycle:88",
-    "aeh.orch.enumeration:192",
-    "aeh.orch.enumeration:201",
+    "aeh.orch.enumeration:204",
+    "aeh.orch.enumeration:213",
     "aeh.orch.run_lifecycle:244",
     "aeh.orch.run_lifecycle:238",
     "aeh.orch.run_lifecycle:249",
@@ -465,10 +465,10 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.pkg.criteria:56",
     "aeh.pkg.criteria:58",
     "aeh.pkg.criteria:60",
-    "aeh.pkg.rubric_methods:108",
-    "aeh.pkg.rubric_methods:63",
-    "aeh.pkg.rubric_methods:82",
-    "aeh.pkg.rubric_methods:89",
+    "aeh.pkg.rubric_methods:137",
+    "aeh.pkg.rubric_methods:92",
+    "aeh.pkg.rubric_methods:111",
+    "aeh.pkg.rubric_methods:118",
     "aeh.pkg.versions:118",
     "aeh.pkg.versions:32",
     "aeh.pkg.versions:41",
@@ -579,7 +579,7 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # score-claim ladder and pattern list landing above the write, again with the
     # reviewer's pattern-tightening disclosures expanding the comments above it;
     # same statement, re-pinned from the walker each time.)
-    "aeh.synth.worker:265",
+    "aeh.synth.worker:269",
     # The grade sites are #104's line numbers (the module's own write surface, every
     # one from GRADE_STATEMENTS or a raw fixture DDL string, keyword-parameterized):
     # `compute_all`'s five pass writes (demote/insert/settle/queue-row/queue-clear),
@@ -624,18 +624,18 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # GRADE_STATEMENTS statement with keyword parameters, the FR-STORE-08
     # discipline), the rest moved with the docstring and statement edits above
     # them. Re-read from the walker, never hand-unioned.
-    "aeh.grade.service:391",
-    "aeh.grade.service:398",
-    "aeh.grade.service:400",
-    "aeh.grade.service:408",
-    "aeh.grade.service:419",
-    "aeh.grade.service:492",
-    "aeh.grade.service:517",
-    "aeh.grade.service:523",
-    "aeh.grade.service:554",
-    "aeh.grade.service:563",
-    "aeh.grade.finalization:150",
-    "aeh.grade.finalization:168",
+    "aeh.grade.service:421",
+    "aeh.grade.service:428",
+    "aeh.grade.service:430",
+    "aeh.grade.service:438",
+    "aeh.grade.service:449",
+    "aeh.grade.service:522",
+    "aeh.grade.service:547",
+    "aeh.grade.service:553",
+    "aeh.grade.service:584",
+    "aeh.grade.service:593",
+    "aeh.grade.finalization:152",
+    "aeh.grade.finalization:170",
     "aeh.grade.amendments:112",
     "aeh.grade.amendments:138",
     "aeh.grade.amendments:144",

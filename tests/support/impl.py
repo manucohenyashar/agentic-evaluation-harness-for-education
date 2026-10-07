@@ -1406,28 +1406,21 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/integration/conform/test_tc_conform_04_full_pipeline_differential.py::test_tc_conform_04_openrouter_arm_runs_the_default_engine_and_reports_per_leg_live_keys",
         ),
     ),
-    # --- TS-146 (#625), M-GRADE/M-JUDGE composition per method -----------------------------
+    # --- TS-145 (#623), M-SETUP rubric-method flows and the general derivation gate --------
     #
-    # #626 names no Python surface (the one assumed name, `GradingService.criterion_lines`,
-    # is in tests/support/composition_world.py), so no `symbol` key is honest. Keyed
-    # `command` on TC-JUDGE-45's enumeration arm: still red with only #622 landed (today's
-    # `enumerate_units` walks every criterion and emits composite units), green only once
-    # #626's guard is in. Cheap: build, create_run, enumerate, read the ledger.
-    "#626 TS-146 composition per method and the composite dispatch guard (TC-GRADE-27, TC-GRADE-C22, TC-JUDGE-45)": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider tests/integration/judge/test_tc_judge_45_composite_dispatch_guard.py::test_tc_judge_45_only_the_aspects_are_enumerated_and_the_composite_is_in_no_unit",
+    # #624 builds them; the design names no Python surface, so the key is on all six members
+    # INVENTED in `tests/support/setup_rubric_methods.py` (the one file naming the
+    # assumed surface). If #624 lands other names this key never fires: re-point that file
+    # and this key together.
+    "#624 TS-145 general derivation read-back and evidence-sum builder (TC-SETUP-24/25, C17)": (
+        "symbols",
+        "aeh.setup:SetupService.derive_general_bands,aeh.setup:SetupService.derivation_card,"
+        "aeh.setup:SetupService.confirm_general_derivation,"
+        "aeh.setup:SetupService.build_evidence_sum,aeh.setup:SetupService.edit_aspect_descriptor,"
+        "aeh.setup:SetupService.confirm_evidence_sum",
         (
-            "tests/integration/judge/test_tc_judge_45_composite_dispatch_guard.py::test_tc_judge_45_only_the_aspects_are_enumerated_and_the_composite_is_in_no_unit",
-            "tests/integration/judge/test_tc_judge_45_composite_dispatch_guard.py::test_tc_judge_45_a_hand_corrupted_composite_unit_is_refused_like_a_malformed_unit",
-            "tests/integration/grade/test_tc_grade_27_composition_per_method.py::test_tc_grade_27_a_the_composite_is_graded_as_the_sum_of_its_aspects",
-            "tests/integration/grade/test_tc_grade_27_composition_per_method.py::test_tc_grade_27_a_the_composite_line_reads_sum_awarded_over_sum_of_maxima",
-            "tests/integration/grade/test_tc_grade_27_composition_per_method.py::test_tc_grade_27_b_a_general_criterion_awards_what_its_bands_twin_awards",
-            "tests/integration/grade/test_tc_grade_27_composition_per_method.py::test_tc_grade_27_c_the_whole_run_twice_grades_identically",
-            "tests/integration/grade/test_tc_grade_27_composition_per_method.py::test_tc_grade_27_d_a_composite_cell_behaves_as_a_standalone_cell",
-            "tests/integration/grade/test_tc_grade_27_composition_per_method.py::test_tc_grade_27_d_a_general_cell_behaves_as_its_bands_twin",
-            "tests/contract/grade/test_ct_grade_c22_method_composition.py::test_tc_grade_c22_a_general_criterion_writes_exactly_its_bands_twins_rows",
-            "tests/contract/grade/test_ct_grade_c22_method_composition.py::test_tc_grade_c22_an_evidence_sum_criterion_is_the_sum_of_its_aspects",
-            "tests/contract/grade/test_ct_grade_c22_method_composition.py::test_tc_grade_c22_the_method_is_never_an_input_to_confidence_routing_or_escalation",
+            "tests/integration/setup/test_tc_setup_24_25_rubric_methods.py",
+            "tests/contract/setup/test_ct_setup_c17_general_derivation_gate.py",
         ),
     ),
     # --- #639, the SPA cases (TC-UI-01..07, TC-UI-C01..C06, PERF-19, TC-CONSOLE-40/41 re-pointed) --

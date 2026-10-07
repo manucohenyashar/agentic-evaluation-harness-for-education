@@ -60,7 +60,7 @@ from tests.support.composition_world import (
     seed_rubric_run,
 )
 
-pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.contract]
 
 SUBMISSION = "s-c22"
 A1, A2, A3 = ASPECTS
