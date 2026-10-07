@@ -299,9 +299,15 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.orch.escalation:474",
     "aeh.orch.escalation:427",
     "aeh.orch.escalation:556",
-    "aeh.orch.composition:44",
+    # #597's re-pin: the readiness redesign's docstring growth above `mark_cell_phase`'s
+    # upsert moved the site 44 -> 49. `ready_cells_with_units` adds no execute site — its
+    # read goes through `handle.query`, which is not an execute method — so the site is the
+    # same statement, re-read from the walker rather than hand-shifted. The costs sites
+    # follow #667's edits on main (240/241).
+    "aeh.orch.composition:49",
     "aeh.orch.costs:240",
     "aeh.orch.costs:241",
+
     # `record_pause_reason` (#365): the one write that annotates an already-paused run
     # without flipping its state. `pause()` deliberately changes nothing on a paused run,
     # so a run recovery REFUSED to resume - a profile switch, FR-CONF-15 - would keep a
@@ -787,6 +793,13 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.calib.fixtures:295",
     "aeh.calib.fixtures:326",
     "aeh.calib.fixtures:336",
+    # #636's (FR-HELP-04): the Q&A log's one durable write — `record_exchange`'s
+    # `tx.execute` of the declared HELP_STATEMENTS["insert_qa_exchange"],
+    # keyword-parameterized, in the module's only write surface's synchronous
+    # transaction (CT-HELP-04: nothing else in M-HELP writes a stored byte).
+    # The read side goes through `handle.query` and is not a census site. Pinned
+    # from the walker.
+    "aeh.help.log:38",
 
 })
 

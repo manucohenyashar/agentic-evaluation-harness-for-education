@@ -4,11 +4,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from .constants import STAGE_EXTRACT, STAGE_SCORE
 from .errors import CellPhaseError
 from .statements import ORCH_STATEMENTS
 from .run_records import _panel_build_ref_of
-from .executors import CELL_PHASES, CellKey, READY_HOOKS, RunHandle
+from .executors import (
+    CELL_PHASES,
+    CellKey,
+    READY_HOOKS,
+    ReadyCell,
+    RunHandle,
+)
 
 
 class CompositionMixin:
@@ -122,6 +127,25 @@ class CompositionMixin:
 
         Terminal means `done` or `quarantined`: a quarantined unit will produce no further
         evidence, and a cell waiting for one would wait forever.
+
+        The decision runs IN SQL (`select_ready_integrity_pre` / `select_ready_aggregate`,
+        #597): only the ready cells are materialized, so a pass's readiness read costs what
+        the ready cells cost, not what the run holds — the whole-run dicts this read used to
+        build per pass were the growth driver PERF-11 measured (`NFR-PIPE-02`).
+        """
+        return tuple(cell.key for cell in self.ready_cells_with_units(run_id, hook))
+
+    def ready_cells_with_units(
+        self, run_id: str, hook: str,
+    ) -> tuple["ReadyCell", ...]:
+        """`ready_cells`, with each ready cell's terminal score/extract-unit figures attached.
+
+        The aggregate hook needs, per ready cell, how many units the phase was computed over
+        and how many were quarantined (`mark_cell_phase`'s `units_consumed`, FR-PIPE-18's
+        even-panel check). Before #597 it re-read the run-wide count GROUP BY twice per pass
+        for figures only the ready cells use; the ready statement computes them for the cells
+        it is already returning, so one read answers both questions and neither read scans
+        into Python what no hook will touch (`NFR-PIPE-02`, CT-PIPE-05).
         """
         if hook not in READY_HOOKS:
             raise ValueError(
@@ -129,37 +153,27 @@ class CompositionMixin:
                 f"{READY_HOOKS} (FR-ORCH-29)."
             )
         cohort, _run_row = self._find_run(run_id)
-        return self._ready_cells_in(cohort, run_id, hook)
+        statement = ("select_ready_integrity_pre" if hook == "integrity_pre"
+                     else "select_ready_aggregate")
+        return tuple(
+            ReadyCell(
+                CellKey(str(row["submission_id"]), str(row["criterion_id"])),
+                terminal=int(row["terminal"] or 0),
+                quarantined=int(row["quarantined"] or 0),
+                total=int(row["total"] or 0),
+            )
+            for row in cohort.query(ORCH_STATEMENTS[statement], run_id=run_id)
+        )
 
-    def _ready_cells_in(self, cohort: Any, run_id: str, hook: str,
-                        phase_rows: Any = None) -> tuple["CellKey", ...]:
+    def _ready_cells_in(self, cohort: Any, run_id: str, hook: str) -> tuple["CellKey", ...]:
         """`ready_cells` for a cohort handle the caller already has (used by the completion check).
         """
-        counts: dict[tuple[str, str], dict[str, tuple[int, int]]] = {}
-        for row in cohort.query(ORCH_STATEMENTS["select_cell_unit_counts"], run_id=run_id):
-            key = (str(row["submission_id"]), str(row["criterion_id"]))
-            counts.setdefault(key, {})[str(row["stage"])] = (
-                int(row["terminal"] or 0), int(row["total"] or 0)
-            )
-        phases: dict[tuple[str, str], dict[str, int]] = {}
-        if phase_rows is None:
-            phase_rows = cohort.query(ORCH_STATEMENTS["select_cell_phases"], run_id=run_id)
-        for row in phase_rows:
-            key = (str(row["submission_id"]), str(row["criterion_id"]))
-            phases.setdefault(key, {})[str(row["phase"])] = int(row["units_consumed"] or 0)
-        stage = STAGE_EXTRACT if hook == "integrity_pre" else STAGE_SCORE
-        ready: list[CellKey] = []
-        for key in sorted(counts):
-            terminal, total = counts[key].get(stage, (0, 0))
-            if not total or terminal < total:
-                continue
-            marked = phases.get(key, {})
-            if hook == "integrity_pre":
-                if "integrity_pre" not in marked:
-                    ready.append(CellKey(*key))
-            elif "aggregated" not in marked or terminal > marked["aggregated"]:
-                ready.append(CellKey(*key))
-        return tuple(ready)
+        statement = ("select_ready_integrity_pre" if hook == "integrity_pre"
+                     else "select_ready_aggregate")
+        return tuple(
+            CellKey(str(row["submission_id"]), str(row["criterion_id"]))
+            for row in cohort.query(ORCH_STATEMENTS[statement], run_id=run_id)
+        )
 
     def _awaiting_aggregation(self, cohort: Any, run_id: str) -> bool:
         """Whether any cell is still waiting for the pipeline layer to aggregate it (#524).
@@ -176,7 +190,7 @@ class CompositionMixin:
         phases = cohort.query(ORCH_STATEMENTS["select_cell_phases"], run_id=run_id)
         if not phases:
             return False
-        return bool(self._ready_cells_in(cohort, run_id, "aggregate", phases))
+        return bool(self._ready_cells_in(cohort, run_id, "aggregate"))
 
     def _cells_with_integrity_pre(self, cohort: Any, run_id: str) -> set[tuple[str, str]]:
         """The cells whose `integrity_pre` phase has been recorded. When an executor is bound, a

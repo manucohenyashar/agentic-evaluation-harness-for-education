@@ -243,10 +243,18 @@ _CONSOLE_BARE_MIGRATION_IMPORTS: frozenset[str] = frozenset(
 #:   to M-PIPE's `recover` — the same one-implementation rule "start run" follows with
 #:   `start_run_in_background`; imported inside the effect that needs it, never at
 #:   module scope.
+#: - `aeh.help`, `aeh.prov`, `aeh.conf.qa_model` — #636, declared contract amendment.
+#:   `FR-HELP-02`'s ask read is the console's third transport use: `help_read.py` (a console
+#:   subpackage module, so these are module-scope imports of it, not of console.py itself)
+#:   builds the grounded assistant (`aeh.help`) on a provider (`aeh.prov`) whose QA model is
+#:   resolved by the FR-CONF-30 rule (`aeh.conf.qa_model`). The console still starts with no
+#:   QA model: the assistant is constructed lazily at the first ask (`CT-HELP-02`'s
+#:   precondition), never at import.
 _CONSOLE_SYMBOL_IMPORT_MODULES: frozenset[str] = frozenset(
-    {"aeh.conf", "aeh.conf.decision_engine", "aeh.det", "aeh.grade", "aeh.orch",
-     "aeh.pipeline", "aeh.pipeline.cli", "aeh.pipeline.driver", "aeh.pipeline.runtime",
-     "aeh.pkg", "aeh.review", "aeh.setup", "aeh.stats", "aeh.store"}
+    {"aeh.conf", "aeh.conf.decision_engine", "aeh.conf.qa_model", "aeh.det", "aeh.grade",
+     "aeh.help", "aeh.orch", "aeh.pipeline", "aeh.pipeline.cli", "aeh.pipeline.driver",
+     "aeh.pipeline.runtime", "aeh.pkg", "aeh.prov", "aeh.review", "aeh.setup",
+     "aeh.stats", "aeh.store"}
 )
 
 
