@@ -412,8 +412,8 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.ingest.submissions:215",
     "aeh.ingest.submissions:440",
     "aeh.ingest.submissions:452",
-    "aeh.ingest.assessment_match:384",
-    "aeh.ingest.assessment_match:407",
+    "aeh.ingest.assessment_match:387",
+    "aeh.ingest.assessment_match:410",
     "aeh.ingest.uploads:19",
     # The pkg sites are #230's line numbers (the verbatim revision copy and the
     # copied-counts statement shifted the module; the tripwire diff being the
@@ -571,7 +571,7 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # score-claim ladder and pattern list landing above the write, again with the
     # reviewer's pattern-tightening disclosures expanding the comments above it;
     # same statement, re-pinned from the walker each time.)
-    "aeh.synth.worker:261",
+    "aeh.synth.worker:265",
     # The grade sites are #104's line numbers (the module's own write surface, every
     # one from GRADE_STATEMENTS or a raw fixture DDL string, keyword-parameterized):
     # `compute_all`'s five pass writes (demote/insert/settle/queue-row/queue-clear),

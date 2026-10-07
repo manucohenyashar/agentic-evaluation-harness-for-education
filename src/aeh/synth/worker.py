@@ -6,6 +6,7 @@ import json
 import sqlite3
 from typing import Any
 
+from aeh.ingest.identity import redact_identity_head
 from aeh.orch import ORCH_MAX_ATTEMPTS, ORCH_STATEMENTS, _cohort_keys_on_filesystem, _env_int
 from aeh.pkg import PackageCatalog
 from aeh.prov import PromptPayload, ProviderError, SamplingParams
@@ -162,7 +163,10 @@ class SynthesisWorker:
                     )
                     continue
                 if documents[0]["markdown"]:
-                    texts.append(documents[0]["markdown"])
+                    # The `Student:` head's written name never reaches the narrative model
+                    # (NFR-PROV-04, CT-INGEST-23, #620): the resolved ref stands in for it.
+                    texts.append(redact_identity_head(documents[0]["markdown"],
+                                                      documents[0]["student_ref"]))
         return tuple(texts)
 
     def _question_complete(self, cohort: Any, units: list[dict],

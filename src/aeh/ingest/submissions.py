@@ -379,7 +379,7 @@ class SubmissionIngestionMixin:
         else:
             outcome, v4_signals = self._v4_evaluate(
                 stored_markdown, regions, package_version, package_catalog,
-                identity_matched)
+                identity_matched, student_ref)
             gates["v4"] = outcome
             if outcome in ("uncertain", "mismatch"):
                 # Both outcomes halt scoring (FR-INGEST-25): quarantined, with the

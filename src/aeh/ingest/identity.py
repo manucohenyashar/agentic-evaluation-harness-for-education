@@ -31,11 +31,25 @@ V3_PASS = "pass"
 V3_AMBIGUOUS = "ambiguous"
 V3_UNMATCHED = "unmatched"
 
-#: What the `Student:` head is replaced with before a transcript reaches a model.
+#: The `student_ref` an unresolved submission carries.
+UNRESOLVED_REF = "unknown"
+
+#: What the `Student:` head is replaced with before a transcript reaches a model, when no
+#: resolved ref is there to stand in for it.
 REDACTED_IDENTITY = "[student]"
 
-_STUDENT_LINE = re.compile(r"^Student:[ \t]*(.*)$", re.MULTILINE)
-_STUDENT_ID_LINE = re.compile(r"^Student ID:[ \t]*(.+)$", re.MULTILINE)
+#: The identity head: a `Student:` label, tolerating Markdown emphasis around it (`**Student:**`),
+#: then the value on the same line. `Student ID:` is not this label (no colon after `Student`).
+_STUDENT_HEAD = re.compile(r"^[ \t]*[*_]*Student[*_]*:[*_]*[ \t]*(?P<value>[^\n]*?)[ \t]*$",
+                           re.MULTILINE)
+
+#: A line that cannot be the value of a bare `Student:` label: another header or region markup.
+_NOT_A_VALUE = re.compile(r"^[ \t]*(<!--|[*_]*(Student ID|Assessment)[*_]*:)")
+
+#: The line after a position, stripped of its surrounding blanks.
+_NEXT_LINE = re.compile(r"\n[ \t]*(?P<line>[^\n]*?)[ \t]*(?=\n|$)")
+
+_STUDENT_ID_LINE = re.compile(r"^[ \t]*[*_]*Student ID[*_]*:[*_]*[ \t]*(.+)$", re.MULTILINE)
 
 
 # --- Tier C, migration 33 (#620, ADR-38): the roster carries names -----------------------------
@@ -53,8 +67,9 @@ TIER_MIGRATIONS[Tier.COHORT] = TIER_MIGRATIONS[Tier.COHORT] + (_INGEST_ROSTER_NA
 
 def normalize_name(text: str) -> str:
     """The match key of a name: case-folded, diacritics removed (precomposed or decomposed),
-    whitespace collapsed, tokens sorted so surname-first and given-name-first agree."""
-    decomposed = unicodedata.normalize("NFKD", text.casefold())
+    whitespace collapsed, tokens sorted so surname-first and given-name-first agree. A comma
+    separates like whitespace, so `Okafor, Amara` is `Amara Okafor`."""
+    decomposed = unicodedata.normalize("NFKD", text.casefold().replace(",", " "))
     stripped = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
     return " ".join(sorted(stripped.split()))
 
@@ -69,18 +84,35 @@ class IdentityMatch:
     candidates: tuple[str, ...] = field(default_factory=tuple)
 
 
+def _identity_head_values(markdown: str) -> list[tuple[int, int]]:
+    """Where each `Student:` head's value sits in `markdown`, as (start, end) offsets. A bare
+    label takes the next non-empty line as its value, unless that line is another header or
+    markup. The ONE parse both the matcher and the redaction read, so they cannot drift: a name
+    the matcher could read is a name the redaction replaces."""
+    spans: list[tuple[int, int]] = []
+    for head in _STUDENT_HEAD.finditer(markdown):
+        if head.group("value").strip():
+            spans.append(head.span("value"))
+            continue
+        position = head.end()
+        while (line := _NEXT_LINE.match(markdown, position)) is not None:
+            position = line.end()
+            if not line.group("line"):
+                continue
+            if not _NOT_A_VALUE.match(line.group("line")):
+                spans.append(line.span("line"))
+            break
+    return spans
+
+
 def written_identity(markdown: str) -> tuple[str | None, str | None]:
-    """The name on the paper's `Student:` line and the ID on its `Student ID:` line (each None
-    when absent or blank)."""
-    name = _first_value(_STUDENT_LINE, markdown)
-    student_id = _first_value(_STUDENT_ID_LINE, markdown)
-    return name, student_id
-
-
-def _first_value(pattern: re.Pattern[str], markdown: str) -> str | None:
-    match = pattern.search(markdown)
-    value = match.group(1).strip() if match else ""
-    return value or None
+    """The name on the paper's first `Student:` head and the ID on its `Student ID:` line (each
+    None when absent or blank)."""
+    heads = _identity_head_values(markdown)
+    name = markdown[heads[0][0]:heads[0][1]].strip() if heads else ""
+    match = _STUDENT_ID_LINE.search(markdown)
+    student_id = match.group(1).strip() if match else ""
+    return name or None, student_id or None
 
 
 def resolve_identity(written_name: str | None, written_id: str | None,
@@ -126,7 +158,16 @@ def triage_finding(match: IdentityMatch, name_present: bool) -> str:
             f"(candidates: {list(match.candidates)})")
 
 
-def redact_identity_head(markdown: str) -> str:
-    """The transcript with every `Student:` line's value replaced, so the child's written name
-    never reaches a model request (NFR-PROV-04). The `Student ID:` line is left: it is an ID."""
-    return _STUDENT_LINE.sub(f"Student: {REDACTED_IDENTITY}", markdown)
+def redact_identity_head(markdown: str, student_ref: str | None = None) -> str:
+    """The transcript with every `Student:` head's value replaced, so the child's written name
+    never reaches a model request (NFR-PROV-04, CT-INGEST-23). The value becomes the
+    submission's resolved `student_ref` when one is given — what the line held before names
+    (so a request whose head already carried the ref is byte-identical) — and a fixed
+    placeholder otherwise. The `Student ID:` line is left: it is an ID. Stored text is never
+    changed; callers apply this to the copy they send."""
+    replacement = (student_ref if student_ref and student_ref != UNRESOLVED_REF
+                   else REDACTED_IDENTITY)
+    out = markdown
+    for start, end in reversed(_identity_head_values(markdown)):
+        out = out[:start] + replacement + out[end:]
+    return out
