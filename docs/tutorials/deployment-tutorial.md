@@ -44,6 +44,8 @@ Three facts shape every choice:
 2. **Student work sits on that computer's disk**, in the data folder. Treat the folder as a student record.
 3. **In OpenRouter mode, student work also goes to OpenRouter.** The system has a consent rule for this (section 7.4).
 
+One framing fact for whoever writes the runbooks: **the console is the operator surface and the terminal is the debugging surface** (NFR-CONSOLE-09). The daily operation this tutorial sets up — start it, load papers, watch the run, sort out problems, export — happens in the browser; the `aeh` commands below are for installation, first bring-up and debugging, and the operating tutorial lists every one with the console screen that covers it (the system keeps that inventory and fails a check if a command appears without one, FR-CONSOLE-41).
+
 ## 2. The two modes at a glance
 
 A **profile** tells the system where its models run. You pick exactly one for each run. There is **no default**: if you forget, the system stops and says so.
