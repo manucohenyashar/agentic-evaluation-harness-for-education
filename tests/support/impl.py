@@ -1487,15 +1487,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # The names are invented in `tests/support/console_api_vocabulary.py` (TS-148 section): each
     # key probes the route-table label or inventory name its story is asked to add, so a rename
     # there moves the key with it. The `_control_` cases in these files are not marked (green).
-    "#631 TS-148 TC-CONSOLE-56/57 run start, results views and exports match the CLI": (
-        "command",
-        "python -c \"import sys; sys.path.insert(0, 'src'); import aeh.console as c; reads = {getattr(r, 'read', None) for r in "
-        "c.API_ROUTES}; sys.exit(0 if {'run start preview', 'results export'} <= reads else 1)\"",
-        (
-            "tests/integration/console/test_ts148_console_coverage.py::test_tc_console_56_the_run_start_banner_estimate_and_confirmation_match_the_cli",
-            "tests/integration/console/test_ts148_console_coverage.py::test_tc_console_57_exports_are_byte_identical_and_views_match_the_cli",
-        ),
-    ),
     "#632 TS-148 TC-CONSOLE-54 the CLI/console parity census": (
         "symbols",
         "aeh.console:CLI_CONSOLE_PATHS,aeh.console:DEBUGGING_ONLY_COMMANDS",

@@ -231,9 +231,14 @@ _CONSOLE_BARE_MIGRATION_IMPORTS: frozenset[str] = frozenset(
 #:   `setup_service_for_store`), and "start run" hands the run to `M-PIPE` on a server-owned
 #:   thread (`start_run_in_background`, `NFR-CONSOLE-08`). Both are imported inside the
 #:   action that needs them, never at module scope.
+#: - `aeh.pipeline.runtime` — #631. The run-start preview resolves the provider the
+#:   started run would use through M-PIPE's own resolver (`_provider_for`), so the
+#:   estimate is priced on the same transport the run spends on — a resolver the console
+#:   would otherwise hold a drifting copy of.
 _CONSOLE_SYMBOL_IMPORT_MODULES: frozenset[str] = frozenset(
     {"aeh.conf", "aeh.conf.decision_engine", "aeh.det", "aeh.grade", "aeh.orch",
-     "aeh.pipeline", "aeh.pkg", "aeh.review", "aeh.setup", "aeh.stats", "aeh.store"}
+     "aeh.pipeline", "aeh.pipeline.runtime", "aeh.pkg", "aeh.review", "aeh.setup",
+     "aeh.stats", "aeh.store"}
 )
 
 

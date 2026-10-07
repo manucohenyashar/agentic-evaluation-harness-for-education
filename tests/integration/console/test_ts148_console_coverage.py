@@ -441,7 +441,6 @@ def test_tc_console_56_control_the_cli_twin_starts_a_run_and_the_orchestrator_es
     assert _orchestrator_estimate(world, run["run_id"], tmp_path) > 0
 
 
-@pytest.mark.writtenahead
 def test_tc_console_56_the_run_start_banner_estimate_and_confirmation_match_the_cli(
         tmp_path, monkeypatch, capsys, network_guard):
     from aeh.pipeline.runtime import _load_config_file
@@ -525,7 +524,6 @@ def _ledger(store, run_id: str) -> dict[str, dict[str, Any]]:
     return _by_submission([dict(r) for r in rows], "the grade ledger")
 
 
-@pytest.mark.writtenahead
 def test_tc_console_57_exports_are_byte_identical_and_views_match_the_cli(
         tmp_data_dir, tmp_path, capsys, network_guard):
     from tests.support.console_world import seed_scored_run

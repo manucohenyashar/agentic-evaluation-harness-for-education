@@ -257,8 +257,8 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # written through the caller's transaction so the phase and the work it stands for
     # commit together.
     "aeh.orch.run_lifecycle:88",
-    "aeh.orch.enumeration:204",
-    "aeh.orch.enumeration:213",
+    "aeh.orch.enumeration:102",
+    "aeh.orch.enumeration:111",
     "aeh.orch.run_lifecycle:244",
     "aeh.orch.run_lifecycle:238",
     "aeh.orch.run_lifecycle:249",
@@ -300,8 +300,8 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.orch.escalation:427",
     "aeh.orch.escalation:556",
     "aeh.orch.composition:44",
-    "aeh.orch.costs:203",
-    "aeh.orch.costs:204",
+    "aeh.orch.costs:240",
+    "aeh.orch.costs:241",
     # `record_pause_reason` (#365): the one write that annotates an already-paused run
     # without flipping its state. `pause()` deliberately changes nothing on a paused run,
     # so a run recovery REFUSED to resume - a profile switch, FR-CONF-15 - would keep a
