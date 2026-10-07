@@ -21,6 +21,7 @@ from .executors import PackageCatalogProtocol, RunHandle
 from .run_lifecycle import RunLifecycleMixin
 from .costs import CostsMixin
 from .enumeration import EnumerationMixin
+from .run_preview import RunPreviewMixin
 from .leasing import LeasingMixin
 from .escalation import EscalationMixin
 from .dispatch import DispatchMixin
@@ -28,7 +29,7 @@ from .composition import CompositionMixin
 from .reporting import ReportingMixin
 
 
-class Orchestrator(RunLifecycleMixin, CostsMixin, EnumerationMixin, LeasingMixin, EscalationMixin, DispatchMixin, CompositionMixin, ReportingMixin):
+class Orchestrator(RunLifecycleMixin, CostsMixin, EnumerationMixin, RunPreviewMixin, LeasingMixin, EscalationMixin, DispatchMixin, CompositionMixin, ReportingMixin):
     """Manages a grading run's work: creates the run, creates its work units, leases them to
     workers, widens judge panels, and moves the run through its states (§3.7).
 
