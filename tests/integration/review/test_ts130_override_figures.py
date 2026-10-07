@@ -6,7 +6,7 @@
 | TC-STATS-37 | FR-STATS-28 | every two-band label counts, one-band labels do not; 1/3 over 6; 4 → `below_min_n`; the stored reader equals the in-memory figure; no `system_band !=` in `aeh.review` |
 | TC-REVIEW-32 | FR-REVIEW-18 (amended) | the stored rate reaches `historical_override_rate` (0.6 / 0.0 / no data), C-HI outranks C-LO, and without the input the two tie |
 | TC-REVIEW-33 | FR-REVIEW-22 (amended) | a pre-rule label (`cohort_id = run id`) never lets a purge pass; nothing rewrites it |
-| TC-REVIEW-34 | FR-REVIEW-23 | labels carry their run's backend; a pre-migration NULL is `backend_not_recorded`; Durable pin 12 |
+| TC-REVIEW-34 | FR-REVIEW-23 | labels carry their run's backend; a pre-migration NULL is `backend_not_recorded`; Durable pin has moved on from 12 (the backend column's own migration — pin == chain head is TC-STORE-25's job) |
 | TC-REVIEW-35 | FR-REVIEW-24 | one service per run in a shared cohort; an unknown run raises `UnknownRunError` and creates no file |
 | TC-REVIEW-37 | FR-STATS-24 (defect #525 item 3) | a collected label names its package; five labels naming pkg-alpha give pkg-alpha's `C1` a 5/0.2 history and pkg-beta's `C1` `no_blind_labels` |
 
@@ -234,7 +234,10 @@ def test_tc_review_33_a_pre_rule_label_never_lets_a_purge_pass(tmp_data_dir):
 
 def test_tc_review_34_labels_record_their_runs_backend(tmp_data_dir, monkeypatch):
     monkeypatch.delenv("HARNESS_REVIEW_OVERRIDE_MIN_N", raising=False)
-    assert COMPLETE_SCHEMA_VERSIONS[Tier.DURABLE] == 12
+    # The pin is only ever expected to have moved ON from 12 (later Durable migrations —
+    # #636's `help_qa_log`, 13 — land past it): the pin equals the chain's head is the other
+    # gate's (`TC-STORE-25`'s pin-tracks-the-full-chain) job, exact. Until #636 this read == 12.
+    assert COMPLETE_SCHEMA_VERSIONS[Tier.DURABLE] >= 12
     store = open_store(tmp_data_dir)
     try:
         store.durable()

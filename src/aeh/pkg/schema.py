@@ -908,8 +908,10 @@ _PKG_PUBLISHED_BASELINE_EVIDENCE = Migration(
             "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
             "= NEW.package_version_id AND pv.locked = 1) "
             # The sanctioned exception: a NEW row that is a baseline row and nothing else
-            # — figures recorded, no agreement claim and no engine verdict riding along.
+            # — all three figures recorded (the same set the UPDATE arm demands), no
+            # agreement claim and no engine verdict riding along.
             "AND NOT (NEW.expected_mean IS NOT NULL AND NEW.expected_sd IS NOT NULL "
+            "AND NEW.expected_histogram IS NOT NULL "
             "AND NEW.agreement IS NULL "
             "AND NEW.decision_engine_noninferior IS NULL) "
             "BEGIN SELECT RAISE(ABORT, 'published version is immutable: validation "
