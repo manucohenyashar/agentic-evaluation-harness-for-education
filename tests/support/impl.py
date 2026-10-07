@@ -1465,14 +1465,12 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # The names are invented in `tests/support/console_api_vocabulary.py` (TS-148 section): each
     # key probes the route-table label or inventory name its story is asked to add, so a rename
     # there moves the key with it. The `_control_` cases in these files are not marked (green).
-    "#632 TS-148 TC-CONSOLE-54 the CLI/console parity census": (
-        "symbols",
-        "aeh.console:CLI_CONSOLE_PATHS,aeh.console:DEBUGGING_ONLY_COMMANDS",
-        (
-            "tests/unit/console/test_tc_console_54_parity_census.py::test_tc_console_54_every_aeh_subcommand_has_a_console_path_or_a_debugging_only_reason",
-            "tests/unit/console/test_tc_console_54_parity_census.py::test_tc_console_54_the_teacher_operations_have_console_paths_not_debugging_listings",
-        ),
-    ),
+    #
+    # The "#632 TS-148 TC-CONSOLE-54 the CLI/console parity census" entry left with #632: the
+    # inventory landed (`aeh.console.parity`, plus the `recover runs` and `add students` control
+    # rows its teacher-operations arm required), and the two census cases run green unmarked.
+    # The census's failure path is live in the fast tier: a future `aeh` subcommand without a
+    # console path or a debugging-only reason fails `TEST_CMD` until someone decides.
 }
 
 

@@ -178,7 +178,13 @@ from .reporting import ReportingMixin
 from .orchestrator import Orchestrator
 # Cohort creation (live-test blocker B3), the door both `aeh cohort create` and the console's
 # roster editor (FR-CONSOLE-42) write a cohort through.
-from .cohorts import CONSENT_CLASSES, CohortSetupError, check_cohort_id, create_cohort
+from .cohorts import (
+    CONSENT_CLASSES,
+    CohortSetupError,
+    add_to_roster,
+    check_cohort_id,
+    create_cohort,
+)
 from .roster_entries import NAME_REQUIREMENT, RosterEntry
 
 

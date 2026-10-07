@@ -25,10 +25,12 @@ from .api import (
 from .cohort_editor import roster_editor_payload
 from .errors import ConsoleBindRefused
 from .hub_state import hub_payload
+from .parity import parity_inventory
 from .results_reads import results_class_read, results_export_read, results_student_read
 from .routes import SCREENS
 from .run_start import run_start_preview_read
 from .vocabulary import (
+    CLI_HELP_READ,
     RESULTS_CLASS_READ,
     RESULTS_EXPORT_READ,
     RESULTS_STUDENT_READ,
@@ -67,6 +69,9 @@ _READS = {
     "screens": lambda _console, _app, _query: {"screens": dict(SCREENS)},
     "roster editor": lambda _console, _app, _query: roster_editor_payload(),
     "hub": lambda console, _app, _query: hub_payload(console),
+    # #632: the parity inventory, generated from the live `aeh` parser — the read is pure
+    # (it opens no store), so the help answers even before a cohort exists.
+    CLI_HELP_READ: lambda _console, _app, _query: parity_inventory(),
     RUN_START_PREVIEW_READ: lambda _console, app, query: run_start_preview_read(app, query),
     RESULTS_CLASS_READ: lambda _console, app, query: results_class_read(app, query),
     RESULTS_STUDENT_READ: lambda _console, app, query: results_student_read(app, query),

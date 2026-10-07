@@ -235,10 +235,18 @@ _CONSOLE_BARE_MIGRATION_IMPORTS: frozenset[str] = frozenset(
 #:   started run would use through M-PIPE's own resolver (`_provider_for`), so the
 #:   estimate is priced on the same transport the run spends on — a resolver the console
 #:   would otherwise hold a drifting copy of.
+#: - `aeh.pipeline.cli` — #632, `FR-CONSOLE-41`. The parity census reads the CLI's own
+#:   parser (`_build_parser`) so the inventory is generated from the subcommands that
+#:   exist, not from a transcribed copy that could drift from it; imported inside
+#:   `parity_inventory`, never at module scope.
+#: - `aeh.pipeline.driver` — #632, `FR-CONSOLE-41`. The "recover runs" control delegates
+#:   to M-PIPE's `recover` — the same one-implementation rule "start run" follows with
+#:   `start_run_in_background`; imported inside the effect that needs it, never at
+#:   module scope.
 _CONSOLE_SYMBOL_IMPORT_MODULES: frozenset[str] = frozenset(
     {"aeh.conf", "aeh.conf.decision_engine", "aeh.det", "aeh.grade", "aeh.orch",
-     "aeh.pipeline", "aeh.pipeline.runtime", "aeh.pkg", "aeh.review", "aeh.setup",
-     "aeh.stats", "aeh.store"}
+     "aeh.pipeline", "aeh.pipeline.cli", "aeh.pipeline.driver", "aeh.pipeline.runtime",
+     "aeh.pkg", "aeh.review", "aeh.setup", "aeh.stats", "aeh.store"}
 )
 
 

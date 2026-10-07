@@ -64,6 +64,24 @@ Use the values it prints for you. The three demo students are not the sample ans
 
 The **console** is the system's web page. It runs on the same computer you are sitting at and can only be reached from that computer. That is deliberate: it has no login, so it refuses to listen to anyone else.
 
+### The console is the operator surface; the terminal is for debugging
+
+This tutorial teaches the console first, on purpose: no operator or teacher workflow requires the terminal (NFR-CONSOLE-09). Every `aeh` terminal command has a home here, or is a debugging tool the console's own help page lists with the reason — the system keeps that inventory and fails a check if a new command appears without one. The commands, and what each is for:
+
+| Command | What it is for | Where you do it instead |
+|---|---|---|
+| `aeh run` | Drive a cohort's run to completion | The console's **Start run** control (section 5) |
+| `aeh recover` | Reclaim leases, resume and settle grades after a crash | The console's **Recover** control (section 5) |
+| `aeh console` | Recover, then serve this console | The console is already running |
+| `aeh cohort create` | Make a cohort with its consent class and roster | The console's **Create cohort** control (section 5) |
+| `aeh cohort add-students` | Extend a cohort's roster | The console's **Add students** control (section 5) |
+| `aeh cohort show` | Print one cohort's consent class and roster size | The **Cohort** page (section 4.1) |
+| `aeh package build` | Build a package from a spec file | **Publish** on the Package screens (section 4.1) |
+| `aeh package export` | Write the spec file for rebuilding or diffing | The console's **Export** delivers the school-facing package |
+| `aeh ingest` | Read test papers and answer sheets through the intake checks | The console's **Upload scans** control (section 5) |
+| `aeh results show` | Print per-student records and the class rollup as JSON | The **Results** page (section 4.1) |
+| `aeh results export` | Write the marks CSV and one PDF per student | The console's **Export** control (section 5) |
+
 ### 3.1 Start it
 
 Open a terminal in the project folder, activate the project's Python environment, and run:
@@ -205,6 +223,8 @@ Repeating a command: an identical **amendment** or **review action** is safe (th
 ### 5.2 The 15 commands
 
 The name goes after `/actions/`. "Checked" means it was run against a real data folder and the result below is what it really said. Fields not listed are not needed.
+
+> This rehearsal table predates the newest controls: the console also takes `create-cohort` (section 3's table), `recover-runs` and `add-students`, and their screens, which the manuals rewrite will fold in here. Until then, section 3's table is the full list.
 
 | Name | Fields | Checked result | Who / when |
 |---|---|---|---|

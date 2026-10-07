@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 from .vocabulary import (
+    CLI_HELP_READ,
     CONTROL_SURFACE_ACTIONS,
     RESULTS_CLASS_READ,
     RESULTS_EXPORT_READ,
@@ -100,6 +101,10 @@ def _build_routes() -> tuple[ApiRoute, ...]:
         # FR-UI-02: the home hub's live state — the package version, the served run's status
         # and the engine in use — which the hub reads on load and polls.
         ApiRoute("GET", f"{API_PREFIX}/hub", None, "hub"),
+        # #632 (FR-CONSOLE-41, NFR-CONSOLE-09): the console's debugging-only help section —
+        # the CLI/console parity inventory, generated from the `aeh` parser. A read, so the
+        # help answers without a store and writes nothing.
+        ApiRoute("GET", f"{API_PREFIX}/cli-help", None, CLI_HELP_READ),
         # #631: the run-start screen's data behind its one confirmation (FR-CONSOLE-43) and
         # the results views, byte-identical with the CLI's (FR-CONSOLE-44, TC-CONSOLE-56/57).
         # Reads, not controls: the preview writes nothing, and the confirmation's write is
