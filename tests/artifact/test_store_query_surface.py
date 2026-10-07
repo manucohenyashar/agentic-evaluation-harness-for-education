@@ -477,10 +477,14 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.pkg.versions:56",
     "aeh.pkg.versions:99",
     "aeh.pkg.validation:53",
-    "aeh.pkg.validation:248",
-    "aeh.pkg.validation:233",
-    "aeh.pkg.validation:280",
-    "aeh.pkg.validation:284",
+    # #525's re-pin: the docstring extension over `record_validation_baseline`
+    # (decision (a), the published append-only exception) moved the module's
+    # seven sites; the statements are the same seven. Re-read from the walker,
+    # never hand-unioned.
+    "aeh.pkg.validation:257",
+    "aeh.pkg.validation:242",
+    "aeh.pkg.validation:289",
+    "aeh.pkg.validation:293",
     "aeh.pkg.validation_reads:35",
     "aeh.pkg.validation_reads:27",
     "aeh.pkg.criteria:246",
@@ -529,9 +533,9 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.pkg.exchange:52",
     "aeh.pkg.exchange:142",
     "aeh.pkg.exchange:140",
-    "aeh.pkg.validation:177",
-    "aeh.pkg.validation:191",
-    "aeh.pkg.validation:194",
+    "aeh.pkg.validation:178",
+    "aeh.pkg.validation:192",
+    "aeh.pkg.validation:195",
     # Lines moved with #234's chain-completeness guard (the IncompleteMigrationChainError
     # class and the COMPLETE_SCHEMA_VERSIONS pin, both above the first site), again with
     # #269's _VersionOrderedRegistry, again with #61's run-lifecycle statements landing

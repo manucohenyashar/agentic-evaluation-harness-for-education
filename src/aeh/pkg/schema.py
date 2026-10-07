@@ -856,6 +856,69 @@ _PKG_CRITERION_SCORE_METHOD = Migration(
 )
 
 
+# --- Tier P, migration 16 (#525, FR-PIPE-15): the published baseline exception ------------------
+#
+# The escalation baseline (`pkg_validation_baseline`'s three columns) is evidence ABOUT a
+# package version, and every version a run grades against is published — so with the 002
+# triggers standing as they were, no baseline could ever reach a run and the
+# distributional-anomaly limb (`FR-PIPE-15`, RISK-96) never fired in production. Decision
+# (a) of 2026-10-07 (#525): the baseline is the ONE kind of record allowed onto a published
+# version, under append-only semantics — evidence may be ADDED (a new row, or a row whose
+# three figure columns are still NULL), never altered. Every other write keeps refusing,
+# including a rewrite of recorded figures and any agreement or verdict write.
+#
+# Both triggers keep their names (TC-PKG-27 matches the trigger set by name) and their
+# FR-PKG-04 abort message; the exception rides the WHEN clause. A plain ALTER TABLE cannot
+# replace a trigger, so the pair is dropped and recreated — forward-only like every
+# migration here.
+_PKG_PUBLISHED_BASELINE_EVIDENCE = Migration(
+    version=16,
+    name="pkg_published_baseline_evidence",
+    statements=(
+        Statement("DROP TRIGGER IF EXISTS validation_record_immutable"),
+        Statement(
+            "CREATE TRIGGER validation_record_immutable BEFORE UPDATE ON validation_record "
+            "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
+            "= OLD.package_version_id AND pv.locked = 1) "
+            # The sanctioned exception: filling a row's three baseline figures that are
+            # still NULL, with every other column pinned by `IS` (NULL-safe) — anything
+            # else, above all a rewrite of recorded figures, aborts.
+            "AND NOT (OLD.expected_mean IS NULL AND OLD.expected_sd IS NULL "
+            "AND OLD.expected_histogram IS NULL "
+            "AND NEW.expected_mean IS NOT NULL AND NEW.expected_sd IS NOT NULL "
+            "AND NEW.expected_histogram IS NOT NULL "
+            "AND OLD.validation_record_id IS NEW.validation_record_id "
+            "AND OLD.package_version_id IS NEW.package_version_id "
+            "AND OLD.criterion_id IS NEW.criterion_id "
+            "AND OLD.population_scope_id IS NEW.population_scope_id "
+            "AND OLD.backend_profile IS NEW.backend_profile "
+            "AND OLD.panel_build_ref IS NEW.panel_build_ref "
+            "AND OLD.scoring_model IS NEW.scoring_model "
+            "AND OLD.agreement IS NEW.agreement "
+            "AND OLD.n IS NEW.n "
+            "AND OLD.recorded_at IS NEW.recorded_at "
+            "AND OLD.decision_engine_noninferior IS NEW.decision_engine_noninferior) "
+            "BEGIN SELECT RAISE(ABORT, 'published version is immutable: validation "
+            "record references a published version'); END"
+        ),
+        Statement("DROP TRIGGER IF EXISTS validation_record_insert_locked"),
+        Statement(
+            "CREATE TRIGGER validation_record_insert_locked BEFORE INSERT ON "
+            "validation_record "
+            "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
+            "= NEW.package_version_id AND pv.locked = 1) "
+            # The sanctioned exception: a NEW row that is a baseline row and nothing else
+            # — figures recorded, no agreement claim and no engine verdict riding along.
+            "AND NOT (NEW.expected_mean IS NOT NULL AND NEW.expected_sd IS NOT NULL "
+            "AND NEW.agreement IS NULL "
+            "AND NEW.decision_engine_noninferior IS NULL) "
+            "BEGIN SELECT RAISE(ABORT, 'published version is immutable: validation "
+            "record added to a published version'); END"
+        ),
+    ),
+)
+
+
 TIER_MIGRATIONS[Tier.PACKAGE] = (
     TIER_MIGRATIONS[Tier.PACKAGE]
     + (_PKG_VERSION_LINEAGE,)
@@ -871,6 +934,7 @@ TIER_MIGRATIONS[Tier.PACKAGE] = (
     + (_PKG_EXPORT_GATE_OUTCOME,)
     + (_PKG_DECISION_ENGINE_NONINFERIOR,)
     + (_PKG_CRITERION_SCORE_METHOD,)
+    + (_PKG_PUBLISHED_BASELINE_EVIDENCE,)
 )
 
 

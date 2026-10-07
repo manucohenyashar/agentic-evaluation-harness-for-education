@@ -367,7 +367,13 @@ this docstring anticipated at #110):
   D's ``label`` table through ``upsert_label``, the store being cached per
   data directory so a collection loop pays the open once. The statistics
   cases (`TC-STATS-C01` rung 2, `TC-STATS-C17`, `TC-STATS-C18`) collect
-  through this route, and `M-STATS` reads the same rows back.
+  through this route, and `M-STATS` reads the same rows back. The label's
+  own package linkage is recorded when the object names it
+  (`package_version_id=` — #525's defect 3, `TC-REVIEW-37`): a history
+  reader can attribute the row, instead of every unversioned row pooling
+  into every lineage. The package-derived figures stay NULL on this route
+  — no run, no band scale — but the attribution itself is not NULL by
+  policy; it is whatever the label honestly carries.
 
 The two are mutually exclusive by signature — a call carrying both is
 refused rather than guessed at, and a call carrying neither route's

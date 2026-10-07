@@ -181,6 +181,7 @@ The base plans' strategy stands. Four rules are specific to this delta:
 | TC-REVIEW-34 | FR-REVIEW-23 | A Durable store opened at chain 11, then migrated to 12. Labels recorded from an `edge-local` run and a `cloud-hosted` run. One pre-migration row | 2 | The column exists. Labels carry `'edge-local'` / `'cloud-hosted'`. The pre-migration row is `NULL`. `exclusion_reasons()` counts it under `backend_not_recorded`. `COMPLETE_SCHEMA_VERSIONS['durable'] == 12` | Exact | P0 |
 | TC-REVIEW-35 | FR-REVIEW-24 | Runs `R1` and `R2` in cohort `c-1` with different flagged rows. `open_review(run_id=R1)`, `open_review(run_id=R2)`, `open_review(run_id='run-nope')` | 2 | Each service holds only its own run's rows. The unknown run raises `UnknownRunError` naming `run-nope`, and the data dir's file listing is unchanged (no `run-nope` cohort file) | Exact + file listing | P0 |
 | TC-REVIEW-36 | FR-REVIEW-09 (regression, #398) | Two `review_service_over` services over one store, opened one after the other (the console builds one per request), each record an `edit` label | 2 | Both labels land, with distinct `label_id`s. Before #398 the per-instance counter minted `label-0001` twice and the second insert failed on the primary key | Exact | P0 |
+| TC-REVIEW-37 | FR-STATS-24 (regression, #525 item 3) | Two packages `pkg-alpha` and `pkg-beta` each declaring `C1`. Five collected labels (`record_label(data_dir=, label=)`) naming `pkg-alpha`'s version, one of them an override | 2 | Every stored `label` row carries the package the label names (never NULL). `stored_override_histories` gives `pkg-alpha`'s `C1` n=5 / 1 override / 0.2 and `pkg-beta`'s `C1` `no_blind_labels` with n=0 — reviews of one package do not count for another sharing only the criterion name | Exact | P0 |
 
 ### 5.4 M-PKG
 
@@ -414,7 +415,7 @@ Follow design §7.4. **TS-126 first**: until the environment leak is gone, a red
 | TS-127 M-PROV shipped seams, counters and the #507 regression cases | TC-PROV-55, TC-PROV-56, TC-PROV-57, TC-PROV-58, TC-PROV-59 | — | no | 1 |
 | TS-128 Triage and re-specification of stale, vacuous and nondeterministic cases | TC-REQ-14, TC-REQ-29, TC-STORE-04, ADV-10, TC-PIPE-05, TC-INTEG-17 | — | no | 1 |
 | TS-129 Jev journey arms left open by TS-117 | SEC-19, ADV-15, TC-E2E-05 | — | no | 1 |
-| TS-130 M-STATS and M-REVIEW: override and disagreement figures, the backend column, run-scoped review, the purge rule | TC-STATS-36, TC-STATS-37, TC-STATS-31, TC-REVIEW-25, TC-REVIEW-32, TC-REVIEW-33, TC-REVIEW-34, TC-REVIEW-35 | — | yes | 1 |
+| TS-130 M-STATS and M-REVIEW: override and disagreement figures, the backend column, run-scoped review, the purge rule | TC-STATS-36, TC-STATS-37, TC-STATS-31, TC-REVIEW-25, TC-REVIEW-32, TC-REVIEW-33, TC-REVIEW-34, TC-REVIEW-35, TC-REVIEW-37 | — | yes | 1 |
 | TS-131 M-PKG non-inferiority column and M-STATS persistence | TC-PKG-33, TC-STATS-38 | — | yes | 2 |
 | TS-132 M-STORE: one SQL text per statement name | TC-STORE-28 | — | yes | 1 |
 | TS-133 M-ORCH: decision spend, submissions, replacement arm, wall clock, error type, alert floor, deprecation | TC-ORCH-54, TC-ORCH-55, TC-ORCH-56, TC-ORCH-57, TC-ORCH-58, TC-ORCH-45, TC-ORCH-47 | — | yes | 1 |

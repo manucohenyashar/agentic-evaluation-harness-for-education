@@ -52,6 +52,7 @@ import aeh.pkg  # noqa: F401
 import aeh.review  # noqa: F401
 import aeh.synth  # noqa: F401
 from aeh.pkg import (
+    BASELINE_PUBLISHED,
     BASELINE_RECORDED,
     BASELINE_UNDECLARED_BAND,
     PackageCatalog,
@@ -253,3 +254,78 @@ def test_tc_pkg_32_an_empty_histogram_writes_nothing(package_world):
 
     assert not written.recorded
     assert _record(tmp_data_dir, version) is None
+
+
+# --- TC-PKG-32 (published arm, #525 decision (a)) ----------------------------------------------
+#
+# Runs always grade against PUBLISHED versions, and since #525 a baseline append is the ONE
+# write a published version admits. The arms below pin both halves of that exception at the
+# triggers themselves — the admission, and the refusal that keeps it append-only — because
+# TC-PIPE-20(a') pins only the admission from the M-PIPE side.
+
+
+def _publish(tmp_data_dir, version: str) -> None:
+    store = open_store(tmp_data_dir)
+    try:
+        PackageCatalog(store.package(PACKAGE_ID), package_id=PACKAGE_ID).publish(
+            version, "teacher")
+    finally:
+        store.close()
+
+
+def test_tc_pkg_32_a_published_version_admits_a_baseline_append_and_refuses_its_rewrite(
+    package_world,
+):
+    """On a published version the first baseline records; a second write to the SAME six-part
+    key is refused (`BASELINE_PUBLISHED`) and the recorded figures stand — evidence added after
+    publication never alters what was recorded (FR-PKG-04's freeze, #525's exception).
+
+    The refusal also asserts the ALTERATION did not happen durably: rollback leaves the first
+    figures in place.
+    """
+    tmp_data_dir, version = package_world
+    first = record_validation_baseline(
+        tmp_data_dir, package_version_id=version, criterion_id=CRITERION,
+        band_histogram=HISTOGRAM,
+    )
+    assert first.recorded, f"the draft write did not land ({first.reason})"
+    _publish(tmp_data_dir, version)
+
+    second = record_validation_baseline(
+        tmp_data_dir, package_version_id=version, criterion_id=CRITERION,
+        band_histogram=HISTOGRAM,
+    )
+
+    assert not second.recorded, "a rewrite of recorded figures was accepted"
+    assert second.reason == BASELINE_PUBLISHED, f"the refusal's reason is {second.reason!r}"
+    record = _record(tmp_data_dir, version)
+    assert record["expected_mean"] == pytest.approx(EXPECTED_MEAN), (
+        f"the refused rewrite changed the stored mean to {record['expected_mean']!r}"
+    )
+
+
+def test_tc32_append_records_under_a_new_six_part_key_on_a_published_version(
+    package_world,
+):
+    """Append-only means per KEY: a second administration under a different backend records a
+    second row; only the recorded figures' own row is locked."""
+    tmp_data_dir, version = package_world
+    first = record_validation_baseline(
+        tmp_data_dir, package_version_id=version, criterion_id=CRITERION,
+        band_histogram=HISTOGRAM,
+    )
+    assert first.recorded, f"the draft write did not land ({first.reason})"
+    _publish(tmp_data_dir, version)
+
+    second = record_validation_baseline(
+        tmp_data_dir, package_version_id=version, criterion_id=CRITERION,
+        band_histogram=HISTOGRAM, backend_profile="edge-local",
+    )
+
+    assert second.recorded, f"a new key's append was refused ({second.reason})"
+    with sqlite3.connect(next(iter((tmp_data_dir / "packages").glob("*.pkg.sqlite")))) as c:
+        rows = c.execute(
+            "SELECT COUNT(*) FROM validation_record WHERE package_version_id = ?",
+            (version,),
+        ).fetchone()
+    assert rows[0] == 2, rows[0]

@@ -3,7 +3,7 @@
 | Case | Oracle |
 |---|---|
 | TC-PIPE-20 (a) | With a baseline `mean=2.0, sd=0.5` stored for C1 under the run's key, the C1 cell at ordinal 5 escalates with a "distributional anomaly" reason (spy on `should_escalate`) |
-| TC-PIPE-20 (a′) | That baseline reaches the run through its writer, `record_validation_baseline` under the run's key on the run's version (written ahead: #525) |
+| TC-PIPE-20 (a′) | That baseline reaches the run through its writer, `record_validation_baseline` under the run's key on the run's version (#525, decision (a): the published append-only exception) |
 | TC-PIPE-20 (b) | No baseline: no anomaly reason, and every call received a `NoValidationData` baseline and history, never `None` |
 | TC-PIPE-20 (c) | 6 blind C1 labels, 4 of them overrides: C1's reasons carry the override history (0.67); C2, with no labels, carries the no-data reason |
 | TC-PIPE-20 (d) | A baseline stored mid-run is not seen by that run's later cells; the next run sees it (Q-45) |
@@ -21,9 +21,10 @@ Disclosed fixture choices:
   triggers refuse any baseline write onto one. So the fixture stands the two
   `validation_record` lock triggers down around `record_validation_baseline` and restores them.
   That pins the M-PIPE half (read under the run's key, once per run, handed to
-  `should_escalate`). Whether a baseline can reach a published version in production is #525's
-  open decision; arm (a′) is that half, red until #525 lands, and its shape may move with the
-  decision.
+  `should_escalate`). #525's decision (a) since admits a baseline APPEND onto a published
+  version through those same triggers, which is what arm (a′) pins — it writes through the
+  writer with the triggers standing; arms (a) and (d) keep the stand-down only because their
+  corpora predate the exception (the `_seed_baseline` route is unchanged).
 - **Escalations F-DEV-PIPE never recorded.** A stored baseline or a contested history makes cells
   escalate that the corpus recorded unescalated, so those widened arms have no recording and the
   run stops at the first one. The TC-PIPE-20 oracles are the decisions the spy saw, which are
@@ -168,7 +169,6 @@ def test_tc_pipe_20_a_a_stored_baseline_makes_the_ordinal_5_cell_escalate_as_an_
         f"C1 at ordinal 5 (z = 6) did not escalate as an anomaly: {first.decision!r} (FR-PIPE-15)")
 
 
-@pytest.mark.writtenahead
 def test_tc_pipe_20_a_prime_the_baseline_reaches_the_runs_version_through_its_writer(
         tmp_path, monkeypatch):
     root = tmp_path / "w"
@@ -184,8 +184,8 @@ def test_tc_pipe_20_a_prime_the_baseline_reaches_the_runs_version_through_its_wr
     finally:
         world.store.close()
     assert write.recorded, (
-        f"the baseline writer refused the run's version ({write.reason}): in production no "
-        "baseline can reach a run (#525)")
+        f"the baseline writer refused the run's version ({write.reason}): the published "
+        "exception (#525, decision (a)) must admit a baseline append")
     assert _mean_sd(read) == (2.0, 0.5), read
 
 

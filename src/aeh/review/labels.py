@@ -236,11 +236,14 @@ def _write_collected_label(
             new_points=None,
             cohort_id=cohort_id,
             # `FR-REVIEW-21`'s columns on the collection route. This route carries no run
-            # (`run_id=""` above) and therefore no package linkage, so the six
-            # package-derived figures are honestly unknown rather than defaulted — a 0
-            # `band_distance` here would read as "the teacher agreed" about a judgement
-            # this route cannot see the band scale for.
-            package_version_id=None,
+            # (`run_id=""` above), so the package-derived FIGURES are honestly unknown
+            # rather than defaulted — a 0 `band_distance` here would read as "the teacher
+            # agreed" about a judgement this route cannot see the band scale for. The
+            # package LINKAGE itself is not unknown: #525's defect 3, the label names the
+            # version it was collected against and the row records it, because a history
+            # that pools unversioned labels counts one package's reviews for another that
+            # shares only a criterion name (`FR-STATS-24`, `TC-REVIEW-37`).
+            package_version_id=getattr(label, "package_version_id", None) or None,
             assignment_type=None,
             band_distance=None,
             system_points=None,
