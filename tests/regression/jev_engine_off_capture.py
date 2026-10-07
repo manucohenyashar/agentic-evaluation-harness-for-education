@@ -22,6 +22,12 @@ the run pinned (they carried an empty one before, design 1.9 §5.1 R4), so the 1
 fixture keys moved. Every other value, the verdict rows included, is byte-identical to the
 `fb12d1e` capture: the new file is the old one with those 12 keys replaced, checked by diff.
 
+**Re-blessed at #616 (2026-10-06), consciously.** FR-CONF-30 records the resolved Q&A model on
+every run's `to_persisted_dict()["provider_config"]` as `qa_model` (here `panel[0]`, the default
+on both configs). Only the two `serialization.<name>.persisted` strings changed, each gaining that
+one key; the run rows M-ORCH writes, the work ids, `panel_build_ref`, the profile summaries and
+every table row are byte-identical, checked by diff. The Q&A model is not grader identity.
+
 Every value in the snapshot is deterministic across drives (three captures at `fb12d1e` were
 byte-identical). Two things are projected. Measured latency is dropped. A wall-clock stamp
 (`*_at`) is reduced to whether it is set, because set-versus-null is behaviour and the instant

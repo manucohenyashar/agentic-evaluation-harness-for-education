@@ -23,7 +23,7 @@ from aeh.conf import (CohortRef, RunConfigError, effective_config, format_profil
                       resolve_run_config)
 from tests.support.conf_builders import EDGE_PANEL_3, HOSTED_PANEL_3, edge_cfg, hosted_cfg
 
-pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
+pytestmark = pytest.mark.contract
 
 COHORT = CohortRef("c-ct-conf-22", "synthetic")
 QA_A = "vendor/qa-model-a@2026-09-01"

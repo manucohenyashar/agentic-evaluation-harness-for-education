@@ -113,7 +113,6 @@ def test_tc_conf_c18_after_a_resume_the_frozen_gate_still_decides(tmp_data_dir, 
 # break condition ("a default is introduced") is the new specification. Split in two so the
 # unchanged sentences stay in the gate while the default itself is written ahead of #616.
 
-@pytest.mark.writtenahead
 def test_tc_conf_c19_v2_2_the_default_is_a_function_of_the_profile_never_the_hardware() -> None:
     from aeh.conf import HARDWARE_PROFILES
 

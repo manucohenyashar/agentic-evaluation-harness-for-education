@@ -175,7 +175,9 @@ You pass one file with `--config`. It can hold a section for each profile, so on
 |---|---|---|
 | `HARNESS_PROFILE` | Which mode: `edge-local`, `cloud-hosted` or `dev-ci`. No default. | All |
 | `prompt_template_v` | The version of the wording given to the judges. Use `judge-prompt/2`, as the shipped files do. | All |
-| `HARNESS_DECISION_ENGINE` | `off` or `jev`. **No default.** `off` means the page reader and the judges do all the grading. Start with `off`. | All |
+| `HARNESS_DECISION_ENGINE` | `off` or `jev`. Default: `jev` on `cloud-hosted` and `dev-ci`, `off` on `edge-local`. `off` means the page reader and the judges do all the grading. | All |
+| `HARNESS_JEV_CONFIDENCE_THRESHOLD` | Jev's confidence bar, 0.50 up to (not including) 1.00. Default 0.80 (0.85 for `openjev-small`). Also settable as `decision_confidence_threshold` in the profile's section of the config file; the environment wins. | All, with Jev on |
+| `HARNESS_QA_MODEL` | The help assistant's model: a pinned OpenRouter build (`vendor/model@2026-09-01`). Default: the first judge. Ignored on `edge-local`, where the assistant is always the first judge. | `cloud-hosted`, `dev-ci` |
 | `[profiles.<name>.transcriber]` | The model that reads the page pictures | All |
 | `[[profiles.<name>.panel]]` | The judges. **You must list 1, 3 or 5** (an even number cannot break a tie). | All |
 | `HARNESS_HARDWARE_PROFILE` | `unified-large`, `unified-small` or `discrete-gpu`. Sets how many model calls run at once. | Local only |
@@ -729,7 +731,9 @@ Every message is the system's real wording (checked unless said).
 | `HARNESS_PROFILE must be one of (...), got None` | No profile chosen | Set `HARNESS_PROFILE`, or put it at the top of the file |
 | `the config file has no section for 'X'` | The file has no section for that profile | Add the section, or choose another profile |
 | `HARNESS_HARDWARE_PROFILE is required when HARNESS_PROFILE is 'edge-local'` | Local mode needs the hardware profile | Add it (6.2) |
-| `HARNESS_DECISION_ENGINE is required: 'jev' or 'off'` | No default | Add `HARNESS_DECISION_ENGINE = "off"` |
+| `HARNESS_JEV_BUILD is required when HARNESS_DECISION_ENGINE is 'jev'` | Jev is on (the default on `cloud-hosted` and `dev-ci`) but no Jev build is named | Add `HARNESS_JEV_BUILD`, or set `HARNESS_DECISION_ENGINE = "off"` |
+| `decision_confidence_threshold must lie in [0.50, 1.00), got ...` (or `HARNESS_JEV_CONFIDENCE_THRESHOLD`) | The Jev threshold is out of range; it is refused, never rounded | Use a value from 0.50 up to (not including) 1.00 |
+| `HARNESS_QA_MODEL is not a resolved build identity` | The Q&A model has a moving tag (`:free`, `@latest`) or no `@` pin | Pin it, e.g. `vendor/model@2026-09-01` |
 | `panel[0] is a provider-pinned build, but ... 'edge-local' requires a edge-weights build` | An OpenRouter-style name in local mode | Use a file path ending `.gguf` (or another weights suffix), plus fingerprint and `quantization` |
 | `panel[0] is not a resolved build identity` | Missing `@...` pin or fingerprint, a moving tag, or no `quantization` (local) | Pin the model (6.3, 7.3) |
 | `panel must hold [1, 3, 5] judges, got 2` | Even panel | Use 1, 3 or 5 judges |
