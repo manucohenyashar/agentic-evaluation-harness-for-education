@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from aeh.pkg import PKG_STATEMENTS
+from aeh.pkg import is_composite, PKG_STATEMENTS
 
 from .constants import (
     GRADE_STATES,
@@ -62,6 +62,8 @@ class FinalizationMixin:
             for row in package_handle.query(
                 PKG_STATEMENTS["select_criteria"], v=run["package_version_id"]
             )
+            # A composite has no score row of its own (FR-PKG-25): never a missing input.
+            if not is_composite(row)
         ]
         for row in cohort.query(
             GRADE_STATEMENTS["select_run_submissions"], cohort_id=run["cohort_id"]

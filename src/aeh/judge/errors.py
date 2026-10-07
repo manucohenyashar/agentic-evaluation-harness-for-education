@@ -16,6 +16,13 @@ class JudgmentError(Exception):
     (NFR-JUDGE-05): a broken judge must fail visibly, never grade confidently."""
 
 
+class CompositeUnitError(JudgmentError):
+    """A work unit names a composite (`evidence_sum`) criterion (FR-JUDGE-38, ADR-39). A composite
+    has no band set to judge — its points are its aspects' sum — so enumeration never creates
+    such a unit; one found in the ledger (a hand-corrupted store) is refused before any
+    transport call, and its failures quarantine it like a malformed unit's."""
+
+
 class ProseAssessmentError(MalformedResponseError):
     """The reply's `evidence_assessment` is free evaluative prose: it uses the configured magnitude
     phrases and refers to no span and no band condition (FR-JUDGE-10, R42).

@@ -7,7 +7,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
-from aeh.pkg import PKG_STATEMENTS, PackageCatalog, points_for_band
+from aeh.pkg import (
+    composite_aspects,
+    is_composite,
+    PKG_STATEMENTS,
+    PackageCatalog,
+    points_for_band,
+)
 from aeh.store import Store
 
 from .constants import (
@@ -36,9 +42,22 @@ from .records import GradeError, GradeReport, SubmissionGrade
 from .finalization import FinalizationMixin
 from .amendments import AmendmentMixin
 from .reporting import ReportingMixin
+from .views import CriterionViewMixin
 
 
-class GradingService(FinalizationMixin, AmendmentMixin, ReportingMixin):
+def _criterion_max(row: Any, band_spans: Mapping[str, tuple[float, float]]) -> float | None:
+    """A banded criterion's maximum: its top band's points (read through `points_for_band`, the
+    canonical reader); a criterion with no band set falls back to its declared `max_points`."""
+    span = band_spans.get(row["criterion_id"])
+    if span is not None:
+        return span[1]
+    declared = _row_value(row, "max_points")
+    return float(declared) if declared is not None else None
+
+
+class GradingService(
+    FinalizationMixin, AmendmentMixin, ReportingMixin, CriterionViewMixin
+):
     """The grading service (design §3.14): compute, finalize, amend, roll up and export grades. It
     is the only writer of `submission_grade`, and never writes criterion scores, verdicts or
     narratives (CT-GRADE-14).
@@ -102,7 +121,12 @@ class GradingService(FinalizationMixin, AmendmentMixin, ReportingMixin):
         criteria_rows = list(
             package_handle.query(PKG_STATEMENTS["select_criteria"], v=version)
         )
-        criteria_ids = [row["criterion_id"] for row in criteria_rows]
+        # `FR-PKG-25`: a composite (`evidence_sum`) is never a grade input of its own — its
+        # points ARE its aspects' score rows, each counted once — so it is no input to wait
+        # for. The structure stays on the surface for the per-criterion view (`FR-GRADE-22`).
+        criteria_ids = [
+            row["criterion_id"] for row in criteria_rows if not is_composite(row)
+        ]
         keys = [
             (row["criterion_id"], json.loads(row["answer_key"]))
             for row in package_handle.query(
@@ -126,6 +150,12 @@ class GradingService(FinalizationMixin, AmendmentMixin, ReportingMixin):
             "criteria_ids": criteria_ids,
             "answer_key_ref": answer_key_ref_of(keys),
             "band_spans": band_spans,
+            "composites": composite_aspects(criteria_rows),
+            "max_points": {
+                row["criterion_id"]: _criterion_max(row, band_spans)
+                for row in criteria_rows
+                if not is_composite(row)
+            },
             "package_version_id": version,
         }
 

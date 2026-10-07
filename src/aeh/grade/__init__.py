@@ -22,6 +22,7 @@ Files:
     reporting.py     the run rollup and export methods of the service
     service.py       `GradingService`: computes and stores every grade of a run
     rollups.py       class rollups, the separated rollup and rollup findings
+    views.py         the per-criterion view: a composite presented as one line
     exports.py       the school-facing export: one PDF per student and a marks CSV
     signals.py       the grading stage's signals and alerts
 
@@ -70,6 +71,7 @@ from .records import (
     GradeRevision,
     RollupBlock,
     RollupFinding,
+    CriterionLine,
     RollupSegment,
     SeparatedRollup,
     SubmissionGrade,
@@ -105,6 +107,7 @@ __all__ = [
     "HARNESS_EXPORT_DIR_ENV",
     "RollupBlock",
     "RollupFinding",
+    "CriterionLine",
     "RollupSegment",
     "SeparatedRollup",
     "SubmissionGrade",

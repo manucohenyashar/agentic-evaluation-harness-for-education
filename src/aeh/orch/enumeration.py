@@ -50,13 +50,25 @@ class EnumerationMixin:
         prompt_template_version = row["prompt_template_v"]
 
         catalog = self._catalog(row)
+        # Imported here, as `_catalog` imports `aeh.pkg`: the import adds Tier P migrations.
+        from aeh.pkg import is_composite
+
+        declared = catalog.criteria(row["package_version_id"])
+        # `FR-JUDGE-38`: a composite (`evidence_sum`) criterion is a grouping record, never a
+        # unit of any stage — only its aspect criteria are extracted and judged. Dropped here,
+        # before the mode branch and the random-arm draw, so nothing downstream sees it.
+        composites = sorted(c["criterion_id"] for c in declared if is_composite(c))
         criteria = sorted(
-            catalog.criteria(row["package_version_id"]),
+            (c for c in declared if not is_composite(c)),
             key=lambda c: c["criterion_id"],
         )
         gates["catalog"] = (
             f"package {row['package_id']} version {row['package_version_id']}: "
             f"{len(criteria)} criterion(a)"
+        )
+        gates["composites"] = (
+            f"{len(composites)} composite criterion(a) withheld from enumeration "
+            f"(FR-JUDGE-38): {composites}" if composites else "none declared"
         )
 
         cohort = self._store.cohort(row["cohort_id"])

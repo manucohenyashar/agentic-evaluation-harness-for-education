@@ -111,6 +111,7 @@ from .exchange import ExchangeMixin
 from .setup_records import SetupRecordsMixin
 from .setup_checks import SetupChecksMixin
 from .catalog import PackageCatalog
+from .rubric_methods import COMPOSITE_METHOD, composite_aspects, is_composite
 from .in_memory import (
     export_package,
     ExportSummary,
@@ -166,4 +167,7 @@ __all__ = [
     "record_promotion",
     "record_validation",
     "validation_for",
+    "COMPOSITE_METHOD",
+    "composite_aspects",
+    "is_composite",
 ]

@@ -43,7 +43,7 @@ from .settings import (
     MAX_OUTPUT_TOKENS_ENV,
     TEMPERATURE_ENV,
 )
-from .errors import IsolationViolation, JudgmentError, ProseAssessmentError
+from .errors import CompositeUnitError, IsolationViolation, JudgmentError, ProseAssessmentError
 from .request import (
     assert_isolated,
     BandView,
@@ -117,6 +117,7 @@ __all__ = [
     "JUDGE_PROMPT_TEMPLATE_V",
     "JUDGE_STATEMENTS",
     "JudgmentError",
+    "CompositeUnitError",
     "PROMPT_FIELD_NAMES",
     "ProseAssessmentError",
     "QuestionView",

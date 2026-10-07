@@ -28,6 +28,35 @@ ASPECT_BAND_COUNT = 2
 _CLOSED_SET = "{" + ", ".join(SCORE_METHODS) + "}"
 
 
+def _row_field(row: Any, name: str) -> Any:
+    """One column of a criterion row, whatever its shape (`sqlite3.Row`, dict or object); a
+    row from before Package migration 15 has no such column and reads as None."""
+    try:
+        return row[name]
+    except (KeyError, IndexError, TypeError):
+        return getattr(row, name, None)
+
+
+def is_composite(row: Any) -> bool:
+    """Whether a criterion row declares the composite method (`evidence_sum`). A composite is a
+    grouping record: never a score unit (`FR-JUDGE-38`), never a grade input of its own — its
+    points are its aspects' sum (`FR-PKG-25`). The one predicate every consumer asks."""
+    return _row_field(row, "score_method") == COMPOSITE_METHOD
+
+
+def composite_aspects(rows: Sequence[Any]) -> dict[str, tuple[str, ...]]:
+    """Each composite criterion of a version's criterion rows, mapped to its aspect criterion
+    ids (those naming it in `component_of`), sorted. A version with none maps to `{}`."""
+    aspects: dict[str, tuple[str, ...]] = {
+        str(_row_field(row, "criterion_id")): () for row in rows if is_composite(row)
+    }
+    for row in rows:
+        parent = _row_field(row, "component_of")
+        if parent is not None and str(parent) in aspects:
+            aspects[str(parent)] += (str(_row_field(row, "criterion_id")),)
+    return {cid: tuple(sorted(ids)) for cid, ids in aspects.items()}
+
+
 def _band_tuple(band: Mapping[str, Any]) -> tuple[int, str, float, str]:
     """A band as (ordinal, band, points, descriptor), the form two band sets compare in."""
     return (int(band["ordinal"]), str(band["band"]), float(band["points"]),

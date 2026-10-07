@@ -12,9 +12,10 @@ from aeh.extract import document_bytes
 from aeh.ingest import INGEST_STATEMENTS
 from aeh.ingest.identity import redact_identity_head
 from aeh.orch import STAGE_EXTRACT, _cohort_keys_on_filesystem
-from aeh.pkg import PackageCatalog
+from aeh.pkg import PackageCatalog, is_composite
 from aeh.prov import PromptPayload
 
+from .errors import CompositeUnitError
 from .schema import JUDGE_STATEMENTS
 from .settings import _EXEMPLAR_SEED_DEFAULT, EXEMPLAR_SEED_ENV
 from .request import (
@@ -149,6 +150,16 @@ def _ordered_exemplars(
     return tuple(ordered)
 
 
+def _refuse_composite(row: Any, criterion_id: str) -> None:
+    """FR-JUDGE-38's last line: a composite criterion never reaches a judge. Enumeration emits
+    no composite unit, so this fires only on a corrupted ledger — before any transport call."""
+    if is_composite(row):
+        raise CompositeUnitError(
+            f"work unit names composite (evidence_sum) criterion {criterion_id!r}: a "
+            "composite is never a score unit, only its aspect criteria are (FR-JUDGE-38)"
+        )
+
+
 def _rubric_of(
     store: Any, run_row: Any, criterion_id: str
 ) -> tuple[CriterionView, QuestionView]:
@@ -164,6 +175,7 @@ def _rubric_of(
     question_id = ""
     for row in catalog.criteria(version):
         if row.get("criterion_id") == criterion_id:
+            _refuse_composite(row, criterion_id)
             question_id = str(row.get("question_id") or "")
             break
     bands = tuple(
