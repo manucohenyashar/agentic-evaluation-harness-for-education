@@ -5,8 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 
-#: The fifteen control actions, verbatim. The runtime surface is **exactly** this set
+#: The control actions, verbatim: HLD §11.8's fifteen, then the operator-requirements delta's
+#: cohort creation (`FR-CONSOLE-42`). The runtime surface is **exactly** this set
 #: (`FR-CONSOLE-32`); an extra entry is the undeclared write path the clause exists to expose.
+#: `CT-CONSOLE-30` admits a new API mutation only as an enumerated control row, which is why the
+#: roster editor's write is a sixteenth action rather than a route of its own.
 CONTROL_SURFACE_ACTIONS: tuple[str, ...] = (
     "approve question inventory",
     "supply answer keys",
@@ -23,6 +26,7 @@ CONTROL_SURFACE_ACTIONS: tuple[str, ...] = (
     "approve exemplar paraphrases at export",
     "export/import package",
     "purge cohort",
+    "create cohort",
 )
 
 
@@ -82,6 +86,15 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
     ),
     "export/import package": ("package_file.path",),
     "purge cohort": ("cohort.purged_at",),
+    # FR-CONSOLE-42: the roster editor, through M-ORCH's `create_cohort` (the CLI's own door).
+    "create cohort": (
+        "cohort.cohort_id",
+        "cohort.consent_class",
+        "cohort.created_at",
+        "roster.cohort_id",
+        "roster.student_ref",
+        "roster.full_name",
+    ),
 }
 
 

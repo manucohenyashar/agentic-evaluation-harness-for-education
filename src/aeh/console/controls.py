@@ -18,7 +18,7 @@ from .write_rows import _rows_for
 
 
 class ControlActionsMixin:
-    """The fifteen control actions and the rows each one writes."""
+    """The enumerated control actions and the rows each one writes."""
 
     def finalize_batch(self, run_id: str = "r-unaddressed", *, actor: str = "operator") -> dict[str, GradeRecord]:
         """Finalize the batch and write the audit line §11.8 requires. The actor is whatever name
@@ -89,18 +89,18 @@ class ControlActionsMixin:
     # -- the control surface -----------------------------------------------------------------------------
 
     def write_surface(self) -> tuple[str, ...]:
-        """The names of the fifteen control actions, checked at runtime (FR-CONSOLE-32). Tests
+        """The names of the enumerated control actions, checked at runtime (FR-CONSOLE-32). Tests
         compare this set exactly, so any undeclared write path shows up."""
         return CONTROL_SURFACE_ACTIONS
 
     def write_fields(self, action: str) -> tuple[str, ...]:
         """The store fields `action` may write (the Effect column of §11.8)."""
         if action not in CONSOLE_WRITE_FIELDS:
-            raise KeyError(f"{action!r} is not one of the fifteen declared control actions")
+            raise KeyError(f"{action!r} is not one of the declared control actions (CONTROL_SURFACE_ACTIONS)")
         return CONSOLE_WRITE_FIELDS[action]
 
     def control_actions(self) -> dict[str, Callable[..., ControlOutcome]]:
-        """The same fifteen actions as callables, each bound to `perform`."""
+        """The same actions as callables, each bound to `perform`."""
         return {action: self._bind(action) for action in CONTROL_SURFACE_ACTIONS}
 
     def _bind(self, action: str) -> Callable[..., ControlOutcome]:
@@ -139,7 +139,7 @@ class ControlActionsMixin:
           module that never reads it.
         """
         if action not in CONSOLE_WRITE_FIELDS:
-            raise KeyError(f"{action!r} is not one of the fifteen declared control actions")
+            raise KeyError(f"{action!r} is not one of the declared control actions (CONTROL_SURFACE_ACTIONS)")
         if replay is not None:
             if replay not in REPLAY_ROUTES:
                 raise ValueError(f"unknown replay route {replay!r}")

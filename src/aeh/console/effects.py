@@ -175,6 +175,12 @@ class DomainEffectsMixin:
                     "correction as done",
                     False,
                 )
+        if action == "create cohort":
+            # FR-CONSOLE-42's roster editor. Imported at the branch so the module's SEC-15
+            # census line numbers (tests/artifact/test_store_query_surface.py) stay put.
+            from .cohort_editor import create_cohort_effect
+
+            return create_cohort_effect(self._store, params)
         if action == "set review window":
             return self._set_review_window_effect(params)
         if action == "amend a finalized grade":

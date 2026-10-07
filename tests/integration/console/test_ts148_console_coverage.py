@@ -234,18 +234,15 @@ def _assert_cohort_differential(tmp_path, network_guard, capsys, with_ids: bool,
         f"{console_rows.get(cohort_key)}")
 
 
-@pytest.mark.writtenahead
 def test_tc_console_55_a_a_names_only_paste_creates_the_cli_cohort(
         tmp_path, network_guard, capsys):
     _assert_cohort_differential(tmp_path, network_guard, capsys, with_ids=False, arm="(a)")
 
 
-@pytest.mark.writtenahead
 def test_tc_console_55_b_names_and_ids_create_the_cli_cohort(tmp_path, network_guard, capsys):
     _assert_cohort_differential(tmp_path, network_guard, capsys, with_ids=True, arm="(b)")
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("cell, rows, csv_text, console_words, cli_words", [
     # (c): the message names the requirement — a name per student.
     ("c ids-only", [{"student_ref": "S-1"}, {"student_ref": "S-2"}],

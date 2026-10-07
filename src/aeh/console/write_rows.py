@@ -14,7 +14,7 @@ from .html import _now
 def _rows_for(action: str, params: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
     """The rows `action` writes: one per declared effect, each with only the fields §11.8 declares.
     Values come from `params` when given, and are clear placeholders otherwise; the tests call all
-    fifteen actions with no arguments and check the fields."""
+    control actions with no arguments and check the fields."""
     by_action: dict[str, list[str]] = {}
     for dotted in CONSOLE_WRITE_FIELDS[action]:
         table, field = dotted.split(".", 1)

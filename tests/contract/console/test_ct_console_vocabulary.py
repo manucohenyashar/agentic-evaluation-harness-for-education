@@ -30,6 +30,8 @@ from tests.support.console_vocabulary import (
     BLOCKING_TOUCHPOINTS,
     CONSOLE_KNOBS,
     CONTROL_SURFACE_ACTIONS,
+    DELTA_CONTROL_ACTIONS,
+    HLD_CONTROL_ACTIONS,
     MOJIBAKE_MARKERS,
     MVP_ABSENT_TOUCHPOINT,
     OBSERVABILITY_METRICS,
@@ -59,6 +61,7 @@ pytestmark = pytest.mark.contract
 
 DESIGN = "docs/design/detailed-design.md"
 HLD = "docs/agentic-evaluation-harness-for-education.md"
+DELTA = "docs/design/operator_requirements_design_delta.md"
 
 
 def _normalized(repo_root, relative: str) -> str:
@@ -170,13 +173,31 @@ def test_the_control_surface_transcribes_hld_11_8(repo_root):
     # exactly the way not to detect that. Review pointed it out and measured that all fifteen
     # appear verbatim in the normalized design text, so the enumeration costs nothing.
     design = _normalized(repo_root, DESIGN)
-    missing = [action for action in CONTROL_SURFACE_ACTIONS if action not in design]
+    missing = [action for action in HLD_CONTROL_ACTIONS if action not in design]
     assert not missing, (
         f"design §3.19 no longer lists these control-surface actions: {missing}"
     )
 
-    assert len(CONTROL_SURFACE_ACTIONS) == 15
-    assert len(set(CONTROL_SURFACE_ACTIONS)) == 15, "the enumeration has a duplicate"
+    assert len(HLD_CONTROL_ACTIONS) == 15
+    assert len(set(CONTROL_SURFACE_ACTIONS)) == len(CONTROL_SURFACE_ACTIONS), (
+        "the enumeration has a duplicate"
+    )
+    assert CONTROL_SURFACE_ACTIONS == HLD_CONTROL_ACTIONS + tuple(DELTA_CONTROL_ACTIONS)
+
+
+def test_the_delta_control_actions_are_the_requirements_that_add_them(repo_root):
+    """The actions beside §11.8's fifteen come from the operator-requirements delta, each from a
+    requirement that adds a console write — and `CT-CONSOLE-30` is what makes that an
+    enumerated control row rather than an API route of its own. An entry naming no such
+    requirement is an undeclared write path wearing a vocabulary entry."""
+    delta = _normalized(repo_root, DELTA)
+    assert "none is added without being an enumerated control row" in delta, (
+        "CT-CONSOLE-30 no longer requires a new API mutation to be an enumerated control row"
+    )
+    assert DELTA_CONTROL_ACTIONS == {"create cohort": "FR-CONSOLE-42"}, (
+        "a delta control action was added or removed: that is a design decision, cite it here"
+    )
+    assert "| fr-console-42 | the console shall create a cohort and load its roster" in delta
 
 
 def test_the_knob_defaults_transcribe_the_design_configuration_line(repo_root):
