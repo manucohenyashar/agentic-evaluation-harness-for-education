@@ -419,8 +419,29 @@ class TeachersDayWorld(SynthWorld):
         self.escalation_refs = {
             arm: self._judge_ref(arm) for arm in CORPUS_ESCALATION_ARMS
         }
+        # The requests' redacted `Student:` head carries the store's RESOLVED ref — the
+        # roster writer's generated one, not the declared name — so the capture's cell
+        # recovery (and the report's identity column) reads the resolved refs off the
+        # store. The base class's map holds the declared names, which only coincide
+        # under the legacy nameless-roster channel this world does not use.
+        self.student_ref_by_sid = {
+            str(row["submission_id"]): str(row["student_ref"])
+            for row in self.handle.query(
+                "SELECT submission_id, student_ref FROM submission")
+        }
 
     # -- the seams -----------------------------------------------------------------------
+
+    def _build_cohort(self) -> None:
+        """The cohort through the same roster writer the twins' class legs call
+        (``aeh.orch.cohorts.create_cohort`` — the journey test's console leg calls it
+        directly, the CLI side through ``aeh cohort create --roster``): one writer, so
+        the three stores' rosters are row-identical, and the refs the redacted request
+        heads carry are the same deterministic generated refs on every side."""
+        from aeh.orch.cohorts import create_cohort
+
+        create_cohort(self.store, self.cohort_id, "synthetic",
+                      [{"full_name": s.student_ref} for s in STUDENTS])
 
     def _make_provider(self, fixture_dir: Any) -> Any:
         """`JourneyCaptureProvider` while capturing; the strict replayer once the

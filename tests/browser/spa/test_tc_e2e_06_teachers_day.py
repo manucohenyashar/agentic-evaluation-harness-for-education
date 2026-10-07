@@ -40,17 +40,23 @@ disclosed in the PR.
   ``aeh package build`` both write through that service. The model-backed Stage A
   draft flow is not driven; ``SetupService``'s read-back is asserted on the console
   side (#624) so the setup surface still sees the published version.
-* The class leg writes the roster directly on the console side (the cohort editor's
-  write control is not in the API yet); the CLI side uses ``aeh cohort create
-  --roster`` so the matcher runs for real there.
+* Both class legs write the roster through the same writer ``aeh cohort create`` calls
+  (``aeh.orch.cohorts.create_cohort``): the console leg calls it directly (the cohort
+  editor's write control is not in the API yet), the CLI side through ``aeh cohort
+  create --roster``. The refs are generated deterministically from the cohort, the
+  ordinal and the name, so the twins' rosters — and the resolved ref every redacted
+  request head carries — are row-identical, which is also what keeps the capture's
+  request keys replayable in the twins.
+* Neither surface names its run: the SPA's start control and ``aeh run`` both let
+  M-ORCH mint the run id (no pending run exists when the day starts), so every leg
+  after the run resolves each twin's minted id from its own store, and the
+  differential reads run ids through ``tier_rows``'s generic ``<minted>`` masking
+  (``MINTED_ID`` covers the ``run-<32hex>`` shape).
 * The review and finalize legs go through the same M-REVIEW / M-GRADE libraries the
   console's review screen and ``finalize batch`` control call, on both sides.
 * ``dev-ci`` is the twins' profile: the console refuses ``cloud-hosted`` outright, and
   dev-ci + ``HARNESS_FIXTURE_DIR`` is the one combination ``_provider_for`` answers
   with the fixture provider.
-* Each surface mints its own run id (``create_run`` mints ``run-<uuid4>``; no pending
-  run exists when the day starts), so both twins' ids are DISCOVERED — the console's
-  from its background-thread table, the CLI's from its run table — never assumed.
 * The ask-for-help leg's transport is a stub: the QA prompt is a shape no replay
   fixture can carry (only synthesis may miss), so ``help_read.provider_for`` is bound
   to a stub ``complete`` — retrieval stays local (M-HELP), the ask stays on the
@@ -209,17 +215,16 @@ def _open_store_with(data_dir: Path):
 
 
 def _console_cohort(store) -> None:
-    """The class leg, console side: the cohort and its roster, written directly (the
-    cohort editor's write control is not in the API yet — module docstring)."""
-    handle = store.cohort(jw.COHORT_ID)
-    with handle.transaction() as tx:
-        tx.execute(
-            "INSERT INTO cohort (cohort_id, consent_class, created_at) "
-            "VALUES (:c, 'synthetic', '2026-01-01T00:00:00+00:00')", c=jw.COHORT_ID)
-        for student in jw.STUDENTS:
-            tx.execute(
-                "INSERT INTO roster (cohort_id, student_ref) VALUES (:c, :s)",
-                c=jw.COHORT_ID, s=student.student_ref)
+    """The class leg, console side: the roster through the same writer ``aeh cohort
+    create`` calls (``aeh.orch.cohorts.create_cohort``) — the cohort editor's write
+    control is not in the API yet, but what the console's class surface fronts must
+    still be the rows that writer produces (TC-CONSOLE-55). The refs are generated
+    deterministically from the cohort, the ordinal and the name, so the twins'
+    rosters are row-identical (module docstring)."""
+    from aeh.orch.cohorts import create_cohort
+
+    create_cohort(store, jw.COHORT_ID, "synthetic",
+                  [{"full_name": s.student_ref} for s in jw.STUDENTS])
 
 
 def _minted_run_id(store, whose: str) -> str:
@@ -248,8 +253,8 @@ def _await_terminal(handle, run_id: str) -> str:
 
 
 def test_tc_e2e_06_teachers_day_journey(
-        tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch,
-        network_guard) -> None:
+        tmp_path_factory: pytest.TempPathFactory,
+        monkeypatch: pytest.MonkeyPatch) -> None:
     """The teacher's-day journey, driven through the operator's surface and the CLI's,
     writes identical stores."""
     _gates()
@@ -309,9 +314,7 @@ def test_tc_e2e_06_teachers_day_journey(
             scratch / "console-pdfs", pages_by_student, assessment_pages)
         _ingest_console(console_store, version, assessment, sheets)
         _serve_and_drive(
-            console_store, console_dir, cfg, version, monkeypatch, export_seen,
-            network_guard)
-        network_guard.assert_no_network()
+            console_store, console_dir, cfg, version, monkeypatch, export_seen)
     finally:
         _close(console_store)
 
@@ -378,18 +381,20 @@ def effective_cfg():
 
 
 def _serve_and_drive(store, console_dir: Path, cfg: dict, version: str,
-                     monkeypatch: pytest.MonkeyPatch, export_seen: dict,
-                     network_guard) -> None:
+                     monkeypatch: pytest.MonkeyPatch, export_seen: dict) -> None:
     """The journey through the served SPA in a browser, plus the console's own leaves.
 
     The browser's legs are the hub, the seven lifecycle screens, the confirm dialog
     and the recovery wording; the leaves the SPA fronts (the start control, the export
     read, the help ask) are exercised over the same origin the SPA itself uses. The
-    whole window sits inside the loopback census (CT-PROV-15): every connect target the
-    console process makes is loopback, and the caller asserts nothing else afterwards.
+    socket guard stands down under the ``browser`` marker (``tests/conftest.py`` — the
+    Playwright driver's event loop needs a loopback socket pair in this interpreter),
+    so the no-egress oracle here is the browser's own request log
+    (``log.foreign_requests()``, asserted below) plus the model boundary: the twins'
+    provider is the fixture replayer, and the ask leg's transport is the local stub,
+    both bound before any request is made.
     """
     from aeh.console import help_read, serve_console
-    from tests.support.console_api_vocabulary import on_loopback
 
     # The ask leg's transport (module docstring): the QA model resolves to the effective
     # panel's first judge (FR-CONF-30, dev-ci → panel[0]), whose real transport is
@@ -401,145 +406,145 @@ def _serve_and_drive(store, console_dir: Path, cfg: dict, version: str,
     monkeypatch.setattr(help_read, "provider_for", _help_provider)
 
     server = serve_console(store=store, cfg=cfg)
-    with on_loopback(server, network_guard) as (port, _census):
-        loopback_host = ".".join(("127", "0", "0", "1"))
-        origin = f"http://{loopback_host}:{port}"
-        try:
-            with spa.spa_page(origin) as (page, log):
-                # -- hub ------------------------------------------------------------
-                spa.open_hub(page, origin)
-                hub = spa.main_text(page)
-                for destination in (*spa.LIFECYCLE_SCREENS, "help", "status"):
-                    card = spa.hub_card(page, destination)
-                    assert card.count() == 1, (
-                        f"TC-E2E-06: the hub has no {destination!r} destination "
-                        f"(found {card.count()}); the hub is the journey's map")
-                # -- setup ----------------------------------------------------------
-                _go(page, origin, "package")
-                assert version in spa.main_text(page), (
-                    "TC-E2E-06: the package screen does not show the published version — "
-                    "the live-state read (#634) is not on the setup screen")
-                # the setup read-back the teacher confirms against (#624)
-                from aeh.setup import setup_service_for_store
-                service = setup_service_for_store(store, _PACKAGE_ID)
-                assert service.current_proposal() is not None, (
-                    "TC-E2E-06: SetupService's read-back does not see the published "
-                    "version's proposal — the setup screen would show nothing")
-                # -- class ----------------------------------------------------------
-                _go(page, origin, "class")
-                roster_text = spa.main_text(page)
-                for student in jw.STUDENTS:
-                    assert student.student_ref in roster_text, (
-                        f"TC-E2E-06: the class screen does not show {student.student_ref!r}")
-                # -- papers ---------------------------------------------------------
-                _go(page, origin, "papers")
-                papers_text = spa.main_text(page)
-                for student in jw.STUDENTS:
-                    assert student.student_ref in papers_text, (
-                        f"TC-E2E-06: the papers screen does not show {student.student_ref!r}'s "
-                        "sheet")
-                # -- run start: banner + confirm -------------------------------------
-                before = spa.store_digest(console_dir)
-                _go(page, origin, "run_start")
-                banner_text = spa.main_text(page)
-                assert "dev-ci" in banner_text, (
-                    f"TC-E2E-06: the run-start screen names no profile — the banner the "
-                    f"preview read answers is not rendered: {banner_text!r}")
-                after = spa.store_digest(console_dir)
-                assert not spa.changed_tables(before, after), (
-                    "TC-E2E-06: opening the run-start screen wrote rows — a no-op until "
-                    "confirmed (TC-UI-05)")
-                # the start control opens the confirmation; confirming it — a click on
-                # the dialog's own named button, TC-UI-05's idiom — posts the console's
-                # own control
-                dialog = _confirm_start(page)
-                assert dialog is not None, (
-                    "TC-E2E-06: starting a run without a confirmation dialog — the "
-                    "journey's confirm step (NFR-SYS-17) is not on the screen")
-                named = dialog.get_by_role("button", name=_START_ACTION)
-                confirm = [named.nth(i) for i in range(named.count())
-                           if not _CANCEL.search(named.nth(i).inner_text())]
-                assert confirm, (
-                    "TC-E2E-06: the confirmation has no button naming the start action")
-                confirm[0].click()
-                # the SPA posts 'start run'; the run drives in the console's background,
-                # keyed by the id M-ORCH minted — discover it, never assume one
-                deadline = time.monotonic() + 60
-                threads: dict = dict(getattr(server.app, "_run_threads", {}))
-                while not threads and time.monotonic() < deadline:
-                    page.wait_for_timeout(200)
-                    threads = dict(getattr(server.app, "_run_threads", {}))
-                assert threads, (
-                    "TC-E2E-06: confirming the start never reached the console's "
-                    "background — the control started no run")
-                assert len(threads) == 1, (
-                    f"TC-E2E-06: the console's background holds {len(threads)} runs; "
-                    "the day's journey starts exactly one")
-                run_id = next(iter(threads))
-                handle = store.cohort(jw.COHORT_ID)
-                status = _await_terminal(handle, run_id)
-                assert status == "complete", (
-                    f"TC-E2E-06: the console twin's run did not complete: {status}")
-                for thread in threads.values():
-                    thread.join(timeout=60)
-                # -- monitor ---------------------------------------------------------
-                _go(page, origin, "monitor")
-                assert _TERMINAL_WORD.search(spa.main_text(page)), (
-                    "TC-E2E-06: the monitor screen does not show the run's terminal phase")
-                # -- review ----------------------------------------------------------
-                _go(page, origin, "review")
-                assert spa.main_text(page), "TC-E2E-06: the review screen renders nothing"
-                # the queue's band decisions, through the same M-REVIEW library the review
-                # screen's controls call (both twins — module docstring)
-                _work_review_queue(console_store)
-                # finalize through the console's own control door, over the same origin
-                # the SPA posts to — the same GradingService call the CLI twin makes below
-                from tests.support.console_api_vocabulary import (
-                    get_bytes, post_json, refused,
-                )
+    port = int(server.port)
+    loopback_host = ".".join(("127", "0", "0", "1"))
+    origin = f"http://{loopback_host}:{port}"
+    try:
+        with spa.spa_page(origin) as (page, log):
+            # -- hub ------------------------------------------------------------
+            spa.open_hub(page, origin)
+            hub = spa.main_text(page)
+            for destination in (*spa.LIFECYCLE_SCREENS, "help", "status"):
+                card = spa.hub_card(page, destination)
+                assert card.count() == 1, (
+                    f"TC-E2E-06: the hub has no {destination!r} destination "
+                    f"(found {card.count()}); the hub is the journey's map")
+            # -- setup ----------------------------------------------------------
+            _go(page, origin, "package")
+            assert version in spa.main_text(page), (
+                "TC-E2E-06: the package screen does not show the published version — "
+                "the live-state read (#634) is not on the setup screen")
+            # the setup read-back the teacher confirms against (#624)
+            from aeh.setup import setup_service_for_store
+            service = setup_service_for_store(store, _PACKAGE_ID)
+            assert service.current_proposal() is not None, (
+                "TC-E2E-06: SetupService's read-back does not see the published "
+                "version's proposal — the setup screen would show nothing")
+            # -- class ----------------------------------------------------------
+            _go(page, origin, "class")
+            roster_text = spa.main_text(page)
+            for student in jw.STUDENTS:
+                assert student.student_ref in roster_text, (
+                    f"TC-E2E-06: the class screen does not show {student.student_ref!r}")
+            # -- papers ---------------------------------------------------------
+            _go(page, origin, "papers")
+            papers_text = spa.main_text(page)
+            for student in jw.STUDENTS:
+                assert student.student_ref in papers_text, (
+                    f"TC-E2E-06: the papers screen does not show {student.student_ref!r}'s "
+                    "sheet")
+            # -- run start: banner + confirm -------------------------------------
+            before = spa.store_digest(console_dir)
+            _go(page, origin, "run_start")
+            banner_text = spa.main_text(page)
+            assert "dev-ci" in banner_text, (
+                f"TC-E2E-06: the run-start screen names no profile — the banner the "
+                f"preview read answers is not rendered: {banner_text!r}")
+            after = spa.store_digest(console_dir)
+            assert not spa.changed_tables(before, after), (
+                "TC-E2E-06: opening the run-start screen wrote rows — a no-op until "
+                "confirmed (TC-UI-05)")
+            # the start control opens the confirmation; confirming it — a click on
+            # the dialog's own named button, TC-UI-05's idiom — posts the console's
+            # own control
+            dialog = _confirm_start(page)
+            assert dialog is not None, (
+                "TC-E2E-06: starting a run without a confirmation dialog — the "
+                "journey's confirm step (NFR-SYS-17) is not on the screen")
+            named = dialog.get_by_role("button", name=_START_ACTION)
+            confirm = [named.nth(i) for i in range(named.count())
+                       if not _CANCEL.search(named.nth(i).inner_text())]
+            assert confirm, (
+                "TC-E2E-06: the confirmation has no button naming the start action")
+            confirm[0].click()
+            # the SPA posts 'start run'; the run drives in the console's background,
+            # keyed by the id M-ORCH minted — discover it, never assume one
+            deadline = time.monotonic() + 60
+            threads: dict = dict(getattr(server.app, "_run_threads", {}))
+            while not threads and time.monotonic() < deadline:
+                page.wait_for_timeout(200)
+                threads = dict(getattr(server.app, "_run_threads", {}))
+            assert threads, (
+                "TC-E2E-06: confirming the start never reached the console's "
+                "background — the control started no run")
+            assert len(threads) == 1, (
+                f"TC-E2E-06: the console's background holds {len(threads)} runs; "
+                "the day's journey starts exactly one")
+            run_id = next(iter(threads))
+            handle = store.cohort(jw.COHORT_ID)
+            status = _await_terminal(handle, run_id)
+            assert status == "complete", (
+                f"TC-E2E-06: the console twin's run did not complete: {status}")
+            for thread in threads.values():
+                thread.join(timeout=60)
+            # -- monitor ---------------------------------------------------------
+            _go(page, origin, "monitor")
+            assert _TERMINAL_WORD.search(spa.main_text(page)), (
+                "TC-E2E-06: the monitor screen does not show the run's terminal phase")
+            # -- review ----------------------------------------------------------
+            _go(page, origin, "review")
+            assert spa.main_text(page), "TC-E2E-06: the review screen renders nothing"
+            # the queue's band decisions, through the same M-REVIEW library the review
+            # screen's controls call (both twins — module docstring)
+            _work_review_queue(console_store, run_id)
+            # finalize through the console's own control door, over the same origin
+            # the SPA posts to — the same GradingService call the CLI twin makes below
+            from tests.support.console_api_vocabulary import (
+                get_bytes, post_json, refused,
+            )
 
-                status, outcome = post_json(
-                    port, "/api/v1/actions/finalize-batch",
-                    {"run_id": run_id, "actor": "teacher"})
-                assert status == 200 and not refused(status, outcome), (
-                    f"TC-E2E-06: the console's finalize-batch control refused: "
-                    f"{status} {outcome!r}")
-                # -- results ----------------------------------------------------------
-                _go(page, origin, "results")
-                assert spa.main_text(page), "TC-E2E-06: the results screen renders nothing"
-                # the export bytes come back through the console's own read
-                # (FR-CONSOLE-44): the marks CSV and one student's PDF, the artifacts the
-                # walkthrough's step 11 reads back
-                status, _headers, csv_bytes = get_bytes(
-                    port, "/api/v1/results/export",
-                    {"run_id": run_id, "format": "csv", "revision": "1"})
-                assert status == 200 and csv_bytes, (
-                    f"TC-E2E-06: the results-export read returned {status}, "
-                    f"{len(csv_bytes) if csv_bytes else 0} bytes of CSV")
-                export_seen["csv"] = len(csv_bytes)
-                first = jw.STUDENTS[0]
-                status, _headers, pdf_bytes = get_bytes(
-                    port, "/api/v1/results/export",
-                    {"run_id": run_id, "format": "pdf", "revision": "1",
-                     "student_ref": first.student_ref})
-                assert status == 200 and pdf_bytes[:5] == b"%PDF-", (
-                    f"TC-E2E-06: the per-student PDF export read returned {status}, "
-                    f"{pdf_bytes[:16]!r}")
-                export_seen["pdf"] = first.student_ref
-                # -- help -------------------------------------------------------------
-                _go(page, origin, "help")
-                assert spa.main_text(page), "TC-E2E-06: the help screen renders nothing"
-                status_code, answer = _ask_help(port)
-                assert status_code == 200 and answer, (
-                    f"TC-E2E-06: asking for help over the console API failed: "
-                    f"{status_code} {answer!r}")
-                assert not log.foreign_requests(), (
-                    f"TC-E2E-06: the journey left the machine's boundary: "
-                    f"{log.foreign_requests()}")
-                assert not spa.rejections(page), (
-                    f"TC-E2E-06: the journey left unhandled rejections: {spa.rejections(page)}")
-        finally:
-            server.terminate()
+            status, outcome = post_json(
+                port, "/api/v1/actions/finalize-batch",
+                {"run_id": run_id, "actor": "teacher"})
+            assert status == 200 and not refused(status, outcome), (
+                f"TC-E2E-06: the console's finalize-batch control refused: "
+                f"{status} {outcome!r}")
+            # -- results ----------------------------------------------------------
+            _go(page, origin, "results")
+            assert spa.main_text(page), "TC-E2E-06: the results screen renders nothing"
+            # the export bytes come back through the console's own read
+            # (FR-CONSOLE-44): the marks CSV and one student's PDF, the artifacts the
+            # walkthrough's step 11 reads back
+            status, _headers, csv_bytes = get_bytes(
+                port, "/api/v1/results/export",
+                {"run_id": run_id, "format": "csv", "revision": "1"})
+            assert status == 200 and csv_bytes, (
+                f"TC-E2E-06: the results-export read returned {status}, "
+                f"{len(csv_bytes) if csv_bytes else 0} bytes of CSV")
+            export_seen["csv"] = len(csv_bytes)
+            first = jw.STUDENTS[0]
+            status, _headers, pdf_bytes = get_bytes(
+                port, "/api/v1/results/export",
+                {"run_id": run_id, "format": "pdf", "revision": "1",
+                 "student_ref": first.student_ref})
+            assert status == 200 and pdf_bytes[:5] == b"%PDF-", (
+                f"TC-E2E-06: the per-student PDF export read returned {status}, "
+                f"{pdf_bytes[:16]!r}")
+            export_seen["pdf"] = first.student_ref
+            # -- help -------------------------------------------------------------
+            _go(page, origin, "help")
+            assert spa.main_text(page), "TC-E2E-06: the help screen renders nothing"
+            status_code, answer = _ask_help(port)
+            assert status_code == 200 and answer, (
+                f"TC-E2E-06: asking for help over the console API failed: "
+                f"{status_code} {answer!r}")
+            assert not log.foreign_requests(), (
+                f"TC-E2E-06: the journey left the machine's boundary: "
+                f"{log.foreign_requests()}")
+            assert not spa.rejections(page), (
+                f"TC-E2E-06: the journey left unhandled rejections: {spa.rejections(page)}")
+    finally:
+        server.terminate()
 
 
 _PACKAGE_ID = "RUBRIC-METHODS"
