@@ -1280,6 +1280,19 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `aeh.pipeline:recover` landed, so its three arms lost the marker and rejoined
     # the gate. Arm (c), the review-window regrade, was never in the entry; it has now
     # landed green with #378's decided rule (recovery does not touch the window).
+    # --- TS-151 (#640), the delta's Requires pairwise cases (the SPA side) -------------------
+    #
+    # TC-REQ-128's SPA session needs the lifecycle screens' recovery wording (#635, FR-UI-07)
+    # and the answers-only affordance (#638, FR-UI-06). Keyed `command` on the same two bundle
+    # probes the TS-152 journey's gate uses, so it resolves only when BOTH stories have shipped
+    # their wording; the contract file's cases (TC-REQ-130..133) run green unmarked already.
+    "#640 TS-151 TC-REQ-128 the SPA publish-and-run-start pairing (waits on #635/#638)": (
+        "command",
+        "python -c \"import sys; sys.path.insert(0, 'src'); from aeh.console import SPA_BUNDLE_DIR; t = (SPA_BUNDLE_DIR / 'index.html').read_text(encoding='utf-8') if (SPA_BUNDLE_DIR / 'index.html').is_file() else ''; ok = ('check that the console service is running' in t) and ('does not operate the system' in t); raise SystemExit(0 if ok else 1)\"",
+        (
+            "tests/browser/spa/test_ts151_requires_spa_pairs.py::test_tc_req_128_the_spa_session_performs_publish_and_run_start_like_the_cli",
+        ),
+    ),
     # --- TS-82 (#155), the blast-radius rule ------------------------------------------------
     #
     # `harness.blast_radius` is the command test plan 4.7 and 6.12 name, and no story in the
@@ -1440,6 +1453,37 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # rows its teacher-operations arm required), and the two census cases run green unmarked.
     # The census's failure path is live in the fast tier: a future `aeh` subcommand without a
     # console path or a debugging-only reason fails `TEST_CMD` until someone decides.
+    # --- TS-152 (#641), TC-E2E-06 + UAT-13 ------------------------------------------------
+    #
+    # The journey needs seven blockers, none of which is alone sufficient: the committed
+    # bundle (#634), the bundle's lifecycle-screen wording (#635), the Q&A wording (#638),
+    # the help module (#636), the live-acceptance entry point (#618), the rubric-method
+    # read-backs (#624) and the console reads (#631). A single key on any one of them
+    # would fire while the journey is still blocked on the rest, so this is one `command`
+    # probe that resolves only when EVERY limb does — the same limbs the test's own
+    # `_gates()` re-checks at unmarking time, each naming its issue there.
+    # #641 does NOT depend on all seven: they are its disclosed prerequisites (PR body).
+    "#641 TS-152 TC-E2E-06 the teacher's-day journey + UAT-13 walkthrough": (
+        "command",
+        "python -c \"import sys, pathlib; sys.path.insert(0, 'src');"
+        "import aeh.console as c; from aeh.console import SPA_BUNDLE_DIR;"
+        "ok = (SPA_BUNDLE_DIR / 'index.html').is_file();"
+        "text = (SPA_BUNDLE_DIR / 'index.html').read_text(encoding='utf-8') if ok else '';"
+        "ok = ok and 'check that the console service is running' in text"
+        " and 'does not operate the system' in text;"
+        "import aeh.conform; ok = ok and hasattr(aeh.conform, 'run_live_acceptance');"
+        "import aeh.help; ok = ok and hasattr(aeh.help, 'HelpAssistant');"
+        "import aeh.setup;"
+        "ok = ok and all(hasattr(aeh.setup.SetupService, m) for m in"
+        " ('derive_general_bands', 'derivation_card', 'confirm_general_derivation',"
+        "  'build_evidence_sum', 'set_aspect_descriptor', 'confirm_evidence_sum'));"
+        "reads = {getattr(r, 'read', None) for r in c.API_ROUTES};"
+        "ok = ok and {'run start preview', 'results export'} <= reads;"
+        "raise SystemExit(0 if ok else 1)\"",
+        (
+            "tests/browser/spa/test_tc_e2e_06_teachers_day.py::test_tc_e2e_06_teachers_day_journey",
+        ),
+    ),
 }
 
 
