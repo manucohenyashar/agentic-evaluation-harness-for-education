@@ -1,9 +1,15 @@
 # Development / test dependencies. Test-plan §4.7 declares the tooling; entries are added
 # here as the story that needs them lands, so the fast tier stays installable in seconds.
 #
+# The runtime libraries (pypdf, pypdfium2, Pillow, typesafe-sdk) are NOT listed here: since
+# ADR-36 (#614) they are `[project] dependencies` in pyproject.toml, so the dev environment gets
+# them by installing the project itself alongside this file, in one command:
+#
 #   python -m venv .venv
-#   .venv/Scripts/python -m pip install -r requirements-dev.txt     # Windows
-#   .venv/bin/python -m pip install -r requirements-dev.txt         # POSIX
+#   .venv/Scripts/python -m pip install -e . -r requirements-dev.txt     # Windows
+#   .venv/bin/python -m pip install -e . -r requirements-dev.txt         # POSIX
+#
+# (`-e .` cannot live in this file: SEC-14 refuses option lines here.)
 
 pytest>=8.0
 
@@ -18,29 +24,8 @@ pytest-randomly>=3.15
 # Profiles `ci` and `nightly` are registered in tests/conftest.py, per §4.7's command table.
 hypothesis>=6.100
 
-# TS-18 / issue #42 lands the live `PypdfSanitizer` (the gateway's
-# neutralize-and-bound stage, FR-INGEST-33/34), and the paired rung-2 security
-# cases (TC-INGEST-33/34 — "real PDF library") build their F-ADV-PDF fixtures
-# with the same library. The fast tier never imports it (the lazy import IS the
-# seam), but the dependency is declared here so a fresh clone runs every suite.
-pypdf>=6.0
-
-# Issue #226 / F10: the live `PdfiumRasterizer`'s dependency — `crop`, like
-# `rasterize`/`text_layer`, lazy-imports it (the lazy import IS the seam, so the
-# fast tier never touches it), and until now no dependency set declared it: a
-# fresh clone could not run the live path the acceptance run needs. Pillow is
-# declared with it because the rasterizer decodes PNG bytes through
-# `PdfBitmap.to_pil()`, which requires it; neither is imported outside M-INGEST
-# (TC-INGEST-01 sweeps for that).
-pypdfium2>=4.0
-Pillow>=10.0
-
 # TS-49 / issue #130: test plan §4.5's E6 — "Playwright or equivalent against the loopback
 # console" — for the three browser-level console facts (TC-CONSOLE-40/41, SEC-12). The driver
 # launches an installed Edge or Chrome by channel (`tests/support/console_browser.py`), so no
 # browser download is needed; without one the `browser` cases skip, naming what is missing.
 playwright>=1.40
-# Design 1.8 (FR-PROV-42): the TypeSafe SDK behind JevOpenRouterProvider. The core install
-# never needs it (ADR-11: pyproject `dependencies = []`, extra `jev-cloud`); the dev tier does,
-# so the SDK-path tests (TS-124/125) import it and fail on assertions, not on ImportError.
-typesafe-sdk==0.7.2

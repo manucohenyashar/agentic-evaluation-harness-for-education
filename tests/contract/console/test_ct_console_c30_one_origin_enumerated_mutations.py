@@ -136,7 +136,6 @@ def test_tc_console_c30_control_the_sweep_flags_every_planted_origin_and_passes_
 # --- the clause (written ahead of #629) ------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c30_the_api_mutations_are_exactly_the_enumerated_control_writes():
     """Breaks if a mutation appears in the API that no enumerated control row backs."""
     routes = list(require(CONSOLE_MODULE, ROUTE_TABLE, issue=API_ISSUE))
@@ -154,7 +153,6 @@ def test_tc_console_c30_the_api_mutations_are_exactly_the_enumerated_control_wri
     )
 
 
-@pytest.mark.writtenahead
 @pytest.mark.integration
 def test_tc_console_c30_an_external_origin_in_any_served_byte_breaks_the_clause(
     tmp_data_dir, tmp_path, network_guard, monkeypatch

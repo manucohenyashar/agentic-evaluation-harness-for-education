@@ -1,4 +1,4 @@
-"""Reading scanned papers with `aeh ingest` (TC-PIPE-30..31, live-test blocker B4).
+"""Reading scanned papers with `aeh ingest` (TC-PIPE-30..32, live-test blocker B4).
 
 Before this, nothing shipped read a scan into a checked paper. These cases drive the real command
 over the sample physics test: the package from its spec, a class from `aeh cohort create`, and

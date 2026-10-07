@@ -538,10 +538,12 @@ python -m venv .venv
 ```
 
 ```bash
-.venv/Scripts/python -m pip install -r requirements-dev.txt
+.venv/Scripts/python -m pip install -e . -r requirements-dev.txt
 ```
 
 On macOS and Linux that second path is `.venv/bin/python`; `scripts/test.sh` finds either.
+`-e .` installs the project itself and with it the four runtime libraries `pyproject.toml`
+declares (ADR-36); `requirements-dev.txt` carries only the test tooling.
 
 Then the fast tier, which is also what `TEST_CMD` and the Stop-hook gate run:
 

@@ -22,6 +22,7 @@ import importlib
 import importlib.util
 from typing import Any
 
+from tests.support.help_vocabulary import BLOCKER_TARGET as _HELP_BLOCKER_TARGET
 from tests.support.extract_vocabulary import (
     ASSEMBLE as _EXTRACT_ASSEMBLE,
     PROMPT_FIELDS as _EXTRACT_PROMPT_FIELDS,
@@ -1343,6 +1344,30 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "python -m pytest -q -p no:cacheprovider tests/perf/test_perf_11_composition_overhead.py::test_perf_11_composition_adds_at_most_a_quarter_millisecond_per_unit",
         ("tests/perf/test_perf_11_composition_overhead.py::test_perf_11_composition_adds_at_most_a_quarter_millisecond_per_unit",),
     ),
+    # --- TS-150 (#637), M-HELP: manuals page, grounded answers-only Q&A, the log ----------
+    #
+    # Keyed `symbols` on the assistant AND #629's route table (TC-HELP-01/03 and C01 read the
+    # routes). #636 depends on #629, so in practice this resolves with #636. The invented names
+    # live in `tests/support/help_vocabulary.py`; a rename there moves this key with it.
+    "#636 TS-150 M-HELP manuals and grounded Q&A": (
+        "symbols",
+        _HELP_BLOCKER_TARGET,
+        (
+            "tests/integration/help/test_ts150_help_manuals_and_qa.py::test_tc_help_01_every_packaged_manual_renders_with_toc_search_and_stable_anchors",
+            "tests/integration/help/test_ts150_help_manuals_and_qa.py::test_tc_help_02_a_grounded_answer_cites_the_recorded_grounding_sections",
+            "tests/integration/help/test_ts150_help_manuals_and_qa.py::test_tc_help_02_b_a_no_grounding_question_gets_the_explicit_not_found_answer",
+            "tests/integration/help/test_ts150_help_manuals_and_qa.py::test_tc_help_03_one_read_only_endpoint_and_an_action_question_changes_nothing",
+            "tests/integration/help/test_ts150_help_manuals_and_qa.py::test_tc_help_04_a_student_question_reaches_the_model_with_no_student_data",
+            "tests/integration/help/test_ts150_help_latency.py::test_tc_help_05_p95_answer_latency_and_retrieval_within_budget",
+            "tests/contract/help/test_ct_help_clauses.py::test_tc_help_c01_one_read_only_endpoint",
+            "tests/contract/help/test_ct_help_clauses.py::test_tc_help_c02_citations_resolve_and_not_found_is_explicit",
+            "tests/contract/help/test_ct_help_clauses.py::test_tc_help_c03_no_student_data_in_any_request",
+            "tests/contract/help/test_ct_help_clauses.py::test_tc_help_c04_writes_only_its_own_log",
+            "tests/contract/help/test_ct_help_clauses.py::test_tc_help_c05_the_log_records_each_exchange_exactly",
+            "tests/security/help/test_sec_25_help_injection.py::test_sec_25_an_injected_question_writes_nothing_and_gets_a_prose_answer",
+            "tests/security/help/test_sec_25_help_injection.py::test_sec_25_an_injection_nested_in_a_manual_passage_writes_nothing",
+        ),
+    ),
     # --- TS-143 (#619), name-primary identity --------------------------------------------
     #
     # Keyed `command` on the design-named migration (`ingest_roster_names`, Cohort 33, owner
@@ -1516,33 +1541,11 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     ),
     # --- TS-140 (#613), packaging flips + the operator-doc sweep ----------------------------
     #
-    # Keyed `command` on the fast static arms themselves: #614 changes a declaration and some
-    # docs, not a symbol, so the only honest signal is those arms going green. TC-PIPE-12's
-    # clean-venv case rides on the same command rather than its own: it is `slow` (a real venv
-    # and a real `pip install` from the index), and the gate runs every blocker on every
-    # TEST_CMD. Re-run it by hand when this fires; it was seen green against a local simulation
-    # of #614's declaration (#613's PR).
-    "#614 TS-140 packaging: four standard dependencies, extras retired, operator docs reduced": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider -p no:randomly "
-        "tests/unit/pipe/test_tc_store_26_packaging_declaration.py::test_tc_store_26_the_core_declares_exactly_the_four_standard_dependencies "
-        "tests/unit/pipe/test_tc_store_26_packaging_declaration.py::test_tc_store_26_no_optional_dependency_table_survives "
-        "tests/contract/prov/test_ts125_sdk_confinement.py::test_tc_prov_53_the_sdk_is_exact_pinned_in_the_core_dependencies "
-        "tests/contract/prov/test_ts125_sdk_confinement.py::test_tc_prov_53_no_shipped_module_keeps_a_packaging_check_naming_an_extra "
-        "tests/artifact/test_tc_store_29_operator_install_docs.py::test_tc_store_29_no_operator_document_names_an_extra_or_a_manual_pillow_install "
-        "tests/artifact/test_tc_store_29_operator_install_docs.py::test_tc_store_29_the_deployment_tutorial_carries_the_air_gap_wheelhouse_paragraph",
-        (
-            "tests/unit/pipe/test_tc_store_26_packaging_declaration.py::test_tc_store_26_the_core_declares_exactly_the_four_standard_dependencies",
-            "tests/unit/pipe/test_tc_store_26_packaging_declaration.py::test_tc_store_26_no_optional_dependency_table_survives",
-            "tests/contract/prov/test_ts125_sdk_confinement.py::test_tc_prov_53_the_sdk_is_exact_pinned_in_the_core_dependencies",
-            "tests/contract/prov/test_ts125_sdk_confinement.py::test_tc_prov_53_no_shipped_module_keeps_a_packaging_check_naming_an_extra",
-            "tests/artifact/test_tc_store_29_operator_install_docs.py::test_tc_store_29_no_operator_document_names_an_extra_or_a_manual_pillow_install",
-            "tests/artifact/test_tc_store_29_operator_install_docs.py::test_tc_store_29_the_deployment_tutorial_carries_the_air_gap_wheelhouse_paragraph",
-            "tests/smoke/test_tc_pipe_12_clean_venv_install.py::test_tc_pipe_12_pip_install_dot_alone_yields_the_command_and_all_four_libraries",
-        ),
-    ),
-    # The SPA-bundle arms wait on M-UI's committed bundle, not on #614: the package-data glob
-    # must reach it and the clean venv must carry it. Same `command` shape, same slow rider.
+    # #614's entry (the four standard dependencies, extras retired, operator docs reduced) was
+    # dropped when #614 landed. The SPA-bundle arms wait on M-UI's committed bundle, not on #614:
+    # the package-data glob must reach it and the clean venv must carry it. Keyed `command` on the
+    # fast static arm; TC-PIPE-12's clean-venv case rides on it rather than its own command
+    # because it is `slow` (a real venv and a real `pip install`) — re-run it by hand when this fires.
     "#634 TS-140 the SPA bundle ships as package data (TC-STORE-26 new arm, TC-PIPE-12)": (
         "command",
         "python -m pytest -q -p no:cacheprovider -p no:randomly "
@@ -1554,23 +1557,8 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     ),
     # --- TS-147 (#628), M-CONSOLE's JSON API and same-origin SPA (FR-CONSOLE-45) ------------
     #
-    # The names are `tests/support/console_api_vocabulary.py`'s: the route table and the
-    # bundle path #629 adds. The `spa_dir=` seam on `serve_console` arrives in the same
-    # change; if it lags, `start_console` reports it as #629's, not as a TypeError.
-    "#629 TS-147 TC-CONSOLE-53/C30 the console API serves one origin with enumerated mutations": (
-        "symbols",
-        f"{CONSOLE_MODULE}:API_ROUTES,{CONSOLE_MODULE}:SPA_BUNDLE_DIR",
-        (
-            "tests/integration/console/test_tc_console_53_api_one_origin.py::test_tc_console_53_a_the_spa_and_its_assets_come_from_this_origin_with_their_types",
-            "tests/integration/console/test_tc_console_53_api_one_origin.py::test_tc_console_53_b_the_census_lists_every_mutating_route_beside_its_control_row",
-            "tests/integration/console/test_tc_console_53_api_one_origin.py::test_tc_console_53_b_every_mutating_route_reaches_exactly_its_control_row",
-            "tests/integration/console/test_tc_console_53_api_one_origin.py::test_tc_console_53_b_a_mutating_verb_on_an_unlisted_path_writes_nothing",
-            "tests/integration/console/test_tc_console_53_api_one_origin.py::test_tc_console_53_b_no_read_route_writes",
-            "tests/integration/console/test_tc_console_53_api_one_origin.py::test_tc_console_53_c_no_served_byte_names_an_external_origin",
-            "tests/contract/console/test_ct_console_c30_one_origin_enumerated_mutations.py::test_tc_console_c30_the_api_mutations_are_exactly_the_enumerated_control_writes",
-            "tests/contract/console/test_ct_console_c30_one_origin_enumerated_mutations.py::test_tc_console_c30_an_external_origin_in_any_served_byte_breaks_the_clause",
-        ),
-    ),
+    # The names are `tests/support/console_api_vocabulary.py`'s. #629 landed the route table,
+    # the bundle path and the `spa_dir=` seam, and its entry was dropped with its markers.
     # The shipped-bundle arm needs the built SPA at the package-data path, which #634 ships
     # (#629's own criterion: "the bundle itself arrives with #634"). Keyed on the file's
     # existence, so it fires when the bundle lands, whichever of #629/#634 is last.

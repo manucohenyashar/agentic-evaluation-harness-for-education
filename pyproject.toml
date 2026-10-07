@@ -1,11 +1,13 @@
-# FR-STORE-15: `pip install .` provides the pipeline without the dev requirements. setuptools
+# FR-STORE-15 (amended by ADR-36, #614): `pip install .` provides the pipeline and every library
+# the documented operator workflows use, without the dev requirements. setuptools
 # is the build backend because the project is a plain src-layout package with no extension
 # modules and no build step of its own — the console's stylesheet is package DATA, not an
 # artifact something compiles (TC-CONSOLE-34 asserts the repository carries no toolchain).
 #
-# Note for an air-gapped install: pip's default build isolation FETCHES setuptools, so a
-# machine with no network needs `pip install . --no-build-isolation` with setuptools already
-# present. The RUNTIME is stdlib-only either way; it is the build step that wants a backend.
+# Note for an air-gapped install: the runtime dependencies AND pip's build-isolated setuptools
+# both come from the index, so a machine with no network installs from a wheelhouse built on a
+# connected machine (`pip download . "setuptools>=69" -d wheelhouse`, then
+# `pip install --no-index --find-links wheelhouse .`) — the deployment tutorial's air-gap section.
 [build-system]
 requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
@@ -16,20 +18,18 @@ version = "0.0.0"
 description = "Agentic Evaluation Harness for Education"
 requires-python = ">=3.11"
 
-# ADR-11: Python 3.11+, stdlib sqlite3. Runtime dependencies land with the modules that
-# need them; nothing is required to run the fast tier by design (NFR-SYS-06, test plan §4.5 E1).
-dependencies = []
-
-# ADR-11, stated as packaging: the core is stdlib-only, so a core install can never pull a
-# transitive dependency into the machine that grades student work. The PDF readers the LIVE
-# ingest leg needs are an extra, and the fast tier does not install it — which is what keeps
-# "no network, no toolchain" a property of the install rather than of anyone's discipline.
-[project.optional-dependencies]
-live-ingest = ["pypdf>=6.0", "pypdfium2>=4.0"]
-# Design 1.8 (FR-PROV-42, ADR-28): the TypeSafe SDK behind the openrouter-jev decision provider,
-# exact-pinned (NFR-PROV-10). Only a cloud-hosted run with the Jev engine needs it; the core,
-# engine-off and edge-local installs never load it (CT-PROV-29).
-jev-cloud = ["typesafe-sdk==0.7.2"]
+# FR-STORE-20 / ADR-36 (#614): everything the documented operator workflows use is a standard
+# dependency, so `pip install .` alone leaves the system complete — there are no extras. ADR-36
+# supersedes only ADR-11's packaging clause: the IMPORT boundary does not move. All four are
+# lazy-imported inside the code paths that need them, so `import aeh.*` and the fast tier load
+# none of them (TC-INGEST-01, TC-PIPE-12, CT-PROV-29). Each entry is enumerated with its reason in
+# the supply-chain inventory (tests/artifact/test_supply_chain.py, SEC-14).
+dependencies = [
+    "pypdf>=6.0",           # M-INGEST, TS-18 (#42): the live PypdfSanitizer (FR-INGEST-33/34)
+    "pypdfium2>=4.0",       # M-INGEST, #226 (F10): the live PdfiumRasterizer (FR-INGEST-13)
+    "Pillow>=10.0",         # M-INGEST/M-STORE, #226: PdfBitmap.to_pil() decodes page pictures
+    "typesafe-sdk==0.7.2",  # M-PROV, TS-124 (#500): JevOpenRouterProvider's SDK (FR-PROV-42, NFR-PROV-10)
+]
 
 # The installed command. `aeh.pipeline:main` lands with the M-PIPE composition story; the
 # entry point is declared ahead of it deliberately (the install succeeds and the name exists;
