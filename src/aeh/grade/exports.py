@@ -42,6 +42,16 @@ _REFERENCE_EXPORT_POPULATION: tuple[tuple[str, str, float, str], ...] = (
 )
 
 
+#: The reference roster's names (#620): synthetic, so the golden export pins the names column
+#: resolving from the roster rather than an always-empty column.
+_REFERENCE_EXPORT_NAMES: dict[str, str] = {
+    "student-001": "Reference Student One",
+    "student-002": "Reference Student Two",
+    "student-003": "Reference Student Three",
+    "student-004": "Reference Student Four",
+}
+
+
 def _reference_export_cohort(run_id: str) -> tuple[Store, Any, Path]:
     """The reference cohort's `(store, cohort handle, store root)`, used when the school-facing
     export is called without a store; this is the golden baseline's reproducible world. Any other
@@ -66,6 +76,10 @@ def _reference_export_cohort(run_id: str) -> tuple[Store, Any, Path]:
             c=cohort_id, t=_REFERENCE_EXPORT_STAMP,
         )
         for submission_id, student_ref, total, grade in _REFERENCE_EXPORT_POPULATION:
+            tx.execute(
+                "INSERT INTO roster (cohort_id, student_ref, full_name) VALUES (:c, :r, :n)",
+                c=cohort_id, r=student_ref, n=_REFERENCE_EXPORT_NAMES[student_ref],
+            )
             tx.execute(
                 "INSERT INTO submission (submission_id, cohort_id, student_ref) "
                 "VALUES (:s, :c, :r)",
@@ -104,6 +118,7 @@ def _reference_export_cohort(run_id: str) -> tuple[Store, Any, Path]:
 #: part of this export the grading owner may accept a diff on.
 _MARKS_COLUMNS = (
     "run_id", "revision", "student_ref", "submission_id", "mark", "grade", "state",
+    "full_name",
 )
 
 
@@ -170,6 +185,9 @@ def export_grade_artifacts(
                     "" if row["total"] is None else f"{float(row['total']):.2f}",
                     row["grade"] or "",
                     row["state"],
+                    # Resolved from the Tier C roster at read time (#620); empty for a
+                    # student created before rosters carried names.
+                    row["full_name"] or "",
                 ]
             )
     pdf_paths = tuple(

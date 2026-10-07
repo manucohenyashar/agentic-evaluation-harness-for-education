@@ -18,6 +18,11 @@ from .hardware import (
 from .decision_engine import (
     _bounded_int,
     _decimal_knob,
+    CONFIDENCE_THRESHOLD_ENV_KEY,
+    CONFIDENCE_THRESHOLD_FILE_KEY,
+    CONFIDENCE_THRESHOLD_HIGH,
+    CONFIDENCE_THRESHOLD_LOW,
+    decision_engine_setting,
     DECISION_ENGINES,
     DECISION_PROVIDERS_BY_PROFILE,
     DecisionEngine,
@@ -39,6 +44,7 @@ from .run_config import CohortRef, RunConfig
 from .sources import parse_allow_remote_real_work
 from .panel import compute_panel_build_ref
 from .consent import _check_consent, REMOTE_PROFILES
+from .qa_model import resolve_qa_model
 
 
 def _resolve_cost(cfg: Mapping[str, Any], backend_profile: str) -> tuple[Decimal | None, str | None]:
@@ -305,6 +311,11 @@ def resolve_run_config(cfg: Mapping[str, Any], cohort: CohortRef) -> RunConfig:
                 f"{error} The run's decision engine ({decision_engine.model.provider}) would also "
                 f"send this cohort's work off the machine (FR-CONF-24).") from None
 
+    # 5c. The Q&A assistant's model (FR-CONF-30), frozen here like everything else. Deliberately
+    #     NOT passed to the consent gate: the assistant receives manual passages and the teacher's
+    #     question, never student work, so it is not remote dispatch of a cohort (FR-CONF-31).
+    qa_model = resolve_qa_model(cfg, backend_profile, panel)
+
     # 6. The consent gate (FR-CONF-08), last because it is the only check that reads `cohort`:
     #    a malformed config reports the malformation, and a well-formed one gets an unambiguous
     #    consent verdict rather than one buried behind a typo.
@@ -325,22 +336,36 @@ def resolve_run_config(cfg: Mapping[str, Any], cohort: CohortRef) -> RunConfig:
         retention_setting=retention_setting,
         panel_build_ref=compute_panel_build_ref(panel, decision_engine),
         decision_engine=decision_engine,
+        qa_model=qa_model,
     )
+
+
+def _resolve_confidence_threshold(cfg: Mapping[str, Any], provider: str) -> Decimal:
+    """The decision gate's threshold (FR-CONF-21/32): the environment knob, else the config file
+    key, else the provider's default. The two surfaces have different names, so `effective_config`'s
+    environment-wins merge cannot order them; this does. An out-of-domain value is refused naming
+    whichever key supplied it, never clamped."""
+    key, raw = CONFIDENCE_THRESHOLD_ENV_KEY, None
+    for candidate in (CONFIDENCE_THRESHOLD_ENV_KEY, CONFIDENCE_THRESHOLD_FILE_KEY):
+        value = cfg.get(candidate)
+        if value is not None and not (isinstance(value, str) and not value.strip()):
+            key, raw = candidate, value
+            break
+    default = Decimal(PROVIDER_DEFAULT_THRESHOLDS.get(provider, DEFAULT_CONFIDENCE_THRESHOLD))
+    return _decimal_knob(raw, key, default, Decimal(CONFIDENCE_THRESHOLD_LOW), Decimal(CONFIDENCE_THRESHOLD_HIGH),
+                         high_inclusive=False)
 
 
 def _resolve_decision_engine(cfg: Mapping[str, Any], backend_profile: str,
                              policy: HardwarePolicy | None, hardware_profile: str | None) -> DecisionEngine | None:
-    """Resolve the decision engine (FR-CONF-17..23). `HARNESS_DECISION_ENGINE` must be set to `jev`
-    or `off`; there is no default.
+    """Resolve the decision engine (FR-CONF-17..23). `HARNESS_DECISION_ENGINE` is `jev` or `off`;
+    unset, it takes the profile's default — `jev` on the cloud profiles, `off` on `edge-local`
+    (FR-CONF-29, CT-CONF-19 v2.2).
 
     The model comes from `cfg["decision_model"]` (a `ModelRef`, or a table in a config file) or
     from `HARNESS_JEV_BUILD` + `HARNESS_DECISION_PROVIDER` (default: the backend's provider) +
     `HARNESS_JEV_QUANTIZATION`. The four gate values are read once, here (CT-CONF-18)."""
-    raw = cfg.get("HARNESS_DECISION_ENGINE")
-    if raw is None:
-        raise ConfigurationError(
-            "HARNESS_DECISION_ENGINE is required: 'jev' or 'off'. It has no default, because a "
-            "default would choose the grading engine for you (FR-CONF-18, CT-CONF-11).")
+    raw = decision_engine_setting(cfg, backend_profile)
     if raw not in DECISION_ENGINES:
         raise ConfigurationError(
             f"HARNESS_DECISION_ENGINE must be one of {DECISION_ENGINES}, got "
@@ -377,12 +402,9 @@ def _resolve_decision_engine(cfg: Mapping[str, Any], backend_profile: str,
         raise ConfigurationError(
             f"hardware profile {hardware_profile!r} cannot hold decision provider {provider!r} "
             f"beside the judge (FR-CONF-23, FR-CONF-28). Admitted alternatives: {', '.join(alternatives)}.")
-    default_threshold = Decimal(PROVIDER_DEFAULT_THRESHOLDS.get(provider, DEFAULT_CONFIDENCE_THRESHOLD))
     return DecisionEngine(
         model=model,
-        confidence_threshold=_decimal_knob(cfg.get("HARNESS_JEV_CONFIDENCE_THRESHOLD"),
-                                           "HARNESS_JEV_CONFIDENCE_THRESHOLD", default_threshold,
-                                           Decimal("0.50"), Decimal("1.00"), high_inclusive=False),
+        confidence_threshold=_resolve_confidence_threshold(cfg, provider),
         cite_threshold=_decimal_knob(cfg.get("HARNESS_JEV_CITE_THRESHOLD"), "HARNESS_JEV_CITE_THRESHOLD",
                                      Decimal(DEFAULT_CITE_THRESHOLD), Decimal("0"), Decimal("1"),
                                      high_inclusive=False, low_inclusive=False),

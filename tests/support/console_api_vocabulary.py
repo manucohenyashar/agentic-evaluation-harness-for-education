@@ -411,3 +411,245 @@ def content_type_matches(path: str, content_type: str) -> bool:
     suffix = Path(path.split("?", 1)[0]).suffix.lower() or ".html"
     expected = EXPECTED_CONTENT_TYPES.get(suffix)
     return expected is not None and content_type.lower().split(";")[0].strip() in expected
+
+
+# ===========================================================================================
+# TS-148 (issue #633): console coverage — TC-CONSOLE-54..57 (FR-CONSOLE-41..44, NFR-CONSOLE-09)
+# ===========================================================================================
+#
+# Written ahead of #630 (roster editor), #631 (run start, results, export) and #632 (the parity
+# inventory). The design names none of the objects below, so they are invented here, once, in
+# the same file as #629's names — #630/#631/#632 may rename any of them with a one-line edit.
+#
+# What each story is asked to provide (and nothing more):
+#
+# * #632 — ``aeh.console.CLI_CONSOLE_PATHS``: ``{"<aeh subcommand path>": "<METHOD> <api path>"}``
+#   for every subcommand the console covers, the route being a row of ``API_ROUTES``; and
+#   ``aeh.console.DEBUGGING_ONLY_COMMANDS``: ``{"<aeh subcommand path>": "<reason>"}`` — the
+#   console's debugging-only help section, each entry saying what the command is *for*. A
+#   subcommand path is the parser's leaf, space-joined: ``"cohort create"``, ``"run"``.
+# * #630 — an ``API_ROUTES`` row whose ``control`` is ``ROSTER_CONTROL``: a ``POST`` taking
+#   ``{"cohort_id", "consent_class", "rows": [{"first_name", "last_name", "student_ref"?}]}``.
+#   Paste tolerance is the SPA's (it splits the paste into rows); the API takes rows. A refusal
+#   is a non-2xx answer, or a 2xx whose JSON says ``"refused": true``, carrying the message.
+# * #631 — a read row whose ``read`` is ``RUN_START_PREVIEW_READ`` (``GET``, query
+#   ``cohort_id``, ``package_version``, ``profile``) answering ``{"banner": str, "estimate":
+#   str | number | null}``; the existing ``start run`` route accepting ``profile`` in its body;
+#   read rows ``RESULTS_CLASS_READ`` / ``RESULTS_STUDENT_READ`` (query ``run_id``) answering
+#   ``{"rollup": ...}`` / ``{"students": [{GRADE_KEYS + COVERAGE_KEYS}]}``; a read row
+#   ``EXPORT_READ`` (query ``run_id``, ``revision``, ``format`` = ``csv`` | ``pdf``, plus
+#   ``student_ref`` for a PDF) answering the export file's bytes; and the CLI's ``aeh results
+#   show`` / ``aeh results export`` (`results_show_argv` / `results_export_argv`), the
+#   debugging inverse the console's bytes are compared against.
+
+#: The issues the TS-148 names wait on.
+ROSTER_ISSUE = "#630"
+RUN_START_ISSUE = "#631"
+PARITY_ISSUE = "#632"
+
+PARITY_PATHS = "CLI_CONSOLE_PATHS"
+DEBUGGING_ONLY = "DEBUGGING_ONLY_COMMANDS"
+
+#: The roster editor's route, found by its ``control`` label, never by path. NOT one of the
+#: fifteen `CONTROL_SURFACE_ACTIONS` and not `NON_CONTROL_MUTATIONS`' upload: `TC-CONSOLE-C30`
+#: flags it as an orphan until #630 decides how cohort creation meets `CT-CONSOLE-30` (a plan
+#: finding, reported on #633's PR — this file does not paper over it).
+ROSTER_CONTROL = "create cohort"
+
+#: The run-start screen's read and the profile the request names. The console process cannot
+#: itself run under `HARNESS_PROFILE=cloud-hosted` (CT-CONSOLE-05/20/27 refuse the bind and
+#: every action), so a `cloud-hosted` run is named per request.
+RUN_START_PREVIEW_READ = "run start preview"
+PROFILE_PARAM = "profile"
+START_RUN_CONTROL = "start run"
+
+RESULTS_CLASS_READ = "results class"
+RESULTS_STUDENT_READ = "results student"
+EXPORT_READ = "results export"
+
+#: Per-student record keys both surfaces carry: the grade and its coverage (the
+#: `GradingService.export` record mapping's column names, FR-GRADE coverage semantics).
+GRADE_KEYS = ("submission_id", "grade", "total", "state")
+COVERAGE_KEYS = ("criteria_total", "criteria_auto", "criteria_reviewed",
+                 "criteria_provisional", "criteria_missing")
+
+
+def results_show_argv(data_dir: Any, run_id: str) -> list[str]:
+    """`aeh results show`: prints ``{"students": [...], "rollup": ...}`` as JSON."""
+    return ["results", "show", "--data-dir", str(data_dir), "--run", run_id]
+
+
+def results_export_argv(data_dir: Any, run_id: str, revision: int, out: Any) -> list[str]:
+    """`aeh results export`: writes the school-facing export (`export_grade_artifacts`: the
+    marks CSV and one PDF per student) into ``out``."""
+    return ["results", "export", "--data-dir", str(data_dir), "--run", run_id,
+            "--revision", str(revision), "--out", str(out)]
+
+
+def cli_leaf_commands(parser: Any) -> list[str]:
+    """Every leaf subcommand of an argparse parser, space-joined (``"cohort create"``), walked
+    from the parser itself — never a hand-kept list."""
+    import argparse
+
+    leaves: list[str] = []
+
+    def walk(node: Any, prefix: tuple[str, ...]) -> None:
+        groups = [a for a in node._actions if isinstance(a, argparse._SubParsersAction)]
+        if not groups:
+            if prefix:
+                leaves.append(" ".join(prefix))
+            return
+        for group in groups:
+            for name, child in group.choices.items():
+                walk(child, prefix + (name,))
+
+    walk(parser, ())
+    return sorted(leaves)
+
+
+def parity_census(leaves: Iterable[str], console_paths: dict[str, str],
+                  debugging_only: dict[str, str], routes: Iterable[Any]) -> list[str]:
+    """`TC-CONSOLE-54`'s oracle: every problem with the inventory; empty when it is exact.
+
+    Every leaf appears exactly once — with a console path that is a real route, or in the
+    debugging-only section with a reason — and the inventory names nothing the parser lacks."""
+    leaves = list(leaves)
+    table = {f"{m} {p}" for m, p, _ in route_rows(routes)}
+    problems: list[str] = []
+    for leaf in leaves:
+        hits = (leaf in console_paths) + (leaf in debugging_only)
+        if hits == 0:
+            problems.append(f"`aeh {leaf}` is silently unrepresented: no console path and no "
+                            "debugging-only listing")
+        elif hits > 1:
+            problems.append(f"`aeh {leaf}` is listed twice: a console path AND debugging-only")
+    for name in sorted(set(console_paths) | set(debugging_only)):
+        if name not in leaves:
+            problems.append(f"the inventory lists `aeh {name}`, which the parser does not have")
+    for name, route in sorted(console_paths.items()):
+        method, _, path = str(route).partition(" ")
+        if f"{method.upper()} {path}" not in table:
+            problems.append(f"`aeh {name}`'s console path {route!r} is not a row of API_ROUTES")
+    for name, reason in sorted(debugging_only.items()):
+        words = re.findall(r"[A-Za-z]{2,}", str(reason or ""))
+        if len(words) < 4:
+            problems.append(f"`aeh {name}` is debugging-only with no reason saying what it is "
+                            f"for: {reason!r}")
+    return problems
+
+
+def route_for(routes: Iterable[Any], *, control: str | None = None,
+              read: str | None = None) -> Any | None:
+    """The one route carrying `control` (a mutation) or `read` (a read), or None."""
+    for route in routes:
+        if control is not None and getattr(route, "control", None) == control:
+            return route
+        if read is not None and getattr(route, "read", None) == read:
+            return route
+    return None
+
+
+#: Wall-clock columns: the two paths ran at different instants, which is not a difference.
+VOLATILE_COLUMN = re.compile(r"(_at|_time)$", re.I)
+#: A whole cell that is a minted surrogate id (`uuid4().hex`, optionally `<prefix>-`): the two
+#: paths mint different ones for the same row (`audit_record_id`, `run-<hex>`, `control-<hex>`).
+#: Whole cells only — a content hash or a `pbr:` build ref embedded in a value is compared.
+MINTED_ID = re.compile(r"^(?:[a-z]+-)?[0-9a-f]{32}$")
+
+
+def tier_rows(data_dir: Path, *, mask: dict[str, str] | None = None,
+              skip_tables: Iterable[str] = ("schema_version",)) -> dict[str, list[str]]:
+    """Every row of every table in every tier file under `data_dir`, read-only (opening never
+    creates a file), as sorted ``repr``s with wall-clock columns dropped and each `mask` key
+    replaced by its value in every text cell — the row-for-row differential's operand. Keyed by
+    file path below the data directory, so a row in a tier only one path touched shows."""
+    import sqlite3
+
+    skip = set(skip_tables)
+    out: dict[str, list[str]] = {}
+    for db in sorted(Path(data_dir).rglob("*.sqlite")):
+        connection = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
+        connection.row_factory = sqlite3.Row
+        try:
+            for (table,) in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'").fetchall():
+                if table in skip or table.startswith("sqlite_"):
+                    continue
+                rows = []
+                for row in connection.execute(f'SELECT * FROM "{table}"'):
+                    cells = []
+                    for key in row.keys():
+                        if VOLATILE_COLUMN.search(key):
+                            continue
+                        value = row[key]
+                        if isinstance(value, str) and MINTED_ID.fullmatch(value):
+                            value = "<minted>"
+                        if isinstance(value, str):
+                            for old, new in (mask or {}).items():
+                                value = value.replace(old, new)
+                        cells.append((key, value))
+                    rows.append(repr(cells))
+                if rows:
+                    out[f"{db.relative_to(data_dir).as_posix()}:{table}"] = sorted(rows)
+        finally:
+            connection.close()
+    return out
+
+
+def row_differences(console: dict[str, list[str]], cli: dict[str, list[str]]) -> list[str]:
+    problems = []
+    for key in sorted(set(console) | set(cli)):
+        a, b = console.get(key, []), cli.get(key, [])
+        if a != b:
+            only_a = [r for r in a if r not in b][:3]
+            only_b = [r for r in b if r not in a][:3]
+            problems.append(f"{key}: console-only {only_a} / cli-only {only_b}")
+    return problems
+
+
+def get_json(port: int, path: str, query: dict[str, Any] | None = None) -> tuple[int, Any]:
+    import json
+    from urllib.parse import urlencode
+
+    target = path + ("?" + urlencode(query) if query else "")
+    status, _headers, body = fetch(port, "GET", target)
+    try:
+        return status, json.loads(body.decode("utf-8")) if body else None
+    except ValueError:
+        return status, body.decode("utf-8", errors="replace")
+
+
+def get_bytes(port: int, path: str, query: dict[str, Any]) -> tuple[int, dict[str, str], bytes]:
+    from urllib.parse import urlencode
+
+    return fetch(port, "GET", path + "?" + urlencode(query))
+
+
+def post_json(port: int, path: str, payload: dict[str, Any]) -> tuple[int, Any]:
+    import json
+
+    body = json.dumps(payload).encode("utf-8")
+    status, _headers, raw = fetch(port, "POST", path, body=body,
+                                  headers={"Content-Type": "application/json",
+                                           "Content-Length": str(len(body))})
+    try:
+        return status, json.loads(raw.decode("utf-8")) if raw else None
+    except ValueError:
+        return status, raw.decode("utf-8", errors="replace")
+
+
+def refused(status: int, answer: Any) -> bool:
+    """A refusal: a 4xx answer, or a 2xx whose JSON says it was refused / not dispatched. A 5xx
+    is a crash, not a refusal, and does not count."""
+    if 400 <= status < 500:
+        return True
+    if not 200 <= status < 300:
+        return False
+    return isinstance(answer, dict) and (bool(answer.get("refused"))
+                                         or answer.get("dispatched") is False)
+
+
+def answer_text(answer: Any) -> str:
+    import json
+
+    return answer if isinstance(answer, str) else json.dumps(answer, ensure_ascii=False)
