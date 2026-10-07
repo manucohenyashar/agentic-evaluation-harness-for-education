@@ -83,6 +83,17 @@ def _build_parser() -> Any:
         "build", help="build and publish a package from a TOML spec; it can never be changed")
     build.add_argument("--data-dir", required=True)
     build.add_argument("--spec", required=True, help="the package spec (TOML)")
+    # FR-PKG-27: the spec is a system-emitted export, and this is the command that emits it —
+    # the inverse of `build`, kept as the debugging/export path (Q-O6). No teacher-facing
+    # surface presents TOML authoring.
+    export = package_sub.add_parser(
+        "export",
+        help="write a package version's spec TOML, which `aeh package build --spec` accepts "
+             "unchanged")
+    export.add_argument("--data-dir", required=True)
+    export.add_argument("--package-version", required=True,
+                        help="the package version id, as build and the console print it")
+    export.add_argument("--spec", required=True, help="the file the spec is written to")
 
     # Live-test blocker B4: read scanned papers through the intake checks.
     ingest_parser = sub.add_parser(
@@ -200,6 +211,22 @@ def _package_command(args: Any) -> int:
     return EXIT_OK
 
 
+def _package_export_command(args: Any) -> int:
+    """`aeh package export`. Writes the spec TOML for one published package version and prints
+    what was written as JSON; the store is only read."""
+    from pathlib import Path
+
+    from .spec_export import export_spec
+
+    store = _open_store(args.data_dir)
+    try:
+        exported = export_spec(store, args.package_version, Path(args.spec))
+    finally:
+        store.close()
+    print(json.dumps(_as_json(exported), indent=2, sort_keys=True))
+    return EXIT_OK
+
+
 def _consent_classes() -> tuple[str, ...]:
     from aeh.orch.cohorts import CONSENT_CLASSES
 
@@ -255,6 +282,8 @@ def main(argv: "Sequence[str] | None" = None) -> int:
         if args.command == "cohort":
             return _cohort_command(args)
         if args.command == "package":
+            if args.package_command == "export":
+                return _package_export_command(args)
             return _package_command(args)
         if args.command == "ingest":
             return _ingest_command(args)

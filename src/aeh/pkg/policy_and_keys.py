@@ -129,6 +129,14 @@ class PolicyAndKeysMixin:
                            grade=grade, scaled_floor=float(floor))
         self._invalidate()
 
+    def boundaries(self, v: PackageVersionId) -> tuple[tuple[str, float], ...]:
+        """The version's boundary table as `(grade, scaled_floor)` pairs, floors ascending
+        (FR-PKG-16). Empty when the version declares no boundaries. The spec export
+        (`FR-PKG-27`) reads this back to emit the `[grades]` table."""
+        return tuple(
+            (row["grade"], float(row["scaled_floor"]))
+            for row in self._handle.query(PKG_STATEMENTS["select_boundaries"], v=v))
+
     def boundary_for(self, v: PackageVersionId, scaled_score: float) -> str | None:
         """The grade for a scaled score: the grade with the highest floor at or below the score
         (FR-PKG-16, CT-PKG-10). A score below every floor, or a version with no boundary table,

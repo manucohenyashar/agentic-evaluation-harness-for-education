@@ -139,3 +139,10 @@ class VersionsMixin:
         rows = self._handle.query(PKG_STATEMENTS["select_latest_package_version"],
                                   p=self._package_id)
         return rows[0]["package_version_id"] if rows else None
+
+    def published_by(self, v: PackageVersionId) -> str | None:
+        """The approver recorded on the version's publish, or None — both when the version does
+        not exist and when it is an unpublished draft, which is exactly what the spec export
+        (`FR-PKG-27`) must refuse before writing anything."""
+        rows = self._handle.query(PKG_STATEMENTS["select_published_by"], v=v)
+        return rows[0]["published_by"] if rows else None
