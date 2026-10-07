@@ -7,7 +7,7 @@ import sqlite3
 from typing import Any
 
 from aeh.orch import ORCH_MAX_ATTEMPTS, ORCH_STATEMENTS, _cohort_keys_on_filesystem, _env_int
-from aeh.pkg import PackageCatalog
+from aeh.pkg import PackageCatalog, is_composite
 from aeh.prov import PromptPayload, ProviderError, SamplingParams
 
 from .schema import SYNTH_STATEMENTS
@@ -101,6 +101,10 @@ class SynthesisWorker:
         criterion with no question gets no L1 narrative."""
         grouped: dict[str, list[str]] = {}
         for row in catalog.criteria(version):
+            # A composite has no score unit of its own (FR-JUDGE-38): its aspects stand for it,
+            # and waiting on it would leave the question never complete.
+            if is_composite(row):
+                continue
             question_id = _question_of_criterion(
                 row["question_id"] or "", row["criterion_id"]
             )
@@ -452,7 +456,10 @@ class SynthesisWorker:
         )
         narratives = len(rows)
         total = narratives + failures
-        criteria_rows = catalog.criteria(run_row["package_version_id"])
+        criteria_rows = [
+            row for row in catalog.criteria(run_row["package_version_id"])
+            if not is_composite(row)  # anchored through its aspects, as `_questions` groups
+        ]
         criterion_ids = {row["criterion_id"] for row in criteria_rows}
         # The per-question anchoring map (`FR-SYNTH-04`, #98's stricter form): the
         # criteria each question's L1 narrative must anchor to — the same mapping the
