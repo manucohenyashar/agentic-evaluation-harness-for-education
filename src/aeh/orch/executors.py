@@ -191,6 +191,26 @@ class CellKey(NamedTuple):
 
 
 @dataclass(frozen=True)
+class ReadyCell:
+    """One ready cell with the unit figures its hook needs, as `ready_cells_with_units`
+    returns them (#597).
+
+    `terminal` is the stage's terminal unit count (`done` or `quarantined`) — the number
+    `mark_cell_phase`'s `units_consumed` was computed over and what `aggregate` compares
+    against the recorded phase to decide a widened panel needs re-aggregating. `quarantined`
+    is the stage's quarantined count among them (FR-PIPE-18's even-panel check, FR-PIPE-05's
+    fallback). `total` is every unit of the stage for the cell, terminal or not — always
+    equal to `terminal` in a ready cell (readiness requires it), carried so the read's shape
+    is the ledger's rather than a ready-only projection.
+    """
+
+    key: CellKey
+    terminal: int
+    quarantined: int
+    total: int
+
+
+@dataclass(frozen=True)
 class RunHandle:
     """Everything the pipeline layer needs to drive one run without reading the ledger itself.
 

@@ -532,7 +532,7 @@ def current_schema_version(tier: Tier) -> int:
 #: tail. #363's `integ_read_indexes` moved Cohort 24→25 — `aeh.integ` holds it now.)
 COMPLETE_SCHEMA_VERSIONS: Mapping[Tier, int] = {
     Tier.PACKAGE: 15,
-    Tier.COHORT: 33,
+    Tier.COHORT: 34,
     # #636's `help_qa_log` — the Q&A log table — is Durable 13, declared here per the
     # migration-11 ruling above: a module the system runs without cannot own a chain link.
     Tier.DURABLE: 13,

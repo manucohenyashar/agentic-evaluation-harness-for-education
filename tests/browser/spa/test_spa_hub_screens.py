@@ -6,16 +6,17 @@ Operator test plan §5.6 (`TC-UI-02` … `TC-UI-05`, `TC-UI-07`, `PERF-19`), §6
 the real console server (`serve_console`) over a seeded real store, a Chromium-family browser
 through Playwright, loopback only.
 
-**Written ahead of implementation: yes.** The SPA does not exist; every case here is red until its
-story lands, and the `writtenahead` marker on each is keyed in `WRITTEN_AHEAD_BLOCKERS`:
+**Written ahead of implementation, per story.** The `writtenahead` marker on each case is keyed
+in `WRITTEN_AHEAD_BLOCKERS`:
 
-* **#634** (the foundation: bundle, tokens, hub) — `TC-UI-02`, `TC-UI-C01`, the re-pointed
-  `TC-CONSOLE-40`/`41`;
-* **#635** (the lifecycle screens, confirmations, degradation) — `TC-UI-03` (with ADV-15's SPA
-  arm), `TC-UI-04` (it needs three screens), `TC-UI-05`, `TC-UI-07`, `TC-UI-C02` … `C05`, `PERF-19`.
+* **#634** (the foundation: bundle, tokens, hub) landed — its cases (`TC-UI-02`, `TC-UI-C01`,
+  the re-pointed `TC-CONSOLE-40`/`41`) lost the marker and were re-checked green unmarked;
+* **#635** (the lifecycle screens, confirmations, degradation) is still open — its cases (`TC-UI-03`
+  (with ADV-15's SPA arm), `TC-UI-04` (it needs three screens), `TC-UI-05`, `TC-UI-07`,
+  `TC-UI-C02` … `C05`, `PERF-19`) stay marked and outside `TEST_CMD` until its story lands.
 
-Every case calls `_require_bundle()` first, so a red case fails in milliseconds with
-`NotImplementedYet` naming #634 — never a navigation timeout that reads like a broken server.
+Every #635 case still calls `_require_bundle()` first, so a red case fails in milliseconds with
+`NotImplementedYet` naming #635 — never a navigation timeout that reads like a broken server.
 
 **The DOM contract** these cases read is declared, with its reasons, in `tests/support/spa.py`:
 hub cards are links named for FR-UI-02's destinations; a loaded screen's `main` carries one
@@ -153,7 +154,6 @@ def _screen_problems(page: Any, log: spa.SpaLog, destination: str) -> tuple[str,
 # --- TC-UI-02 — the hub ---------------------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_ui_02_the_hub_shows_every_destination_with_live_state_and_no_dead_link(tmp_data_dir):
     """`TC-UI-02` / FR-UI-02 (P0) — the hub renders one card per destination (nine), the cards
     show live state read from the store (the package version, the last run's status, the engine
@@ -646,7 +646,6 @@ def urlsplit_path(url: str) -> str:
 # --- TC-UI-C01 — one origin -------------------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_ui_c01_a_session_over_the_hub_and_every_destination_requests_one_origin(tmp_data_dir):
     """`TC-UI-C01` / CT-UI-01 (P0, runtime half; the static half is the bundle sweep) — every
     request the browser context issues while the hub and every destination load is to the
@@ -902,7 +901,6 @@ def test_perf_19_hub_first_contentful_paint_under_2s_and_transitions_under_300ms
 # --- TC-CONSOLE-40 / 41, re-pointed at the SPA --------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_console_40_spa_a_session_over_the_react_app_leaves_no_storage_or_worker(tmp_data_dir):
     """`TC-CONSOLE-40` re-pointed (operator plan §5.0; FR-CONSOLE-17, FR-UI-08) — the same oracle
     as TS-49's, over the React app: after the hub and every destination load, localStorage,
@@ -925,7 +923,6 @@ def test_tc_console_40_spa_a_session_over_the_react_app_leaves_no_storage_or_wor
         _fail_with(problems)
 
 
-@pytest.mark.writtenahead
 def test_tc_console_41_spa_the_react_app_requests_nothing_from_another_origin(tmp_data_dir):
     """`TC-CONSOLE-41` / SEC-12 re-pointed (FR-CONSOLE-18, CT-UI-01) — the network log of a hub
     session plus every destination holds only the console's origin, fonts and assets included.

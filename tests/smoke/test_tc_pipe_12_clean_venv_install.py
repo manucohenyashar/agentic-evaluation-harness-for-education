@@ -17,13 +17,15 @@ library used to expose would now pass silently everywhere else.
 
 **Rung 4, `slow`, nightly** — as the gap-fix plan placed it (§5, TS-84): a real venv and a real
 `pip install` from the package index, so this case needs network and minutes, which is why it is
-outside `TEST_CMD` by its `slow` marker and not only by `writtenahead`. It installs a *copy* of the
-package sources (`pyproject.toml` and `src/`), not the checkout itself, so setuptools' build
-directories never land in the working tree.
+outside `TEST_CMD` by its `slow` marker. It installs a *copy* of the package sources
+(`pyproject.toml` and `src/`), not the checkout itself, so setuptools' build directories never
+land in the working tree.
 
-**Written ahead.** The install-and-import case is red until **#614** (today `import pypdf` and the
-other three fail in the clean venv — the reason this case exists). The SPA-bundle case is red until
-**#634** commits the bundle; #614 cannot make it green, so it is its own test and its own blocker.
+**Written ahead, then landed.** The install-and-import case was red until **#614** flipped the
+packaging (before it, `import pypdf` and the other three failed in the clean venv — the reason the
+case exists); the SPA-bundle case was red until **#634** committed the bundle, which #614 could
+not make green. Both stories have landed; the case carries no `writtenahead` marker and re-runs
+by hand whenever the packaging or the bundle changes.
 """
 
 from __future__ import annotations
@@ -146,7 +148,6 @@ def test_tc_pipe_12_pip_install_dot_alone_yields_the_command_and_all_four_librar
         "that need them (the import boundary did not move with the install boundary)")
 
 
-@pytest.mark.writtenahead
 def test_tc_pipe_12_the_installed_package_carries_the_spa_bundle(clean_venv) -> None:
     """Every file of the source `console_assets/` tree — the stylesheet and the SPA bundle
     (FR-UI-01) — exists at the same path in the installed package, and the bundle's entry document

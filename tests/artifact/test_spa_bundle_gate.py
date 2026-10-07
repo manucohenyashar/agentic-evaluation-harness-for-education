@@ -15,10 +15,10 @@ including `https://react.dev/errors/…`, passes.
 one path level deep: a nested `assets/` directory exists in `src/` and is absent from the wheel.
 `TC-UI-01 (a)` therefore also asserts every bundle file is matched by a declared package-data glob.
 
-**Written ahead of #634** for every case that reads the real bundle (`writtenahead`, keyed in
-`WRITTEN_AHEAD_BLOCKERS` on `spa.BUNDLE_INDEX`). The **controls** — the sweep, the diff and the
-glob matcher proven against planted bundles in both directions — need no bundle and run green in
-the gate today: a sweep that cannot fail is a gate that cannot close.
+The bundle cases were **written ahead of #634** and joined the gate when it landed: the marker
+is off and the entry is out of `WRITTEN_AHEAD_BLOCKERS`, the cases re-checked green unmarked.
+The **controls** — the sweep, the diff and the glob matcher proven against planted bundles in
+both directions — need no bundle: a sweep that cannot fail is a gate that cannot close.
 """
 
 from __future__ import annotations
@@ -49,7 +49,6 @@ def _plant(root: Path, files: dict[str, str | bytes]) -> Path:
 # --- the cases over the real bundle (red until #634) ---------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_ui_01_a_the_committed_bundle_is_present_non_empty_and_ships_as_package_data():
     """`TC-UI-01 (a)` / FR-UI-01 (P0) — the bundle is at the package-data path, its `index.html`
     is a non-empty HTML document that loads at least one script, it carries HTML, JS and CSS, and
@@ -71,7 +70,6 @@ def test_tc_ui_01_a_the_committed_bundle_is_present_non_empty_and_ships_as_packa
     assert not problems, "\n".join(problems)
 
 
-@pytest.mark.writtenahead
 def test_tc_ui_01_b_tc_ui_c01_the_bundle_names_no_external_origin():
     """`TC-UI-01 (b)` / `TC-UI-C01` static half / CT-UI-01 (P0) — a full-text sweep of every text
     file of the built bundle finds no `http(s)://` or `ws(s)://` origin other than loopback —
@@ -86,7 +84,6 @@ def test_tc_ui_01_b_tc_ui_c01_the_bundle_names_no_external_origin():
         + "\n  ".join(f"{name}: {url}" for name, url in found[:40]))
 
 
-@pytest.mark.writtenahead
 def test_tc_console_40_spa_arm_no_service_worker_registration_anywhere_in_the_bundle():
     """`TC-CONSOLE-40` re-pointed, the SPA arm operator plan §5.0 adds (P0, FR-UI-08) — no file of
     the bundle can register a service worker (`navigator.serviceWorker` / `.register`). The
@@ -96,7 +93,6 @@ def test_tc_console_40_spa_arm_no_service_worker_registration_anywhere_in_the_bu
     assert not found, f"service-worker code in the bundle (FR-UI-08 forbids one): {found}"
 
 
-@pytest.mark.writtenahead
 def test_tc_ui_c06_the_bundle_has_committed_source_a_pinned_toolchain_and_one_token_file():
     """`TC-UI-C06` (rung-0 half) / NFR-UI-02 / `TC-UI-04`'s declared set (P1) — the inputs the
     reproducible build needs are committed: the TypeScript source, the lockfile that pins the
