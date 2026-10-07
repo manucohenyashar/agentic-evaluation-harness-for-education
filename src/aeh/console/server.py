@@ -350,6 +350,7 @@ class ConsoleServer:
         resolved_port = port if port is not None else (config.get("CONSOLE_PORT") or 0)
         self._store = store
         self._run_id = run_id
+        self._help_assistant: Any = None
         self.app = build_console(store=store, bind_address=str(self.bind_address))
         # "start run" resolves the run configuration the server was started with.
         self.app.run_config = self._effective()
@@ -421,6 +422,22 @@ class ConsoleServer:
     @property
     def port(self) -> int:
         return int(self.socket.getsockname()[1])
+
+    def help_assistant(self) -> Any:
+        """The manuals Q&A assistant (M-HELP), built on the first ask and held for this
+        server's life.
+
+        Built here, not at start, so a console whose configuration names no QA model starts
+        and serves the manuals and refuses at the ask instead (`help_read.resolve_help_model`);
+        held thereafter because the manuals are package data — the index cannot go stale
+        within a process, and rebuilding it per ask would spend the retrieval budget
+        (`NFR-HELP-01`) on nothing.
+        """
+        if self._help_assistant is None:
+            from .help_read import build_help_assistant
+
+            self._help_assistant = build_help_assistant(self._store, self._effective())
+        return self._help_assistant
 
     @property
     def pid(self) -> int:

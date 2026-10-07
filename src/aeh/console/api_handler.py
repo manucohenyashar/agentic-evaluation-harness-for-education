@@ -10,9 +10,18 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
+
+from .help_read import (
+    MANUAL_ID_PARAM,
+    ask_payload,
+    manual_payload,
+    manuals_payload,
+)
 
 from .api import (
     API_ROUTES,
+    ASK_QUERY_PARAM,
     UPLOAD_CONTROL,
     allowed_methods,
     ApiRoute,
@@ -54,23 +63,28 @@ def outcome_json(action: str, outcome: Any) -> bytes:
 
 
 #: The reads the API answers, by the name a read route carries. Each takes the running
-#: console, the console's app and the request's query parameters. The first three are pure
-#: functions of the declared tables — no store is opened, so no read can create or touch a
-#: stored byte. The hub read is a pure function of the console's own held state (its config,
-#: its served run); the TS-148 reads (`run start preview`, the results views, the export)
-#: reach the running app's store and M-ORCH/M-GRADE's doors; the preview writes nothing
-#: (its cohort/package guards are read-only), and the export reads the bytes
-#: `export_grade_artifacts` writes into a temporary directory. Each answers JSON, or a
-#: `FileAnswer` for the export's raw bytes.
+#: console, the console's app, the route's path parameters and the request's query string.
+#: The first three are pure functions of the declared tables — no store is opened, so no
+#: read can create or touch a stored byte. The hub read is a pure function of the console's
+#: own held state (its config, its served run); the TS-148 reads (`run start preview`, the
+#: results views, the export) reach the running app's store and M-ORCH/M-GRADE's doors; the
+#: preview writes nothing (its cohort/package guards are read-only), and the export reads
+#: the bytes `export_grade_artifacts` writes into a temporary directory. The manuals reads
+#: are pure functions of the packaged manuals library. The ask read (`M-HELP`) is answered
+#: by the mixin, not this table: its only write is the assistant's own Q&A log, written
+#: after the model answered, so a refused or failed ask writes nothing (`CT-HELP-04`).
+#: Each answers JSON, or a `FileAnswer` for the export's raw bytes.
 _READS = {
-    "controls": lambda _console, _app, _query: controls_payload(),
-    "screens": lambda _console, _app, _query: {"screens": dict(SCREENS)},
-    "roster editor": lambda _console, _app, _query: roster_editor_payload(),
-    "hub": lambda console, _app, _query: hub_payload(console),
-    RUN_START_PREVIEW_READ: lambda _console, app, query: run_start_preview_read(app, query),
-    RESULTS_CLASS_READ: lambda _console, app, query: results_class_read(app, query),
-    RESULTS_STUDENT_READ: lambda _console, app, query: results_student_read(app, query),
-    RESULTS_EXPORT_READ: lambda _console, app, query: results_export_read(app, query),
+    "controls": lambda _console, _app, _params, _query: controls_payload(),
+    "screens": lambda _console, _app, _params, _query: {"screens": dict(SCREENS)},
+    "roster editor": lambda _console, _app, _params, _query: roster_editor_payload(),
+    "hub": lambda console, _app, _params, _query: hub_payload(console),
+    RUN_START_PREVIEW_READ: lambda _console, app, _params, query: run_start_preview_read(app, query),
+    RESULTS_CLASS_READ: lambda _console, app, _params, query: results_class_read(app, query),
+    RESULTS_STUDENT_READ: lambda _console, app, _params, query: results_student_read(app, query),
+    RESULTS_EXPORT_READ: lambda _console, app, _params, query: results_export_read(app, query),
+    "manuals": lambda _console, _app, _params, _query: manuals_payload(),
+    "manual": lambda _console, _app, params, _query: manual_payload(params.get(MANUAL_ID_PARAM, "")),
 }
 
 
@@ -115,7 +129,7 @@ class ApiRequestsMixin:
                 self._respond(404, b'{"error":"not found"}', JSON_TYPE, close=True)
             return
         if matched.control is None:
-            self._api_read(matched, query or {})
+            self._api_read(matched, params, query or {})
             return
         try:
             self._console.recheck_environment()
@@ -129,14 +143,20 @@ class ApiRequestsMixin:
             return
         self._api_control(matched, params)
 
-    def _api_read(self, route: ApiRoute, query: dict[str, str]) -> None:
+    def _api_read(self, route: ApiRoute, path_params: dict[str, str],
+                  query: dict[str, str]) -> None:
         """One read: the reader's answer as JSON, or a `FileAnswer`'s bytes with their own
         media type. A refusal is a 400 — a read asked for something that is not there is
         the caller's mistake, and the body carries the named gap; anything else is a 500
-        with the connection closed, so a failed read is answered, never a dropped socket."""
+        with the connection closed, so a failed read is answered, never a dropped socket.
+        The ask read (`M-HELP`) is dispatched here rather than in `_READS`: its only write
+        is the assistant's own Q&A log, written after the model answered."""
+        if route.read == "help ask":
+            self._help_ask(query)
+            return
         reader = _READS[str(route.read)]
         try:
-            answer = reader(self._console, self._console.app, query)
+            answer = reader(self._console, self._console.app, path_params, query)
         except (ValueError, KeyError) as refusal:
             body = json.dumps({"error": str(refusal)}).encode("utf-8")
             self._respond(400, body, JSON_TYPE)
@@ -145,10 +165,32 @@ class ApiRequestsMixin:
             body = json.dumps({"error": str(error)}).encode("utf-8")
             self._respond(500, body, JSON_TYPE, close=True)
             return
+        if answer is None:
+            body = json.dumps({"error": "not found"}).encode("utf-8")
+            self._respond(404, body, JSON_TYPE, close=True)
+            return
         if isinstance(answer, FileAnswer):
             self._respond(200, answer.body, answer.content_type)
             return
         self._respond(200, json.dumps(answer).encode("utf-8"), JSON_TYPE)
+
+    def _help_ask(self, query: dict[str, str]) -> None:
+        """The grounded Q&A ask (`M-HELP`, `CT-HELP-01`): one read-only GET whose only write
+        is the assistant's own Q&A log row, written after the model answered."""
+        question = query.get(ASK_QUERY_PARAM, "").strip()
+        if not question:
+            body = json.dumps(
+                {"error": "the ask read takes the question as ?q=<question>"}
+            ).encode("utf-8")
+            self._respond(400, body, JSON_TYPE)
+            return
+        try:
+            payload = ask_payload(self._console.help_assistant(), question)
+        except Exception as error:  # noqa: BLE001 — a failed ask is a 500, never a dropped socket
+            body = json.dumps({"error": str(error)}).encode("utf-8")
+            self._respond(500, body, JSON_TYPE, close=True)
+            return
+        self._respond(200, json.dumps(payload).encode("utf-8"), JSON_TYPE)
 
     def _api_control(self, route: ApiRoute, path_params: dict[str, str]) -> None:
         """Pass the request's parameters to the door unvalidated: refusing a malformed request

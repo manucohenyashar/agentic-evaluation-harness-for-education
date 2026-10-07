@@ -35,6 +35,9 @@ SPA_BUNDLE_DIR: Path = Path(__file__).resolve().parent.parent / "console_assets"
 #: The label of the one non-control mutation the API carries (`FR-CONSOLE-04`).
 UPLOAD_CONTROL = "upload scans"
 
+#: The query parameter the ask read takes the question from (`M-HELP`).
+ASK_QUERY_PARAM = "q"
+
 #: Media types by suffix. Explicit rather than `mimetypes`, which on Windows reads the
 #: registry and can answer `text/plain` for `.js` — a module script the browser then refuses.
 CONTENT_TYPES: dict[str, str] = {
@@ -108,6 +111,12 @@ def _build_routes() -> tuple[ApiRoute, ...]:
         ApiRoute("GET", f"{API_PREFIX}/results/class", None, RESULTS_CLASS_READ),
         ApiRoute("GET", f"{API_PREFIX}/results/student", None, RESULTS_STUDENT_READ),
         ApiRoute("GET", f"{API_PREFIX}/results/export", None, RESULTS_EXPORT_READ),
+        # M-HELP (FR-HELP-01): the manuals page's reads, and the grounded Q&A ask. The ask is a
+        # GET, not a POST: its only write is the assistant's own Q&A log (`CT-HELP-04`), so it
+        # is not a control action and the route carries no control row.
+        ApiRoute("GET", f"{API_PREFIX}/manuals", None, "manuals"),
+        ApiRoute("GET", f"{API_PREFIX}/manuals/{{manual_id}}", None, "manual"),
+        ApiRoute("GET", f"{API_PREFIX}/help/ask", None, "help ask"),
     )
     controls = tuple(
         ApiRoute("POST", f"{API_PREFIX}/actions/{action_slug(action)}", action)
