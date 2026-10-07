@@ -61,6 +61,10 @@ DESIGN_RUN_CONFIG_FIELDS = (
     "panel_build_ref",
     # CT-CONF-02 as amended by the Jev design delta (FR-CONF-17, CT-CONF v2.0): the 13th field.
     "decision_engine",
+    # FR-CONF-30 / CT-CONF-22 (operator-requirements delta, #616): the frozen Q&A model, which
+    # "is recorded on the run's provider_config" and "rehydrated identically on resume" — so it
+    # needs a carrier on the frozen config. The 14th field.
+    "qa_model",
 )
 
 

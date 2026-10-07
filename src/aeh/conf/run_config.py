@@ -129,9 +129,10 @@ class ProfileSummary:
 class RunConfig:
     """One frozen answer to "which grader is this run?" (design §3.1).
 
-    The field set is **exactly** these thirteen (Jev design delta FR-CONF-17 added
-    `decision_engine`, defaulted `None` so a literal written before it still constructs an
-    engine-off config). `CT-CONF-C02` asserts set equality rather than a
+    The field set is **exactly** these fourteen (Jev design delta FR-CONF-17 added
+    `decision_engine`, and the operator-requirements delta FR-CONF-30 / CT-CONF-22 added
+    `qa_model`; both default `None` so a literal written before them still constructs).
+    `CT-CONF-C02` asserts set equality rather than a
     subset, so adding a convenience field here breaks the contract suite by design — that is the
     clause working, not a broken test.
 
@@ -161,6 +162,10 @@ class RunConfig:
     retention_setting: str | None
     panel_build_ref: str
     decision_engine: DecisionEngine | None = None
+    #: FR-CONF-30: the Q&A assistant's model, frozen at resolution. Not part of the grader
+    #: identity: it never reaches `panel_build_ref` or `profile_summary()`. `None` only on a
+    #: literal or a row written before FR-CONF-30, where the assistant falls back to `panel[0]`.
+    qa_model: ModelRef | None = None
 
     def __post_init__(self) -> None:
         """Enforce CT-CONF-02 and CT-CONF-03 on the type itself, not only in the resolver.
@@ -298,6 +303,8 @@ class RunConfig:
                     f"{self.backend_profile!r}; it admits {allowed} (FR-CONF-19).")
             _check_resolved(self.decision_engine.model, "decision_engine.model", self.backend_profile)
 
+        self._check_qa_model()
+
         expected_ref = compute_panel_build_ref(self.panel, self.decision_engine)
         if self.panel_build_ref != expected_ref:
             raise ConfigurationError(
@@ -305,6 +312,25 @@ class RunConfig:
                 f"{self.panel_build_ref!r}, the ordered panel hashes to {expected_ref!r} "
                 f"(CT-CONF-07)."
             )
+
+    def _check_qa_model(self) -> None:
+        """CT-CONF-22 on the type: a resolved ref in this backend's form, and on `edge-local`
+        exactly `panel[0]` — no knob overrides it there, so a literal or a hand-edited row cannot
+        either."""
+        if self.qa_model is None:
+            return
+        if not isinstance(self.qa_model, ModelRef):
+            raise ConfigurationError(
+                f"qa_model must be a ModelRef or None, got {type(self.qa_model).__name__}.")
+        _check_resolved(self.qa_model, "qa_model", self.backend_profile)
+        if self.backend_profile == "edge-local" and self.qa_model != self.panel[0]:
+            raise ConfigurationError(
+                "on edge-local the Q&A model is panel[0] and nothing overrides it (CT-CONF-22).")
+
+    def assistant_model(self) -> ModelRef:
+        """The model the Q&A assistant uses: `qa_model`, or `panel[0]` on a config that predates
+        FR-CONF-30 (the default on every profile)."""
+        return self.qa_model if self.qa_model is not None else self.panel[0]
 
     def profile_summary(self) -> ProfileSummary:
         """The run's grader identity, ready to show or store (FR-CONF-09).
@@ -379,5 +405,8 @@ class RunConfig:
                 # byte-identical to its pre-delta form (NFR-SYS-14).
                 **({} if self.decision_engine is None
                    else {"decision_engine": self.decision_engine.to_dict()}),
+                # FR-CONF-30: recorded on every resolved run; absent only on a pre-delta literal,
+                # so such a row still round-trips byte-identically.
+                **({} if self.qa_model is None else {"qa_model": _ref_to_dict(self.qa_model)}),
             },
         }

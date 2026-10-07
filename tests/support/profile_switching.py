@@ -60,8 +60,8 @@ def f_profiles(top_level_profile: str | None = "edge-local", **shared: Any) -> d
     cfg: dict[str, Any] = {
         "prompt_template_v": SHARED_TEMPLATE,
         "profiles": {
-            # Jev design delta FR-CONF-18: HARNESS_DECISION_ENGINE is required with no default.
-            # Each section says "off": these cases test profile switching, not engine choice.
+            # Each section says "off" explicitly (FR-CONF-29 defaults the cloud profiles to jev):
+            # these cases test profile switching, not engine choice.
             "edge-local": {
                 "HARNESS_DECISION_ENGINE": "off",
                 "HARNESS_HARDWARE_PROFILE": "unified-small",

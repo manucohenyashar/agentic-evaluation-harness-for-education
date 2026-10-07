@@ -232,7 +232,10 @@ class ProgressMixin:
             ),
         ) + later
         remaining = sum(1 for step in steps if step.available and not step.done)
-        ready = confirmed and keys_done
+        # A rubric-method read-back awaiting the teacher holds publish (CT-SETUP-17), so
+        # the report cannot call the draft ready while one is pending.
+        methods_pending = any(self._pending_method_criteria(v).values())
+        ready = confirmed and keys_done and not methods_pending
         return SetupProgress(
             package_version_id=v, steps=steps, remaining_steps=remaining,
             ready_to_publish=ready,

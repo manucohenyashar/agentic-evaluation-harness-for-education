@@ -135,6 +135,26 @@ def _render(value) -> str:
         return repr(value)
 
 
+def _module_contributed(persisted: dict) -> dict:
+    """`provider_config` minus FR-CONF-30's `qa_model`, after asserting that entry adds nothing.
+
+    FR-CONF-30 (#616) records the Q&A model under `provider_config.qa_model` as a `ModelRef`
+    mapping, so a build id now sits in this dict. When no `HARNESS_QA_MODEL` is set it is a copy
+    of `panel[0]` — an identity `panel_config` already carries verbatim, the boundary
+    `test_tc_conf_11_a_credential_a_caller_embeds_in_a_build_id_is_persisted_verbatim` scopes out.
+    Asserted equal here, so the entry can never smuggle in text the row did not already hold;
+    everything else in the dict is still scanned as before.
+    """
+    provider_config = dict(persisted["provider_config"])
+    qa_model = provider_config.pop("qa_model", None)
+    if qa_model is not None:
+        assert qa_model == persisted["panel_config"]["panel"][0], (
+            "provider_config.qa_model is not panel[0]'s identity, so it carries text the run row "
+            "did not already hold"
+        )
+    return provider_config
+
+
 # --- TC-CONF-11 -------------------------------------------------------------------------------
 
 
@@ -259,7 +279,7 @@ def test_tc_conf_11_the_serialized_provider_config_matches_no_credential_pattern
     poisoned = _cfg_with_credential_in_every_field(SENTINEL_CREDENTIAL)
     config = resolve_run_config(poisoned, CohortRef("c-real", "real"))
 
-    provider_config = _render(config.to_persisted_dict()["provider_config"])
+    provider_config = _render(_module_contributed(config.to_persisted_dict()))
 
     for name, pattern in CREDENTIAL_PATTERNS.items():
         assert not pattern.search(provider_config), (
@@ -299,7 +319,8 @@ def test_tc_conf_11_provider_config_holds_no_free_text_at_all():
     from aeh.conf import HARDWARE_PROFILES, RETENTION_SETTINGS
 
     config = resolve_run_config(hosted_cfg("cloud-hosted", panel=HOSTED_PANEL_3), SYNTHETIC_COHORT)
-    provider_config = config.to_persisted_dict()["provider_config"]
+    # `qa_model` (FR-CONF-30) is checked inside the helper: it must equal panel[0]'s identity.
+    provider_config = _module_contributed(config.to_persisted_dict())
 
     closed_sets = {
         "hardware_profile": set(HARDWARE_PROFILES) | {None},
@@ -415,7 +436,7 @@ def test_tc_conf_11_a_credential_a_caller_embeds_in_a_build_id_is_persisted_verb
     # `build_id` matching a credential pattern would satisfy `CT-CONF-03` (what it accepts still
     # round-trips verbatim) and `FR-CONF-11`'s normative clause both, and pinning today's
     # behaviour here would fail it for no requirement's sake. Raised on the PR instead.
-    assert SENTINEL_CREDENTIAL not in _render(persisted["provider_config"]), (
+    assert SENTINEL_CREDENTIAL not in _render(_module_contributed(persisted)), (
         "provider_config is the surface FR-CONF-11 names, and it must stay clean"
     )
     assert config.panel[0].build_id == embedded["panel"][0].build_id, (
@@ -458,7 +479,7 @@ def test_sec_01_the_process_to_disk_and_logs_boundary_leaks_nothing(monkeypatch,
 
     crossings = {
         "persisted row": run_row,
-        "provider_config (poisoned cfg)": poisoned_config.to_persisted_dict()["provider_config"],
+        "provider_config (poisoned cfg)": _module_contributed(poisoned_config.to_persisted_dict()),
         "profile summary": config.profile_summary(),
         "canonical json": config.profile_summary().to_canonical_json(),
         "log records": [(r.getMessage(), r.__dict__) for r in captured_records],
