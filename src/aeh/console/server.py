@@ -446,7 +446,7 @@ class ConsoleServer:
             if reader is None:
                 continue
             with contextlib.suppress(Exception):
-                reader(self, self.app, {})
+                reader(self, self.app, {}, {})
 
     # -- configuration (`FR-CONSOLE-36`) -----------------------------------------------------
 
