@@ -39,6 +39,11 @@ CONTROL_SURFACE_ACTIONS: tuple[str, ...] = (
     # an existing cohort (a replayed submission writes nothing, `FR-CONSOLE-02`); merging the
     # two verbs would trade that guarantee for a shorter list.
     "add students",
+    # The operator-requirements delta's second console action (FR-UI-05): the SPA's package
+    # screen must be able to publish the M-SETUP draft, and `CT-CONSOLE-30` admits a new API
+    # mutation only as an enumerated control row — the same rule that made cohort creation a
+    # sixteenth action.
+    "publish package",
 )
 
 
@@ -68,6 +73,22 @@ RESULTS_EXPORT_READ = "results export"
 #: The CLI/console parity inventory's read (`FR-CONSOLE-41`, `NFR-CONSOLE-09`, #632): the
 #: generated census the console's debugging-only help section renders.
 CLI_HELP_READ = "CLI help"
+
+
+#: The lifecycle screens' reads (FR-UI-03, #635): one JSON document per SPA screen, each
+#: through the door the server-rendered console or the CLI calls for the same view. They are
+#: reads, not controls — a screen render writes nothing (`TC-UI-C02`'s reload digest), so
+#: the API adds no write path by carrying them.
+PACKAGE_SETUP_READ = "package setup"
+CLASS_ROSTER_READ = "class roster"
+PAPERS_READ = "papers"
+RUN_START_STATE_READ = "run start state"
+MONITOR_READ = "monitor"
+REVIEW_QUEUE_READ = "review queue"
+BLIND_SEATS_READ = "blind seats"
+RESULTS_SCREEN_READ = "results screen"
+STUDENT_DETAIL_READ = "student detail"
+SYSTEM_STATUS_READ = "system status"
 
 
 #: The per-action field contract (§11.8's Effect column): the store fields each action may
@@ -142,6 +163,14 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
         "work_unit.lease_expires_ticks",
         "work_unit.lease_expires_at",
         "submission_grade.finalized_at",
+    ),
+    # FR-UI-05: the SPA's package screen publishes the M-SETUP draft through `SetupService.
+    # publish` — M-PKG's one-transaction lock flip on the version row (FR-PKG-01): `locked`
+    # set and the approver recorded. The dotted names are the tables the flip touches, which
+    # is what the all-tier digest sees when the confirmation writes.
+    "publish package": (
+        "package_version.locked",
+        "package_version.published_by",
     ),
 }
 

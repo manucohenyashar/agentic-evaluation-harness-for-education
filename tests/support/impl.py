@@ -1392,25 +1392,11 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # The tradeoff, stated: if
     # an earlier story ships the phrase, the entry fires before the story lands — re-check the
     # cases green before unmarking, never unmark on the notice alone.
-    "#635 M-UI lifecycle screens (TC-UI-03/04/05/07, C02..C05, PERF-19)": (
-        "command",
-        'python -m tests.support.spa contains "check that the console service is running"',
-        (
-            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_03_the_seven_lifecycle_screens_render_the_seeded_store",
-            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_03_adv_15_the_spa_blind_sample_shows_no_decision_band_or_confidence",
-            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_04_styles_resolve_to_tokens_focus_is_visible_contrast_is_aa_fonts_are_local",
-            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_05_publish_start_and_finalize_are_no_ops_until_confirmed",
-            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_07_with_the_server_stopped_every_destination_names_the_recovery",
-            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_c02_a_reload_shows_exactly_what_the_api_reports_and_writes_nothing",
-            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_c03_no_student_text_in_storage_urls_or_logs_and_no_service_worker",
-            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_c04_an_api_error_renders_a_named_recoverable_message_on_every_screen",
-            "tests/browser/spa/test_spa_hub_screens.py::test_tc_ui_c05_bands_are_editable_band_controls_and_no_screen_takes_a_numeric_score",
-            "tests/browser/spa/test_spa_hub_screens.py::test_perf_19_hub_first_contentful_paint_under_2s_and_transitions_under_300ms",
-        ),
-    ),
-    # #638's entry (the bundle probe for FR-UI-06's answers-only affordance) was dropped when
-    # #638 landed and the bundle carried the wording; its case was re-checked green unmarked
-    # at the drop.
+    #
+    # #635's entry (the recovery text) was dropped when #635 landed; its cases were re-checked
+    # green unmarked at the drop. #638's entry (the bundle probe for FR-UI-06's answers-only
+    # affordance) was dropped when #638 landed and the bundle carried the wording; its case
+    # was re-checked green unmarked at the drop.
     # --- TS-140 (#613), packaging flips + the operator-doc sweep ----------------------------
     #
     # #614's entry (the four standard dependencies, extras retired, operator docs reduced) was

@@ -201,10 +201,15 @@ def test_the_delta_control_actions_are_the_requirements_that_add_them(repo_root)
     # operations reachable from the console; `add students` is FR-CONSOLE-42's roster editor
     # pointed at an existing cohort (kept apart from `create cohort` because `create_cohort`
     # refuses an existing cohort — a replayed submission writes nothing, `FR-CONSOLE-02`).
+    # FR-UI-05 (#635) added `publish package`: the package screen's publish is a destructive
+    # action whose confirmation is the API's — `CT-CONSOLE-30` admits it only as an
+    # enumerated control row through M-SETUP's `publish` (the lock flip), never a route
+    # beside the enumeration.
     assert DELTA_CONTROL_ACTIONS == {
         "create cohort": "FR-CONSOLE-42",
         "recover runs": "FR-CONSOLE-41",
         "add students": "FR-CONSOLE-42",
+        "publish package": "FR-UI-05",
     }, (
         "a delta control action was added or removed: that is a design decision, cite it here"
     )
@@ -217,6 +222,7 @@ def test_the_delta_control_actions_are_the_requirements_that_add_them(repo_root)
         "FR-CONSOLE-41 no longer names recover among the console-reachable operations, so the "
         "`recover runs` control row has lost the requirement that adds it"
     )
+    assert "| fr-ui-05 | every destructive or irreversible action (publish package, start" in delta
 
 
 def test_the_knob_defaults_transcribe_the_design_configuration_line(repo_root):

@@ -38,12 +38,34 @@ from .parity import parity_inventory
 from .results_reads import results_class_read, results_export_read, results_student_read
 from .routes import SCREENS
 from .run_start import run_start_preview_read
+from .screen_reads import (
+    blind_seats_read,
+    class_roster_read,
+    monitor_read,
+    package_setup_read,
+    papers_read,
+    results_screen_read,
+    review_queue_read,
+    run_start_state_read,
+    student_detail_read,
+    system_status_read,
+)
 from .vocabulary import (
+    BLIND_SEATS_READ,
+    CLASS_ROSTER_READ,
     CLI_HELP_READ,
+    MONITOR_READ,
+    PACKAGE_SETUP_READ,
+    PAPERS_READ,
     RESULTS_CLASS_READ,
     RESULTS_EXPORT_READ,
+    RESULTS_SCREEN_READ,
     RESULTS_STUDENT_READ,
+    REVIEW_QUEUE_READ,
     RUN_START_PREVIEW_READ,
+    RUN_START_STATE_READ,
+    STUDENT_DETAIL_READ,
+    SYSTEM_STATUS_READ,
 )
 
 JSON_TYPE = "application/json; charset=utf-8"
@@ -90,6 +112,19 @@ _READS = {
     # #632: the parity inventory, generated from the live `aeh` parser — the read is pure
     # (it opens no store), so the help answers even before a cohort exists.
     CLI_HELP_READ: lambda _console, _app, _params, _query: parity_inventory(),
+    # #635 (FR-UI-03): the lifecycle screens' reads. Each takes the console (for its bound
+    # run), the app (the store and the modules' doors) and the query (a run or cohort named
+    # per request), writes nothing, and answers a document the SPA renders as is.
+    PACKAGE_SETUP_READ: lambda console, app, _params, query: package_setup_read(console, app, query),
+    CLASS_ROSTER_READ: lambda _console, app, _params, query: class_roster_read(_console, app, query),
+    PAPERS_READ: lambda console, app, _params, query: papers_read(console, app, query),
+    RUN_START_STATE_READ: lambda console, app, _params, query: run_start_state_read(console, app, query),
+    MONITOR_READ: lambda console, app, _params, query: monitor_read(console, app, query),
+    REVIEW_QUEUE_READ: lambda console, app, _params, query: review_queue_read(console, app, query),
+    BLIND_SEATS_READ: lambda console, app, _params, query: blind_seats_read(console, app, query),
+    RESULTS_SCREEN_READ: lambda console, app, _params, query: results_screen_read(console, app, query),
+    STUDENT_DETAIL_READ: lambda console, app, _params, query: student_detail_read(console, app, query),
+    SYSTEM_STATUS_READ: lambda _console, app, _params, query: system_status_read(_console, app, query),
 }
 
 

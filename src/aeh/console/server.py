@@ -24,8 +24,8 @@ from .errors import ConsoleBindRefused
 from .html import _row_get, _stylesheet_bytes
 from .uploads import _record_upload_part, upload_scans
 from .run_planning import build_console
-from .api import SPA_BUNDLE_DIR, action_slug as _action_slug
-from .api_handler import ApiRequestsMixin, outcome_json
+from .api import SPA_BUNDLE_DIR, API_ROUTES, action_slug as _action_slug
+from .api_handler import _READS, ApiRequestsMixin, outcome_json
 
 #: Paths the API owns: everything under it is routed from `API_ROUTES` and nothing else.
 _API_ROOT = "/api/"
@@ -93,6 +93,11 @@ class _ConsoleRequestHandler(ApiRequestsMixin, BaseHTTPRequestHandler):
 
     server_version = "aeh-console"
     protocol_version = "HTTP/1.1"
+    # Answer immediately: the API's responses are small and written header-write then
+    # body-write, so with Nagle (the socketserver default) the second segment waits on a
+    # delayed ACK — a screen read that answers in 5ms once warm costs 50-100ms on a fresh
+    # connection. `TCP_NODELAY` on every accepted socket is what keeps reads uniform.
+    disable_nagle_algorithm = True
 
     @property
     def _console(self) -> "ConsoleServer":
@@ -323,12 +328,44 @@ class _ConsoleHTTPServer(ThreadingHTTPServer):
 
     def __init__(self, address: tuple, handler: type, console: "ConsoleServer") -> None:
         self.console = console
+        # Every accepted connection, until its own handler closes it. `ThreadingHTTPServer`
+        # serves each on its own daemon thread, so a plain `shutdown()` stops only the accept
+        # loop: connections already accepted keep answering (a browser's kept-alive socket
+        # would read 200s from a console that is supposed to be gone). Tracking them here is
+        # what lets `ConsoleServer.terminate()` end those too.
+        self._accepted: set[socket.socket] = set()
+        self._accepted_lock = threading.Lock()
         # The family follows the address rather than defaulting to IPv4: `CONSOLE_BIND=::1` is
         # a legal loopback bind (`TC-CONSOLE-05` uses it as the discriminating probe that the
         # knob is read at all), and binding it on an `AF_INET` socket raises `gaierror`.
         if ":" in str(address[0]):
             self.address_family = socket.AF_INET6
         super().__init__(address, handler)
+
+    def process_request(self, request: socket.socket, client_address: Any) -> None:
+        with self._accepted_lock:
+            self._accepted.add(request)
+        super().process_request(request, client_address)
+
+    def close_request(self, request: socket.socket) -> None:
+        super().close_request(request)
+        with self._accepted_lock:
+            self._accepted.discard(request)
+
+    def stop_accepted_connections(self) -> None:
+        """Shut down and close every connection this server has accepted and not yet closed.
+
+        Forcing `SHUT_RDWR` (rather than the half-close a finished handler does) unblocks a
+        handler thread sitting in a keep-alive read, so the browser's next request over the
+        socket fails instead of being answered by a console that has stopped."""
+        with self._accepted_lock:
+            sockets = list(self._accepted)
+            self._accepted.clear()
+        for live in sockets:
+            with contextlib.suppress(Exception):
+                live.shutdown(socket.SHUT_RDWR)
+            with contextlib.suppress(Exception):
+                live.close()
 
 
 class ConsoleServer:
@@ -388,6 +425,28 @@ class ConsoleServer:
             target=self._httpd.serve_forever, name="aeh-console", daemon=True
         )
         self._thread.start()
+        self._warm_reads()
+
+    def _warm_reads(self) -> None:
+        """One throwaway in-process call per parameterless read route's reader, before use.
+
+        A fresh server's first handling of an endpoint carries one-time cost — lazy imports,
+        the first open of a package's tier file — that a screen read is otherwise asked to
+        absorb inside a browser's check window (CT-UI-04, PERF-19): a read that answers in a
+        millisecond warm answered in fifty cold. The warm-up calls the readers directly
+        through the dispatch table the handler uses, so the cost is paid once, at start, on
+        the same code path the request will take — without the HTTP hop, which would make
+        the console an egress-capable module outside M-PROV (TC-PROV-05). Every failure is
+        swallowed: a read the store cannot answer yet is still a route whose imports and
+        doors are warm."""
+        for route in API_ROUTES:
+            if route.method != "GET" or "{" in route.path:
+                continue
+            reader = _READS.get(str(route.read))
+            if reader is None:
+                continue
+            with contextlib.suppress(Exception):
+                reader(self, self.app, {}, {})
 
     # -- configuration (`FR-CONSOLE-36`) -----------------------------------------------------
 
@@ -466,8 +525,12 @@ class ConsoleServer:
         return os.getpid()
 
     def terminate(self) -> None:
-        """Stop serving: shut down the loop, close the port and join the thread.
+        """Stop serving: shut down the loop, close the port, end the accepted connections and
+        join the thread.
 
+        Ending the accepted connections is what makes "the console is gone" hold for a
+        connected client too (FR-UI-07's degradation arms on it): without it, a browser's
+        kept-alive socket would keep being answered after the port refuses new connections.
         `returncode` is set to 0 once the thread is joined — the observable "it is really
         stopped" the child-process design used an exit status for."""
         if self._closed:
@@ -475,6 +538,7 @@ class ConsoleServer:
         self._closed = True
         with contextlib.suppress(Exception):
             self._httpd.shutdown()
+        self._httpd.stop_accepted_connections()
         with contextlib.suppress(Exception):
             self._httpd.server_close()
         self._thread.join(timeout=10)

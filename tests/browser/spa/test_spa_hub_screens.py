@@ -11,12 +11,9 @@ in `WRITTEN_AHEAD_BLOCKERS`:
 
 * **#634** (the foundation: bundle, tokens, hub) landed — its cases (`TC-UI-02`, `TC-UI-C01`,
   the re-pointed `TC-CONSOLE-40`/`41`) lost the marker and were re-checked green unmarked;
-* **#635** (the lifecycle screens, confirmations, degradation) is still open — its cases (`TC-UI-03`
+* **#635** (the lifecycle screens, confirmations, degradation) landed — its cases (`TC-UI-03`
   (with ADV-15's SPA arm), `TC-UI-04` (it needs three screens), `TC-UI-05`, `TC-UI-07`,
-  `TC-UI-C02` … `C05`, `PERF-19`) stay marked and outside `TEST_CMD` until its story lands.
-
-Every #635 case still calls `_require_bundle()` first, so a red case fails in milliseconds with
-`NotImplementedYet` naming #635 — never a navigation timeout that reads like a broken server.
+  `TC-UI-C02` … `C05`, `PERF-19`) lost the marker and were re-checked green unmarked.
 
 **The DOM contract** these cases read is declared, with its reasons, in `tests/support/spa.py`:
 hub cards are links named for FR-UI-02's destinations; a loaded screen's `main` carries one
@@ -55,6 +52,11 @@ pytestmark = [pytest.mark.browser, pytest.mark.integration]
 #: Student text no page would render by accident, planted in the narrative the results / student
 #: screens read (the TS-49 sentinel, a different value so a cross-suite leak is attributable).
 SENTINEL_TEXT = "Ngozi-Sentinel-8842 argued that evaporation outpaces rainfall in July"
+
+#: Bound on waiting for a read's outcome to render (TC-UI-C04's failing arm): the route-
+#: intercepted fetch does not hold network idle, so the oracle waits for the alert itself —
+#: long enough for a failed read to settle on a loaded box, far shorter than a hang.
+_ERROR_SETTLE_MS = 2_000
 
 
 def _require_bundle() -> None:
@@ -208,7 +210,6 @@ def test_tc_ui_02_the_hub_shows_every_destination_with_live_state_and_no_dead_li
 # --- TC-UI-03 — the seven lifecycle screens over real store data ---------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_ui_03_the_seven_lifecycle_screens_render_the_seeded_store(tmp_data_dir):
     """`TC-UI-03` / FR-UI-03 (P0) — walk package setup, class setup, papers, run start, monitor,
     review and results against a seeded store. Each shows the store's own data (ids read back from
@@ -282,7 +283,6 @@ def jev_world(tmp_path_factory):
     world.store.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_ui_03_adv_15_the_spa_blind_sample_shows_no_decision_band_or_confidence(request):
     """`TC-UI-03`'s review/blind arm — ADV-15 re-run against the SPA (operator plan §5.0): over an
     engine-on run, the blind-sample screen carries no decision band, no decision confidence and no
@@ -462,7 +462,6 @@ def _focus_problems(page: Any, where: str) -> list[str]:
     return problems
 
 
-@pytest.mark.writtenahead
 def test_tc_ui_04_styles_resolve_to_tokens_focus_is_visible_contrast_is_aa_fonts_are_local(
     tmp_data_dir,
 ):
@@ -531,13 +530,29 @@ def _dialog(page: Any) -> Any:
     return page.get_by_role("dialog").or_(page.get_by_role("alertdialog"))
 
 
-@pytest.mark.writtenahead
+def _grades_already_final(s: Served) -> bool:
+    """Whether every current grade of the served run reads `final` — the store side of
+    FR-CONSOLE-02's no-op finalize: when the run's own completion already settled the
+    grades (ADR-3, null window finalizes on run completion), confirming the finalize
+    writes nothing, and that is honest only over a class that is entirely settled."""
+    states = [str(r["state"]) for r in s.store.cohort(s.world.cohort_id).query(
+        "SELECT state FROM submission_grade WHERE run_id = :r AND is_current = 1",
+        r=s.world.run_id)]
+    return bool(states) and all(state == "final" for state in states)
+
+
 def test_tc_ui_05_publish_start_and_finalize_are_no_ops_until_confirmed(tmp_data_dir):
     """`TC-UI-05` / FR-UI-05 (P1) — for publish (a setup-ready draft), run start (the seeded
     pending run) and finalize (its computed, unfinalized grades): the action opens a confirmation
     that names what it does; while it is open, and after it is cancelled, **no table in any tier
     changed** (counts and contents); confirming it writes. The all-tier digest is the oracle, not
-    one table, so a write to an unexpected tier is caught too."""
+    one table, so a write to an unexpected tier is caught too.
+
+    The finalize arm runs after the confirmed start, whose restart runs the pipeline to
+    completion — and a run's own completion settles its grades (ADR-3, null window finalizes
+    on run completion). By then the finalize's rows have already landed, so its confirm is
+    honestly a no-op (FR-CONSOLE-02: a confirm whose work is done never re-passes); the arm
+    pins that no-op by asserting the grades are final, not by demanding a second write."""
     with served(tmp_data_dir, setup="ready") as s, spa.spa_page(s.origin) as (page, log):
         problems = []
         for destination, action, names, owned in _ACTIONS:
@@ -589,7 +604,15 @@ def test_tc_ui_05_publish_start_and_finalize_are_no_ops_until_confirmed(tmp_data
             while spa.store_digest(s.data_dir) == before and time.monotonic() < deadline:
                 page.wait_for_timeout(100)
             landed = spa.changed_tables(before, spa.store_digest(s.data_dir))
-            if not landed:
+            if not landed and destination == "results" and _grades_already_final(s):
+                # A confirm whose work is already done is a no-op, never a fresh pass
+                # (FR-CONSOLE-02; ADR-3): the confirmed start above ran the pipeline to
+                # completion, and a run's own completion settles its grades — so by this
+                # arm the finalize's rows have already landed, and "nothing was written"
+                # is the honest outcome exactly while every grade the action owns is
+                # final. A no-op over anything else is a silent failure.
+                pass
+            elif not landed:
                 problems.append(f"{destination}: confirming wrote nothing — the row did not land")
             elif not any(table.split(":")[-1] in owned for table in landed):
                 problems.append(f"{destination}: confirming wrote {landed}, none of the tables "
@@ -601,7 +624,6 @@ def test_tc_ui_05_publish_start_and_finalize_are_no_ops_until_confirmed(tmp_data
 # --- TC-UI-07 — the server is gone ------------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_ui_07_with_the_server_stopped_every_destination_names_the_recovery(tmp_data_dir):
     """`TC-UI-07` / FR-UI-07 (P1) — load the hub, **stop the real server** (not an intercepted
     route: "unreachable" is the case), then follow each hub card. Each destination renders the
@@ -671,7 +693,6 @@ def test_tc_ui_c01_a_session_over_the_hub_and_every_destination_requests_one_ori
 # --- TC-UI-C02 — no authoritative client state -------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_ui_c02_a_reload_shows_exactly_what_the_api_reports_and_writes_nothing(tmp_data_dir):
     """`TC-UI-C02` / CT-UI-02 (P1) — (1) a full reload of every destination writes nothing to any
     tier and leaves no browser storage behind; (2) after an out-of-band change the browser could
@@ -715,7 +736,6 @@ def test_tc_ui_c02_a_reload_shows_exactly_what_the_api_reports_and_writes_nothin
 # --- TC-UI-C03 — no student text in the browser ------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_ui_c03_no_student_text_in_storage_urls_or_logs_and_no_service_worker(tmp_data_dir):
     """`TC-UI-C03` / CT-UI-03, FR-UI-08 (P0) — a session that **did** render the sentinel student
     text (anchored: some screen shows it) leaves nothing in localStorage, sessionStorage, Cache
@@ -755,7 +775,6 @@ def test_tc_ui_c03_no_student_text_in_storage_urls_or_logs_and_no_service_worker
 # --- TC-UI-C04 — named, recoverable API errors -------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_ui_c04_an_api_error_renders_a_named_recoverable_message_on_every_screen(tmp_data_dir):
     """`TC-UI-C04` / CT-UI-04 (P1) — every `/api/` call answers 500 (route interception: an API
     *error*, the server is up). The hub and each destination render a named message (`role=alert`
@@ -787,10 +806,18 @@ def test_tc_ui_c04_an_api_error_renders_a_named_recoverable_message_on_every_scr
                 problems.append(f"{destination}: no hub card while the API fails")
                 continue
             card.first.click()
-            page.wait_for_load_state("networkidle")
+            # `networkidle` cannot be the wait here: this page has a route handler, and a
+            # route-intercepted request does not hold network idle — the wait can lapse while
+            # the failed read is still in flight. Wait for the alert itself instead, bounded;
+            # a screen that truly never names its error still times out and is recorded below.
+            alert = page.locator("main").get_by_role("alert")
+            try:
+                alert.first.wait_for(state="visible", timeout=_ERROR_SETTLE_MS)
+            except Exception:
+                pass
             # `role=alert` only: a polling `role=status` region exists on a healthy screen too, and
             # would count as the "named message" whether or not the error was named.
-            alert = page.locator("main").get_by_role("alert")
+            named = [alert.nth(i).inner_text().strip() for i in range(alert.count())]
             named = [alert.nth(i).inner_text().strip() for i in range(alert.count())]
             if not any(named):
                 problems.append(f"{destination}: the API error renders no named message")
@@ -801,12 +828,27 @@ def test_tc_ui_c04_an_api_error_renders_a_named_recoverable_message_on_every_scr
                 continue
             failing["on"] = False
             retry.first.click()
-            page.wait_for_load_state("networkidle")
             try:
                 spa.wait_for_screen(page)
             except Exception:
                 problems.append(f"{destination}: retry did not recover once the API answered")
                 continue
+            # The screen's heading is rendered beside the error, so `wait_for_screen` cannot
+            # see the refetch — and the retry's read is route-intercepted, so it does not
+            # hold network idle either. Wait for the alert itself to leave, bounded: a
+            # recovery that never lands still times out and is recorded below.
+            retry_alert = page.locator("main").get_by_role("alert")
+            try:
+                retry_alert.first.wait_for(state="hidden", timeout=_ERROR_SETTLE_MS)
+            except Exception:
+                pass
+            # And for the store's own text, bounded, before judging the recovery.
+            if destination in recovered_data:
+                try:
+                    page.get_by_text(recovered_data[destination]).first.wait_for(
+                        state="visible", timeout=_ERROR_SETTLE_MS)
+                except Exception:
+                    pass
             # Recovered means the error is gone AND the store's data is back — a screen that keeps
             # its heading beside the alert is the normal shape of NOT recovering.
             if page.locator("main").get_by_role("alert").count():
@@ -821,7 +863,6 @@ def test_tc_ui_c04_an_api_error_renders_a_named_recoverable_message_on_every_scr
 # --- TC-UI-C05 — band-only editing -------------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_ui_c05_bands_are_editable_band_controls_and_no_screen_takes_a_numeric_score(
     tmp_data_dir,
 ):
@@ -861,7 +902,6 @@ def test_tc_ui_c05_bands_are_editable_band_controls_and_no_screen_takes_a_numeri
 # --- PERF-19 ------------------------------------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_perf_19_hub_first_contentful_paint_under_2s_and_transitions_under_300ms(tmp_data_dir):
     """`PERF-19` / NFR-UI-01 (P2) — first contentful paint of the hub (the browser's own
     `first-contentful-paint` entry) under `HARNESS_UI_FCP_BUDGET_MS` (2000, NFR-UI-01's figure) and

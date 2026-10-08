@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchHubState, type HubState } from "./api";
 
 /** The poll cadence until the first read answers (then the read's own `poll_interval_ms`). */
@@ -7,6 +7,8 @@ const FIRST_POLL_FALLBACK_MS = 3000;
 export interface HubRead {
   state: HubState | null;
   failed: boolean;
+  /** The read's recovery action, run now rather than on the next poll tick (CT-UI-04). */
+  retry: () => void;
 }
 
 /**
@@ -55,5 +57,19 @@ export function useHubState(): HubRead {
     };
   }, []);
 
-  return { state, failed };
+  // The retry is the same read the poll runs, outside the loop: an immediate refetch, so a
+  // failed state's "try again" is a real action, not a wait for the next tick. It shares no
+  // controller with the poll — a retry's answer must survive the poll's own abort — and its
+  // outcome lands in the same state the poll writes, so whichever answers first wins.
+  const retry = useCallback((): void => {
+    fetchHubState().then(
+      (next) => {
+        setState(next);
+        setFailed(false);
+      },
+      () => setFailed(true),
+    );
+  }, []);
+
+  return { state, failed, retry };
 }

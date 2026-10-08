@@ -161,6 +161,10 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
         "package.contains_real_student_text",
     ),
     "export/import package": ("package_file.path",),
+    # The delta's FR-UI-05 (#635): the package screen's publish is M-PKG's lock flip, and its
+    # write is the two package_version fields the flip sets — the version stops being a draft
+    # and the approver is recorded, which is what CT-CONSOLE-C02's field probe observed.
+    "publish package": ("package_version.locked", "package_version.published_by"),
     "purge cohort": ("cohort.purged_at",),
     # The delta's FR-CONSOLE-42 (roster editor, #630): Tier C cohort and roster rows only — a
     # student's name is never a field a scoring prompt reads (NFR-PROV-04).
