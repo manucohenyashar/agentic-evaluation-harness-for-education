@@ -604,4 +604,4 @@ def _live_arm_legs(
     if run_config.decision_engine is None:
         return None
     with tempfile.TemporaryDirectory(prefix="conform-live-arm-") as arm_dir:
-        return live_backend_legs(run_config, cohort, Path(arm_dir))
+        return live_backend_legs(run_config, cohort, Path(arm_dir), config=backend_config)

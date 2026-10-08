@@ -34,6 +34,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Mapping
 
+from aeh.conf import HOSTED_JEV_PROFILES
 from aeh.prov import OPENROUTER_API_KEY_ENV
 from aeh.store import Statement
 
@@ -156,9 +157,12 @@ class _CountingCompletionProvider:
                 f"({', '.join(LIVE_LEGS)}); per-leg accounting would silently lose the call."
             )
         completion = self._inner.complete(prompt, model_ref, params)
+        # The ref tallied is the one the config names (Q-O1), not `resolved_build`: the wire
+        # layer strips the date pin and records the served slug, and the oracle the nightly
+        # asserts is "the leg called the model the test day pinned".
         self._tallies[leg].add(
             completion.tokens_in, completion.tokens_out, completion.cost,
-            completion.resolved_build)
+            str(getattr(model_ref, "build_id", "") or ""))
         return completion
 
     def __getattr__(self, name: str) -> Any:
@@ -178,9 +182,11 @@ class _CountingDecisionProvider:
 
     def decide(self, request: Any, model_ref: Any) -> Any:
         decision = self._inner.decide(request, model_ref)
+        # Same rule as the completion tally: the ref is the config's build id, not the
+        # pin-stripped slug `resolved_build` carries.
         self._tallies[LEG_DECISION].add(
             decision.tokens_in, decision.tokens_out, decision.cost,
-            decision.resolved_build)
+            str(getattr(model_ref, "build_id", "") or ""))
         return decision
 
     def __getattr__(self, name: str) -> Any:
@@ -189,7 +195,10 @@ class _CountingDecisionProvider:
 
 # --- the run-start refusal gates (FR-CONFORM-17's preconditions) ----------------------------------
 
-_OPENROUTER_PROFILES = frozenset({"dev-ci", "cloud-hosted"})
+# The hosted profiles, taken from M-CONF's derived set (the resolver and the acceptance must
+# agree on what "hosted" means; restating the literals here would let a new hosted profile pass
+# resolution and then be refused at the acceptance's start).
+_OPENROUTER_PROFILES = frozenset(HOSTED_JEV_PROFILES)
 _KEY_ENV = OPENROUTER_API_KEY_ENV
 _FIXTURE_DIR_ENV = "HARNESS_FIXTURE_DIR"
 
@@ -308,17 +317,20 @@ def _drive_live_pipeline(
     *,
     provider: Any,
     decision_provider: Any,
+    config: Mapping[str, Any] | None = None,
 ) -> str:
     """The one full-pipeline drive: cohort, package, intake, then run to completion.
 
     Composed the way `aeh run` composes it (`pipeline.cli._run_command`): the providers are
-    built before the run exists (the retention gate asks them inside `create_run`), the run is
-    created against the built package version, started, and driven to completion with the same
-    providers bound. The random-arm sample is held at 0 for the drive: it widens panels past
-    the panel with no spare live seat, which would send a derived name to a real server.
-    Returns the run id. The store is the caller's — opened by it, closed by it — so the
-    caller's own reads after the drive see the same handle, and no second connection is held
-    against the same file.
+    built before the run exists (the retention gate asks them inside `create_run`), the
+    escalation seats are read from the raw config before anything starts (the same
+    `_escalation_judge_refs` validation `aeh run` refuses on, when the caller passes the
+    config document), the run is created against the built package version, started, and
+    driven to completion with the same providers bound. The random-arm sample is held at 0
+    for the drive: it widens panels past the panel with no spare live seat, which would send
+    a derived name to a real server. Returns the run id. The store is the caller's — opened
+    by it, closed by it — so the caller's own reads after the drive see the same handle, and
+    no second connection is held against the same file.
     """
     from aeh.orch import Orchestrator
     from aeh.orch.cohorts import create_cohort
@@ -331,6 +343,7 @@ def _drive_live_pipeline(
         read_package_spec,
     )
     from aeh.pipeline.rosters import read_roster_file
+    from aeh.pipeline.runtime import _escalation_judge_refs
 
     spec_path, roster_path, assessment, sheets_dir = _materials_paths()
     entries = read_roster_file(roster_path)
@@ -349,6 +362,14 @@ def _drive_live_pipeline(
             "cohort with nothing scored."
         )
 
+    # The seats are read with the environment as the caller left it, before the drive holds
+    # the random-arm rate at 0 — the same order `_run_command` validates in, so a config
+    # whose sample needs seats it does not name is refused before the run exists.
+    judge_refs = (
+        _escalation_judge_refs(dict(config), run_config, cohort, provider)
+        if config is not None else None
+    )
+
     previous_rate = os.environ.get(RANDOM_ARM_RATE_ENV)
     os.environ[RANDOM_ARM_RATE_ENV] = "0"
     try:
@@ -357,7 +378,7 @@ def _drive_live_pipeline(
         orchestrator.start(run_id)
         result = run_to_completion(
             store, run_id, provider=provider, run_config=run_config,
-            decision_provider=decision_provider)
+            decision_provider=decision_provider, judge_refs=judge_refs)
     finally:
         if previous_rate is None:
             os.environ.pop(RANDOM_ARM_RATE_ENV, None)
@@ -435,7 +456,10 @@ def _band_agreement(store: Any, cohort_id: str, run_id: str) -> dict[str, Mappin
 # --- the entry point ------------------------------------------------------------------------------
 
 
-def run_live_acceptance(run_config: Any, *, cohort: Any, data_dir: Path) -> LiveAcceptanceReport:
+def run_live_acceptance(
+    run_config: Any, *, cohort: Any, data_dir: Path,
+    config: Mapping[str, Any] | None = None,
+) -> LiveAcceptanceReport:
     """One live acceptance: the full pipeline on the profile's real models, accounted per leg.
 
     The four precondition gates run first (`_refusal_gates`); then the pipeline is driven once
@@ -445,7 +469,9 @@ def run_live_acceptance(run_config: Any, *, cohort: Any, data_dir: Path) -> Live
     pre-screen and verdict rows. A leg with zero calls fails the report (`failed_legs`) and an
     extreme rate marks it invalid (`invalid_extremes`, naming the extreme and the frozen gate
     values). The per-leg figures are recorded into `run_metrics` through M-ORCH's write path,
-    so the report and the durable record are the same numbers.
+    so the report and the durable record are the same numbers. `config`, when the caller
+    passes the effective config document the run_config was resolved from, seats the
+    escalation judges the way `aeh run` does and runs its pre-run refusals.
     """
     from aeh.judge.metrics import decision_engine_metrics
     from aeh.orch import Orchestrator
@@ -457,7 +483,8 @@ def run_live_acceptance(run_config: Any, *, cohort: Any, data_dir: Path) -> Live
     store = open_store(Path(data_dir))
     try:
         run_id = _drive_live_pipeline(
-            store, run_config, cohort, provider=completion, decision_provider=decision)
+            store, run_config, cohort, provider=completion, decision_provider=decision,
+            config=config)
 
         handle = store.cohort(cohort.cohort_id)
         metrics = decision_engine_metrics(handle, run_id)
@@ -530,7 +557,10 @@ def _record_run_metrics(store: Any, report: LiveAcceptanceReport) -> None:
     Orchestrator(store).record_run_metrics(report.run_id, metrics)
 
 
-def live_backend_legs(run_config: Any, cohort: Any, data_dir: Path) -> dict[str, dict[str, Any]]:
+def live_backend_legs(
+    run_config: Any, cohort: Any, data_dir: Path,
+    config: Mapping[str, Any] | None = None,
+) -> dict[str, dict[str, Any]]:
     """The re-specified TC-CONFORM-04 arm: the same drive for a conformance-suite backend.
 
     A live OpenRouter backend whose config resolves the decision engine drives the full
@@ -538,7 +568,7 @@ def live_backend_legs(run_config: Any, cohort: Any, data_dir: Path) -> dict[str,
     `BackendResult` carries the per-leg figures beside the divergence figures. Only the legs
     are returned: the differential's subject is the backend's own pass over the fixture set;
     this drive exists so the report can show the decision leg really ran on the profile's
-    default engine.
+    default engine. `config` is the backend's raw document, for the escalation seats.
     """
     from aeh.judge.metrics import decision_engine_metrics
     from aeh.store import open_store
@@ -549,7 +579,8 @@ def live_backend_legs(run_config: Any, cohort: Any, data_dir: Path) -> dict[str,
     store = open_store(Path(data_dir))
     try:
         run_id = _drive_live_pipeline(
-            store, run_config, cohort, provider=completion, decision_provider=decision)
+            store, run_config, cohort, provider=completion, decision_provider=decision,
+            config=config)
         legs = {leg: tallies[leg].figures() for leg in LIVE_LEGS}
         # CT-CONFORM-17: the decision leg carries the two rate keys too — the differential's
         # key set is the clause's, on this arm the same as on `run_live_acceptance`'s.

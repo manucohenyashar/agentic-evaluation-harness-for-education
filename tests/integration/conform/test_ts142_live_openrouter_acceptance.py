@@ -165,7 +165,8 @@ def _live_run(tmp_path_factory) -> _LiveRun:
             _import_full_migration_chain()
             run_config, cohort, cfg = _resolve_live_config()
             data_dir = tmp_path_factory.mktemp("live-acceptance")
-            report = run_live_acceptance(run_config, cohort=cohort, data_dir=data_dir)
+            report = run_live_acceptance(run_config, cohort=cohort, data_dir=data_dir,
+                                         config=cfg)
         except Exception as error:
             _RUN["error"] = error
             raise
