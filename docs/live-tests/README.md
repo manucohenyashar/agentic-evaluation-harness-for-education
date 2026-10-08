@@ -15,7 +15,7 @@ Everything needed to host, configure and run the first live teacher test of the 
 | 1 | [`02-live-readiness-and-blockers.md`](02-live-readiness-and-blockers.md) | Everyone, first | The verdict, the eight blockers with proof, what was and was not checked, and the work to do |
 | 2 | [`01-hosting-and-configuration.md`](01-hosting-and-configuration.md) | Setting up the machine | Profiles, install, data folder, OpenRouter key and limits, the consent rule, every setting, a security checklist |
 | 3 | [`../tutorials/operating-tutorial.md`](../tutorials/operating-tutorial.md) | The operator and the teacher | How the console works, all 14 pages, all 15 commands, and the six phases of the grading life cycle, with screenshots and real replies |
-| 4 | [`03-sample-tests-and-answer-sheets.md`](03-sample-tests-and-answer-sheets.md) | Preparing the test | Two sample tests, rubrics, keys, ten answer sheets (including three awkward ones), expected results |
+| 4 | [`03-sample-tests-and-answer-sheets.md`](03-sample-tests-and-answer-sheets.md) | Preparing the test | Two sample tests covering every rubric scoring method, rubrics, keys, ten answer sheets (including three awkward ones), expected results |
 | 5 | [`04-test-day-plan.md`](04-test-day-plan.md) | Running the day | Three stages, roles, timeline, record sheet, pass criteria, teacher questions |
 
 ## What is in the other folders
@@ -23,9 +23,12 @@ Everything needed to host, configure and run the first live teacher test of the 
 | Path | What it is |
 |---|---|
 | [`config/live-test.dev-ci.toml`](config/live-test.dev-ci.toml) | The configuration for the test, with every line explained. The two model names are **unconfirmed** at OpenRouter. |
+| [`config/ps9-forces-01.package.toml`](config/ps9-forces-01.package.toml), [`config/eng7-read-01.package.toml`](config/eng7-read-01.package.toml) | The two package specs `aeh package build` publishes. Physics: multiple-choice keys and band lines. English: one line of each scoring method — evidence checklist (`evidence_sum`), `bands`, and the teacher's own words (`general`). Build both to grade every rubric type. |
+| [`config/ps9-roster.txt`](config/ps9-roster.txt), [`config/eng7-roster.txt`](config/eng7-roster.txt) | The two class lists for `aeh cohort create --roster` |
 | [`sample-materials/pdf/`](sample-materials/pdf/) | The sample PDFs (18 files): tests, model answers, rubrics, blank answer sheets, finished answer sheets |
+| [`sample-materials/show_criterion_marks.py`](sample-materials/show_criterion_marks.py) | After a run: each student's mark per rubric line (a checklist with its items beneath), and a check that every checklist mark is the sum of its items |
 | [`sample-materials/build_sample_materials.py`](sample-materials/build_sample_materials.py) | Rebuilds those PDFs, identically every time (standard library only) |
-| [`sample-materials/verify_sample_materials.py`](sample-materials/verify_sample_materials.py) | Runs every sample sheet through the system's real intake checks, with no network and no cost |
+| [`sample-materials/verify_sample_materials.py`](sample-materials/verify_sample_materials.py) | Builds both packages from their specs, runs every sample sheet through the system's real intake checks, and checks that a run would grade every rubric method, with no network and no cost |
 | [`sample-materials/check_config.py`](sample-materials/check_config.py) | Tells you whether a configuration file will be accepted, before you start anything |
 | [`sample-materials/build_rehearsal_data.py`](sample-materials/build_rehearsal_data.py) | Builds a practice data folder (a finished run over three demo students) to rehearse the console on |
 | [`../tutorials/images/`](../tutorials/images/) | Screenshots of the real console pages used in the tutorial |

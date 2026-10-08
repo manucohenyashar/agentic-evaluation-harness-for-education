@@ -572,6 +572,10 @@ A **package** is everything about one test: its questions, the rubric lines and 
 * one `[[question]]` per question, in paper order: `id`, `type` (`mcq` or `open`), `points`, `text`, `options` for multiple choice, and `model_answer`. The judges are shown the text and the model answer, so write them in full.
 * one `[[criterion]]` per rubric line: `id`, `question`, and either `key = "C"` (multiple choice; it must be one of the question's options) or `bands`, listed **worst to best**, an even number from 2 to 6, each with `name`, `points` and `descriptor`. The band names are the words a teacher later uses to change a mark. Every question needs at least one line, and a multiple-choice question needs a key, not bands.
 * `[grades]`: the lowest total that earns each grade.
+* optionally, a judged line's **scoring method**, `score_method`, one of three (the default is `bands`). [`docs/live-tests/config/eng7-read-01.package.toml`](../live-tests/config/eng7-read-01.package.toml), the sample English test, has one of each:
+  * `bands`: the line above; its mark is the points of the band awarded.
+  * `evidence_sum`: an evidence checklist. The line has `points` (the sum of its items' maxima) and **no** bands or key; each item is its own `[[criterion]]` with `component_of = "<the checklist's id>"` and exactly two bands (`absent`, `present`). Each item is judged on its own, the checklist never is, and its mark is the sum of its items' points.
+  * `general`: a line the teacher described in their own words. It carries `derivation_description` (the teacher's paragraph, kept as a record; no model reads it) and the `bands` derived from it, which the `approved_by` person is recorded as confirming. It grades exactly as a `bands` line.
 
 Then (checked):
 
@@ -660,6 +664,24 @@ What to expect, and what to record:
 * **Step 5.** Exit code 0 means every paper was graded. Exit code 3 means the run paused: read `pause_reason` in what it printed (for example the cost ceiling, 7.3, or an OpenRouter refusal, 7.6), fix it, and run the same command again; it continues where it stopped.
 * **Extra judges.** When judges are unsure or disagree, the system adds two more judges to that answer, and one more if a judge call is lost. With one judge in the file and no extra models, it cannot: the answer keeps its score, marked provisional, and goes to teacher review (the run's output says `no real judge for seats 2-3`, and the score's state is `provisional_unreviewed`). To let it add judges, add `[[profiles.dev-ci.escalation_judge]]` tables to the configuration file, each a **different** model from the panel and from each other, checked on a zero-retention host first (7.6). For a one-judge panel, **two** are enough to leave the random sample on (drop the `HARNESS_ORCH_RANDOM_ARM_RATE` line); if the sample is on and there are fewer, `aeh run` refuses before starting and says how many to add. Each one more lets one more step happen instead of leaving the answer provisional; **five** cover every seat a one-judge run can ever need (a sampled answer starts with three judges, can widen to five, and can get one replacement).
 * **Step 6.** Open `/runs/<run id>/rollup` and `/quarantine` (the operating tutorial, section 4). The parked papers can be released or closed there (section 5); the no-name paper can only be closed.
+
+**The second test: every rubric method.** The physics test has multiple-choice keys and band lines only. The sample English test uses one line of each scoring method (8.2): an evidence checklist (C1, the sum of items C1a and C1b), a band line (C2) and a line in the teacher's own words (C3). Run it in the same data folder and terminal, after the physics run:
+
+```powershell
+$E = "docs\live-tests\sample-materials\pdf\ENG7-READ-01"
+python -m aeh cohort create --data-dir $D --cohort eng7-class --consent synthetic --roster docs\live-tests\config\eng7-roster.txt
+python -m aeh package build --data-dir $D --spec docs\live-tests\config\eng7-read-01.package.toml
+$VE = "ENG7-READ-01@<the 12 characters it printed>"
+python -m aeh ingest --data-dir $D --cohort eng7-class --package-version $VE `
+  --config docs\live-tests\config\live-test.dev-ci.toml `
+  --assessment "$E\01-test-paper.pdf" "$E\answer-sheets"
+python -m aeh run --data-dir $D --cohort eng7-class --package-version $VE `
+  --config docs\live-tests\config\live-test.dev-ci.toml
+# Each student's mark per line, and the check that every C1 equals C1a + C1b (run id from the run's output):
+python docs\live-tests\sample-materials\show_criterion_marks.py --data-dir $D --cohort eng7-class --run <run id>
+```
+
+Expect all four English sheets `ok` at intake. The reference marks to compare with are in the live-test guide ([03, section 3](../live-tests/03-sample-tests-and-answer-sheets.md)). Before spending anything, `python docs\live-tests\sample-materials\verify_sample_materials.py` checks both specs build and that a run would grade every line of every method, with no key and no network.
 
 ## 9. Practice first: the rehearsal folder
 

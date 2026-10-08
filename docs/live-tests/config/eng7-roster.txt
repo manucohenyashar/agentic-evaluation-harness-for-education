@@ -1,0 +1,8 @@
+# The class list for the sample English test (ENG7-READ-01): the IDs written on the four sample
+# answer sheets. One entry per line is read as a name (#620): the sample sheets write these IDs on
+# their Student line, so each one is the "name" its paper is matched by. A real class lists full
+# names (see the deployment tutorial).
+E7-001
+E7-002
+E7-003
+E7-004

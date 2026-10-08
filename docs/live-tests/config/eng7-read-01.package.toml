@@ -1,0 +1,121 @@
+# Package spec for the sample English test (docs/live-tests/sample-materials, ENG7-READ-01).
+#
+# This is the test that exercises EVERY rubric method the system supports (FR-PKG-24, ADR-39):
+#
+#   C1   Q1  evidence_sum  an evidence checklist: the composite C1 is the sum of its two aspects,
+#                          C1a (names the character) and C1b (states the evening task). Each
+#                          aspect is a two-band (absent / present) line judged on its own; the
+#                          composite itself is never sent to a judge (FR-JUDGE-38).
+#   C2   Q2  bands         the classic four-band line, worst to best.
+#   C3   Q3  general       the teacher described in their own words how to arrive at a mark; the
+#                          system derived a band set from that description and the teacher
+#                          confirmed it (FR-PKG-26, FR-SETUP-18). It grades exactly as a bands line.
+#
+# (The physics test, ps9-forces-01.package.toml, covers the multiple-choice key lookup and more
+# bands lines. Run both to cover every kind of rubric line.)
+#
+# Build and publish it with:
+#     python -m aeh package build --data-dir ~/aeh-data --spec docs/live-tests/config/eng7-read-01.package.toml
+#
+# The command prints the package version id (ENG7-READ-01@<12 hex>) that `aeh run` needs.
+# A built package can never be changed: to correct it, give the corrected spec a new `package`
+# id. Everything here is copied from build_sample_materials.py, so the sample answer sheets and
+# the rubric PDF match. In the teacher's path the console builds this from the confirmed setup
+# flow (FR-PKG-27); the file is the engineer's / export path, and has the export's vocabulary.
+
+# The package id must be the test name printed on every answer sheet ("Assessment: ENG7-READ-01"):
+# intake's right-test check (V4) compares the two, ignoring case.
+package = "ENG7-READ-01"
+
+# Who approved the questions and rubric. Recorded on the published package, and recorded as the
+# person who confirmed the general line's derived bands (C3).
+approved_by = "Sample-materials teacher"
+
+# --- the questions, in paper order. A judge is shown each question's text and model answer. ---
+
+[[question]]
+id = "Q1"
+type = "open"
+points = 2
+text = "Who is the main character, and what does he do every evening?"
+model_answer = "The main character is Tomas. Every evening he climbs the steps, cleans the lens and lights the lamp."
+
+[[question]]
+id = "Q2"
+type = "open"
+points = 3
+text = "Why does Tomas keep the lamp burning even though the big ships no longer come? Use evidence from the passage."
+model_answer = "Someone might still need the light. Even though big ships stopped coming, a small fishing boat used the lamp on a stormy night to find the safe channel."
+
+[[question]]
+id = "Q3"
+type = "open"
+points = 3
+text = "Write two or three sentences about how Tomas changes by the end of the passage."
+model_answer = "At the start Tomas wonders whether lighting the lamp is worth it. After he saves the fisherman he is sure it is, and he climbs the steps 'a little taller than before'."
+
+# --- C1: score_method = "evidence_sum" (an evidence checklist). ---
+# The composite carries NO bands and NO key; its `points` is the sum of its aspects' maxima.
+# Each aspect is its own [[criterion]] with `component_of` naming the composite and exactly two
+# bands (absent / present). The awarded points of C1 are the sum of the aspects' awarded points.
+
+[[criterion]]
+id = "C1"
+question = "Q1"
+score_method = "evidence_sum"
+points = 2
+
+[[criterion]]
+id = "C1a"
+question = "Q1"
+component_of = "C1"
+construct_tag = "names the main character"
+bands = [
+  { name = "absent", points = 0, descriptor = "Does not name Tomas as the main character (for example, only 'a man' or 'the keeper')." },
+  { name = "present", points = 1, descriptor = "Names Tomas as the main character." },
+]
+
+[[criterion]]
+id = "C1b"
+question = "Q1"
+component_of = "C1"
+construct_tag = "states the evening task"
+bands = [
+  { name = "absent", points = 0, descriptor = "Does not say what he does each evening, or names something else." },
+  { name = "present", points = 1, descriptor = "Says he lights the lamp each evening (climbing the steps or cleaning the lens may also be mentioned)." },
+]
+
+# --- C2: score_method = "bands" (the default; the line could omit it). Worst first. ---
+
+[[criterion]]
+id = "C2"
+question = "Q2"
+score_method = "bands"
+bands = [
+  { name = "none", points = 0, descriptor = "No relevant answer." },
+  { name = "limited", points = 1, descriptor = "Repeats the passage ('he lights it every night') without giving a reason." },
+  { name = "adequate", points = 2, descriptor = "Gives a sensible reason, but with no evidence from the passage." },
+  { name = "full", points = 3, descriptor = "Gives a reason (someone might still need the light, such as a small boat) AND supports it with evidence from the passage." },
+]
+
+# --- C3: score_method = "general" (the teacher's own words). ---
+# `derivation_description` is the teacher's prose, kept as provenance; no model reads it. The
+# `bands` are the set the system derived from it and the teacher confirmed. A general line is
+# stored and graded exactly as a bands line.
+
+[[criterion]]
+id = "C3"
+question = "Q3"
+score_method = "general"
+derivation_description = "I give full marks when the student explains that Tomas goes from doubting that the lamp is worth lighting to being sure that it is, and backs this up with a detail from the ending, such as climbing the steps a little taller or no longer wondering. If they describe that change but give no detail, that is most of the marks. If they only retell what happens, such as the boat arriving, without saying how Tomas himself changes, they get a little credit. An answer with nothing relevant gets nothing."
+bands = [
+  { name = "none", points = 0, descriptor = "No relevant answer." },
+  { name = "retell", points = 1, descriptor = "Retells what happens in the story (the boat arrives) without describing a change in Tomas." },
+  { name = "change", points = 2, descriptor = "Describes how Tomas changes (unsure to confident, or doubting to proud) but gives no detail from the passage." },
+  { name = "evidenced", points = 3, descriptor = "Says Tomas starts unsure whether the work matters and ends sure that it does, AND gives a detail that shows it (the taller climb, or no longer wondering)." },
+]
+
+# --- grade boundaries: the lowest total that earns each grade (8 points in all). ---
+[grades]
+pass = 6
+"not yet" = 0

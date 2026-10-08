@@ -124,25 +124,48 @@ ENGLISH_QUESTIONS = [
     ("Q3", "Write two or three sentences about how Tomas changes by the end of the passage."),
 ]
 
+# The English test uses one rubric line of each scoring method the system supports (FR-PKG-24):
+# C1 is an evidence checklist (`evidence_sum`), C2 a band line (`bands`), C3 a line the teacher
+# described in their own words (`general`). A dict detail names its method; the package spec
+# `config/eng7-read-01.package.toml` carries the same lines in the system's vocabulary.
 ENGLISH_RUBRIC = [
-    ("C1", "Q1", "Names the main character", "Yes or no. Yes if the answer names Tomas."),
-    ("C2", "Q1", "States the evening task", "Yes or no. Yes if the answer says he lights the lamp "
-                                            "(climbing the steps or cleaning the lens may also be mentioned)."),
-    ("C3", "Q2", "Why the lamp is kept burning", [
+    ("C1", "Q1", "Who and what each evening (evidence checklist)", dict(
+        method="evidence_sum",
+        rule="One point for each item the answer shows; the line's mark is the sum, out of 2.",
+        aspects=[
+            ("C1a", "Names the main character", 1,
+             "Names Tomas as the main character."),
+            ("C1b", "States the evening task", 1,
+             "Says he lights the lamp each evening (climbing the steps or cleaning the lens may "
+             "also be mentioned)."),
+        ])),
+    ("C2", "Q2", "Why the lamp is kept burning", [
         ("Full (3)", "Gives a reason (someone might still need the light, such as a small boat) AND "
                      "supports it with evidence from the passage."),
         ("Adequate (2)", "Gives a sensible reason but with no evidence from the passage."),
         ("Limited (1)", "Repeats the passage ('he lights it every night') without a reason."),
         ("None (0)", "No relevant answer."),
     ]),
-    ("C4", "Q3", "How Tomas changes", [
-        ("Full (3)", "Says he starts unsure whether the work matters and ends confident it does, "
-                     "and gives a detail that shows it (the taller climb, or no longer wondering)."),
-        ("Adequate (2)", "Describes the change (unsure to confident, or sad to proud) but gives no detail."),
-        ("Limited (1)", "Describes what happens in the story (the boat arrives) without describing a "
-                        "change in Tomas."),
-        ("None (0)", "No relevant answer."),
-    ]),
+    ("C3", "Q3", "How Tomas changes (described in the teacher's own words)", dict(
+        method="general",
+        description=(
+            "I give full marks when the student explains that Tomas goes from doubting that the "
+            "lamp is worth lighting to being sure that it is, and backs this up with a detail "
+            "from the ending, such as climbing the steps a little taller or no longer wondering. "
+            "If they describe that change but give no detail, that is most of the marks. If they "
+            "only retell what happens, such as the boat arriving, without saying how Tomas "
+            "himself changes, they get a little credit. An answer with nothing relevant gets "
+            "nothing."),
+        bands=[
+            ("Evidenced (3)", "Says Tomas starts unsure whether the work matters and ends sure "
+                              "that it does, AND gives a detail that shows it (the taller climb, "
+                              "or no longer wondering)."),
+            ("Change (2)", "Describes how Tomas changes (unsure to confident, or doubting to "
+                           "proud) but gives no detail from the passage."),
+            ("Retell (1)", "Retells what happens in the story (the boat arrives) without "
+                           "describing a change in Tomas."),
+            ("None (0)", "No relevant answer."),
+        ])),
 ]
 
 ENGLISH_MODEL_ANSWER = [
@@ -408,6 +431,19 @@ def _rubric_body(d: Doc, rubric: list) -> None:
         d.para(f"{cid}  ({qid})  {name}", "b")
         if isinstance(detail, str):
             d.para(detail, indent=4)
+        elif isinstance(detail, dict) and detail["method"] == "evidence_sum":
+            d.para("Scoring method: evidence checklist (evidence sum). " + detail["rule"], indent=4)
+            for aid, aspect, points, present in detail["aspects"]:
+                d.para(f"{aid}  {aspect} ({points} point): present if the answer {present[0].lower()}"
+                       f"{present[1:]}", indent=4)
+        elif isinstance(detail, dict) and detail["method"] == "general":
+            d.para("Scoring method: described in the teacher's own words. The teacher wrote:",
+                   indent=4)
+            d.para(f'"{detail["description"]}"', indent=6)
+            d.para("The system derived these bands from that description, and the teacher "
+                   "confirmed them:", indent=4)
+            for band, text in detail["bands"]:
+                d.para(f"{band}: {text}", indent=6)
         else:
             for band, text in detail:
                 d.para(f"{band}: {text}", indent=4)
@@ -443,8 +479,9 @@ def english_rubric() -> Doc:
     _header(d, ENGLISH_ID, "Marking Rubric - " + ENGLISH_TITLE, None, False)
     _rubric_body(d, ENGLISH_RUBRIC)
     d.line("Grade policy (plain language)", "b")
-    d.para("The test total is out of 8 points (two 1-point yes/no lines and two 3-point written "
-           "lines). 6 or more is a pass; below 6 is not yet a pass.")
+    d.para("The test total is out of 8 points: Q1's evidence checklist (two 1-point items, out of "
+           "2), Q2's band line (out of 3) and Q3's line described in the teacher's own words "
+           "(out of 3). 6 or more is a pass; below 6 is not yet a pass.")
     return d
 
 

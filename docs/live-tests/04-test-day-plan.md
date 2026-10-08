@@ -48,7 +48,7 @@ All must be true. Each line is a checkable goal, listed in 02.
 - [ ] **[B4]** Uploading `S9-001-strong.pdf` leads, with no engineer typing, to a read paper that appears in the preflight page.
 - [ ] **[B1]** `aeh run` under `dev-ci` with a key really calls OpenRouter, and the printed summary says which provider ran.
 - [ ] An OpenRouter spending limit is set. `HARNESS_COST_CEILING` is set to a number you are comfortable losing. (No console page shows the run's spend, so OpenRouter's dashboard is where you watch it, or an engineer reads it from the data folder.)
-- [ ] Both packages (`PS9-FORCES-01`, `ENG7-READ-01`) are published, with keys C, B, C and B for Q1, Q2, Q3 and Q5a.
+- [ ] Both packages (`PS9-FORCES-01`, `ENG7-READ-01`) are published from `config/ps9-forces-01.package.toml` and `config/eng7-read-01.package.toml`, with keys C, B, C and B for Q1, Q2, Q3 and Q5a, and the English package carrying one line of each rubric method (C1 evidence checklist with items C1a/C1b, C2 bands, C3 the teacher's own words).
 - [ ] A backup of an empty data folder exists, so "start again" is one copy.
 
 **Stage 1 passed when** an engineer, **without help from the people who built the system**, takes the sample files to a finished run and a screen the teacher can read. Until then, do not schedule the test.
@@ -120,10 +120,12 @@ Copy this table and fill it in. One row per sheet. Leave a cell blank rather tha
 | S9-004 | parked, `incomplete` | | 3 of 4 + Q1 by operator | C4 (none) / C6: | | | |
 | S9-005 | parked, `unmatched_assessment` | | n/a | n/a | | | |
 | S9-006 | parked, `incomplete` | | 4 of 4 once matched | C4: / C6: | | | |
-| E7-001 | ok | | n/a | C1: C2: C3: C4: | | | |
-| E7-002 | ok | | n/a | C1: C2: C3: C4: | | | |
-| E7-003 | ok | | n/a | C1: C2: C3: C4: | | | |
-| E7-004 | ok | | n/a | C1: C2: C3: C4: | | | |
+| E7-001 | ok | | n/a | C1a: C1b: (C1 = sum?) C2: C3: | | | |
+| E7-002 | ok | | n/a | C1a: C1b: (C1 = sum?) C2: C3: | | | |
+| E7-003 | ok | | n/a | C1a: C1b: (C1 = sum?) C2: C3: | | | |
+| E7-004 | ok | | n/a | C1a: C1b: (C1 = sum?) C2: C3: | | | |
+
+The English lines use the three scoring methods ([03, section 3](03-sample-tests-and-answer-sheets.md)): C1 is an evidence checklist whose mark is the sum of items C1a and C1b, C2 is a band line, C3 a line the teacher described in their own words. Read them with `show_criterion_marks.py` (03, section 7).
 
 ## How to judge the result
 
@@ -133,7 +135,8 @@ These thresholds are **suggestions to agree before the day**, not rules of the s
 |---|---|---|
 | 1. Can it be run? | The operator finished every step using only the documents; the engineer stepped in at most for items already listed as blockers | List each step that failed |
 | 2. Fails safely? | Exactly the three expected sheets parked, each for the expected reason; nothing graded for them before the operator acted; **zero** non-synthetic data sent | Any extra parked sheet is a finding (see the right-test risk in 02); any wrong grade for a parked sheet is a **serious** finding |
-| 3. Deterministic exact? | Every multiple-choice mark equals the key. No exceptions. | Any difference is a defect |
+| 3. Deterministic exact? | Every multiple-choice mark equals the key, and every English C1 equals C1a + C1b (`show_criterion_marks.py` ends `OK`). No exceptions. | Any difference is a defect |
+| 3a. Every rubric method graded? | The English run graded C1a, C1b, C2 and C3 for every admitted sheet, and never sent C1 itself to a judge; C3 (the teacher's own words) got a band like any band line | A method with no grades, or a judged C1, is a defect |
 | 4. Judged part sensible? | At least 7 of 10 written bands within one band of the teacher's, and no gap of three bands | A pattern (all too high, all in the middle) matters more than the count |
 | Recovery | After Ctrl-C and restart the run finished, with no repeated or missing work | Record exactly what was missing |
 | Audit | The finalize and amend succeeded (the replies said `dispatched: true`). No page shows the name the teacher gave, so ask an engineer to read it from the data folder, or record it as a gap | |

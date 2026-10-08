@@ -3,10 +3,19 @@
 
 What this proves, and what it does not
 --------------------------------------
-It builds the two sample packages through the real package writer, puts the sample students on a
-roster, and sends every sample PDF through the real intake (`aeh.ingest.Ingestor`): the file
-integrity gate (V0), page-count gate (V1), structure gate (V2), identity gate (V3) and
-right-test gate (V4), then prints what each sheet did.
+It builds the two sample packages from the package specs the live test uses
+(`config/ps9-forces-01.package.toml`, `config/eng7-read-01.package.toml`) through the real
+`aeh package build` code, creates each class from its shipped roster file, and sends every
+sample PDF through the real intake (`aeh.ingest.Ingestor`): the file integrity gate (V0),
+page-count gate (V1), structure gate (V2), identity gate (V3) and right-test gate (V4), then
+prints what each sheet did.
+
+It then checks the rubric methods (FR-PKG-24): between them the two packages carry every
+scoring method the system supports (`bands`, `evidence_sum`, `general`, and the multiple-choice
+key lookup), and a `dev-ci` run created from `config/live-test.dev-ci.toml` over the admitted
+sheets enumerates work for every rubric line except the evidence-sum composite, which is never
+dispatched (FR-JUDGE-38): its two aspects are. No model is called and no key is needed: the run
+is created and its work listed, never started.
 
 The one thing replaced is the page-reading model. A scripted stand-in returns the page text a
 perfect reader would produce (the header lines carried over verbatim, one marked region per
@@ -33,6 +42,7 @@ which is why the folder is under your home directory.
 
 from __future__ import annotations
 
+import os
 import shutil
 import sys
 import tempfile
@@ -55,13 +65,35 @@ import aeh.review  # noqa: F401,E402
 import aeh.synth  # noqa: F401,E402
 
 import build_sample_materials as sm  # noqa: E402
-from aeh.conf import ModelRef  # noqa: E402
+from aeh.conf import ModelRef, effective_config, parse_config_document  # noqa: E402
+from aeh.conf import resolve_run_config  # noqa: E402
 from aeh.ingest import Ingestor, PdfiumRasterizer, PypdfSanitizer, ResidencySlot  # noqa: E402
+from aeh.orch import Orchestrator  # noqa: E402
+from aeh.orch.cohorts import create_cohort  # noqa: E402
+from aeh.pipeline.packages import build_package, read_package_spec  # noqa: E402
+from aeh.pipeline.rosters import read_roster_file  # noqa: E402
 from aeh.pkg import PackageCatalog  # noqa: E402
 from aeh.prov import Completion, SamplingParams  # noqa: E402
 from aeh.store import open_store  # noqa: E402
 
-STAMP = "2026-01-01T00:00:00+00:00"
+CONFIG = HERE.parent / "config"
+LIVE_CONFIG = CONFIG / "live-test.dev-ci.toml"
+
+# The package spec and the class list the live test uses for each sample test.
+MATERIALS = {
+    sm.PHYSICS_ID: (CONFIG / "ps9-forces-01.package.toml", CONFIG / "ps9-roster.txt"),
+    sm.ENGLISH_ID: (CONFIG / "eng7-read-01.package.toml", CONFIG / "eng7-roster.txt"),
+}
+
+# The scoring method of each rubric line, in the live-test guide's words. `key` is a
+# multiple-choice line: stored as a two-band line and marked by key lookup, never judged.
+EXPECTED_METHODS = {
+    sm.PHYSICS_ID: {"C1": "key", "C2": "key", "C3": "key", "C4": "bands", "C5": "key",
+                    "C6": "bands"},
+    sm.ENGLISH_ID: {"C1": "evidence_sum", "C1a": "aspect of C1", "C1b": "aspect of C1",
+                    "C2": "bands", "C3": "general"},
+}
+
 TRANSCRIBER = ModelRef(role="transcriber", provider="local", build_id="scripted-reader@sha256:0",
                        quantization="q4")
 
@@ -171,37 +203,64 @@ def written_region(qid: str, printed_question: str, text: str) -> str:
     return region("transcribed_text", qid, f"{printed_question} {text}", conf=0.9)
 
 
-# ---- the two packages ---------------------------------------------------------------------------
+# ---- the two packages, built the way `aeh package build` builds them ----------------------------
 
-def build_package(store, test_id: str, rubric: list, mcq_options: dict, answer_keys: dict,
-                  boundaries: list) -> tuple[PackageCatalog, str]:
-    handle = store.package(test_id)
-    with handle.transaction() as tx:
-        tx.execute("INSERT INTO package (package_id, created_at) VALUES (:p, :c)", p=test_id, c=STAMP)
-    catalog = PackageCatalog(handle, package_id=test_id, blobs=store.blobs())
-    version = catalog.create_version(None)
-    for cid, qid, _name, detail in rubric:
-        if cid in mcq_options:
-            catalog.add_criterion(version, cid, question_id=qid, kind="mcq", max_points=1.0,
-                                  scoring_model="atomic", band_count=2)
-            catalog.add_band(version, cid, 0, "incorrect", 0.0)
-            catalog.add_band(version, cid, 1, "correct", 1.0)
-            catalog.set_mcq_options(version, cid, [(k, f"Option {k}") for k in mcq_options[cid]])
-            catalog.set_answer_key(version, cid, [answer_keys[cid]])
-        elif isinstance(detail, str):  # a yes/no written line
-            catalog.add_criterion(version, cid, question_id=qid, kind="open", max_points=1.0,
-                                  scoring_model="atomic", band_count=2)
-            catalog.add_band(version, cid, 0, "not met", 0.0, "The answer does not do this.")
-            catalog.add_band(version, cid, 1, "met", 1.0, detail)
-        else:  # a four-band written line
-            catalog.add_criterion(version, cid, question_id=qid, kind="open", max_points=3.0,
-                                  scoring_model="holistic", band_count=4)
-            for ordinal, (label, text) in enumerate(reversed(detail)):
-                name = label.split(" (")[0].lower()
-                catalog.add_band(version, cid, ordinal, name, float(ordinal), text)
-    catalog.set_boundaries(version, boundaries)
-    catalog.publish(version, approved_by="Sample-materials check")
-    return catalog, version
+def build_package_from_spec(store, test_id: str) -> tuple[PackageCatalog, str]:
+    """Build and publish `test_id`'s package from its shipped spec, through the real build code."""
+    spec_path, _roster = MATERIALS[test_id]
+    built = build_package(store, read_package_spec(spec_path))
+    catalog = PackageCatalog(store.package(built.package_id), package_id=built.package_id,
+                             blobs=store.blobs())
+    return catalog, built.package_version
+
+
+def declared_methods(catalog: PackageCatalog, version: str) -> dict[str, str]:
+    """Each rubric line's scoring method, in the guide's words (see EXPECTED_METHODS)."""
+    found = {}
+    for row in map(dict, catalog.criteria(version)):
+        if row["kind"] == "mcq":
+            found[row["criterion_id"]] = "key"
+        elif row["component_of"]:
+            found[row["criterion_id"]] = f"aspect of {row['component_of']}"
+        else:
+            found[row["criterion_id"]] = row["score_method"]
+    return found
+
+
+def enumerated_lines(store, cohort: str, version: str) -> tuple[dict[str, set[str]], str]:
+    """Create (never start) a dev-ci run from the live config over `cohort`, and return the rubric
+    lines it enumerated work for, with their stages, and the enumeration's note on composites."""
+    raw = parse_config_document(LIVE_CONFIG.read_text(encoding="utf-8"), "toml")
+    orchestrator = Orchestrator(store)
+    config = resolve_run_config(dict(effective_config(raw)), orchestrator.cohort_ref(cohort))
+    run_id = orchestrator.create_run(cohort, version, config)
+    report = orchestrator.enumerate_units(run_id)
+    lines: dict[str, set[str]] = {}
+    for row in store.cohort(cohort).query(
+            "SELECT DISTINCT criterion_id, stage FROM work_unit WHERE run_id = :r", r=run_id):
+        lines.setdefault(row["criterion_id"], set()).add(row["stage"])
+    return lines, report.gates.get("composites", "")
+
+
+def check_methods(store, test_id: str, catalog: PackageCatalog, version: str,
+                  cohort: str) -> list[str]:
+    """Print the package's rubric methods and the lines a dev-ci run would grade; return any
+    difference from what the live-test guide says."""
+    failures = []
+    methods = declared_methods(catalog, version)
+    print("  rubric methods:  " + ", ".join(f"{c}={m}" for c, m in sorted(methods.items())))
+    if methods != EXPECTED_METHODS[test_id]:
+        failures.append(f"{test_id}: the guide says rubric methods {EXPECTED_METHODS[test_id]}, "
+                        f"the built package has {methods}")
+    lines, composites = enumerated_lines(store, cohort, version)
+    print("  dev-ci run work: " + ", ".join(
+        f"{c}({'+'.join(sorted(stages))})" for c, stages in sorted(lines.items())))
+    print(f"  composites:      {composites}")
+    graded = {c for c, m in methods.items() if m != "evidence_sum"}
+    if set(lines) != graded:
+        failures.append(f"{test_id}: a run should enumerate work for {sorted(graded)}, it "
+                        f"enumerated {sorted(lines)}")
+    return failures
 
 
 def main() -> int:
@@ -215,26 +274,17 @@ def main() -> int:
         blobs = store.blobs()
         print(f"working folder: {home_tmp}\n")
 
-        worlds = [
-            (sm.PHYSICS_ID, sm.PHYSICS_RUBRIC,
-             {"C1": "ABCD", "C2": "ABCD", "C3": "ABCD", "C5": "ABC"},
-             {"C1": "C", "C2": "B", "C3": "C", "C5": "B"},
-             [("A", 8.0), ("B", 6.0), ("C", 4.0), ("D", 2.0), ("F", 0.0)], sm.PHYSICS_SHEETS),
-            (sm.ENGLISH_ID, sm.ENGLISH_RUBRIC, {}, {},
-             [("pass", 6.0), ("not yet", 0.0)], sm.ENGLISH_SHEETS),
-        ]
-        for test_id, rubric, opts, keys, bounds, sheets in worlds:
-            catalog, version = build_package(store, test_id, rubric, opts, keys, bounds)
+        # The run created by the method check reads its profile from the live config file, and
+        # leaves the random extra-judge sample off, as the one-judge live walkthrough does.
+        os.environ.pop("HARNESS_PROFILE", None)
+        os.environ["HARNESS_ORCH_RANDOM_ARM_RATE"] = "0"
+        worlds = [(sm.PHYSICS_ID, sm.PHYSICS_SHEETS), (sm.ENGLISH_ID, sm.ENGLISH_SHEETS)]
+        for test_id, sheets in worlds:
+            catalog, version = build_package_from_spec(store, test_id)
             cohort = f"coh-{test_id.lower()}"
+            # The shipped class list. S9-006 left its name off the page, but is on the list.
+            create_cohort(store, cohort, "synthetic", read_roster_file(MATERIALS[test_id][1]))
             handle = store.cohort(cohort)
-            with handle.transaction() as tx:
-                tx.execute("INSERT INTO cohort (cohort_id, consent_class, created_at) "
-                           "VALUES (:c, 'synthetic', :t)", c=cohort, t=STAMP)
-                for sheet in sheets:
-                    # S9-006 left its name off the page, but it is still a student on the roster.
-                    ref = sheet["student"] or "S9-006"
-                    tx.execute("INSERT INTO roster (cohort_id, student_ref) VALUES (:c, :s)",
-                               c=cohort, s=ref)
             ingestor = Ingestor(handle, blobs, reader, TRANSCRIBER, SamplingParams(temperature=0.0),
                                 PdfiumRasterizer(), residency=ResidencySlot.for_policy(("transcriber",)),
                                 sanitizer=PypdfSanitizer())
@@ -261,6 +311,8 @@ def main() -> int:
                 if report.ingest_status != want:
                     failures.append(f"{sheet['stem']}: the guide says {want!r}, intake gave "
                                     f"{report.ingest_status!r}")
+            if not ANSWERS_ONLY:
+                failures += check_methods(store, test_id, catalog, version, cohort)
         store.close()
     finally:
         shutil.rmtree(home_tmp, ignore_errors=True)
@@ -276,6 +328,8 @@ def main() -> int:
             print("  -", failure)
         return 1
     print("OK: every sample sheet behaved at intake as the live-test guide says it will.")
+    print("OK: the two packages carry every rubric method (key, bands, evidence_sum, general), "
+          "and a run grades every line but the evidence-sum composite, which is its aspects' sum.")
     return 0
 
 
