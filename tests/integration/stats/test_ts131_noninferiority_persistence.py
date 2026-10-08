@@ -74,7 +74,7 @@ def test_tc_pkg_33_the_verdict_column_round_trips_and_refuses_outside_its_domain
                 f"a refused {bad!r} changed the stored verdict")
     finally:
         store.close()
-    assert COMPLETE_SCHEMA_VERSIONS[Tier.PACKAGE] == 15
+    assert COMPLETE_SCHEMA_VERSIONS[Tier.PACKAGE] == 16
     assert "pkg_decision_engine_noninferior" in (REPO / "CLAUDE.md").read_text(encoding="utf-8")
 
 

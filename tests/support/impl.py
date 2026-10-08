@@ -1319,13 +1319,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     #
     # Keyed `command` on the written-ahead tests themselves: each blocker is a behaviour of
     # code that already exists, so the only honest signal is the case going green.
-    # #525 (needs-attention): no baseline can reach a published version (FR-PKG-04), which is
-    # every version a run uses. The arm's shape may move with #525's decision.
-    "#525 TS-134 TC-PIPE-20(a') the baseline writer reaches the run's version": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_20_a_prime_the_baseline_reaches_the_runs_version_through_its_writer",
-        ("tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_20_a_prime_the_baseline_reaches_the_runs_version_through_its_writer",),
-    ),
+    # "#525 TS-134 TC-PIPE-20(a') the baseline writer reaches the run's version" left with
+    # #525's fix: decision (a) makes a baseline append the one admitted write on a published
+    # version, and the arm runs green against the live triggers.
     # "#523 TS-134 TC-PIPE-22 an MCQ-only paper is narrated" left with #523's fix: the
     # worker's MC-only branch narrates a multiple-choice-only submission from its scored
     # deterministic results by template, with no model call, so the case rejoined the gate.
