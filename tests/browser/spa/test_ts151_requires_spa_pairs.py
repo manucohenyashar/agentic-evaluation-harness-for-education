@@ -3,27 +3,35 @@ case each, at rung 3 (E6) per operator test plan §6.13:
 
 | Case | Pair | Assertion |
 |---|---|---|
-| `TC-REQ-128` | M-UI → M-CONSOLE | a scripted E6 session performs publish and run start; the API calls observed are exactly the enumerated controls; the rows written equal the CLI path's row-for-row |
-| `TC-REQ-129` | M-UI → M-HELP | the Q&A panel's traffic is only `ask()`; no other M-HELP endpoint is called from the SPA in the recorded session |
+| `TC-REQ-128` | M-UI → M-CONSOLE | a scripted E6 session performs the run start on the SPA's run-start screen; the API calls observed are exactly the enumerated routes (the one mutation the enumerated "start run" control); the rows written equal the CLI path's row-for-row |
+| `TC-REQ-129` | M-UI → M-HELP | the Q&A panel's traffic is only `ask()`; no other M-HELP endpoint is called from the SPA in the recorded session — its case lives beside the panel's: `tests/browser/spa/test_spa_qa_panel.py` |
 
 The rung-2 halves of this story (`TC-REQ-130`..`133`) are
 `tests/contract/requires/test_ts151_requires_delta.py`. The rig is the TS-49/TS-148 family:
 `serve_console` for real on the loopback bind, a Chromium-family browser through Playwright
-(`spa_page`), the network guard loosened for loopback only. The run-start differential is
-TS-148's (`tests/integration/console/test_ts148_console_coverage.py`), one rung up: the console
-side drives the SPA's confirmations, not raw JSON.
+(`spa_page`), the network guard stood down under the `browser` marker (TS-49's rule) — the
+no-egress oracle is the browser's own request log (`SpaLog.foreign_requests`). The run-start
+differential is TS-148's (`tests/integration/console/test_ts148_console_coverage.py`),
+one rung up: the console side drives the SPA's confirmations, not raw JSON.
 
-**Written ahead of implementation: yes.** Both cases are red until their paired stories land;
-they fail in milliseconds on the missing bundle (`NotImplementedYet` naming #634) — never a
-navigation timeout that reads like a broken server — and their `writtenahead` marker is keyed
-in `WRITTEN_AHEAD_BLOCKERS` on the conjunction of #632's parity inventory, #634's committed
-bundle, #636's assistant and #638's answers-only affordance. #631's run-start routes and the
-publish control's route ship no keyed name in any open story, so when the key fires, re-check
-both cases green before unmarking; never unmark on the notice alone.
+**The run-start premise, reworked** (disclosed on the PR). The plan row's "publish and run
+start" paired the two controls over one setup-ready world — but the SPA's run-start screen is
+resume-only by design (FR-UI-03d names FR-CONSOLE-43, whose confirmation posts the served
+run's id — the FR-CONF-15 resume; with no served run the screen's button is disabled and it
+says there is nothing to start), and the console's publish is the confirmed setup flow's
+publish through M-SETUP — a path no `aeh` subcommand performs (`aeh package build` builds
+and publishes a spec-built package, a different path), so a publish leg has no CLI twin to
+differ against. The case now owns the leg the design actually pins: the confirmation writes
+the same run-start rows the CLI writes, `aeh run` continuing the same stored run on a twin
+copy of the same world — both drives stubbed (TC-PIPE-26's precedent, via TC-CONSOLE-56's
+seams) so the comparison is the start's rows. The publish affordance's own E6 coverage is
+TC-UI-05's publish arm over the setup-ready draft (no row-for-row twin there — the publish
+leg's twin comparison is dropped with this rework, a plan finding for the row's owner to
+amend). The `writtenahead` marker came off and the `WRITTEN_AHEAD_BLOCKERS` entry left with
+this rework (#635/#638's wording shipped; the case re-checked green unmarked).
 
-Isolation: real store, real modules, no network (`network_guard`); the Q&A session's model
-boundary is the recorded QA double behind `RecordedFixtureProvider` — the only egress point
-(CT-PROV-15).
+Isolation: real store, real modules, no egress; the run start's model boundary is stubbed at
+the drive seam, the same instance kind on both paths (TS-148's double).
 """
 
 from __future__ import annotations
@@ -31,10 +39,9 @@ from __future__ import annotations
 import re
 import shutil
 import time
-from contextlib import contextmanager
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 import pytest
 
@@ -49,63 +56,50 @@ import aeh.orch  # noqa: F401
 import aeh.pkg  # noqa: F401
 import aeh.review  # noqa: F401
 import aeh.synth  # noqa: F401
+from aeh.console.vocabulary import RUN_START_STATE_READ
 from aeh.store import open_store
 from tests.support import spa
 from tests.support.console_api_vocabulary import (
-    PROFILE_PARAM,
+    MUTATING_METHODS,
     ROUTE_TABLE,
+    RUN_START_ISSUE,
     RUN_START_PREVIEW_READ,
     START_RUN_CONTROL,
     matches_template,
-    route_rows,
     row_differences,
+    route_rows,
     tier_rows,
 )
 from tests.support.impl import CONSOLE_MODULE, NotImplementedYet, require, require_path
 
 pytestmark = [pytest.mark.browser, pytest.mark.integration]
 
-#: Invented DOM contract for the two SPA actions this story drives (FR-UI-05: every confirmation
-#: names what it does, and the confirming button is the one naming the action — never a header
-#: close/x). Declared here, once; #635 aligns the bundle or these patterns move with a one-line
-#: edit — rename there, not here.
-PUBLISH_ACTION = re.compile(r"publish", re.I)
+#: The DOM contract for the SPA action this story drives (FR-UI-05): the screen's action button
+#: names what it does ("Start the run"), and the confirming button inside the dialog is the one
+#: naming the action — never the dialog's Cancel. Declared here, once; the bundle renames there,
+#: not here.
 RUN_START_ACTION = re.compile(r"start (the |a )?run", re.I)
+RUN_START_CONFIRM = re.compile(r"^start\b", re.I)
 _CANCEL = re.compile(r"cancel", re.I)
 
-#: The publish control's API label — **invented**: no route in #629's table publishes the setup
-#: flow's package version yet, and no open story names the label. #632's census owns the
-#: enumerated-controls inventory; when it lands, re-point this constant or the case.
-PUBLISH_CONTROL = "publish package version"
-PUBLISH_ISSUE = "#632"
-
-PROFILE = "cloud-hosted"
-JEV_BUILD = "openrouter/typesafe/jev-1.13@20260917"
-PANEL_BUILDS = (
-    "openrouter/qwen/qwen3-30b-a3b@2026-06-01",
-    "openrouter/meta-llama/llama-3.3-70b-instruct@2026-06-01",
-    "openrouter/mistralai/mistral-small-3.2-24b-instruct@2026-06-01",
-)
-#: The operator's config file: profile sections only, no top-level `HARNESS_PROFILE` — the
-#: console process runs unprofiled and the run names its profile per request (TS-148's reading).
-CONFIG_TOML = (
-    'prompt_template_v = "judge-prompt/2"\n'
-    "[profiles.cloud-hosted]\n"
-    "HARNESS_COST_CEILING = 50\n"
-    'HARNESS_COST_CURRENCY = "USD"\n'
-    'retention_setting = "zero-retention"\n'
-    'HARNESS_DECISION_ENGINE = "jev"\n'
-    'HARNESS_DECISION_PROVIDER = "openrouter-jev"\n'
-    f'HARNESS_JEV_BUILD = "{JEV_BUILD}"\n'
-    "[profiles.cloud-hosted.transcriber]\n"
-    'role = "transcriber"\nprovider = "openrouter"\n'
-    'build_id = "openrouter/qwen/qwen3-vl-8b-instruct@2026-06-01"\n'
-    + "".join(f'[[profiles.cloud-hosted.panel]]\nrole = "judge"\nprovider = "openrouter"\n'
-              f'build_id = "{build}"\n' for build in PANEL_BUILDS)
-)
-CRITERIA = (
-    {"criterion_id": "C01", "kind": "open", "scoring_model": "holistic"},
-    {"criterion_id": "C02", "kind": "open", "scoring_model": "holistic"},
+#: The twin's config file: the `edge-local` section `aeh run` re-resolves the stored run's
+#: continuation against. The seeded world's run froze `edge_cfg`'s values (tests/support/
+#: conf_builders.py), and `aeh run` refuses a continuation whose resolved backend profile
+#: differs from the run's (FR-CONF-15's posture, cli.py) — so the twin re-resolves the same
+#: profile, panel and transcriber the run froze. Profile sections only, no top-level
+#: `HARNESS_PROFILE`: the CLI call names it in the environment (FR-CONF-14).
+TWIN_PROFILE = "edge-local"
+TWIN_CONFIG_TOML = (
+    'prompt_template_v = "conf-v1.0.0"\n'
+    "[profiles.edge-local]\n"
+    'HARNESS_HARDWARE_PROFILE = "unified-large"\n'
+    'HARNESS_DECISION_ENGINE = "off"\n'
+    "[[profiles.edge-local.panel]]\n"
+    'role = "judge"\nprovider = "ollama"\n'
+    'build_id = "/models/llama-3.3-70b.gguf@sha256:aaaa"\nquantization = "q4"\n'
+    "[profiles.edge-local.transcriber]\n"
+    'role = "transcriber"\nprovider = "ollama"\n'
+    'build_id = "/models/whisper-large-v3.gguf@sha256:bbbb"\nquantization = "q4"\n'
 )
 
 
@@ -152,43 +146,32 @@ def _route(routes, issue: str, *, control: str | None = None, read: str | None =
     return found
 
 
-# --- the twin world: one confirmed setup flow, seeded twice ------------------------------------
+# --- the twin world: one scored pending run, seeded once, copied twice --------------------------
 
 
-def _seed_flow(data_dir: Path):
-    """The confirmed setup flow over one real store: store, document ingested, the proposed
-    inventory confirmed, every answer key keyed — the publishable draft (`TC-UI-05`'s
-    setup-ready world), beside a synthetic cohort and its papers loaded. The support seeds are
-    deterministic, so seeding this twice yields two identical stores; minted ids are masked in
-    the differential (`tier_rows`'s `<minted>` rule), never assumed equal."""
-    from tests.support.orch_run import seed_cohort
-    from tests.support.setup_harness import ingest_document, stage_chain
-    chain = stage_chain(data_dir)
-    try:
-        assessment = ingest_document(chain.store)
-        proposal = chain.service.propose_inventory(assessment)
-        chain.service.confirm_inventory(proposal.proposal_id)
-        chain.service.set_answer_keys({"CRIT-Q4": ["A"], "CRIT-Q5": ["A"], "CRIT-Q6": ["A"]})
-        seed_cohort(chain.store, ("S001", "S002", "S003"))
-        return chain
-    finally:
-        _close(chain.store)
-
-
-def _flow_world(tmp_path: Path) -> dict[str, Any]:
-    """One confirmed flow seeded twice and copied, so the console's store and the CLI's twin
-    start identical (TS-148's `_run_world`, with the setup draft in it)."""
-    from tests.support.orch_run import ORCH_COHORT_ID
+def _resume_world(tmp_path: Path) -> dict[str, Any]:
+    """One scored **pending** run seeded once (console_world's seeding: the shipped M-ORCH,
+    M-DET and M-GRADE writers over a real store; `create_run` freezes the resolved
+    `edge_cfg` configuration on the run row, which is what the resume restarts under,
+    FR-CONF-15) and the closed store copied, so the console's store and the CLI's twin start
+    identical — TC-CONSOLE-56's `_run_world` one premise up: a stored run, not a fresh
+    cohort-and-package pair."""
+    from tests.support.console_world import seed_scored_run
 
     base = tmp_path / "base"
-    chain = _seed_flow(base)
+    store = open_store(base)
+    try:
+        seeded = seed_scored_run(store, submissions=2)
+    finally:
+        _close(store)
     console_dir, cli_dir = tmp_path / "console", tmp_path / "cli"
     shutil.copytree(base, console_dir)
     shutil.copytree(base, cli_dir)
     config = tmp_path / "harness.toml"
-    config.write_text(CONFIG_TOML, encoding="utf-8")
-    return {"cohort": ORCH_COHORT_ID, "version": chain.version, "console": console_dir,
-            "cli": cli_dir, "config": config}
+    config.write_text(TWIN_CONFIG_TOML, encoding="utf-8")
+    return {"cohort": seeded.cohort_id, "version": seeded.package_version_id,
+            "run_id": seeded.run_id, "console": console_dir, "cli": cli_dir,
+            "config": config}
 
 
 def _start_seams(monkeypatch) -> None:
@@ -230,26 +213,6 @@ def _the_run(data_dir: Path) -> dict[str, Any]:
     return rows[0]
 
 
-def _published_version(data_dir: Path) -> Any:
-    """The store's published package version (`package_version.locked = 1`, read-only) —
-    what the SPA's publish confirmation must have landed."""
-    import sqlite3
-
-    versions: list[str] = []
-    for db in Path(data_dir).rglob("*.sqlite"):
-        connection = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
-        try:
-            if connection.execute(
-                    "SELECT 1 FROM sqlite_master WHERE name = 'package_version'").fetchone():
-                versions += [r[0] for r in connection.execute(
-                    "SELECT package_version_id FROM package_version WHERE locked = 1")]
-        finally:
-            connection.close()
-    assert len(versions) == 1, (
-        f"expected exactly one published package version, found {versions}")
-    return versions[0]
-
-
 def _observed_api_calls(page, log: spa.SpaLog) -> list[tuple[str, str]]:
     """(method, path) for every `/api/` request the page issued since it was attached —
     the pair-level census's operand. `SpaLog.requests` holds URLs only; Playwright's request
@@ -266,22 +229,27 @@ def _observed_api_calls(page, log: spa.SpaLog) -> list[tuple[str, str]]:
 
 
 
-def _confirm(page, action: re.Pattern[str], what: str, problems: list[str]) -> bool:
-    """Click the first enabled button named for `action` on the current screen, confirm the
-    dialog with the button naming the action (never a cancel/close), and report problems."""
+def _open_confirmation(page, action: re.Pattern[str], what: str, problems: list[str]):
+    """Click the first enabled button named for `action` on the current screen, and return the
+    dialog it opened (None, with the problem recorded, when it opened none)."""
     buttons = page.locator("main").get_by_role("button", name=action)
     enabled = [buttons.nth(i) for i in range(buttons.count()) if buttons.nth(i).is_enabled()]
     if not enabled:
         problems.append(f"{what}: no enabled {action.pattern!r} action on its screen")
-        return False
+        return None
     enabled[0].click()
     dialog = page.get_by_role("dialog")
     try:
         dialog.first.wait_for(state="visible")
     except Exception:
         problems.append(f"{what}: {action.pattern!r} opened no confirmation dialog")
-        return False
-    named = dialog.first.get_by_role("button", name=action)
+        return None
+    return dialog.first
+
+
+def _confirm_dialog(dialog, names: re.Pattern[str], what: str, problems: list[str]) -> bool:
+    """Click the dialog's button naming the action (never a cancel/close)."""
+    named = dialog.get_by_role("button", name=names)
     confirm = [named.nth(i) for i in range(named.count()) if not _CANCEL.search(
         named.nth(i).inner_text())]
     if not confirm:
@@ -304,18 +272,19 @@ def _wait_for_write(page, before: dict[str, Any], data_dir: Path, what: str,
 def _api_census_problems(observed: list[tuple[str, str]]) -> list[str]:
     """CT-CONSOLE-30 at the pair level: every `/api/` request the session made names an
     enumerated route of the route table, and every mutating one is an enumerated control row
-    (never an orphan, never a read)."""
+    (never an orphan, never a read). `route_rows` yields `(METHOD, path template, control)`;
+    a read route's `control` is None, which is fine for a GET."""
     _serve, routes = require(CONSOLE_MODULE, "serve_console", ROUTE_TABLE, issue="#629")
     templates = route_rows(routes)
     problems: list[str] = []
     for method, path in observed:
-        hit = next(((m, c, t) for m, c, t in templates
+        hit = next(((m, t, c) for m, t, c in templates
                     if m.upper() == method.upper() and matches_template(t, path)), None)
         if hit is None:
             problems.append(f"the SPA called an API path no route enumerates: {method} {path}")
             continue
-        _m, control, _t = hit
-        if method.upper() in ("POST", "PUT", "PATCH", "DELETE") and control is None:
+        _m, _t, control = hit
+        if method.upper() in MUTATING_METHODS and control is None:
             problems.append(
                 f"the SPA issued a mutating call whose route carries no enumerated "
                 f"control: {method} {path}")
@@ -325,93 +294,140 @@ def _api_census_problems(observed: list[tuple[str, str]]) -> list[str]:
 # --- TC-REQ-128 --------------------------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
-def test_tc_req_128_the_spa_session_performs_publish_and_run_start_like_the_cli(
-        tmp_path, network_guard, monkeypatch, capsys):
-    """`TC-REQ-128` / M-UI→M-CONSOLE (P0) — a scripted E6 session performs publish and run
-    start on a setup-ready world; every `/api/` call the session made is an enumerated route
-    and every mutation is an enumerated control (CT-CONSOLE-30 at the pair level); and the
-    run-start confirmation's rows equal the CLI path's row-for-row (FR-CONSOLE-43's own claim:
-    "the same run-start rows the CLI writes; there is no second start path"), masked minted
-    ids. TS-148's TC-CONSOLE-56 differential, one rung up.
+def test_tc_req_128_the_spa_session_starts_the_run_like_the_cli(tmp_path, monkeypatch, capsys):
+    """`TC-REQ-128` / M-UI→M-CONSOLE (P0) — a scripted E6 session performs the run start on the
+    SPA's run-start screen (FR-UI-03d): the screen reads the run the console serves, its
+    confirmation opens on the preview read (FR-CONSOLE-43's banner and estimate — rendering it
+    writes nothing), and confirming posts the served run's id: the FR-CONF-15 resume, the run's
+    own frozen configuration, nothing composed from today's environment. Every `/api/` call the
+    session made is an enumerated route and its one mutation is the enumerated "start run"
+    control (CT-CONSOLE-30 at the pair level); and the SPA-started run's rows equal, row for
+    row, the rows `aeh run` writes continuing the same stored run on a twin copy of the same
+    world (FR-CONSOLE-43: "the same run-start rows the CLI writes; there is no second start
+    path") — TC-CONSOLE-56's differential, one rung up, minted ids masked.
 
-    *Reading, disclosed in the PR:* the design's row-for-row claim is the run-start leg's —
-    no `aeh` subcommand publishes (R-12 makes the console the publish path), so the publish
-    leg is pinned by the census (an enumerated control wrote it) and by the published version
-    landing. When #632's census names publish's console path, the publish leg can join the
-    differential."""
+    *Premise, reworked (disclosed on the PR):* the first draft paired "publish and run start"
+    over a setup-ready world with no run — but the SPA's run-start screen is resume-only by
+    design (with no served run its button is disabled and it says there is nothing to start),
+    and the console's publish is the confirmed setup flow's publish through M-SETUP, a path
+    no `aeh` subcommand performs (`aeh package build` publishes a spec-built package, a
+    different path), so a publish leg has no CLI twin to differ against. The publish
+    affordance's own E6 coverage is TC-UI-05's publish arm over the setup-ready draft; this
+    case owns the leg FR-CONSOLE-43 pins."""
     _require_bundle()
-    # Red-by-design guards BEFORE the fixture work: the session needs the lifecycle screens'
-    # recovery wording (#635, FR-UI-07) and the answers-only affordance (#638, FR-UI-06) —
-    # the same two bundle probes the TS-152 journey's registry command uses. Without these,
-    # the case would crash deep in the twin world instead of refusing at its door.
-    for phrase, issue in (("check that the console service is running", "#635"),
-                          ("does not operate the system", "#638")):
-        if not spa.text_in_bundle(spa.BUNDLE_INDEX.parent, phrase):
-            raise NotImplementedYet(
-                f"the SPA bundle does not carry {phrase!r} yet (blocked on {issue}); "
-                "the wording is that story's to ship.")
-
+    # The run-start screen's own failure path must still degrade as FR-UI-07 names it (the
+    # preview read's refusal wording is #635's): a cheap probe at the door, before the twin
+    # world would crash deep in the drive.
+    if not spa.text_in_bundle(spa.BUNDLE_INDEX.parent, "check that the console service is "
+                                                         "running"):
+        raise NotImplementedYet(
+            "the SPA bundle does not carry the recovery wording yet (blocked on #635); "
+            "the wording is that story's to ship.")
+    _start_seams(monkeypatch)
+    world = _resume_world(tmp_path)
     serve, routes = require(CONSOLE_MODULE, "serve_console", ROUTE_TABLE, issue="#629")
+    state = _route(routes, RUN_START_ISSUE, read=RUN_START_STATE_READ)
+    preview = _route(routes, RUN_START_ISSUE, read=RUN_START_PREVIEW_READ)
+    start = _route(routes, RUN_START_ISSUE, control=START_RUN_CONTROL)
 
     store = open_store(world["console"])
     problems: list[str] = []
     observed: list[tuple[str, str]] = []
     try:
-        server = serve(store=store)
-        with on_loopback(server, network_guard) as (port, _census):
-            origin = f"http://localhost:{port}"
-            with spa.spa_page(origin) as (page, log):
-                observed = _observed_api_calls(page, log)
-                spa.open_hub(page, origin)
-                spa.go_to(page, origin, "package")
-                before = spa.store_digest(world["console"])
-                if _confirm(page, PUBLISH_ACTION, "package: publish", problems):
-                    _wait_for_write(page, before, world["console"], "package: publish",
-                                    problems)
-                spa.go_to(page, origin, "run_start")
-                before_start = spa.store_digest(world["console"])
-                if _confirm(page, RUN_START_ACTION, "run start", problems):
-                    _wait_for_write(page, before_start, world["console"], "run start",
-                                    problems)
-                for thread in list(getattr(server.app, "_run_threads", {}).values()):
-                    thread.join(timeout=30)
-                problems += [f"uncaught page error {e!r}" for e in log.page_errors]
-                problems += [f"a request left the console's origin: {u}"
-                             for u in log.foreign_requests()]
+        server = serve(store=store, run_id=world["run_id"])
+        host, port = server.socket.getsockname()[:2]
+        origin = f"http://{host}:{port}"
+        with spa.spa_page(origin) as (page, log):
+            observed = _observed_api_calls(page, log)
+            spa.open_hub(page, origin)
+            spa.go_to(page, origin, "run_start")
+            text = spa.main_text(page)
+            for value in (world["run_id"], world["cohort"], world["version"]):
+                if value not in text:
+                    problems.append(
+                        f"run start: the screen does not show the served run's {value!r} — "
+                        "the state read did not render what would start")
+            before = spa.store_digest(world["console"])
+            dialog = _open_confirmation(page, RUN_START_ACTION, "run start", problems)
+            if dialog is not None:
+                if spa.store_digest(world["console"]) != before:
+                    problems.append(
+                        "run start: opening the confirmation (its preview read) wrote "
+                        + str(spa.changed_tables(before, spa.store_digest(world["console"]))))
+                if _confirm_dialog(dialog, RUN_START_CONFIRM, "run start", problems):
+                    _wait_for_write(page, before, world["console"], "run start", problems)
+                    outcome = page.locator("main").get_by_role("status")
+                    try:
+                        outcome.first.wait_for(state="visible", timeout=2_000)
+                    except Exception:
+                        pass
+                    if outcome.count() and outcome.first.inner_text().strip().startswith(
+                            "Refused"):
+                        problems.append("run start: the confirmation was refused: "
+                                        + outcome.first.inner_text().strip())
+            for thread in list(getattr(server.app, "_run_threads", {}).values()):
+                thread.join(timeout=30)
+            problems += [f"uncaught page error {e!r}" for e in log.page_errors]
+            problems += [f"a request left the console's origin: {u}"
+                         for u in log.foreign_requests()]
     finally:
+        # The served fixture's cleanup (test_spa_hub_screens.py): the accept loop and its
+        # socket back, before the store's tier handles.
+        server.terminate()
         _close(store)
-    network_guard.assert_no_network()
 
-    published = _published_version(world["console"])
     run = _the_run(world["console"])
-    assert run["package_version_id"] == published, (
-        f"TC-REQ-128: the run the session started names {run['package_version_id']!r}, not "
-        "the version the session published — the SPA started a run on a second path")
+    if run["status"] != "running":
+        problems.append(
+            f"run start: the served run is {run['status']!r}, not 'running' — the "
+            "confirmation did not start it")
+    if run["package_version_id"] != world["version"]:
+        problems.append(
+            f"run start: the started run names {run['package_version_id']!r}, not the served "
+            f"{world['version']!r} — the SPA started something else")
+    for route, what in ((state, "the run-start state read"),
+                        (preview, "the run-start preview read"),
+                        (start, "the start-run confirmation")):
+        if (route.method.upper(), route.path) not in observed:
+            problems.append(
+                f"run start: the session never made {what} ({route.method} {route.path}); "
+                "the pairing is not what was driven")
     problems += _api_census_problems(observed)
     _fail_with(problems)
 
-    # The CLI twin: the same flow, published by the same setup surface, then `aeh run` on the
-    # published version — the rows the confirmation must equal.
-    from aeh.pipeline import cli as cli_module
+    # The CLI twin: the same stored run, continued by `aeh run` over the twin copy — the rows
+    # the confirmation must equal. Both drives are stubbed (`_start_seams`), so what is
+    # compared is what the START wrote, before any dispatch.
+    code, out, err = _cli_run(world, monkeypatch, capsys)
+    assert code == 0, f"TC-REQ-128: the CLI twin did not continue its run: {out + err}"
 
-    twin = stage_chain(world["cli"])
-    try:
-        twin_version = twin.service.publish(_TEACHER)
-    finally:
-        _close(twin.store)
-    code, out, err = _cli(tmp_path, world, twin_version, capsys)
-    assert code == 0, f"TC-REQ-128: the CLI twin did not start its run: {out + err}"
-
-    console_run, cli_run = _the_run(world["console"]), _the_run(world["cli"])
     differences = row_differences(
-        tier_rows(world["console"], mask={console_run["run_id"]: "<run>",
-                                          published: "<version>"}),
-        tier_rows(world["cli"], mask={cli_run["run_id"]: "<run>",
-                                      twin_version: "<version>"}))
+        tier_rows(world["console"], mask={world["run_id"]: "<run>"}),
+        tier_rows(world["cli"], mask={world["run_id"]: "<run>"}))
     assert not differences, (
-        "TC-REQ-128: the SPA session did not write exactly the CLI path's rows (row for row; "
-        "minted ids masked):\n  " + "\n  ".join(differences))
+        "TC-REQ-128: the SPA's confirmed start did not write exactly the rows `aeh run` "
+        "writes continuing the same stored run (row for row; minted ids masked):\n  "
+        + "\n  ".join(differences))
+
+
+def _cli_run(world: dict[str, Any], monkeypatch, capsys) -> tuple[int, str, str]:
+    """`aeh run` continuing the twin's stored run: the CLI names the run's cohort and package
+    version (how the command finds a run to continue) and re-resolves the frozen profile from
+    the twin's config file — the run resumes on the backend it froze (FR-CONF-15)."""
+    from aeh.pipeline import cli
+
+    monkeypatch.setenv("HARNESS_PROFILE", TWIN_PROFILE)
+    monkeypatch.setenv("HARNESS_HARDWARE_PROFILE", "unified-large")
+    try:
+        capsys.readouterr()
+        code = cli.main(["run", "--data-dir", str(world["cli"]), "--cohort", world["cohort"],
+                         "--package-version", world["version"], "--config",
+                         str(world["config"])])
+        captured = capsys.readouterr()
+    finally:
+        monkeypatch.delenv("HARNESS_PROFILE", raising=False)
+        monkeypatch.delenv("HARNESS_HARDWARE_PROFILE", raising=False)
+    return code, captured.out, captured.err
 
 
 def _fail_with(problems: list[str]) -> None:
