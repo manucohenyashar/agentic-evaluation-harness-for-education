@@ -44,6 +44,8 @@ Three facts shape every choice:
 2. **Student work sits on that computer's disk**, in the data folder. Treat the folder as a student record.
 3. **In OpenRouter mode, student work also goes to OpenRouter.** The system has a consent rule for this (section 7.4).
 
+One framing fact for whoever writes the runbooks: **the console is the operator surface and the terminal is the debugging surface** (NFR-CONSOLE-09). The daily operation this tutorial sets up — start it, load papers, watch the run, sort out problems, export — happens in the browser; the `aeh` commands below are for installation, first bring-up and debugging, and the operating tutorial lists every one with the console screen that covers it (the system keeps that inventory and fails a check if a command appears without one, FR-CONSOLE-41).
+
 ## 2. The two modes at a glance
 
 A **profile** tells the system where its models run. You pick exactly one for each run. There is **no default**: if you forget, the system stops and says so.
@@ -97,6 +99,8 @@ python -m venv .venv
 pip install .
 ```
 
+On Windows, if `pip` itself fails to start (see the "Fatal error in launcher" row in section 13), the private environment is broken or was copied from another computer: redo Steps 1 and 2, or use `python -m pip install .`.
+
 That one command is the whole install. It also downloads the libraries that read PDFs, decode page pictures and talk to the Jev decision engine in OpenRouter mode, so it needs internet access. There are no optional parts to add and nothing to name by hand. (No internet on the school computer? See section 4.1.)
 
 **Step 4: check it worked.**
@@ -108,15 +112,23 @@ aeh --help
 You should see (checked):
 
 ```
-usage: aeh [-h] {run,recover,console} ...
+usage: aeh [-h] {run,recover,console,cohort,package,ingest,results} ...
 
 Run, recover and serve the agentic evaluation harness.
 
 positional arguments:
-  {run,recover,console}
+  {run,recover,console,cohort,package,ingest,results}
     run                 drive a cohort's run to completion
     recover             reclaim leases, resume and settle grades
     console             recover, then serve the operator console
+    cohort              make a cohort (class) with its consent class and
+                        roster, or show one
+    package             build and publish a package (a test's questions,
+                        rubric and keys)
+    ingest              read the test paper and answer sheets (PDFs) through
+                        the intake checks
+    results             show a run's grades and rollup, or export the school-
+                        facing set
 ```
 
 `python -m aeh ...` does exactly the same thing and works even if the `aeh` command is not on your PATH.
@@ -124,7 +136,7 @@ positional arguments:
 **Two details people trip over (both checked):**
 
 * The `--config` option belongs **after** the command word: `aeh console --data-dir ... --config ...`. Putting it first (`aeh --config x console ...`) fails with *"invalid choice: 'x'"*. The comment at the top of `config/harness.example.toml` shows it the wrong way round; ignore that line.
-* `aeh recover` takes only `--data-dir`. It has no `--config`.
+* `aeh recover` takes only `--data-dir` (its two other flags, `--extractor` and `--synthesizer`, pin developer build identities; an operator does not need them). It has no `--config`.
 
 People who will also run the project's own test suite use `pip install -e . -r requirements-dev.txt` instead, on Python 3.13. An operator does not need it.
 
@@ -547,7 +559,7 @@ Not yet recorded: who created the class. Only the time is stored.
 
 ### 8.2 Build a package (the test, its rubric and keys)
 
-A **package** is everything about one test: its questions, the rubric lines and their bands, the multiple-choice keys and the grade boundaries. Once built it is published and can never be changed. Write it as a TOML file; [`docs/live-tests/config/ps9-forces-01.package.toml`](../live-tests/config/ps9-forces-01.package.toml) is a complete example, the sample physics test. In short:
+A **package** is everything about one test: its questions, the rubric lines and their bands, the multiple-choice keys and the grade boundaries. Once built it is published and can never be changed. The spec file below is the **debugging/export path**, not the teacher's path (FR-PKG-27): the system creates the valid package file itself from what the teacher confirmed in setup, so a teacher never authors a spec. A published version's spec is a **system-emitted export** — `aeh package export --data-dir ~/aeh-data --package-version <version> --spec out.toml` writes it, and the `aeh package build --spec` command below accepts that export unchanged — and the command is kept so an engineer can build a package without the setup flow, as this tutorial does with the sample physics test. Write it as a TOML file; [`docs/live-tests/config/ps9-forces-01.package.toml`](../live-tests/config/ps9-forces-01.package.toml) is a complete example, the sample physics test. In short:
 
 * `package`: the test's name **exactly as printed on the paper** (`Assessment: PS9-FORCES-01`). Intake's right-test check compares the two, ignoring case.
 * `approved_by`: who approved the questions, keys and rubric.
@@ -745,11 +757,12 @@ Every message is the system's real wording (checked unless said).
 | `... froze backend profile 'X' and this process resolved 'Y'` | You tried to resume a run under another profile | Set `HARNESS_PROFILE` to the one it names |
 | `InsecureLocationError` | Folder under `/tmp` | Use a folder in your home |
 | `ConsoleBindRefused` | Cloud profile, or a network address | Section 8 |
+| `Fatal error in launcher: Unable to create process using '...python.exe'` (Windows, when running `pip` or `aeh`) | The private environment is broken: it was copied from another computer or folder, or its Python has moved, so the commands inside it still point at the old location | Delete the `.venv` folder and redo Steps 1 to 3 of section 4; if `pip` alone still fails, use `python -m pip install .` |
 | `aeh: error: argument command: invalid choice` | `--config` was put before the command | Put it after: `aeh console --data-dir ... --config ...` |
 
 ## 14. A short check for the whole setup
 
-1. `aeh --help` shows `run`, `recover` and `console`.
+1. `aeh --help` shows `run`, `recover`, `console`, `cohort`, `package`, `ingest` and `results`.
 2. `check_config.py` says `ACCEPTED` for your file.
 3. The data folder is in your home folder.
 4. For OpenRouter mode: `OPENROUTER_API_KEY` is set in this terminal, a spending limit exists, and the two model names are on openrouter.ai/models.
