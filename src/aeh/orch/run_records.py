@@ -6,7 +6,7 @@ import json
 import uuid
 from typing import Any, Sequence
 
-from .constants import _JSON_SEPARATORS
+from .constants import MODEL_PIN_ROLES, MODEL_PINS_KEY, _JSON_SEPARATORS
 from .errors import WorkLedgerError
 from .statements import ORCH_STATEMENTS
 from .settings import JUDGE_DECISION_TEMPLATE_V, _now
@@ -26,6 +26,36 @@ def decision_engine_record(decision_engine: Any) -> dict[str, Any]:
         "max_citation_questions": decision_engine.max_citation_questions,
         "token_bytes_ratio": decision_engine.token_bytes_ratio,
         "template": JUDGE_DECISION_TEMPLATE_V,
+    }
+
+
+def _pin_records(model_pins: "Mapping[str, Any] | None") -> dict[str, Any]:
+    """The `model_pins` field a pinned run freezes into `provider_config` (FR-PIPE-19), or
+    nothing — the key is absent entirely when no pin was given, so a pre-feature row
+    round-trips byte-identically (`NFR-CONF-04`, the `decision_engine` pattern above).
+
+    Each role's entry carries the ref's three identity fields (provider, build,
+    quantization), so a caller can rebuild the exact `ModelRef` the run froze. A role
+    outside `MODEL_PIN_ROLES` is refused before any write: a pin for a seat the pipeline
+    does not drive would record an identity nothing honours.
+    """
+    if not model_pins:
+        return {}
+    unknown = sorted(str(role) for role in model_pins if role not in MODEL_PIN_ROLES)
+    if unknown:
+        raise WorkLedgerError(
+            f"model_pins must key {MODEL_PIN_ROLES}, got {unknown}. A pin for a role no "
+            "CLI flag or stage drives is not a pin this ledger can honour."
+        )
+    return {
+        MODEL_PINS_KEY: {
+            role: {
+                "provider": ref.provider,
+                "build_id": ref.build_id,
+                "quantization": ref.quantization,
+            }
+            for role, ref in model_pins.items()
+        },
     }
 
 
@@ -107,6 +137,41 @@ def _panel_build_ref_of(row: Any) -> str:
     except (TypeError, ValueError):
         return ""
     return str(config.get("panel_build_ref") or "") if isinstance(config, dict) else ""
+
+
+def _model_pin_records_of(
+    row: Any,
+) -> tuple[tuple[str, str, str, "str | None"], ...]:
+    """The run's recorded model pins (`FR-PIPE-19`), from its saved provider config.
+
+    One tuple per pinned role, in role order — `(role, provider, build_id, quantization)`
+    — so a caller can compare a fresh flag against what the run froze, or rebuild the
+    `ModelRef` a run keeps, without touching the JSON itself (`CT-PIPE-05`: M-PIPE
+    executes no SQL, and the persisted-config schema is M-ORCH's to read). `()` for a row
+    with no `model_pins` key: pre-feature rows carry none, and the absence is the honest
+    answer — an unpinned run has no pin to keep or compare against.
+    """
+    try:
+        config = json.loads(_mapping_get(row, "provider_config") or "{}")
+    except (TypeError, ValueError):
+        return ()
+    if not isinstance(config, dict):
+        return ()
+    raw = config.get(MODEL_PINS_KEY)
+    if not isinstance(raw, dict):
+        return ()
+    records: list[tuple[str, str, str, "str | None"]] = []
+    for role in MODEL_PIN_ROLES:
+        entry = raw.get(role)
+        if not isinstance(entry, dict):
+            continue
+        records.append((
+            role,
+            str(entry.get("provider") or ""),
+            str(entry.get("build_id") or ""),
+            entry.get("quantization"),
+        ))
+    return tuple(records)
 
 
 def record_run_start(

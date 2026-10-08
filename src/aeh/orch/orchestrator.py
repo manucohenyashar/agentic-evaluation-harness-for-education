@@ -14,7 +14,7 @@ from .work_units import compute_work_id, WorkUnit
 from .errors import RunNotFoundError, WorkLedgerError
 from .statements import ORCH_STATEMENTS
 from .settings import _env_int, LEASE_SECONDS_ENV, _now, ORCH_LEASE_SECONDS
-from .run_records import default_package_id_for
+from .run_records import default_package_id_for, _model_pin_records_of
 from .reports import SweepPlan
 from .package_checks import _cohort_keys_on_filesystem
 from .executors import PackageCatalogProtocol, RunHandle
@@ -143,6 +143,10 @@ class Orchestrator(RunLifecycleMixin, CostsMixin, EnumerationMixin, RunPreviewMi
         #: cannot say (the seam's in-memory counters); the dropped judges are ledger
         #: state, not this dict's (`_dropped_judges`).
         self._dispatch_states: dict[str, dict[str, Any]] = {}
+        #: The `extractor_version` hash input per run (`FR-PIPE-19`), parsed once from the
+        #: run row's frozen `model_pins`. The ledger is the truth; this only keeps a small
+        #: JSON read from repeating per unit on the enumeration hot path.
+        self._extractor_versions: dict[str, str] = {}
 
     def _invalidate_order_cache(self, run_id: str) -> None:
         """Clear the cached dispatch order for one run (NFR-ORCH-01).
@@ -200,7 +204,14 @@ class Orchestrator(RunLifecycleMixin, CostsMixin, EnumerationMixin, RunPreviewMi
 
         Kept beside `compute_work_id`'s call so the nine inputs' provenance is one
         glance: run and package from the run row, prompt template version from the
-        frozen config, extractor version from the module constant, judge from the arm.
+        frozen config, extractor version from the run's recorded pin or the module
+        constant (`FR-PIPE-19`), judge from the arm.
+
+        The extractor version is read from the run row's own frozen `model_pins`, not
+        from a caller: the pin is a property of the RUN, so any process re-enumerating
+        it — a resume, a recovery, `aeh run` with no flags — hashes the same ids the
+        pinned process did (`TC-PIPE-34`), and a run created without pins keeps
+        `EXTRACTOR_VERSION` and every pre-feature id unchanged (`TC-REG-06`).
 
         `origin` names the unit's provenance — `'base'`, `'escalation'` or
         `'random_arm'` (`FR-ORCH-09/11`). It is deliberately **not** a `work_id` input:
@@ -220,7 +231,7 @@ class Orchestrator(RunLifecycleMixin, CostsMixin, EnumerationMixin, RunPreviewMi
             package_version_id=row["package_version_id"],
             panel_config=row["panel_config"],
             prompt_template_version=row["prompt_template_v"],
-            extractor_version=EXTRACTOR_VERSION,
+            extractor_version=self._extractor_version_of(row),
         )
         params = {
             "work_id": work_id,
@@ -232,6 +243,22 @@ class Orchestrator(RunLifecycleMixin, CostsMixin, EnumerationMixin, RunPreviewMi
             "origin": origin,
         }
         return work_id, params
+
+    def _extractor_version_of(self, row: Any) -> str:
+        """The `extractor_version` hash input for one run's units (`FR-PIPE-19`).
+
+        The run's recorded extractor pin's build id when the run froze one, else the
+        module constant. Cached per run id — the persisted config is frozen for the
+        run's lifetime, and the enumeration loop calls here once per unit.
+        """
+        run_id = str(row["run_id"])
+        if run_id not in self._extractor_versions:
+            pins = _model_pin_records_of(row)
+            recorded = next(
+                (pin[2] for pin in pins if pin[0] == "extractor" and pin[2]), None
+            )
+            self._extractor_versions[run_id] = recorded or EXTRACTOR_VERSION
+        return self._extractor_versions[run_id]
 
     def _unit_from_row(self, row: Any) -> WorkUnit:
         """Turn a claimed ledger row into the `WorkUnit` handed to a worker.
@@ -424,6 +451,7 @@ class Orchestrator(RunLifecycleMixin, CostsMixin, EnumerationMixin, RunPreviewMi
                     pause_reason=row["pause_reason"],
                     backend_profile=str(row["backend_profile"] or ""),
                     started_at=str(row["started_at"] or ""),
+                    model_pins=_model_pin_records_of(row),
                 ))
         return tuple(found)
 
