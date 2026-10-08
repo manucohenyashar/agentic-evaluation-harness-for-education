@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from "react";
-import { askHelp, fetchRead, type HelpAnswer, type HelpDoc } from "../api";
-import { ReadScreen } from "../components/ReadScreen";
-import { useScreenRead } from "../useScreenRead";
+import { Screen } from "../components/Screen";
+import { askHelp, type HelpAnswer } from "../api";
 
 type AskState =
   | { kind: "idle" }
@@ -103,31 +102,41 @@ export function QaPanel() {
 }
 
 /**
- * The help screen (FR-UI-03, the manuals list; #638's Q&A panel beside it, FR-UI-06): the
- * manuals this console ships and the assistant's one standing limit — it answers questions
- * about operating the system; it does not operate it. The grounded Q&A panel is the manuals
- * story's work (#638); this screen's degradation contract holds already (FR-UI-07).
+ * The whole help destination: the Q&A panel beside the link to the manuals themselves —
+ * the pages the citations open (FR-HELP-01's console page, served same-origin). The level-1
+ * heading is the screen contract every destination carries (`screens.tsx`).
  */
-export function Help() {
-  const read = useScreenRead<HelpDoc>("/api/v1/help");
+/**
+ * The whole help destination: the Q&A panel beside the link to the manuals themselves —
+ * the pages the citations open (FR-HELP-01's console page, served same-origin). The level-1
+ * heading is the screen contract every destination carries (`screens.tsx`). The screen reads
+ * nothing of its own (TC-REQ-129: the SPA's api traffic is the hub read and the ask), so its
+ * degradation (FR-UI-07) rides the hub read's own failure — a named message and the hub
+ * read's retry, the same recoverable shape every other screen renders.
+ */
+export function Help({ failed = false, onRetry }: {
+  failed?: boolean;
+  onRetry?: () => void;
+}) {
   return (
-    <ReadScreen title="Manuals & help" read={read}>
-      {(data) => (
+    <Screen title="Manuals & help">
+      {failed && (
         <>
-          <ul className="rows-list">
-            {data.manuals.map((manual) => (
-              <li key={manual}>
-                <span className="step-name">{manual}</span>
-              </li>
-            ))}
-          </ul>
-          <p className="panel">{data.ask}</p>
-          <QaPanel />
-          <p className="qa-manuals-link">
-            Or read the <a href="/manuals">manuals page</a> directly.
+          <p role="alert" className="screen-alert">
+            The console could not read its state — check that the console service is
+            running.
           </p>
+          {onRetry && (
+            <button type="button" className="button" onClick={onRetry}>
+              Try again
+            </button>
+          )}
         </>
       )}
-    </ReadScreen>
+      <QaPanel />
+      <p className="qa-manuals-link">
+        Or read the <a href="/manuals">manuals page</a> directly.
+      </p>
+    </Screen>
   );
 }

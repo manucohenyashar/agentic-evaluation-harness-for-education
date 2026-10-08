@@ -89,7 +89,6 @@ BLIND_SEATS_READ = "blind seats"
 RESULTS_SCREEN_READ = "results screen"
 STUDENT_DETAIL_READ = "student detail"
 SYSTEM_STATUS_READ = "system status"
-HELP_READ = "help"
 
 
 #: The per-action field contract (§11.8's Effect column): the store fields each action may

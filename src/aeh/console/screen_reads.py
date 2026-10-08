@@ -413,20 +413,3 @@ def system_status_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
         "packages": packages,
     }
 
-
-def help_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
-    """The help screen's document — the manuals this console ships, until M-HELP's index
-    lands (#638). The degradation contract (FR-UI-07) applies to this screen too, so the
-    read exists now and the screen's recovery is real."""
-    return {
-        "manuals": [
-            "Teacher guide",
-            "Deployment tutorial",
-            "Live-test documents",
-            "Console help",
-        ],
-        "ask": (
-            "The assistant answers questions about operating the system; it does not "
-            "operate it."
-        ),
-    }

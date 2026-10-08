@@ -21,7 +21,6 @@ from .vocabulary import (
     CLASS_ROSTER_READ,
     CLI_HELP_READ,
     CONTROL_SURFACE_ACTIONS,
-    HELP_READ,
     MONITOR_READ,
     PACKAGE_SETUP_READ,
     PAPERS_READ,
@@ -144,7 +143,6 @@ def _build_routes() -> tuple[ApiRoute, ...]:
         ApiRoute("GET", f"{API_PREFIX}/results/screen", None, RESULTS_SCREEN_READ),
         ApiRoute("GET", f"{API_PREFIX}/results/student-detail", None, STUDENT_DETAIL_READ),
         ApiRoute("GET", f"{API_PREFIX}/system-status", None, SYSTEM_STATUS_READ),
-        ApiRoute("GET", f"{API_PREFIX}/help", None, HELP_READ),
     )
     controls = tuple(
         ApiRoute("POST", f"{API_PREFIX}/actions/{action_slug(action)}", action)

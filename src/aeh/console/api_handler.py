@@ -41,7 +41,6 @@ from .run_start import run_start_preview_read
 from .screen_reads import (
     blind_seats_read,
     class_roster_read,
-    help_read,
     monitor_read,
     package_setup_read,
     papers_read,
@@ -55,7 +54,6 @@ from .vocabulary import (
     BLIND_SEATS_READ,
     CLASS_ROSTER_READ,
     CLI_HELP_READ,
-    HELP_READ,
     MONITOR_READ,
     PACKAGE_SETUP_READ,
     PAPERS_READ,
@@ -127,7 +125,6 @@ _READS = {
     RESULTS_SCREEN_READ: lambda console, app, _params, query: results_screen_read(console, app, query),
     STUDENT_DETAIL_READ: lambda console, app, _params, query: student_detail_read(console, app, query),
     SYSTEM_STATUS_READ: lambda _console, app, _params, query: system_status_read(_console, app, query),
-    HELP_READ: lambda _console, _app, _params, _query: help_read(_console, _app, _query),
 }
 
 
