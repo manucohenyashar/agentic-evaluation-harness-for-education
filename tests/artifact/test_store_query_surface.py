@@ -256,19 +256,24 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # #362 (FR-ORCH-28): `mark_cell_phase`'s upsert of the per-cell composition phase,
     # written through the caller's transaction so the phase and the work it stands for
     # commit together.
-    "aeh.orch.run_lifecycle:88",
+    # #664 (FR-PIPE-19): the model-pin recording in `create_run` and the pin-reader in
+    # `run_records` shifted the file's line numbers; the sites are the same statements
+    # as before, and the re-pin is line drift only. `run_lifecycle.py` is unchanged on
+    # main, so #664's numbers hold; `enumeration.py` is #597's SQL-ready rewrite, whose
+    # sites are main's re-pin.
+    "aeh.orch.run_lifecycle:99",
     "aeh.orch.enumeration:102",
     "aeh.orch.enumeration:111",
-    "aeh.orch.run_lifecycle:244",
-    "aeh.orch.run_lifecycle:238",
+    "aeh.orch.run_lifecycle:260",
+    "aeh.orch.run_lifecycle:255",
     "aeh.orch.run_lifecycle:249",
-    "aeh.orch.run_lifecycle:270",
-    "aeh.orch.run_lifecycle:282",
-    "aeh.orch.run_lifecycle:310",
-    "aeh.orch.run_lifecycle:430",
-    "aeh.orch.run_lifecycle:412",
-    "aeh.orch.run_lifecycle:454",
-    "aeh.orch.run_lifecycle:462",
+    "aeh.orch.run_lifecycle:281",
+    "aeh.orch.run_lifecycle:293",
+    "aeh.orch.run_lifecycle:321",
+    "aeh.orch.run_lifecycle:441",
+    "aeh.orch.run_lifecycle:423",
+    "aeh.orch.run_lifecycle:465",
+    "aeh.orch.run_lifecycle:473",
     "aeh.orch.leasing:234",
     "aeh.orch.leasing:253",
     "aeh.orch.leasing:265",
@@ -299,20 +304,26 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.orch.escalation:474",
     "aeh.orch.escalation:427",
     "aeh.orch.escalation:556",
-    "aeh.orch.composition:44",
+    # #597's re-pin: the readiness redesign's docstring growth above `mark_cell_phase`'s
+    # upsert moved the site 44 -> 49. `ready_cells_with_units` adds no execute site — its
+    # read goes through `handle.query`, which is not an execute method — so the site is the
+    # same statement, re-read from the walker rather than hand-shifted. The costs sites
+    # follow #667's edits on main (240/241).
+    "aeh.orch.composition:49",
     "aeh.orch.costs:240",
     "aeh.orch.costs:241",
+
     # `record_pause_reason` (#365): the one write that annotates an already-paused run
     # without flipping its state. `pause()` deliberately changes nothing on a paused run,
     # so a run recovery REFUSED to resume - a profile switch, FR-CONF-15 - would keep a
     # stale reason that answers a different question. Declared statement,
     # keyword-parameterized, in the caller's transaction (FR-STORE-08).
-    "aeh.orch.run_lifecycle:550",
+    "aeh.orch.run_lifecycle:561",
     "aeh.orch.leasing:672",
     "aeh.orch.leasing:674",
     "aeh.orch.dispatch:449",
     "aeh.orch.reporting:369",
-    "aeh.orch.run_records:145",
+    "aeh.orch.run_records:210",
     # #612 (live OpenRouter enablement): cohort creation and roster widening write the
     # roster through ORCH_STATEMENTS, and ingest marks interrupted submissions
     # not_reached through INGEST_STATEMENTS - declared statements, keyword parameters,
@@ -477,10 +488,14 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.pkg.versions:56",
     "aeh.pkg.versions:99",
     "aeh.pkg.validation:53",
-    "aeh.pkg.validation:248",
-    "aeh.pkg.validation:233",
-    "aeh.pkg.validation:280",
-    "aeh.pkg.validation:284",
+    # #525's re-pin: the docstring extension over `record_validation_baseline`
+    # (decision (a), the published append-only exception) moved the module's
+    # seven sites; the statements are the same seven. Re-read from the walker,
+    # never hand-unioned.
+    "aeh.pkg.validation:257",
+    "aeh.pkg.validation:242",
+    "aeh.pkg.validation:289",
+    "aeh.pkg.validation:293",
     "aeh.pkg.validation_reads:35",
     "aeh.pkg.validation_reads:27",
     "aeh.pkg.criteria:246",
@@ -529,9 +544,9 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.pkg.exchange:52",
     "aeh.pkg.exchange:142",
     "aeh.pkg.exchange:140",
-    "aeh.pkg.validation:177",
-    "aeh.pkg.validation:191",
-    "aeh.pkg.validation:194",
+    "aeh.pkg.validation:178",
+    "aeh.pkg.validation:192",
+    "aeh.pkg.validation:195",
     # Lines moved with #234's chain-completeness guard (the IncompleteMigrationChainError
     # class and the COMPLETE_SCHEMA_VERSIONS pin, both above the first site), again with
     # #269's _VersionOrderedRegistry, again with #61's run-lifecycle statements landing
@@ -579,8 +594,9 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # score-claim ladder and pattern list landing above the write, again with the
     # reviewer's pattern-tightening disclosures expanding the comments above it;
     # again with #523's MC-only helpers landing in the resolution section above the
-    # write — same statement, re-pinned from the walker each time.)
-    "aeh.synth.worker:324",
+    # write, again with #668's roster-identity read landing beside `_evidence` — same
+    # statement, re-pinned from the walker each time.)
+    "aeh.synth.worker:353",
     # The grade sites are #104's line numbers (the module's own write surface, every
     # one from GRADE_STATEMENTS or a raw fixture DDL string, keyword-parameterized):
     # `compute_all`'s five pass writes (demote/insert/settle/queue-row/queue-clear),
@@ -680,8 +696,9 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # submission's declared consent class. (Re-pinned from the walker on any
     # line move.) (#134's re-pin: the conformance module's divergence-gate
     # machinery and the per-fixture ingest-ladder drive grew the module above
-    # the ephemeral store open.)
-    "aeh.conform.suite:347",
+    # the ephemeral store open.) (#618's re-pin: the TS-142 live arm's branch grew
+    # `_run_backend`'s opening above the ephemeral store open.)
+    "aeh.conform.suite:348",
     # The review site is #110's: the label store's one durable write, a single
     # `tx.execute` inside `_persist_label`'s transaction body, passing
     # `REVIEW_STATEMENTS["insert_label"]` — a declared statement with keyword
@@ -787,6 +804,13 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.calib.fixtures:295",
     "aeh.calib.fixtures:326",
     "aeh.calib.fixtures:336",
+    # #636's (FR-HELP-04): the Q&A log's one durable write — `record_exchange`'s
+    # `tx.execute` of the declared HELP_STATEMENTS["insert_qa_exchange"],
+    # keyword-parameterized, in the module's only write surface's synchronous
+    # transaction (CT-HELP-04: nothing else in M-HELP writes a stored byte).
+    # The read side goes through `handle.query` and is not a census site. Pinned
+    # from the walker.
+    "aeh.help.log:38",
 
 })
 

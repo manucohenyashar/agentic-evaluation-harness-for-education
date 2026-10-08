@@ -93,17 +93,20 @@ def _assert_refused(refusal: rm.Refusal, must_name: tuple[str, ...], what: str,
 
 
 def test_tc_pkg_34_b_the_package_pin_is_15_and_names_pkg_criterion_score_method():
-    """The pin, the chain and CLAUDE.md move together (RISK-119).
+    """Migration 15 sits under its design name, and the pin, the chain and CLAUDE.md move
+    together (RISK-119).
 
     This is also the `WRITTEN_AHEAD_BLOCKERS` key for #622: cheap, and true only when migration
     15 has landed under its design name — another tier-P migration taking 15 would not satisfy
-    it.
+    it. The pin itself is only ever expected to have moved ON from 15 (later migrations —
+    #525's 16 — land past it): the pin equals the chain's head is the other gate's
+    (`TC-STORE-25`'s pin-tracks-the-full-chain) job, exact.
     """
     chain = {m.version: m.name for m in TIER_MIGRATIONS[Tier.PACKAGE]}
     assert chain.get(SCORE_METHOD_VERSION) == SCORE_METHOD_MIGRATION, (
         f"Package migration {SCORE_METHOD_VERSION} is {chain.get(SCORE_METHOD_VERSION)!r}, not "
         f"{SCORE_METHOD_MIGRATION!r} (FR-PKG-24); the chain is {chain}")
-    assert COMPLETE_SCHEMA_VERSIONS[Tier.PACKAGE] == SCORE_METHOD_VERSION, (
+    assert COMPLETE_SCHEMA_VERSIONS[Tier.PACKAGE] >= SCORE_METHOD_VERSION, (
         f"COMPLETE_SCHEMA_VERSIONS[Tier.PACKAGE] is {COMPLETE_SCHEMA_VERSIONS[Tier.PACKAGE]}; a "
         "migration added to a chain bumps its pin in the same change (CLAUDE.md, #234)")
     claude_md = (REPO / "CLAUDE.md").read_text(encoding="utf-8")

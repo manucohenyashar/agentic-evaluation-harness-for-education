@@ -7,7 +7,7 @@ import sqlite3
 from typing import Any
 
 from aeh.det.constants import BAND_CORRECT
-from aeh.ingest.identity import redact_identity_head
+from aeh.ingest.identity import pseudonymize_name, redact_identity_head
 from aeh.orch import ORCH_MAX_ATTEMPTS, ORCH_STATEMENTS, _cohort_keys_on_filesystem, _env_int
 from aeh.orch.work_units import _row_evaluation_mode
 from aeh.pkg import PackageCatalog, is_composite
@@ -170,6 +170,19 @@ class SynthesisWorker:
 
     # -- the reads a request is assembled from ----------------------------------------------
 
+    def _roster_identity(self, cohort: Any, submission_id: str) -> "tuple[Any, Any]":
+        """The submission's roster display name and `student_ref`, as `(name, ref)` — the
+        inputs `pseudonymize_name` replaces the name with the ref over (NFR-PROV-08, #593's
+        boundary rule). The join is the one `M-ORCH`'s claim select resolves for `M-JUDGE`:
+        a ref the roster does not hold, or holds namelessly (the pre-#620 shape), yields
+        `None` and every text passes through unchanged, byte-identically."""
+        rows = cohort.query(
+            SYNTH_STATEMENTS["select_synth_roster_name"], submission_id=submission_id
+        )
+        if not rows:
+            return None, None
+        return rows[0]["student_name"], rows[0]["student_ref"]
+
     def _verdicts(self, cohort: Any, units: list[dict],
                   criterion_id: str) -> tuple[CriterionVerdict, ...]:
         """One criterion's verdicts, read from its completed score units. Only this question's
@@ -195,7 +208,15 @@ class SynthesisWorker:
                   submission_id: str) -> tuple[str, ...]:
         """The question's evidence: each criterion's evidence rows decoded from their stored spans,
         or the document's Markdown when a row has no span payload. That fallback only reads a
-        document that belongs to this submission."""
+        document that belongs to this submission.
+
+        Every text is name-free before it joins a request (`NFR-PROV-08`, #668): the
+        rostered name the student wrote in the body — or that `M-EXTRACT` sliced into a
+        span — is replaced by the `student_ref` through the ONE boundary helper,
+        `pseudonymize_name` (#593), the same rule `M-JUDGE`'s and `M-EXTRACT`'s
+        assemblers apply. The `Student:` head redaction stays as the first layer (the
+        head's spelling is unreliable); the body/span pseudonymization is the second."""
+        student_name, student_ref = self._roster_identity(cohort, submission_id)
         texts: list[str] = []
         seen_documents: set[str] = set()
         for unit in units:
@@ -205,7 +226,10 @@ class SynthesisWorker:
                 SYNTH_STATEMENTS["select_synth_evidence"], work_id=unit["work_id"]
             ):
                 if row["payload"] is not None:
-                    texts.extend(_payload_span_texts(row["payload"]))
+                    texts.extend(
+                        pseudonymize_name(text, student_name, student_ref)
+                        for text in _payload_span_texts(row["payload"])
+                    )
                     continue
                 document_id = row["document_id"]
                 if not document_id or document_id in seen_documents:
@@ -222,10 +246,15 @@ class SynthesisWorker:
                     )
                     continue
                 if documents[0]["markdown"]:
-                    # The `Student:` head's written name never reaches the narrative model
-                    # (NFR-PROV-04, CT-INGEST-23, #620): the resolved ref stands in for it.
-                    texts.append(redact_identity_head(documents[0]["markdown"],
-                                                      documents[0]["student_ref"]))
+                    # Two layers: the `Student:` head's written name never reaches the
+                    # narrative model (`NFR-PROV-04`, CT-INGEST-23, #620) — the resolved
+                    # ref stands in for it — and the rostered name the body carries is
+                    # pseudonymized with the roster join above (#668).
+                    texts.append(pseudonymize_name(
+                        redact_identity_head(documents[0]["markdown"],
+                                             documents[0]["student_ref"]),
+                        student_name, student_ref,
+                    ))
         return tuple(texts)
 
     def _question_complete(self, cohort: Any, units: list[dict],

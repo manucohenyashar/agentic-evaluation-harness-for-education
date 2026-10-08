@@ -19,6 +19,7 @@ from typing import Any, NamedTuple
 from .vocabulary import (
     BLIND_SEATS_READ,
     CLASS_ROSTER_READ,
+    CLI_HELP_READ,
     CONTROL_SURFACE_ACTIONS,
     HELP_READ,
     MONITOR_READ,
@@ -45,6 +46,9 @@ SPA_BUNDLE_DIR: Path = Path(__file__).resolve().parent.parent / "console_assets"
 
 #: The label of the one non-control mutation the API carries (`FR-CONSOLE-04`).
 UPLOAD_CONTROL = "upload scans"
+
+#: The query parameter the ask read takes the question from (`M-HELP`).
+ASK_QUERY_PARAM = "q"
 
 #: Media types by suffix. Explicit rather than `mimetypes`, which on Windows reads the
 #: registry and can answer `text/plain` for `.js` — a module script the browser then refuses.
@@ -111,6 +115,10 @@ def _build_routes() -> tuple[ApiRoute, ...]:
         # FR-UI-02: the home hub's live state — the package version, the served run's status
         # and the engine in use — which the hub reads on load and polls.
         ApiRoute("GET", f"{API_PREFIX}/hub", None, "hub"),
+        # #632 (FR-CONSOLE-41, NFR-CONSOLE-09): the console's debugging-only help section —
+        # the CLI/console parity inventory, generated from the `aeh` parser. A read, so the
+        # help answers without a store and writes nothing.
+        ApiRoute("GET", f"{API_PREFIX}/cli-help", None, CLI_HELP_READ),
         # #631: the run-start screen's data behind its one confirmation (FR-CONSOLE-43) and
         # the results views, byte-identical with the CLI's (FR-CONSOLE-44, TC-CONSOLE-56/57).
         # Reads, not controls: the preview writes nothing, and the confirmation's write is
@@ -119,7 +127,12 @@ def _build_routes() -> tuple[ApiRoute, ...]:
         ApiRoute("GET", f"{API_PREFIX}/results/class", None, RESULTS_CLASS_READ),
         ApiRoute("GET", f"{API_PREFIX}/results/student", None, RESULTS_STUDENT_READ),
         ApiRoute("GET", f"{API_PREFIX}/results/export", None, RESULTS_EXPORT_READ),
-        # #635: the lifecycle screens' documents (FR-UI-03) — one GET per screen, each a
+        # M-HELP (FR-HELP-01): the manuals page's reads, and the grounded Q&A ask. The ask is a
+        # GET, not a POST: its only write is the assistant's own Q&A log (`CT-HELP-04`), so it
+        # is not a control action and the route carries no control row.
+        ApiRoute("GET", f"{API_PREFIX}/manuals", None, "manuals"),
+        ApiRoute("GET", f"{API_PREFIX}/manuals/{{manual_id}}", None, "manual"),
+        ApiRoute("GET", f"{API_PREFIX}/help/ask", None, "help ask"),
         # read over the same doors the server-rendered console calls. No row here writes.
         ApiRoute("GET", f"{API_PREFIX}/package-setup", None, PACKAGE_SETUP_READ),
         ApiRoute("GET", f"{API_PREFIX}/class-roster", None, CLASS_ROSTER_READ),

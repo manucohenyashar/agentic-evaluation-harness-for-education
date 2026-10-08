@@ -1,8 +1,8 @@
 # Configuration for the first live teacher test: the "dev-ci" profile, grading through OpenRouter.
 #
 # Why dev-ci and not cloud-hosted: the console refuses to start under cloud-hosted (it has no
-# login, so it may only run on one machine, for one person). dev-ci also sends student work to
-# OpenRouter, so it is gated by the same consent rule: only cohorts marked "synthetic" or
+# login, so it may only run on one machine, for one person). "dev-ci" also sends student work
+# to OpenRouter, so it is gated by the same consent rule: only cohorts marked "synthetic" or
 # "consented" may be graded (the sample answer sheets are synthetic).
 #
 # Every request to OpenRouter carries zdr=true and data_collection="deny": OpenRouter sends the
@@ -34,10 +34,20 @@ prompt_template_v = "judge-prompt/2"
 HARNESS_COST_CEILING = 5
 HARNESS_COST_CURRENCY = "USD"
 
-# "off" = the page-reading model and the judge panel do all the grading. "jev" turns on the extra
-# decision engine, which needs a separate package (typesafe-sdk) and a pinned Jev build. Keep it
-# off for a first test: fewer moving parts, and every score then has one clear source.
-HARNESS_DECISION_ENGINE = "off"
+# The Jev decision engine is ON by default on this profile (FR-CONF-29): every rubric cell is
+# pre-screened by the Jev decision model, which either settles the band itself or hands the cell
+# back to the judge panel — both outcomes are recorded in run_metrics. The engine needs its own
+# model build, pinned with a date (never :latest). Per test day: confirm the build on
+# https://openrouter.ai/models first, then adjust the pin below. Suggestion for the first day:
+# typesafe/jev-1.13@2026-09-17 (answered real calls through the TypeSafe SDK path); a later day
+# might pin typesafe/jev-1.14@<date> once confirmed.
+HARNESS_JEV_BUILD = "openrouter/typesafe/jev-1.13@2026-09-17"
+
+# For a one-off run with the engine off (every score then has one clear source, the judge
+# panel), set it in the terminal instead of here — the terminal wins, and the file keeps the
+# engine the acceptance runs:
+#     export HARNESS_DECISION_ENGINE=off           (macOS / Linux)
+#     $env:HARNESS_DECISION_ENGINE = "off"         (Windows PowerShell)
 
 # The model that reads the page images and turns them into text.
 [profiles.dev-ci.transcriber]

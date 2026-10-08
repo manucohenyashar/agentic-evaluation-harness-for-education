@@ -56,11 +56,15 @@ written:
 * A band NAME in the histogram is not one the criterion declares. A mean over a scale the
   package does not declare is a fabricated figure, and a partial mean over "the ones I
   recognised" is worse — it would silently drop a band and shift the baseline.
-* The version is published. `FR-PKG-04` makes a published version's rows immutable and
-  the triggers enforce it; a baseline is evidence about a version, and evidence arriving
-  after publication does not get to rewrite it. Skipped, not raised: a promote of an
-  administration against a published package is a normal thing to do, and it must not
-  fail because one optional record could not be filed.
+* The version is published — with #525's one sanctioned exception. `FR-PKG-04` makes a
+  published version's rows immutable and the triggers enforce it; since decision (a) of
+  2026-10-07, a baseline APPEND is the one write those triggers admit on a published version
+  (a new row, or a row whose three figure columns are still NULL — evidence ABOUT the
+  version, added after publication, never altering a recorded figure). A rewrite of
+  recorded figures, and every agreement or verdict write, still refuse. Refused is
+  `BASELINE_PUBLISHED` on the returned record, not a raise: a promote of an administration
+  against a published package is a normal thing to do, and it must not fail because one
+  optional record could not be filed.
 
 Returns a `BaselineWrite` — the status AND the reason — so the caller reports what
 happened rather than assuming it worked. Every refusal above is an ordinary event on

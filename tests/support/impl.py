@@ -22,7 +22,6 @@ import importlib
 import importlib.util
 from typing import Any
 
-from tests.support.help_vocabulary import BLOCKER_TARGET as _HELP_BLOCKER_TARGET
 from tests.support.extract_vocabulary import (
     ASSEMBLE as _EXTRACT_ASSEMBLE,
     PROMPT_FIELDS as _EXTRACT_PROMPT_FIELDS,
@@ -1281,6 +1280,19 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `aeh.pipeline:recover` landed, so its three arms lost the marker and rejoined
     # the gate. Arm (c), the review-window regrade, was never in the entry; it has now
     # landed green with #378's decided rule (recovery does not touch the window).
+    # --- TS-151 (#640), the delta's Requires pairwise cases (the SPA side) -------------------
+    #
+    # TC-REQ-128's SPA session needs the lifecycle screens' recovery wording (#635, FR-UI-07)
+    # and the answers-only affordance (#638, FR-UI-06). Keyed `command` on the same two bundle
+    # probes the TS-152 journey's gate uses, so it resolves only when BOTH stories have shipped
+    # their wording; the contract file's cases (TC-REQ-130..133) run green unmarked already.
+    "#640 TS-151 TC-REQ-128 the SPA publish-and-run-start pairing (waits on #635/#638)": (
+        "command",
+        "python -c \"import sys; sys.path.insert(0, 'src'); from aeh.console import SPA_BUNDLE_DIR; t = (SPA_BUNDLE_DIR / 'index.html').read_text(encoding='utf-8') if (SPA_BUNDLE_DIR / 'index.html').is_file() else ''; ok = ('check that the console service is running' in t) and ('does not operate the system' in t); raise SystemExit(0 if ok else 1)\"",
+        (
+            "tests/browser/spa/test_ts151_requires_spa_pairs.py::test_tc_req_128_the_spa_session_performs_publish_and_run_start_like_the_cli",
+        ),
+    ),
     # --- TS-82 (#155), the blast-radius rule ------------------------------------------------
     #
     # `harness.blast_radius` is the command test plan 4.7 and 6.12 name, and no story in the
@@ -1307,13 +1319,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     #
     # Keyed `command` on the written-ahead tests themselves: each blocker is a behaviour of
     # code that already exists, so the only honest signal is the case going green.
-    # #525 (needs-attention): no baseline can reach a published version (FR-PKG-04), which is
-    # every version a run uses. The arm's shape may move with #525's decision.
-    "#525 TS-134 TC-PIPE-20(a') the baseline writer reaches the run's version": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_20_a_prime_the_baseline_reaches_the_runs_version_through_its_writer",
-        ("tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_20_a_prime_the_baseline_reaches_the_runs_version_through_its_writer",),
-    ),
+    # "#525 TS-134 TC-PIPE-20(a') the baseline writer reaches the run's version" left with
+    # #525's fix: decision (a) makes a baseline append the one admitted write on a published
+    # version, and the arm runs green against the live triggers.
     # "#523 TS-134 TC-PIPE-22 an MCQ-only paper is narrated" left with #523's fix: the
     # worker's MC-only branch narrates a multiple-choice-only submission from its scored
     # deterministic results by template, with no model call, so the case rejoined the gate.
@@ -1332,41 +1340,15 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # "unowned: S3 shows the proposed inventory as editable rows (TS-91 TC-CONSOLE-45)" left with #599's fix.
     # "unowned: the blind-flow plan names no removed table (TS-91 TC-CONSOLE-45)" left with #601's fix.
     # "unowned: a console review accept records a label (TS-91 TC-CONSOLE-44 row 8)" left with #598's fix.
-    # #597 (design 1.9.1 §5.4 R30): M-PIPE's hooks cost 3.8 ms/unit at 10 submissions after
-    # #597's first change (5.3 before), against NFR-PIPE-02's 0.25 ms. The rest is readiness
-    # rescans per pass and the owners' per-cell work; #597 is needs-attention on the budget.
-    "#597 TS-99 PERF-11 composition adds at most 0.25 ms per unit": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider tests/perf/test_perf_11_composition_overhead.py::test_perf_11_composition_adds_at_most_a_quarter_millisecond_per_unit",
-        ("tests/perf/test_perf_11_composition_overhead.py::test_perf_11_composition_adds_at_most_a_quarter_millisecond_per_unit",),
-    ),
+    # "#597 TS-99 PERF-11 composition adds at most 0.25 ms per unit" left with #597's fix:
+    # the readiness decision runs in SQL, the aggregate hook's per-pass run-wide count reads
+    # are folded into one ready read, the gate's evidence read is indexed (Cohort 34), and
+    # PERF-11 runs as the budget + no-growth guard with its `writtenahead` marker off.
     # "#620 TS-143 name-primary V3 matching, roster names, Cohort 33" left with #620's fix.
     # A keep-both merge re-added the entry (the same artifact #626's entry hit); with #620
     # merged and its two cases running unmarked, the re-added entry only fires the gate.
-    # --- TS-150 (#637), M-HELP: manuals page, grounded answers-only Q&A, the log ----------
-    #
-    # Keyed `symbols` on the assistant AND #629's route table (TC-HELP-01/03 and C01 read the
-    # routes). #636 depends on #629, so in practice this resolves with #636. The invented names
-    # live in `tests/support/help_vocabulary.py`; a rename there moves this key with it.
-    "#636 TS-150 M-HELP manuals and grounded Q&A": (
-        "symbols",
-        _HELP_BLOCKER_TARGET,
-        (
-            "tests/integration/help/test_ts150_help_manuals_and_qa.py::test_tc_help_01_every_packaged_manual_renders_with_toc_search_and_stable_anchors",
-            "tests/integration/help/test_ts150_help_manuals_and_qa.py::test_tc_help_02_a_grounded_answer_cites_the_recorded_grounding_sections",
-            "tests/integration/help/test_ts150_help_manuals_and_qa.py::test_tc_help_02_b_a_no_grounding_question_gets_the_explicit_not_found_answer",
-            "tests/integration/help/test_ts150_help_manuals_and_qa.py::test_tc_help_03_one_read_only_endpoint_and_an_action_question_changes_nothing",
-            "tests/integration/help/test_ts150_help_manuals_and_qa.py::test_tc_help_04_a_student_question_reaches_the_model_with_no_student_data",
-            "tests/integration/help/test_ts150_help_latency.py::test_tc_help_05_p95_answer_latency_and_retrieval_within_budget",
-            "tests/contract/help/test_ct_help_clauses.py::test_tc_help_c01_one_read_only_endpoint",
-            "tests/contract/help/test_ct_help_clauses.py::test_tc_help_c02_citations_resolve_and_not_found_is_explicit",
-            "tests/contract/help/test_ct_help_clauses.py::test_tc_help_c03_no_student_data_in_any_request",
-            "tests/contract/help/test_ct_help_clauses.py::test_tc_help_c04_writes_only_its_own_log",
-            "tests/contract/help/test_ct_help_clauses.py::test_tc_help_c05_the_log_records_each_exchange_exactly",
-            "tests/security/help/test_sec_25_help_injection.py::test_sec_25_an_injected_question_writes_nothing_and_gets_a_prose_answer",
-            "tests/security/help/test_sec_25_help_injection.py::test_sec_25_an_injection_nested_in_a_manual_passage_writes_nothing",
-        ),
-    ),
+    # "#636 TS-150 M-HELP manuals and grounded Q&A" left with #636's fix: the assistant, the
+    # manuals library and the route reads exist, so the TC-HELP cases dropped their markers.
     "#155 check_traceability --contracts-only passes the real pair (TS-82)": (
         "command",
         "python .claude/skills/create-test-plan/scripts/check_traceability.py "
@@ -1374,20 +1356,12 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "--contracts-only --quiet",
         ("tests/contract/blast/test_tc_blast_rule.py::test_tc_blast_03_the_contracts_only_gate_fails_a_lost_clause_case_and_ci_runs_it",),
     ),
-    # --- TS-142 (#617), the live OpenRouter acceptance ----------------------------------------
+    # --- TS-142 (#617/#618), the live OpenRouter acceptance ------------------------------------
     #
-    # `live` + nightly, so TEST_CMD never selects them either way; the marker still matters for
-    # `-m live` runs and for this registry's notice. Keyed on the invented module-level entry
-    # point (`tests/support/conform_vocabulary.py`, TS-142) — not on a report field, which on a
-    # frozen dataclass is no class attribute and would never resolve.
-    "#618 TS-142 TC-CONFORM-17/18/C17 + TC-CONFORM-04 OpenRouter arm (live acceptance)": (
-        "symbol",
-        "aeh.conform:run_live_acceptance",
-        (
-            "tests/integration/conform/test_ts142_live_openrouter_acceptance.py",
-            "tests/integration/conform/test_tc_conform_04_full_pipeline_differential.py::test_tc_conform_04_openrouter_arm_runs_the_default_engine_and_reports_per_leg_live_keys",
-        ),
-    ),
+    # The "#618 TS-142 TC-CONFORM-17/18/C17 + TC-CONFORM-04 OpenRouter arm (live acceptance)"
+    # entry left with #618: `aeh.conform:run_live_acceptance` landed, and the TS-142 cases
+    # lost the marker and rejoined the gate (they stay `live`/nightly, so TEST_CMD still
+    # never selects them).
     # --- TS-145 (#623), M-SETUP rubric-method flows and the general derivation gate --------
     #
     # #624 builds them; the design names no Python surface, so the key is on all six members
@@ -1411,21 +1385,18 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # #634's entry (the committed bundle, keyed `path` on its index.html) was dropped when #634
     # landed and the bundle was committed; its cases were re-checked green unmarked at the drop.
     #
-    # #635 and #638 deliver no Python name and no new file whose path the design fixes, and a
+    # #635 and #638 delivered no Python name and no new file whose path the design fixes, and a
     # `command` running their browser cases would launch a browser on every fast-tier run and read
-    # an E6 *skip* (exit 0) as "resolved". So both are keyed on a millisecond static probe over the
-    # bundle for the wording each story is the first to ship, quoted from the design: FR-UI-07's
-    # recovery text (#635) and FR-UI-06's answers-only affordance (#638). The tradeoff, stated: if
-    # an earlier story ships either phrase, its entry fires before the story lands — re-check the
+    # an E6 *skip* (exit 0) as "resolved". So the entry was keyed on a millisecond static probe
+    # over the bundle for the wording the story is the first to ship, quoted from the design.
+    # The tradeoff, stated: if
+    # an earlier story ships the phrase, the entry fires before the story lands — re-check the
     # cases green before unmarking, never unmark on the notice alone.
     #
     # #635's entry (the recovery text) was dropped when #635 landed; its cases were re-checked
-    # green unmarked at the drop.
-    "#638 M-UI Q&A panel (TC-UI-06)": (
-        "command",
-        'python -m tests.support.spa contains "does not operate the system"',
-        ("tests/browser/spa/test_spa_qa_panel.py::test_tc_ui_06_a_manuals_answer_cites_real_anchors_under_the_answers_only_affordance",),
-    ),
+    # green unmarked at the drop. #638's entry (the bundle probe for FR-UI-06's answers-only
+    # affordance) was dropped when #638 landed and the bundle carried the wording; its case
+    # was re-checked green unmarked at the drop.
     # --- TS-140 (#613), packaging flips + the operator-doc sweep ----------------------------
     #
     # #614's entry (the four standard dependencies, extras retired, operator docs reduced) was
@@ -1452,12 +1423,41 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # The names are invented in `tests/support/console_api_vocabulary.py` (TS-148 section): each
     # key probes the route-table label or inventory name its story is asked to add, so a rename
     # there moves the key with it. The `_control_` cases in these files are not marked (green).
-    "#632 TS-148 TC-CONSOLE-54 the CLI/console parity census": (
-        "symbols",
-        "aeh.console:CLI_CONSOLE_PATHS,aeh.console:DEBUGGING_ONLY_COMMANDS",
+    #
+    # The "#632 TS-148 TC-CONSOLE-54 the CLI/console parity census" entry left with #632: the
+    # inventory landed (`aeh.console.parity`, plus the `recover runs` and `add students` control
+    # rows its teacher-operations arm required), and the two census cases run green unmarked.
+    # The census's failure path is live in the fast tier: a future `aeh` subcommand without a
+    # console path or a debugging-only reason fails `TEST_CMD` until someone decides.
+    # --- TS-152 (#641), TC-E2E-06 + UAT-13 ------------------------------------------------
+    #
+    # The journey needs seven blockers, none of which is alone sufficient: the committed
+    # bundle (#634), the bundle's lifecycle-screen wording (#635), the Q&A wording (#638),
+    # the help module (#636), the live-acceptance entry point (#618), the rubric-method
+    # read-backs (#624) and the console reads (#631). A single key on any one of them
+    # would fire while the journey is still blocked on the rest, so this is one `command`
+    # probe that resolves only when EVERY limb does — the same limbs the test's own
+    # `_gates()` re-checks at unmarking time, each naming its issue there.
+    # #641 does NOT depend on all seven: they are its disclosed prerequisites (PR body).
+    "#641 TS-152 TC-E2E-06 the teacher's-day journey + UAT-13 walkthrough": (
+        "command",
+        "python -c \"import sys, pathlib; sys.path.insert(0, 'src');"
+        "import aeh.console as c; from aeh.console import SPA_BUNDLE_DIR;"
+        "ok = (SPA_BUNDLE_DIR / 'index.html').is_file();"
+        "text = (SPA_BUNDLE_DIR / 'index.html').read_text(encoding='utf-8') if ok else '';"
+        "ok = ok and 'check that the console service is running' in text"
+        " and 'does not operate the system' in text;"
+        "import aeh.conform; ok = ok and hasattr(aeh.conform, 'run_live_acceptance');"
+        "import aeh.help; ok = ok and hasattr(aeh.help, 'HelpAssistant');"
+        "import aeh.setup;"
+        "ok = ok and all(hasattr(aeh.setup.SetupService, m) for m in"
+        " ('derive_general_bands', 'derivation_card', 'confirm_general_derivation',"
+        "  'build_evidence_sum', 'set_aspect_descriptor', 'confirm_evidence_sum'));"
+        "reads = {getattr(r, 'read', None) for r in c.API_ROUTES};"
+        "ok = ok and {'run start preview', 'results export'} <= reads;"
+        "raise SystemExit(0 if ok else 1)\"",
         (
-            "tests/unit/console/test_tc_console_54_parity_census.py::test_tc_console_54_every_aeh_subcommand_has_a_console_path_or_a_debugging_only_reason",
-            "tests/unit/console/test_tc_console_54_parity_census.py::test_tc_console_54_the_teacher_operations_have_console_paths_not_debugging_listings",
+            "tests/browser/spa/test_tc_e2e_06_teachers_day.py::test_tc_e2e_06_teachers_day_journey",
         ),
     ),
 }

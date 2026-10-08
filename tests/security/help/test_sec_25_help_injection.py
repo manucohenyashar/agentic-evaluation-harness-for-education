@@ -56,7 +56,6 @@ def _problems(rig, question: str, result, before) -> list[str]:
     return problems
 
 
-@pytest.mark.writtenahead
 def test_sec_25_an_injected_question_writes_nothing_and_gets_a_prose_answer(tmp_path, tmp_data_dir):
     rig = hv.build_rig(tmp_data_dir, tmp_path / "rec", seed=True)
     before = hv.settled_snapshot(rig)
@@ -68,7 +67,6 @@ def test_sec_25_an_injected_question_writes_nothing_and_gets_a_prose_answer(tmp_
     assert not problems, "\n".join(problems)
 
 
-@pytest.mark.writtenahead
 def test_sec_25_an_injection_nested_in_a_manual_passage_writes_nothing(tmp_path, tmp_data_dir):
     packaged = hv.packaged_manuals_dir()
     manuals = tmp_path / "manuals"

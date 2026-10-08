@@ -6,12 +6,19 @@
 | TC-STATS-37 | FR-STATS-28 | every two-band label counts, one-band labels do not; 1/3 over 6; 4 → `below_min_n`; the stored reader equals the in-memory figure; no `system_band !=` in `aeh.review` |
 | TC-REVIEW-32 | FR-REVIEW-18 (amended) | the stored rate reaches `historical_override_rate` (0.6 / 0.0 / no data), C-HI outranks C-LO, and without the input the two tie |
 | TC-REVIEW-33 | FR-REVIEW-22 (amended) | a pre-rule label (`cohort_id = run id`) never lets a purge pass; nothing rewrites it |
-| TC-REVIEW-34 | FR-REVIEW-23 | labels carry their run's backend; a pre-migration NULL is `backend_not_recorded`; Durable pin 12 |
+| TC-REVIEW-34 | FR-REVIEW-23 | labels carry their run's backend; a pre-migration NULL is `backend_not_recorded`; Durable pin has moved on from 12 (the backend column's own migration — pin == chain head is TC-STORE-25's job) |
 | TC-REVIEW-35 | FR-REVIEW-24 | one service per run in a shared cohort; an unknown run raises `UnknownRunError` and creates no file |
+| TC-REVIEW-37 | FR-STATS-24 (defect #525 item 3) | a collected label names its package; five labels naming pkg-alpha give pkg-alpha's `C1` a 5/0.2 history and pkg-beta's `C1` `no_blind_labels` |
 
 Implemented by #433, #514, #515 and #434's decision (all merged), so these land green.
+TC-REVIEW-37 is the exception: it is a defect fix's regression case (#525 item 3, no TC
+existed), written RED first against the collection route that hard-coded the package NULL.
 
 Disclosed:
+- **TC-REVIEW-37.** The reader keeps its documented "or no version" accommodation (a label
+  that names no version pools into every lineage, because no honest reading can attribute
+  it); what this case pins is the WRITE side — a label that names its package records it, so
+  the reviews of one package stop counting for another that shares a criterion name.
 - **TC-REVIEW-33.** The plan's refusal "naming the unattributable label" is not what M-STORE
   says: it names the unmet gate ("no label rows for cohort …"), never the row. The case asserts
   the labels gate is the ONLY unmet one (the cohort's audit and stats rows are seeded). Its NULL
@@ -38,7 +45,7 @@ from aeh.pkg import NoValidationData
 from aeh.store import COMPLETE_SCHEMA_VERSIONS, PurgePreconditionError, Tier, open_store
 from tests.support import broken_stats_fixtures as broken
 from tests.support.grade_vocabulary import write_criterion_scores
-from tests.support.orch_run import ORCH_COHORT_ID, orch_cfg, seed_run
+from tests.support.orch_run import ORCH_COHORT_ID, orch_cfg, seed_package, seed_run
 from tests.support.source_tree import package_source
 
 pytestmark = pytest.mark.integration
@@ -227,7 +234,10 @@ def test_tc_review_33_a_pre_rule_label_never_lets_a_purge_pass(tmp_data_dir):
 
 def test_tc_review_34_labels_record_their_runs_backend(tmp_data_dir, monkeypatch):
     monkeypatch.delenv("HARNESS_REVIEW_OVERRIDE_MIN_N", raising=False)
-    assert COMPLETE_SCHEMA_VERSIONS[Tier.DURABLE] == 12
+    # The pin is only ever expected to have moved ON from 12 (later Durable migrations —
+    # #636's `help_qa_log`, 13 — land past it): the pin equals the chain's head is the other
+    # gate's (`TC-STORE-25`'s pin-tracks-the-full-chain) job, exact. Until #636 this read == 12.
+    assert COMPLETE_SCHEMA_VERSIONS[Tier.DURABLE] >= 12
     store = open_store(tmp_data_dir)
     try:
         store.durable()
@@ -283,3 +293,68 @@ def test_tc_review_35_open_review_serves_exactly_its_run(tmp_data_dir):
         review.open_review(tmp_data_dir, run_id="run-nope")
     after = sorted(p.relative_to(tmp_data_dir).as_posix() for p in Path(tmp_data_dir).rglob("*"))
     assert before == after, "an unknown run created a file"
+
+
+# --- TC-REVIEW-37 (defect #525 item 3) -------------------------------------------------------
+
+
+@dataclasses.dataclass
+class _PackagedLabel:
+    """A collected label that also names its package version.
+
+    `broken.Label` carries only the columns `CT-STATS-01` filters on — by design it has no
+    `package_version_id`, which is exactly the column #525's item 3 is about: the collection
+    route (`record_label(data_dir=, label=)`) must read the label's own package linkage and
+    store it, not hard-code NULL. This fixture adds that one field so the test can say which
+    package a label belongs to; the route is `getattr`-based, so nothing else changes shape.
+    """
+
+    label_id: str
+    criterion_id: str
+    band: int
+    teacher_band: int
+    label_type: str = "blind"
+    evaluation_mode: str = "judged"
+    saw_system_output: int = 0
+    origin: str = "blind_sample"
+    package_version_id: str | None = None
+
+
+def test_tc_review_37_a_collected_label_counts_for_the_package_it_names(tmp_data_dir, monkeypatch):
+    monkeypatch.delenv("HARNESS_REVIEW_OVERRIDE_MIN_N", raising=False)
+    store = open_store(tmp_data_dir)
+    try:
+        alpha = seed_package(store, (
+            {"criterion_id": "C1", "kind": "open", "scoring_model": "atomic"},),
+            package_id="pkg-alpha")
+        beta = seed_package(store, (
+            {"criterion_id": "C1", "kind": "open", "scoring_model": "atomic"},),
+            package_id="pkg-beta")
+    finally:
+        store.close()
+    labels = [
+        _PackagedLabel(
+            label_id=f"L-{i}", criterion_id="C1", band=2, teacher_band=2,
+            origin="override" if i == 0 else "blind_sample", package_version_id=alpha)
+        for i in range(5)
+    ]
+    for label in labels:
+        review.record_label(data_dir=tmp_data_dir, label=label)
+    with sqlite3.connect(Path(tmp_data_dir) / "durable.sqlite") as c:
+        versions = dict(c.execute("SELECT label_id, package_version_id FROM label").fetchall())
+    assert set(versions.values()) == {alpha}, (
+        f"FR-STATS-24 (defect #525 item 3): every collected label carries the package it "
+        f"names, not NULL: {versions}")
+    store = open_store(tmp_data_dir)
+    try:
+        alpha_histories = stats.stored_override_histories(store, alpha)
+        beta_histories = stats.stored_override_histories(store, beta)
+    finally:
+        store.close()
+    alpha_c1 = alpha_histories["C1"]
+    assert (alpha_c1.n, alpha_c1.override_count, alpha_c1.override_rate) == (5, 1, 0.2), alpha_c1
+    beta_c1 = beta_histories["C1"]
+    assert isinstance(beta_c1, NoValidationData) and beta_c1.reason == "no_blind_labels" \
+        and beta_c1.n == 0, (
+        f"{beta_c1}: five labels naming pkg-alpha must not count for pkg-beta's C1 — "
+        "the packages share only the criterion name (defect #525 item 3)")

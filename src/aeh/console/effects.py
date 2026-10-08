@@ -195,6 +195,12 @@ class DomainEffectsMixin:
             from .cohort_editor import create_cohort_effect
 
             return create_cohort_effect(self._store, params)
+        if action == "add students":
+            from .cohort_editor import add_students_effect
+
+            return add_students_effect(self._store, params)
+        if action == "recover runs":
+            return self._recover_effect(params)
         if action == "set review window":
             return self._set_review_window_effect(params)
         if action == "amend a finalized grade":
@@ -583,6 +589,36 @@ class DomainEffectsMixin:
         return (
             f"package version {version} published through M-PKG's lock flip "
             f"(approved by {actor})",
+            True,
+        )
+
+    def _recover_effect(self, params: dict[str, Any]) -> tuple[str, bool]:
+        """`recover runs` (`FR-CONSOLE-41`, #632): M-PIPE's `recover` — the door `aeh recover`
+        opens — reclaiming expired leases, resuming open runs and settling the grades whose
+        review window lapsed. It is idempotent by construction (a clean store's report is empty
+        and writes nothing), so a double-clicked post recovers nothing twice."""
+        from aeh.pipeline.driver import recover
+
+        if getattr(self._store, "data_dir", None) is None:
+            return "no store is attached; nothing was recovered", False
+        try:
+            report = recover(self._store)
+        except Exception as exc:  # noqa: BLE001 — a refusal is the honest outcome
+            return (
+                f"M-PIPE refused the recovery: {exc} — nothing was recovered",
+                False,
+            )
+        resumed, regraded = len(report.runs_resumed), len(report.runs_regraded)
+        if not (report.leases_reclaimed or resumed or regraded):
+            return (
+                "recovery ran through M-PIPE and had nothing to do: no expired lease, no "
+                "open run waiting to resume, no review window lapsed while the process was "
+                "down",
+                False,
+            )
+        return (
+            f"recovery ran through M-PIPE's recover: {report.leases_reclaimed} lease(s) "
+            f"reclaimed, {resumed} run(s) resumed, {regraded} regraded",
             True,
         )
 

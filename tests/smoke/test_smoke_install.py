@@ -98,10 +98,19 @@ def test_tc_smoke_01_clean_install_needs_nothing_beyond_a_venv_and_a_data_dir(
     tracked = subprocess.run(
         ["git", "ls-files"], cwd=REPO_ROOT, capture_output=True, text=True, check=True
     ).stdout.splitlines()
-    npm = [f for f in tracked if Path(f).name in NPM_MANIFESTS]
+    # The npm-manifest rule guards the INSTALL story, not the whole tree: since #634 (M-UI),
+    # the SPA's source tree `ui/` deliberately commits its manifests — Q-O3 pins the
+    # toolchain through the lockfile so the bundle is reproducibly rebuildable — and the
+    # committed bundle (`src/aeh/console_assets/spa/`) is pre-built, so the install never
+    # runs npm. An npm manifest anywhere ELSE means a second toolchain the install story
+    # does not declare.
+    npm = [f for f in tracked
+           if Path(f).name in NPM_MANIFESTS and not Path(f).parts[:1] == ("ui",)]
     assert npm == [], (
-        f"TC-SMOKE-01: npm-shaped manifests in the tracked tree: {npm}. The install "
-        "story is venv + requirements-dev.txt; a package.json means a second toolchain."
+        f"TC-SMOKE-01: npm-shaped manifests in the tracked tree outside ui/: {npm}. The "
+        "install story is venv + requirements-dev.txt; a package.json outside the SPA's "
+        "source tree (where Q-O3 pins the toolchain through the lockfile) means a second "
+        "toolchain."
     )
     servers = [f for f in tracked if Path(f).name in SERVER_ARTIFACTS]
     assert servers == [], (

@@ -191,6 +191,26 @@ class CellKey(NamedTuple):
 
 
 @dataclass(frozen=True)
+class ReadyCell:
+    """One ready cell with the unit figures its hook needs, as `ready_cells_with_units`
+    returns them (#597).
+
+    `terminal` is the stage's terminal unit count (`done` or `quarantined`) — the number
+    `mark_cell_phase`'s `units_consumed` was computed over and what `aggregate` compares
+    against the recorded phase to decide a widened panel needs re-aggregating. `quarantined`
+    is the stage's quarantined count among them (FR-PIPE-18's even-panel check, FR-PIPE-05's
+    fallback). `total` is every unit of the stage for the cell, terminal or not — always
+    equal to `terminal` in a ready cell (readiness requires it), carried so the read's shape
+    is the ledger's rather than a ready-only projection.
+    """
+
+    key: CellKey
+    terminal: int
+    quarantined: int
+    total: int
+
+
+@dataclass(frozen=True)
 class RunHandle:
     """Everything the pipeline layer needs to drive one run without reading the ledger itself.
 
@@ -224,6 +244,13 @@ class RunHandle:
     #: part of the six-part validation key a composition layer reads baselines under
     #: (FR-PIPE-15, #525). `""` when the row predates the field.
     panel_build_ref: str = ""
+    #: The model pins the run froze (FR-PIPE-19), from its persisted provider config:
+    #: `(role, provider, build_id, quantization)` tuples, in role order. A composition
+    #: layer compares a fresh `--extractor` / `--synthesizer` flag against them before
+    #: driving (`TC-PIPE-36`) and re-applies them when the run is continued without one.
+    #: `()` when the row carries no `model_pins` key — a pre-feature row, or a run
+    #: started without pins.
+    model_pins: "tuple[tuple[str, str, str, str | None], ...]" = ()
 
 
 class PackageCatalogProtocol(Protocol):

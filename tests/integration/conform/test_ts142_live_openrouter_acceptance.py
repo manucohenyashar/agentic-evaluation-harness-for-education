@@ -9,9 +9,9 @@ in for these** (plan §3 item 3): the whole point of the tier is that the model 
 so there is deliberately no offline arm here. `RecordedFixtureProvider` appears in this tier only
 as the divergence oracle (FR-CONFORM-06's machinery), never as a leg's transport.
 
-**Written ahead of #618.** No entry point exists yet; the surface these cases drive is invented
-and named once in `tests/support/conform_vocabulary.py` (TS-142 section). Registered in
-`WRITTEN_AHEAD_BLOCKERS` on `aeh.conform:run_live_acceptance`.
+**#618 landed the surface** (`aeh.conform:run_live_acceptance`): the entry point, the report
+type and the per-leg accounting the vocabulary names below are implemented in
+`src/aeh/conform/live_acceptance.py`.
 
 **Gate order, and why it differs from `TC-CONFORM-04`'s.** Each case checks
 `OPENROUTER_API_KEY` *first* and skips naming it when unset; only then does it `require()` the
@@ -73,7 +73,6 @@ pytestmark = [
     pytest.mark.integration,
     pytest.mark.live,
     pytest.mark.slow,
-    pytest.mark.writtenahead,
 ]
 
 ISSUE = "#618"
@@ -166,7 +165,8 @@ def _live_run(tmp_path_factory) -> _LiveRun:
             _import_full_migration_chain()
             run_config, cohort, cfg = _resolve_live_config()
             data_dir = tmp_path_factory.mktemp("live-acceptance")
-            report = run_live_acceptance(run_config, cohort=cohort, data_dir=data_dir)
+            report = run_live_acceptance(run_config, cohort=cohort, data_dir=data_dir,
+                                         config=cfg)
         except Exception as error:
             _RUN["error"] = error
             raise

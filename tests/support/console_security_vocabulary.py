@@ -176,6 +176,26 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
         "roster.student_ref",
         "roster.full_name",
     ),
+    # #632: the delta's second roster row — late students into an existing cohort, appended
+    # through M-ORCH's `add_to_roster`. Roster fields only, like `create cohort`: a student's
+    # name is never a field a scoring prompt reads (NFR-PROV-04).
+    "add students": (
+        "roster.cohort_id",
+        "roster.student_ref",
+        "roster.full_name",
+    ),
+    # #632, `FR-CONSOLE-41`: recovery delegates to M-PIPE's `recover`, which resumes open runs
+    # (run.status), requeues expired leases (the work_unit lease columns) and settles the
+    # grades whose review window lapsed (submission_grade.finalized_at). No field a scoring
+    # prompt reads.
+    "recover runs": (
+        "run.status",
+        "work_unit.status",
+        "work_unit.lease_owner",
+        "work_unit.lease_expires_ticks",
+        "work_unit.lease_expires_at",
+        "submission_grade.finalized_at",
+    ),
 }
 
 #: The three actions §11.8 places **before any scoring exists**, inside the §6.2 lock.

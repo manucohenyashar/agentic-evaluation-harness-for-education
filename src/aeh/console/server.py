@@ -10,11 +10,12 @@ import socket
 import threading
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 from typing import Any
 
 from aeh.conf import effective_config
 
+from . import manuals_page
 from .settings import CONSOLE_BIND
 from .routes import CLOUD_HOSTED_PROFILE, LOOPBACK_ADDRESSES, SCREENS
 from .vocabulary import CONTROL_SURFACE_ACTIONS
@@ -173,6 +174,21 @@ class _ConsoleRequestHandler(ApiRequestsMixin, BaseHTTPRequestHandler):
                 self._not_found()
                 return
             self._respond(200, body, "text/css; charset=utf-8")
+            return
+        # The manuals pages (M-HELP, FR-HELP-01): the targets the Q&A panel's citations
+        # point at. Served directly, like the stylesheet above — the HLD's thirteen screens
+        # are not the only text the console serves, and the SPA never calls the manuals
+        # reads, so the panel's traffic stays exactly the ask endpoint (TC-REQ-129).
+        if route == "/manuals":
+            self._respond(200, manuals_page.manuals_library_html().encode("utf-8"),
+                          "text/html; charset=utf-8")
+            return
+        if route.startswith("/manuals/"):
+            page = manuals_page.manual_page_html(unquote(route[len("/manuals/"):]))
+            if page is None:
+                self._not_found()
+                return
+            self._respond(200, page.encode("utf-8"), "text/html; charset=utf-8")
             return
         if route.startswith("/blobs/"):
             self._serve_crop(route[len("/blobs/"):])
@@ -373,6 +389,7 @@ class ConsoleServer:
         port: int | None = None,
         environ: Any = None,
         spa_dir: Any = None,
+        help_assistant: Any = None,
     ) -> None:
         self._cfg = dict(cfg or {})
         #: Where `/` and `/assets/` are served from (FR-CONSOLE-45): the packaged bundle unless a
@@ -387,6 +404,10 @@ class ConsoleServer:
         resolved_port = port if port is not None else (config.get("CONSOLE_PORT") or 0)
         self._store = store
         self._run_id = run_id
+        #: A caller-supplied QA assistant, the way `spa_dir` names a bundle: the seam a
+        #: recorded-provider tier configures the ask with (operator plan §4 rule 7), in place
+        #: of the lazily built one below. `None` keeps the production rule unchanged.
+        self._help_assistant: Any = help_assistant
         self.app = build_console(store=store, bind_address=str(self.bind_address))
         # "start run" resolves the run configuration the server was started with.
         self.app.run_config = self._effective()
@@ -481,6 +502,22 @@ class ConsoleServer:
     def port(self) -> int:
         return int(self.socket.getsockname()[1])
 
+    def help_assistant(self) -> Any:
+        """The manuals Q&A assistant (M-HELP), built on the first ask and held for this
+        server's life.
+
+        Built here, not at start, so a console whose configuration names no QA model starts
+        and serves the manuals and refuses at the ask instead (`help_read.resolve_help_model`);
+        held thereafter because the manuals are package data — the index cannot go stale
+        within a process, and rebuilding it per ask would spend the retrieval budget
+        (`NFR-HELP-01`) on nothing.
+        """
+        if self._help_assistant is None:
+            from .help_read import build_help_assistant
+
+            self._help_assistant = build_help_assistant(self._store, self._effective())
+        return self._help_assistant
+
     @property
     def pid(self) -> int:
         """This process's id. The console runs in-process (ADR-17), so there is no other process;
@@ -517,13 +554,18 @@ def serve_console(
     cfg: dict[str, Any] | None = None,
     environ: Any = None,
     spa_dir: Any = None,
+    help_assistant: Any = None,
 ) -> ConsoleServer:
     """Serve the console. Before binding it refuses, in this order: the `cloud-hosted` deployment
     profile (never allowed, whatever the settings), then any non-loopback address. Both are read
     from the effective configuration, with environment variables taking priority over `cfg`
     (FR-CONSOLE-36). `spa_dir` names the SPA bundle to serve at `/` and `/assets/`; the
-    packaged one (`SPA_BUNDLE_DIR`) when omitted (FR-CONSOLE-45)."""
-    return ConsoleServer(store, run_id=run_id, cfg=cfg, environ=environ, spa_dir=spa_dir)
+    packaged one (`SPA_BUNDLE_DIR`) when omitted (FR-CONSOLE-45). `help_assistant` names a
+    prebuilt QA assistant the ask is answered with (the recorded-provider seam, operator plan
+    §4 rule 7); when omitted the assistant is built lazily at the first ask from the effective
+    configuration (`FR-CONF-30`)."""
+    return ConsoleServer(store, run_id=run_id, cfg=cfg, environ=environ, spa_dir=spa_dir,
+                         help_assistant=help_assistant)
 
 
 def start_console(
@@ -533,10 +575,11 @@ def start_console(
     run_id: str | None = None,
     environ: Any = None,
     spa_dir: Any = None,
+    help_assistant: Any = None,
 ) -> ConsoleServer:
     """Start the console with `cfg`. The same refusals apply in the same order: the profile first,
     then the address, so the refusal cannot be turned off like a default (CT-CONSOLE-20). Both use
     the effective configuration, with environment variables taking priority over `cfg`
-    (FR-CONSOLE-36). `spa_dir` names the SPA bundle to serve at `/` and `/assets/`; the
-    packaged one (`SPA_BUNDLE_DIR`) when omitted (FR-CONSOLE-45)."""
-    return ConsoleServer(store, run_id=run_id, cfg=cfg, environ=environ, spa_dir=spa_dir)
+    (FR-CONSOLE-36). `spa_dir` and `help_assistant` are as `serve_console` takes them."""
+    return ConsoleServer(store, run_id=run_id, cfg=cfg, environ=environ, spa_dir=spa_dir,
+                         help_assistant=help_assistant)

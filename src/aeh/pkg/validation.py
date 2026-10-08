@@ -124,7 +124,8 @@ BASELINE_UNDECLARED_BAND = "the histogram names a band the criterion does not de
 
 
 BASELINE_PUBLISHED = (
-    "the version is published and its validation records are immutable (FR-PKG-04)"
+    "the version is published and the write was refused (FR-PKG-04): the published "
+    "baseline exception (#525) appends evidence only, and never alters a recorded figure"
 )
 
 
@@ -218,6 +219,14 @@ def record_validation_baseline(
 ) -> BaselineWrite:
     """Write one criterion's baseline band distribution onto its `validation_record` row.
 
+    On a **published** version the write is append-only — decision (a) of #525, the one
+    sanctioned exception to FR-PKG-04's freeze, because every version a run grades against
+    is published and the escalation baseline (`FR-PIPE-15`) is evidence ABOUT the version.
+    The exception appends: a new baseline row may be added, and a row whose three figure
+    columns are still NULL may be filled, but a recorded figure is never altered — a
+    rewrite comes back refused with `BASELINE_PUBLISHED`, as does any agreement or engine
+    verdict write.
+
     More detail: `docs/code-notes/pkg.md`, section `validation.py: record_validation_baseline`.
     """
     if not band_histogram or sum(band_histogram.values()) <= 0:
@@ -287,9 +296,13 @@ def record_validation_baseline(
                 connection.commit()
             except sqlite3.IntegrityError:
                 # `IntegrityError` ONLY, which is what the published-version triggers
-                # (`validation_record_immutable`, `validation_record_insert_locked`)
-                # raise through `RAISE(ABORT, ...)`. See the docstring: that is the
-                # designed refusal, not a failure of the promote that triggered it.
+                # (`validation_record_immutable`, `validation_record_insert_locked`) raise
+                # through `RAISE(ABORT, ...)`. Since #525 the pair carries the one
+                # sanctioned exception — a baseline row may be appended to a published
+                # version — so reaching here means the write was outside it: an alteration
+                # of recorded figures, or an agreement/verdict write. See the docstring:
+                # that is the designed refusal, not a failure of the promote that
+                # triggered it.
                 #
                 # `sqlite3.DatabaseError` stood here and was too wide by exactly the
                 # cases that matter. A missing column — this function connects with raw

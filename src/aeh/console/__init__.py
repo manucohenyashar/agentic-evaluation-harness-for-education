@@ -39,6 +39,7 @@ Files:
     server.py           the HTTP server and its request handler
     api.py              the JSON API's route table and the SPA bundle path (FR-CONSOLE-45)
     api_handler.py      serving `/api/` from that table, and the SPA from the same origin
+    parity.py           the CLI/console parity inventory and its help read (FR-CONSOLE-41)
     run_planning.py     building a console and planning runs
     queue_renderers.py  the review queue rendered at module level
     driver.py           `run_pipeline_for_test`, the headless end-to-end driver
@@ -165,6 +166,12 @@ from .views import ReadViewsMixin
 from .grade_actions import GradeActionsMixin
 from .app import ConsoleApp
 from .api import API_ROUTES, ApiRoute, SPA_BUNDLE_DIR
+from .parity import (
+    CLI_COMMAND_PURPOSE,
+    CLI_CONSOLE_PATHS,
+    DEBUGGING_ONLY_COMMANDS,
+    parity_inventory,
+)
 from .server import (
     _ConsoleRequestHandler,
     ConsoleServer,
@@ -188,6 +195,9 @@ __all__ = [
     "CalibrationRender",
     "API_ROUTES",
     "ApiRoute",
+    "CLI_COMMAND_PURPOSE",
+    "CLI_CONSOLE_PATHS",
+    "DEBUGGING_ONLY_COMMANDS",
     "ConsoleApp",
     "ConsoleBindRefused",
     "ControlOutcome",
@@ -211,6 +221,7 @@ __all__ = [
     "render_conformance_surface",
     "render_discovery",
     "render_gate_result",
+    "parity_inventory",
     "render_grade_coverage",
     "render_package_catalog",
     "render_preflight",

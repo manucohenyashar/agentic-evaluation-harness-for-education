@@ -27,6 +27,18 @@ CONTROL_SURFACE_ACTIONS: tuple[str, ...] = (
     "export/import package",
     "purge cohort",
     "create cohort",
+    # `FR-CONSOLE-41` (#632): recover is one of the operations the CLI offers that must be
+    # reachable from the console. The control delegates to M-PIPE's `recover` — the same door
+    # `aeh recover` opens — rather than queueing a row: recovery reclaims leases and settles
+    # grades immediately, and a queued reclaim is exactly the stall the operator is asking to
+    # clear.
+    "recover runs",
+    # `FR-CONSOLE-42` (#632): the roster editor also loads late students into an existing
+    # cohort, through M-ORCH's `add_to_roster` — the door `aeh cohort add-students` opens.
+    # A separate action rather than a widened `create cohort`, because `create_cohort` refuses
+    # an existing cohort (a replayed submission writes nothing, `FR-CONSOLE-02`); merging the
+    # two verbs would trade that guarantee for a shorter list.
+    "add students",
     # The operator-requirements delta's second console action (FR-UI-05): the SPA's package
     # screen must be able to publish the M-SETUP draft, and `CT-CONSOLE-30` admits a new API
     # mutation only as an enumerated control row — the same rule that made cohort creation a
@@ -57,6 +69,10 @@ RUN_START_PREVIEW_READ = "run start preview"
 RESULTS_CLASS_READ = "results class"
 RESULTS_STUDENT_READ = "results student"
 RESULTS_EXPORT_READ = "results export"
+
+#: The CLI/console parity inventory's read (`FR-CONSOLE-41`, `NFR-CONSOLE-09`, #632): the
+#: generated census the console's debugging-only help section renders.
+CLI_HELP_READ = "CLI help"
 
 
 #: The lifecycle screens' reads (FR-UI-03, #635): one JSON document per SPA screen, each
@@ -130,6 +146,24 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
         "roster.cohort_id",
         "roster.student_ref",
         "roster.full_name",
+    ),
+    # FR-CONSOLE-42 (#632): the same roster rows, appended to an existing cohort's ledger
+    # through M-ORCH's `add_to_roster` (the CLI's own door).
+    "add students": (
+        "roster.cohort_id",
+        "roster.student_ref",
+        "roster.full_name",
+    ),
+    # FR-CONSOLE-41 (#632): recovery delegates to M-PIPE's `recover`, which resumes open runs
+    # (run.status), requeues expired leases (the work_unit lease columns) and settles the
+    # grades whose review window lapsed (submission_grade.finalized_at).
+    "recover runs": (
+        "run.status",
+        "work_unit.status",
+        "work_unit.lease_owner",
+        "work_unit.lease_expires_ticks",
+        "work_unit.lease_expires_at",
+        "submission_grade.finalized_at",
     ),
     # FR-UI-05: the SPA's package screen publishes the M-SETUP draft through `SetupService.
     # publish` — M-PKG's one-transaction lock flip on the version row (FR-PKG-01): `locked`

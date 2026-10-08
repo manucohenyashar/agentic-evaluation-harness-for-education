@@ -4,17 +4,9 @@ import { DESTINATIONS } from "./destinations";
 import { Navigate } from "./navigate";
 import { Hub } from "./screens/Hub";
 import { BlindSample } from "./screens/BlindSample";
-import { ClassSetup } from "./screens/ClassSetup";
 import { Help } from "./screens/Help";
-import { Monitor } from "./screens/Monitor";
-import { PackageSetup } from "./screens/PackageSetup";
-import { Papers } from "./screens/Papers";
-import { Results } from "./screens/Results";
-import { Review } from "./screens/Review";
-import { RunStart } from "./screens/RunStart";
 import { StudentDetail } from "./screens/StudentDetail";
-import { SystemStatus } from "./screens/SystemStatus";
-import { NotFound } from "./screens/screens";
+import { ClassSetup, Monitor, NotFound, Papers, PackageSetup, Results, Review, RunStart, SystemStatus } from "./screens/screens";
 import { useHubState } from "./useHubState";
 
 /**
