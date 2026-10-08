@@ -20,6 +20,7 @@ Files:
     adversarial.py the adversarial tier
     decision.py    decision-engine conformance on the F-JEV fixtures
     injection.py   decision-engine robustness to prompt-injection twin pairs
+    live_acceptance.py the live OpenRouter acceptance (per-leg accounting; FR-CONFORM-17/18)
 
 Detailed design notes (the full original module description): `docs/code-notes/conform.md`.
 """
@@ -64,7 +65,13 @@ from .constants import (
     UNSTUBBABLE_STAGE,
     VLM_STAGE,
 )
-from .errors import ConformanceError, ConsentRefused, MergeRefused, StaleFixtureError
+from .errors import (
+    ConformanceError,
+    ConsentRefused,
+    LiveAcceptanceRefused,
+    MergeRefused,
+    StaleFixtureError,
+)
 from . import bands  # noqa: F401  (imported for its registrations)
 from .fixtures import FixtureSet, FixtureSubmission, load_fixture_set
 from .reports import (
@@ -75,6 +82,7 @@ from .reports import (
     ConformanceReport,
     DistributionReport,
     DivergenceReport,
+    LiveAcceptanceReport,
     UnitOutcome,
     ValidationRecord,
 )
@@ -116,3 +124,4 @@ from .injection import (
     NOT_RECOMMENDED,
     run_injection_robustness,
 )
+from .live_acceptance import run_live_acceptance

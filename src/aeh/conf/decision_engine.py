@@ -69,6 +69,15 @@ DECISION_PROVIDERS_BY_PROFILE: Mapping[str, tuple[str, ...]] = MappingProxyType(
 FIXTURE_DECISION_PROVIDER = "fixture"
 
 
+#: The profiles whose decision provider is the remote hosted Jev build through the TypeSafe SDK
+#: path (FR-PROV-16) — the profiles the live acceptance drives (`FR-CONFORM-17`, #618). Derived
+#: from `DECISION_PROVIDERS_BY_PROFILE` so a new binding needs no second edit.
+HOSTED_JEV_PROFILES: frozenset[str] = frozenset(
+    profile for profile, providers in DECISION_PROVIDERS_BY_PROFILE.items()
+    if "openrouter-jev" in providers
+)
+
+
 DECISION_PLACEMENTS: tuple[str, ...] = ("shared", "cpu")
 
 

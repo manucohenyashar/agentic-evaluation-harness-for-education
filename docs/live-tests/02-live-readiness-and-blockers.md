@@ -144,7 +144,7 @@ The right-test gate (V4) compares the words in a student's answers with the word
 | B2 (the request shape) against the real service | **Closed (2026-10-03):** see B2 | — |
 | How well a page-reading model reads handwriting | The sample sheets are typed | Add two or three hand-written, scanned sheets |
 | Real cost and real run time | No live run was possible | Read them off the first run, using the cost ceiling as the guard |
-| The Jev decision engine | Left off on purpose | Needs a pinned Jev build (its library comes with `pip install .`); try it on a second test |
+| The Jev decision engine | The engine is now **on by default** on the OpenRouter profiles and the config pins its build (`openrouter/typesafe/jev-1.13@2026-09-17`, #618) — but that pin has not answered a real call yet | The live acceptance (`TC-CONFORM-17/18`) exercises the Jev leg on the nightly: run it once the key is on the nightly box, and read the per-criterion accept/fallback rates and band agreement off its report |
 | The `accept-or-correct-rubric-read-back` command | It needs a model reference object, which a web form cannot supply, so it cannot succeed over the web (B5) | Fix with B5 |
 | Resuming a paused run from the console | Only the request is queued; the worker stops when the run pauses, so a resume probably waits for the next console start (read from the code, not tried) | Try it once a live run exists |
 

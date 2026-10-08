@@ -104,6 +104,12 @@ def physics(tmp_data_dir, tmp_path, monkeypatch):
 
     for key in ("HARNESS_FIXTURE_DIR", "HARNESS_PROFILE", "HARNESS_ORCH_RANDOM_ARM_RATE"):
         monkeypatch.delenv(key, raising=False)
+    # The reference config runs the Jev decision engine by default now (#618); the fake
+    # transport stands in for the OpenRouter completion path only, and the decision leg's
+    # TypeSafe SDK path has no stand-in here. This case's subject is the escalation seats, not
+    # the engine, so it pins the engine off the way the config file itself instructs: the
+    # terminal wins over the file.
+    monkeypatch.setenv("HARNESS_DECISION_ENGINE", "off")
     # Every judge escalation may run: the default budget is a rate, and six papers are few.
     monkeypatch.setenv("HARNESS_ORCH_ESCALATION_BUDGET", "1.0")
     fake = _FakeOpenRouter({TRANSCRIBER, PANEL_JUDGE})

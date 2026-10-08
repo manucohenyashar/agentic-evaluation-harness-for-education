@@ -78,7 +78,7 @@ aeh --help
 
 You should see `usage: aeh [-h] {run,recover,console} ...` with the three commands *run*, *recover* and *console*. (`python -m aeh ...` does the same thing and always works, even if `aeh` is not on your PATH.) The install and this `aeh --help` output were checked in a clean environment; reading a PDF through it was checked with the sample-sheet script.
 
-The Jev decision engine's library (a pinned `typesafe-sdk==0.7.2`) is already part of that install. Leave the engine off for the first test.
+The Jev decision engine's library (a pinned `typesafe-sdk==0.7.2`) is already part of that install, and the engine is **on by default** on this profile: every rubric cell is pre-screened by the Jev decision model before the judge panel sees it. The config file pins the engine's build (`HARNESS_JEV_BUILD`); confirm the pinned model on openrouter.ai/models for your test day. For a one-off run with the engine off, set `HARNESS_DECISION_ENGINE=off` in the terminal — the terminal wins, and the file keeps the engine the live acceptance runs.
 
 > **For the person who will also run the test suite**, not the operator: `pip install -e . -r requirements-dev.txt` instead, on Python 3.13, and set the temporary folder away from `/tmp` (the tests use the same safe-folder rule): `TMPDIR=$HOME/tmp-aeh`.
 
@@ -122,7 +122,7 @@ The ready-made file is [`config/live-test.dev-ci.toml`](config/live-test.dev-ci.
 |---|---|---|
 | `[profiles.dev-ci]` | The profile this section configures | `dev-ci` |
 | `HARNESS_COST_CEILING`, `HARNESS_COST_CURRENCY` | Spend guard for one run. Required for `dev-ci` and `cloud-hosted`. Currency is a three-letter code such as `USD`. | `5`, `USD` |
-| `HARNESS_DECISION_ENGINE` | **No default**: it must be `jev` or `off`. `off` = the page reader and judge panel do everything. | `off` |
+| `HARNESS_JEV_BUILD` | The pinned build of the Jev decision engine, which pre-screens every rubric cell before the judge panel sees it. Must be a pinned build (`@<date>`), like the other model names. | `openrouter/typesafe/jev-1.13@2026-09-17` |
 | `HARNESS_PROFILE` (top of the file) | Which profile this file selects when the terminal does not say. The terminal wins if both are set. | `dev-ci` |
 | `[profiles.dev-ci.transcriber]` | The model that reads page images | the repository's example model, **unconfirmed** |
 | `[[profiles.dev-ci.panel]]` | The judges. **Must be 1, 3 or 5** (an even panel cannot break a tie). | one judge, **unconfirmed** |
@@ -148,7 +148,7 @@ ACCEPTED
   profile ............ dev-ci   (from the config file; cohort consent class: synthetic)
   page reader ........ openrouter/qwen/qwen3-vl-8b-instruct@2026-06-01
   judge 1 ............ openrouter/qwen/qwen3-30b-a3b@2026-06-01
-  decision engine .... off
+  decision engine .... openrouter/typesafe/jev-1.13@2026-09-17
   cost ceiling ....... 5 USD
   concurrency ........ 8 calls at a time
   OPENROUTER_API_KEY . NOT SET in this terminal
