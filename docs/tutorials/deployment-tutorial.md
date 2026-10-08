@@ -273,21 +273,17 @@ build_id = "/models/qwen3-30b-a3b-q4.gguf@sha256:<64 hex characters>"
 quantization = "q4"
 ```
 
-Now the rules for the model lines.
+Now the model line itself, part by part. This is the one place where the configuration asks you to assemble a string by hand, so every part of it is explained here.
 
-**`build_id` must name a file, its fingerprint, and the `quantization` must be set.** It has the form `<path to file>@sha256:<fingerprint>`.
+**The `build_id` has the form `<path to file>@sha256:<fingerprint>`, and the `quantization` line must also be set.** All three together — the path, the fingerprint and the quantization — are the build's identity: leave any one out and the string does not name a build.
 
-* The file name must end in `.gguf`, `.safetensors`, `.bin`, `.pt`, `.mlx` or `.npz`. A name that does not end like one of these is read as an OpenRouter name and refused in local mode (checked: *"panel[0] is a provider-pinned build, but backend_profile 'edge-local' requires a edge-weights build"*).
-* A missing fingerprint is refused (checked: *"panel[0] is not a resolved build identity"*).
-* The fingerprint is the file's SHA-256 hash, written as hex characters. Get the real one with:
-
-  * macOS / Linux: `sha256sum /models/qwen3-30b-a3b-q4.gguf`
-  * Windows PowerShell: `Get-FileHash -Algorithm SHA256 C:\models\qwen3-30b-a3b-q4.gguf`
-
-  **The system does not check the fingerprint against the file.** The checker accepted a fingerprint of all zeros. That is why you must put the real one in: it is how you can later prove which exact model graded a student.
-* `quantization` is a short label such as `q4`. It must not be empty.
-
-**`provider`** can be `local`, `local-server`, `ollama` or `vllm-mlx`. All four use the same code. Use `local` unless you want the name to describe your server.
+| Part | Example | What it means | How to obtain it |
+|---|---|---|---|
+| The path | `/models/qwen3-30b-a3b-q4.gguf` | The model file on this computer | Copy the full path of the file you downloaded. It **must end in one of** `.gguf`, `.safetensors`, `.bin`, `.pt`, `.mlx` or `.npz`. That suffix decides how the whole string is read: a name ending like one of these is read as a local weights build, anything else as an OpenRouter-style name, and in local mode the other form is refused (checked: *"panel[0] is a provider-pinned build, but backend_profile 'edge-local' requires a edge-weights build"*) |
+| `@sha256:` | `@sha256:` | The separator before the fingerprint | Type it literally, always exactly this. What follows it must be hexadecimal characters only (0-9, a-f); anything else is refused (checked: *"panel[0] is not a resolved build identity"*) |
+| The fingerprint | 64 hex characters | The SHA-256 hash of the weights file | `sha256sum /models/qwen3-30b-a3b-q4.gguf` (macOS / Linux) or `Get-FileHash -Algorithm SHA256 C:\models\qwen3-30b-a3b-q4.gguf` (Windows PowerShell). **The system does not check the fingerprint against the file** — the checker accepted one of all zeros. Put the real one in anyway: it is how you can later prove which exact model graded a student |
+| `quantization` (a separate line) | `q4` | How compressed the weights are | Any non-empty label works, but use the one the file's own name carries (`Q4_K_M` → `q4`), so the record later reads true. Missing or empty is refused |
+| `provider` (a separate line) | `local` | How the model is served: `local`, `local-server`, `ollama` or `vllm-mlx` | All four use the same code. Use `local` unless you want the name to describe your server |
 
 **On Windows**, write the path with forward slashes (`C:/models/x.gguf@sha256:...`) or in single quotes (`'C:\models\x.gguf@sha256:...'`). Both were accepted by the checker. In double quotes a backslash is a special character in TOML.
 
@@ -419,10 +415,20 @@ What each part means, and the rules (all checked unless said):
 
 * **`HARNESS_COST_CEILING`** is required for both profiles. **It counts estimates, not the bill.** Each model call is counted at the system's fixed price sheet before it is sent: about $0.007 a call with the default settings, while the real calls in 7.6 cost about $0.0001. So a ceiling of `5` stops a run after roughly 700 model calls, whatever OpenRouter actually charges; raise it if a run pauses on the ceiling, and keep OpenRouter's own spending limit (7.2) as the real stop. Without it: *"HARNESS_COST_CEILING is required for backend_profile 'cloud-hosted'"*. It must be a whole or decimal number, not negative. `5` is plenty for ten sample answer sheets. The environment can override it.
 * **`retention_setting`** is required for `cloud-hosted` only. It must be `provider-default` or `zero-retention`. It *records* your choice. It does **not** make the privacy check pass (see 7.6). Leaving it out is refused: *"retention_setting is required for backend_profile 'cloud-hosted'"*.
-* **Model names** are written `openrouter/<vendor>/<model>@<date or version>`. The `@...` part is required: it pins the exact version. A moving tag such as `@latest` is refused. Do **not** give these a `quantization` line (the provider owns it).
-* **Do the models exist?** Yes, for the two names in the shipped files: both answered real calls on 2026-10-03 (checked). If you choose other models, confirm each one on openrouter.ai/models first.
+* **Model names** are written `openrouter/<vendor>/<model>@<pin>`. The three parts mean different things and come from different places — the table under this list explains each one and how to obtain it. The `@...` part is required, and a moving tag such as `@latest` is refused. Do **not** give these a `quantization` line (the provider owns it).
+* **Do the models exist?** Yes, for the two names in the shipped files: both answered real calls on 2026-10-03 (checked). How to confirm any model yourself is in the table below.
 * **Judges:** one judge is the smallest test, but with one judge nobody can disagree, so the system cannot show agreement figures. For a real accuracy test, use **three** judges from different model families (add two more `[[profiles....panel]]` blocks). An even number such as two is refused: *"panel must hold [1, 3, 5] judges, got 2"*.
 * **`HARNESS_CONCURRENCY`** sets how many calls run at once. The default is 8. Here it *sets* the number (it does not just lower it): `20` is accepted. OpenRouter's own rate limits may refuse a high number.
+
+**The model string, part by part.** A model name such as `openrouter/qwen/qwen3-30b-a3b@2026-06-01` is three parts glued together, each with its own meaning and its own source:
+
+| Part | Example | What it means | How to obtain it |
+|---|---|---|---|
+| `openrouter/` | `openrouter/` | The literal prefix that names the provider | Nothing to choose: always written exactly like this |
+| `<vendor>/<model>` | `qwen/qwen3-30b-a3b` | OpenRouter's own slug — the one in the model page's address (`https://openrouter.ai/qwen/qwen3-30b-a3b`) | Copy it from the model's page, or list every slug the service knows with `curl -s https://openrouter.ai/api/v1/models` and read the `id` fields (no key needed). **Only this part is sent to OpenRouter** |
+| `@<pin>` | `@2026-06-01` | The harness's own record of which version you meant. OpenRouter has no date pin: the checker accepts any non-empty pin that is not a moving tag, and the pin is stripped before a request is built | Choose the date you confirmed the model — a good source is the `created` field the model-list call above returns for that slug (it converts to a date), or simply the day you checked the model on openrouter.ai/models. Keep it stable afterwards, so later records read true |
+
+**The pin is your record, not a version OpenRouter serves.** Because a request carries only `<vendor>/<model>`, OpenRouter may point that slug at an updated upstream model at any time; the pin does not prevent that. What a run actually used is recorded afterwards: each reply names the model that served it, and that record is what you later prove a student was graded by. The pin says what you *intended*; the reply says what *answered*; provenance needs both.
 
 ### 7.4 Who may be graded: the consent rule
 
@@ -446,7 +452,7 @@ HARNESS_DECISION_PROVIDER = "openrouter-jev"
 HARNESS_JEV_BUILD = "openrouter/typesafe/jev-1.13@20260917"
 ```
 
-Its default address is `https://openrouter.ai/api/v1/systemone` (change with `HARNESS_JEV_OPENROUTER_URL`). It sends student work off the machine too, so the consent rule covers it. **Not checked against the real service.** Keep it `off` for a first test.
+Its default address is `https://openrouter.ai/api/v1/systemone` (change with `HARNESS_JEV_OPENROUTER_URL`). The build id is written in the same shape as §7.3's model names, `openrouter/...@<pin>`: the same pin rules apply, and the `@...` part is your own record again — it is stripped before the request, not something the service knows. It sends student work off the machine too, so the consent rule covers it. **Not checked against the real service.** Keep it `off` for a first test.
 
 ### 7.6 What a run through OpenRouter does now (reproduced)
 
