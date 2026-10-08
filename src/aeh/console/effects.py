@@ -75,14 +75,28 @@ class DomainEffectsMixin:
                         False,
                     )
                 try:
-                    GradingService(self._store).finalize_batch(run_id, actor)
+                    record = GradingService(self._store).finalize_batch(run_id, actor)
                 except Exception as exc:  # noqa: BLE001 — a refusal is the honest outcome
                     return (
                         f"M-GRADE refused the finalization of run {run_id}: {exc} — nothing "
                         "was settled, and the console does not report a refused batch as done",
                         False,
                     )
-                return f"batch for run {run_id} finalized through M-GRADE", True
+                settled = int(getattr(record, "finalized", 0) or 0)
+                if settled:
+                    return (
+                        f"batch for run {run_id} finalized through M-GRADE: "
+                        f"{settled} grade(s) settled",
+                        True,
+                    )
+                # A finalize that settled nothing already says so (FR-CONSOLE-02's repeat
+                # case; ADR-3's completion road got there first): "finalized" over an empty
+                # settlement would be the top silent-failure shape, so the no-op is named.
+                return (
+                    f"every current grade of run {run_id} is already final; "
+                    "nothing was settled",
+                    True,
+                )
             return "finalize batch names no run or actor; nothing was finalized", False
         if action == "resolve quarantine item":
             submission_id = params.get("submission_id")
@@ -191,6 +205,8 @@ class DomainEffectsMixin:
             return self._blind_effect(params)
         if action == "start run":
             return self._start_run_effect(params)
+        if action == "publish package":
+            return self._publish_package_effect(params)
         if action == "export/import package":
             return self._export_effect(params)
         if action == "approve exemplar paraphrases at export":
@@ -458,13 +474,22 @@ class DomainEffectsMixin:
         config = params.get("config")
         try:
             if not isinstance(config, dict):
-                # The run's configuration, composed exactly as the run-start screen's
-                # preview read composed it: the request's per-run profile (FR-CONSOLE-43 —
-                # a console process cannot run under `cloud-hosted` itself) and threshold
-                # (FR-CONF-32) are the same explicit settings every other path writes.
-                from .run_start import compose_run_start_config
+                from .run_start import compose_restart_config, compose_run_start_config
 
-                config = compose_run_start_config(self, params)
+                if str(params.get("profile") or "").strip():
+                    # The run's configuration, composed exactly as the run-start screen's
+                    # preview read composed it: the request's per-run profile (FR-CONSOLE-43 —
+                    # a console process cannot run under `cloud-hosted` itself) and threshold
+                    # (FR-CONF-32) are the same explicit settings every other path writes.
+                    config = compose_run_start_config(self, params)
+                elif run_id is not None:
+                    # A start that names the run and no profile of its own is a RESUME: it
+                    # restarts under the run's own frozen configuration (FR-CONF-15), not
+                    # today's composition — a console serving an old run must not silently
+                    # rebind it to the environment it happens to run in now.
+                    config = compose_restart_config(self, run_id)
+                else:
+                    config = compose_run_start_config(self, params)
             started, thread = start_run_in_background(
                 self._store, cohort_id=cohort_id, package_version_id=package_version,
                 config=config, run_id=run_id)
@@ -506,6 +531,58 @@ class DomainEffectsMixin:
         return (
             f"package version {package_version} exported through M-PKG to {dest.name} "
             f"(content hash {getattr(report, 'content_hash', '?')[:12]})",
+            True,
+        )
+
+    def _publish_package_effect(self, params: dict[str, Any]) -> tuple[str, bool]:
+        """The SPA's publish confirmation (FR-UI-05): the M-SETUP draft is published through
+        `SetupService.publish` — the publication itself is M-PKG's one-transaction lock flip
+        (FR-PKG-01); setup assembles and gates, the Tier P writer writes (CT-PKG-12). A
+        refusal is the named outcome: the console never reports a refused publish as done."""
+        from aeh.setup import setup_service_for_store
+
+        actor = params.get("actor")
+        package_id = str(params.get("package_id") or "")
+        data_dir = getattr(self._store, "data_dir", None)
+        if data_dir is None:
+            return "publish package holds no store; nothing was published", False
+        if not actor:
+            return (
+                "publish package names no approver (actor); nothing was published",
+                False,
+            )
+        if not package_id:
+            # Never-create rule: the publish names the stored package whose setup still
+            # holds a draft — the same package `_draft_package` shows the screen — rather
+            # than opening an unknown id's tier file. A finished setup (no proposal left)
+            # is not the draft: publishing it would offer one thing and lock another.
+            found_draft = None
+            for path in sorted(Path(data_dir, "packages").glob("*.pkg.sqlite")):
+                candidate = path.name.removesuffix(".pkg.sqlite")
+                try:
+                    if setup_service_for_store(
+                            self._store, candidate).current_proposal() is not None:
+                        found_draft = candidate
+                        break
+                except Exception:  # noqa: BLE001 — an unreadable setup is not the draft
+                    continue
+            if found_draft is None:
+                return (
+                    "no stored package holds a draft to publish; nothing was published",
+                    False,
+                )
+            package_id = found_draft
+        try:
+            version = setup_service_for_store(self._store, package_id).publish(str(actor))
+        except Exception as exc:  # noqa: BLE001 — a refusal is the honest outcome
+            return (
+                f"M-SETUP refused the publish of {package_id}: {exc} — nothing was "
+                "published, and the console does not report a refused publish as done",
+                False,
+            )
+        return (
+            f"package version {version} published through M-PKG's lock flip "
+            f"(approved by {actor})",
             True,
         )
 

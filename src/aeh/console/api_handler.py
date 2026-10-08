@@ -28,11 +28,35 @@ from .hub_state import hub_payload
 from .results_reads import results_class_read, results_export_read, results_student_read
 from .routes import SCREENS
 from .run_start import run_start_preview_read
+from .screen_reads import (
+    blind_seats_read,
+    class_roster_read,
+    help_read,
+    monitor_read,
+    package_setup_read,
+    papers_read,
+    results_screen_read,
+    review_queue_read,
+    run_start_state_read,
+    student_detail_read,
+    system_status_read,
+)
 from .vocabulary import (
+    BLIND_SEATS_READ,
+    CLASS_ROSTER_READ,
+    HELP_READ,
+    MONITOR_READ,
+    PACKAGE_SETUP_READ,
+    PAPERS_READ,
     RESULTS_CLASS_READ,
     RESULTS_EXPORT_READ,
+    RESULTS_SCREEN_READ,
     RESULTS_STUDENT_READ,
+    REVIEW_QUEUE_READ,
     RUN_START_PREVIEW_READ,
+    RUN_START_STATE_READ,
+    STUDENT_DETAIL_READ,
+    SYSTEM_STATUS_READ,
 )
 
 JSON_TYPE = "application/json; charset=utf-8"
@@ -71,6 +95,20 @@ _READS = {
     RESULTS_CLASS_READ: lambda _console, app, query: results_class_read(app, query),
     RESULTS_STUDENT_READ: lambda _console, app, query: results_student_read(app, query),
     RESULTS_EXPORT_READ: lambda _console, app, query: results_export_read(app, query),
+    # #635 (FR-UI-03): the lifecycle screens' reads. Each takes the console (for its bound
+    # run), the app (the store and the modules' doors) and the query (a run or cohort named
+    # per request), writes nothing, and answers a document the SPA renders as is.
+    PACKAGE_SETUP_READ: lambda console, app, query: package_setup_read(console, app, query),
+    CLASS_ROSTER_READ: lambda _console, app, query: class_roster_read(_console, app, query),
+    PAPERS_READ: lambda console, app, query: papers_read(console, app, query),
+    RUN_START_STATE_READ: lambda console, app, query: run_start_state_read(console, app, query),
+    MONITOR_READ: lambda console, app, query: monitor_read(console, app, query),
+    REVIEW_QUEUE_READ: lambda console, app, query: review_queue_read(console, app, query),
+    BLIND_SEATS_READ: lambda console, app, query: blind_seats_read(console, app, query),
+    RESULTS_SCREEN_READ: lambda console, app, query: results_screen_read(console, app, query),
+    STUDENT_DETAIL_READ: lambda console, app, query: student_detail_read(console, app, query),
+    SYSTEM_STATUS_READ: lambda _console, app, query: system_status_read(_console, app, query),
+    HELP_READ: lambda _console, _app, _query: help_read(_console, _app, _query),
 }
 
 

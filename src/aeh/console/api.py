@@ -17,11 +17,22 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 from .vocabulary import (
+    BLIND_SEATS_READ,
+    CLASS_ROSTER_READ,
     CONTROL_SURFACE_ACTIONS,
+    HELP_READ,
+    MONITOR_READ,
+    PACKAGE_SETUP_READ,
+    PAPERS_READ,
     RESULTS_CLASS_READ,
     RESULTS_EXPORT_READ,
+    RESULTS_SCREEN_READ,
     RESULTS_STUDENT_READ,
+    REVIEW_QUEUE_READ,
     RUN_START_PREVIEW_READ,
+    RUN_START_STATE_READ,
+    STUDENT_DETAIL_READ,
+    SYSTEM_STATUS_READ,
 )
 
 #: The API's version prefix. A breaking change to the API moves to `/api/v2/` beside it.
@@ -108,6 +119,19 @@ def _build_routes() -> tuple[ApiRoute, ...]:
         ApiRoute("GET", f"{API_PREFIX}/results/class", None, RESULTS_CLASS_READ),
         ApiRoute("GET", f"{API_PREFIX}/results/student", None, RESULTS_STUDENT_READ),
         ApiRoute("GET", f"{API_PREFIX}/results/export", None, RESULTS_EXPORT_READ),
+        # #635: the lifecycle screens' documents (FR-UI-03) — one GET per screen, each a
+        # read over the same doors the server-rendered console calls. No row here writes.
+        ApiRoute("GET", f"{API_PREFIX}/package-setup", None, PACKAGE_SETUP_READ),
+        ApiRoute("GET", f"{API_PREFIX}/class-roster", None, CLASS_ROSTER_READ),
+        ApiRoute("GET", f"{API_PREFIX}/papers", None, PAPERS_READ),
+        ApiRoute("GET", f"{API_PREFIX}/run-start-state", None, RUN_START_STATE_READ),
+        ApiRoute("GET", f"{API_PREFIX}/monitor", None, MONITOR_READ),
+        ApiRoute("GET", f"{API_PREFIX}/review-queue", None, REVIEW_QUEUE_READ),
+        ApiRoute("GET", f"{API_PREFIX}/blind-seats", None, BLIND_SEATS_READ),
+        ApiRoute("GET", f"{API_PREFIX}/results/screen", None, RESULTS_SCREEN_READ),
+        ApiRoute("GET", f"{API_PREFIX}/results/student-detail", None, STUDENT_DETAIL_READ),
+        ApiRoute("GET", f"{API_PREFIX}/system-status", None, SYSTEM_STATUS_READ),
+        ApiRoute("GET", f"{API_PREFIX}/help", None, HELP_READ),
     )
     controls = tuple(
         ApiRoute("POST", f"{API_PREFIX}/actions/{action_slug(action)}", action)

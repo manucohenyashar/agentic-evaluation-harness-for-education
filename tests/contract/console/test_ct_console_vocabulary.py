@@ -194,10 +194,18 @@ def test_the_delta_control_actions_are_the_requirements_that_add_them(repo_root)
     assert "none is added without being an enumerated control row" in delta, (
         "CT-CONSOLE-30 no longer requires a new API mutation to be an enumerated control row"
     )
-    assert DELTA_CONTROL_ACTIONS == {"create cohort": "FR-CONSOLE-42"}, (
+    assert DELTA_CONTROL_ACTIONS == {
+        "create cohort": "FR-CONSOLE-42",
+        # FR-UI-05 (#635): the package screen's publish is a destructive action whose
+        # confirmation is the API's — `CT-CONSOLE-30` admits it only as an enumerated
+        # control row through M-SETUP's `publish` (the lock flip), never a route beside
+        # the enumeration.
+        "publish package": "FR-UI-05",
+    }, (
         "a delta control action was added or removed: that is a design decision, cite it here"
     )
     assert "| fr-console-42 | the console shall create a cohort and load its roster" in delta
+    assert "| fr-ui-05 | every destructive or irreversible action (publish package, start" in delta
 
 
 def test_the_knob_defaults_transcribe_the_design_configuration_line(repo_root):

@@ -155,6 +155,10 @@ HLD_CONTROL_ACTIONS: tuple[str, ...] = (
 #: an orphan route. Transcribed from the delta, not from the implementation.
 DELTA_CONTROL_ACTIONS: dict[str, str] = {
     "create cohort": "FR-CONSOLE-42",
+    # `FR-UI-05` (#635): the package screen's publish is a destructive action whose
+    # confirmation is the API's — `CT-CONSOLE-30` admits it only as an enumerated control
+    # row through M-SETUP's `publish` (the lock flip), never a route beside the enumeration.
+    "publish package": "FR-UI-05",
 }
 
 #: The whole enumerated write surface `FR-CONSOLE-32` pins: §11.8's fifteen plus the delta's.

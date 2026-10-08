@@ -189,7 +189,8 @@ class StoreReadsMixin:
         if cohort_key is None:
             return None
         rows = list(self._store.cohort(cohort_key).query(
-            "SELECT run_id, cohort_id, package_id, package_version_id, status FROM run "
+            "SELECT run_id, cohort_id, package_id, package_version_id, status, pause_reason "
+            "FROM run "
             "WHERE run_id = :run_id", run_id=run_id))
         return dict(rows[0]) if rows else None
 

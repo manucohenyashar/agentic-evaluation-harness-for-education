@@ -753,7 +753,7 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # pre-checks and its completed-before-refusal progress disclosure above the
     # tail sites — moving the seven tail sites down again; same statements.)
     "aeh.console.controls:215",
-    "aeh.console.effects:124",
+    "aeh.console.effects:138",
     "aeh.console.key_correction:140",
     "aeh.console.driver:120",
     "aeh.console.driver:159",

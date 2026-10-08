@@ -1,19 +1,20 @@
-import { useEffect, useState, type ComponentType } from "react";
+import { useEffect, useState, type ComponentType, type ReactElement } from "react";
 import type { HubState } from "./api";
 import { DESTINATIONS } from "./destinations";
+import { Navigate } from "./navigate";
 import { Hub } from "./screens/Hub";
-import {
-  ClassSetup,
-  Help,
-  Monitor,
-  NotFound,
-  Papers,
-  PackageSetup,
-  Results,
-  Review,
-  RunStart,
-  SystemStatus,
-} from "./screens/screens";
+import { BlindSample } from "./screens/BlindSample";
+import { ClassSetup } from "./screens/ClassSetup";
+import { Help } from "./screens/Help";
+import { Monitor } from "./screens/Monitor";
+import { PackageSetup } from "./screens/PackageSetup";
+import { Papers } from "./screens/Papers";
+import { Results } from "./screens/Results";
+import { Review } from "./screens/Review";
+import { RunStart } from "./screens/RunStart";
+import { StudentDetail } from "./screens/StudentDetail";
+import { SystemStatus } from "./screens/SystemStatus";
+import { NotFound } from "./screens/screens";
 import { useHubState } from "./useHubState";
 
 /**
@@ -23,7 +24,8 @@ import { useHubState } from "./useHubState";
  * destination (FR-UI-02), present beside every screen, so each destination stays one click
  * away from wherever the teacher is.
  */
-type ScreenComponent = ComponentType<{ state: HubState | null }>;
+type ScreenProps = { state: HubState | null };
+type ScreenComponent = ComponentType<ScreenProps>;
 
 const ROUTES: Record<string, ScreenComponent> = {
   "/": Hub,
@@ -37,6 +39,9 @@ const ROUTES: Record<string, ScreenComponent> = {
   "/help": Help,
   "/status": SystemStatus,
 };
+
+/** A results row's student link: `#/results/students/<submission id>`. */
+const STUDENT_ROUTE = /^\/results\/students\/([^/]+)$/;
 
 function routeOf(hash: string): string {
   const path = hash.replace(/^#/, "");
@@ -53,18 +58,31 @@ export function App() {
     return () => window.removeEventListener("hashchange", follow);
   }, []);
 
-  const Screen = ROUTES[route] ?? NotFound;
+  const student = STUDENT_ROUTE.exec(route);
+  let screen: ReactElement;
+  if (student !== null) {
+    screen = <StudentDetail submissionId={student[1] ?? ""} />;
+  } else if (route === "/review/blind") {
+    screen = <BlindSample />;
+  } else {
+    const Screen = ROUTES[route] ?? NotFound;
+    screen = <Screen state={hub.state} />;
+  }
   return (
-    <>
+    <Navigate.Provider value={setRoute}>
       <nav className="hub" aria-label="Console destinations">
         <ul className="hub-grid">
           {DESTINATIONS.map((destination) => (
             <li key={destination.path}>
-              <a className="card" href={`#${destination.path}`}>
+              <a
+                className="card"
+                href={`#${destination.path}`}
+                onClick={() => setRoute(destination.path)}
+              >
                 <h2>{destination.title}</h2>
                 <p className="card-note">{destination.note}</p>
                 {destination.path === "/run" && hub.state !== null && (
-                  <p className="card-state">Decision engine: {hub.state.engine}</p>
+                  <p className="card-state">Engine in force: {hub.state.engine}</p>
                 )}
               </a>
             </li>
@@ -72,13 +90,15 @@ export function App() {
         </ul>
       </nav>
       <main className="screen">
-        {hub.failed && (
+        {/* The hub's own alert rides the hub route alone (CT-UI-04): a screen's error is the
+            screen's own named message, so one screen's failure never answers for another. */}
+        {route === "/" && hub.failed && (
           <p role="alert" className="hub-alert">
             The console could not read its state. It will keep trying.
           </p>
         )}
-        <Screen state={hub.state} />
+        {screen}
       </main>
-    </>
+    </Navigate.Provider>
   );
 }
