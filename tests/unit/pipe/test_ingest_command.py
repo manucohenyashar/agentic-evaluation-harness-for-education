@@ -18,10 +18,13 @@ from aeh.pipeline import cli
 from aeh.prov import HttpResponse, OpenRouterProvider
 from aeh.prov.live import IMAGE_FIELD, _fields_from_wire
 from aeh.store import open_store
+from tests.support.live_test_config import configured_models
 
 REPO = Path(__file__).resolve().parents[3]
 SAMPLE_SPEC = REPO / "docs" / "live-tests" / "config" / "ps9-forces-01.package.toml"
 DEV_CI_CONFIG = REPO / "docs" / "live-tests" / "config" / "live-test.dev-ci.toml"
+#: The page reader the config names, read from it (tests/support/live_test_config.py).
+TRANSCRIBER, _ = configured_models(DEV_CI_CONFIG)
 SAMPLES = REPO / "docs" / "live-tests" / "sample-materials"
 
 
@@ -54,7 +57,7 @@ class _FakeOpenRouter:
                 self.request_problems.append("the page request names no declared questions")
             text = self.pages[(fields["source_blob_hash"], int(fields["page_no"]))]
         return HttpResponse(200, {}, json.dumps({
-            "model": "qwen/qwen3-vl-8b-instruct",
+            "model": TRANSCRIBER,
             "choices": [{"finish_reason": "stop", "message": {"content": text}}],
             "usage": {"prompt_tokens": 100, "completion_tokens": 50, "cost": 0.00001},
         }).encode("utf-8"))
@@ -136,7 +139,7 @@ def test_tc_pipe_30_aeh_ingest_reads_every_sheet_through_the_real_checks(tmp_dat
         image = next(m for m in body["messages"] if m["name"] == IMAGE_FIELD)
         assert image["content"][0]["image_url"]["url"].startswith("data:image/png;base64,")
         assert body["provider"] == {"zdr": True, "data_collection": "deny"}
-        assert body["model"] == "qwen/qwen3-vl-8b-instruct"
+        assert body["model"] == TRANSCRIBER  # whatever OpenRouter model the config names
 
 
 def test_tc_pipe_30_a_rerun_reads_nothing_twice(tmp_data_dir, physics, capsys):

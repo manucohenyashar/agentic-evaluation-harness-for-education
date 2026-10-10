@@ -23,14 +23,17 @@ from aeh.pipeline import cli
 from aeh.prov import HttpResponse, OpenRouterProvider
 from aeh.prov.live import _fields_from_wire
 from aeh.store import open_store
+from tests.support.live_test_config import configured_builds, configured_models
 
 REPO = Path(__file__).resolve().parents[3]
 SAMPLE_SPEC = REPO / "docs" / "live-tests" / "config" / "ps9-forces-01.package.toml"
 DEV_CI_CONFIG = REPO / "docs" / "live-tests" / "config" / "live-test.dev-ci.toml"
 SAMPLES = REPO / "docs" / "live-tests" / "sample-materials"
 
-TRANSCRIBER = "qwen/qwen3-vl-8b-instruct"
-PANEL_JUDGE = "qwen/qwen3-30b-a3b"
+#: The models the config names — read from it, not hard-coded: the operator may put any
+#: OpenRouter model there (tests/support/live_test_config.py).
+TRANSCRIBER, PANEL_JUDGE = configured_models(DEV_CI_CONFIG)
+_, PANEL_JUDGE_BUILD = configured_builds(DEV_CI_CONFIG)
 EXTRA_JUDGES = ("vendor-a/judge-one", "vendor-b/judge-two", "vendor-c/judge-three")
 
 
@@ -85,9 +88,12 @@ def _config(tmp_path, extra_judges=()):
     """The shipped dev-ci config, plus `escalation_judge` tables for `extra_judges`."""
     text = DEV_CI_CONFIG.read_text(encoding="utf-8")
     for slug in extra_judges:
+        # A full build id is used as given (the panel's own, for the one-seat case); a bare
+        # model name is pinned the way the shipped config pins its models.
+        build = slug if slug.startswith("openrouter/") else f"openrouter/{slug}@2026-06-01"
         text += ("\n[[profiles.dev-ci.escalation_judge]]\nrole = \"judge\"\n"
                  "provider = \"openrouter\"\n"
-                 f"build_id = \"openrouter/{slug}@2026-06-01\"\n")
+                 f"build_id = \"{build}\"\n")
     path = tmp_path / "live.toml"
     path.write_text(text, encoding="utf-8")
     return path
@@ -229,7 +235,7 @@ def test_tc_pipe_33_the_random_arm_without_its_seats_is_refused_before_the_run(
 
 
 @pytest.mark.parametrize("extra, words", [
-    ((PANEL_JUDGE,), "already has a seat"),
+    ((PANEL_JUDGE_BUILD,), "already has a seat"),
     ((EXTRA_JUDGES[0], EXTRA_JUDGES[0]), "already has a seat"),
 ])
 def test_tc_pipe_33_a_model_holds_one_seat(tmp_data_dir, tmp_path, physics, capsys, extra, words):
