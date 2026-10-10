@@ -27,8 +27,12 @@ DOCUMENT_KINDS: tuple[str, ...] = ("assessment", "reference", "rubric", "submiss
 #: and bumped only deliberately. v2 added the region-marker protocol and the per-kind
 #: description fields (#38); v3 added the per-region confidence, content-state and
 #: unresolved-token attributes (#39); v4 added the verbatim header carry-over the
-#: V3/V4 gates parse (#41) — each a deliberate bump, recorded in the PR.
-TRANSCRIPTION_PROMPT_VERSION = "ingest-transcribe-v4"
+#: V3/V4 gates parse (#41); v5 states the mark and answer protocol the parser and the
+#: V2/V4 gates read — exactly one mark region per multiple-choice question carrying
+#: `selection=`, `question_id=` on every answer region, the package's own question ids —
+#: after the first live run found a real reader following v4 literally and every sheet
+#: parked (TC-REG-15) — each a deliberate bump, recorded in the PR.
+TRANSCRIPTION_PROMPT_VERSION = "ingest-transcribe-v5"
 
 
 #: The three region kinds (`FR-INGEST-13`). A region is exactly one.

@@ -28,6 +28,12 @@ on both configs). Only the two `serialization.<name>.persisted` strings changed,
 one key; the run rows M-ORCH writes, the work ids, `panel_build_ref`, the profile summaries and
 every table row are byte-identical, checked by diff. The Q&A model is not grader identity.
 
+**Re-blessed at TC-REG-15 (2026-10-09), consciously.** The transcription prompt moved to
+`ingest-transcribe-v5` and each package-bound page request now names the declared questions, so
+the 4 transcription fixture keys moved (re-captured at HEAD; every request they replace is a
+page read). The other 44 keys, the verdict rows, run row, work ids, trace and every other value
+are byte-identical, checked by diff.
+
 Every value in the snapshot is deterministic across drives (three captures at `fb12d1e` were
 byte-identical). Two things are projected. Measured latency is dropped. A wall-clock stamp
 (`*_at`) is reduced to whether it is set, because set-versus-null is behaviour and the instant

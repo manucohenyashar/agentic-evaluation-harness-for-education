@@ -35,14 +35,19 @@ UNTRUSTED_CLOSE = "</untrusted_student_content>"
 SUPERSEDED_PREFIX = "~~superseded-by"
 
 
-#: The transcription prompt (v4): v2's region-marker protocol, per-kind description
+#: The transcription prompt (v5): v2's region-marker protocol, per-kind description
 #: fields (`FR-INGEST-10`) and retraction markup (`FR-INGEST-12` — BOTH versions of a
 #: struck-through/corrected line are kept); v3's per-region confidence, content-state
-#: and unresolved-token attributes; v4 adds the verbatim header carry-over — the
+#: and unresolved-token attributes; v4's verbatim header carry-over — the
 #: 'Assessment:' and 'Student:' lines the ladder's V3/V4 gates parse (`FR-INGEST-24`,
-#: `FR-INGEST-25`). A prompt change alters every subsequent transcript, so this is a
-#: deliberate, PR-recorded bump (`NFR-INGEST-05`). Descriptive-only: the model is told
-#: the evaluative bar in the prompt too, though the module enforces it mechanically.
+#: `FR-INGEST-25`); v5 spells out the mark and answer protocol the parser and the V2/V4
+#: gates read (`FR-INGEST-17`, `FR-INGEST-23`): one mark region per multiple-choice
+#: question naming the chosen option in `selection=`, `question_id=` on every answer
+#: region, and the ids from the request's `declared_questions` field. v4 never asked for
+#: any of these, and a real reader following it literally parked every sheet (TC-REG-15).
+#: A prompt change alters every subsequent transcript, so this is a deliberate,
+#: PR-recorded bump (`NFR-INGEST-05`). Descriptive-only: the model is told the evaluative
+#: bar in the prompt too, though the module enforces it mechanically.
 TRANSCRIPTION_PROMPT = (
     "Transcribe this examination page verbatim into Markdown. Carry the page's header "
     "lines over verbatim first, each on its own line: any 'Assessment: <name>' line "
@@ -54,7 +59,23 @@ TRANSCRIPTION_PROMPT = (
     "each with '<!-- /region -->'. Tag every region with its reading confidence "
     "('conf=0.87'), an answer region's content state ('state=present', 'state=blank' "
     "when the answer space is empty), and a mark region with its selection state "
-    "('selection_state=resolved' or 'ambiguous' or 'multiple_marks'). Where a "
+    "('selection_state=resolved' or 'ambiguous' or 'multiple_marks'). "
+    "Answers follow these rules exactly. "
+    "(1) Write exactly one selection_mark region per multiple-choice question, never "
+    "one per printed option. When one option is clearly marked, write "
+    "'selection_state=resolved selection=<option id>' with the option id as printed "
+    "(for example 'selection=C'); when two or more options are marked, write "
+    "'selection_state=multiple_marks' and no selection; when the mark is unclear, "
+    "write 'selection_state=ambiguous' and no selection; when no option is marked, "
+    "write 'state=blank'. Never choose an option the page does not show as marked. "
+    "(2) Put 'question_id=<id>' on every answer region — each mark and each written "
+    "answer — for example '<!-- region: kind=selection_mark question_id=Q1 conf=0.95 "
+    "selection_state=resolved selection=C -->C<!-- /region -->' and "
+    "'<!-- region: kind=transcribed_text question_id=Q4 conf=0.9 state=present -->"
+    "the student's words<!-- /region -->'. Leave the printed question text and the "
+    "printed options untagged, as plain kind=transcribed_text regions. "
+    "(3) When the request lists declared questions, use exactly those ids, spelled as "
+    "listed: part (b) of question 5 is 'Q5b' when the list names 'Q5b'. Where a "
     "handwritten token cannot be read, transcribe it as <unresolved>token</"
     "unresolved> — never guess it. Describe graphics with the element kind's named "
     "fields: a free-body diagram names per arrow its label, origin point and "

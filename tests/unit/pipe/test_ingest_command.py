@@ -33,6 +33,9 @@ class _FakeOpenRouter:
         self.requests: list = []
         self.interrupt_at: int | None = None  # raise KeyboardInterrupt on this request number
         self.status = 200
+        # It answers with perfect markup whatever it is asked, so it checks what it was asked
+        # (TC-REG-15): every page request must state the mark protocol and name the questions.
+        self.request_problems: list[str] = []
 
     def send(self, request):  # noqa: ANN001
         self.requests.append(request)
@@ -45,6 +48,10 @@ class _FakeOpenRouter:
         if fields.get("instruction", "").startswith("Decide whether"):
             text = "uncertain"  # the right-test check's optional second opinion
         else:
+            if "selection=" not in fields.get("instruction", ""):
+                self.request_problems.append("the page prompt never asks for selection=")
+            if not fields.get("declared_questions"):
+                self.request_problems.append("the page request names no declared questions")
             text = self.pages[(fields["source_blob_hash"], int(fields["page_no"]))]
         return HttpResponse(200, {}, json.dumps({
             "model": "qwen/qwen3-vl-8b-instruct",
@@ -93,6 +100,7 @@ def physics(tmp_data_dir, tmp_path, monkeypatch, capsys):
            "roster": roster, "fake": fake, "expected": dict(v.EXPECTED_STATUS)}
     for name in ("build_sample_materials", "verify_sample_materials"):
         sys.modules.pop(name, None)
+    assert not fake.request_problems, sorted(set(fake.request_problems))
 
 
 def _ingest(data_dir, physics, capsys, cohort="class-ps9", with_paper=True):

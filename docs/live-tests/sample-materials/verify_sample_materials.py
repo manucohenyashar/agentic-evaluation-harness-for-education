@@ -109,10 +109,16 @@ EXPECTED_STATUS = {
 
 
 class ScriptedReader:
-    """Stands in for the page-reading model: answers a page request with the text staged for it."""
+    """Stands in for the page-reading model: answers a page request with the text staged for it.
+
+    It answers with perfect markup whatever it is asked, so it also checks what it was asked: a
+    page request must state the mark protocol (`selection=`) and name the package's questions.
+    A reader that ignored its request is how the first live run's markup bug got past this
+    check (TC-REG-15)."""
 
     def __init__(self) -> None:
         self.pages: dict[tuple[str, int], str] = {}
+        self.request_problems: list[str] = []
 
     def stage(self, blob: str, pages: list[str]) -> None:
         for number, text in enumerate(pages, start=1):
@@ -128,6 +134,10 @@ class ScriptedReader:
             return Completion(text="uncertain", tokens_in=10, tokens_out=1, latency_ms=1,
                               resolved_build=model_ref.build_id, cached_prefix_tokens=0, cost=None)
         key = (fields.get("source_blob_hash"), int(fields["page_no"]))
+        if "selection=" not in fields.get("instruction", ""):
+            self.request_problems.append(f"page {key[1]}: the prompt never asks for selection=")
+        if not fields.get("declared_questions"):
+            self.request_problems.append(f"page {key[1]}: the request names no declared questions")
         if key not in self.pages:
             raise AssertionError(f"no staged page for {key}")
         return Completion(text=self.pages[key], tokens_in=10, tokens_out=5, latency_ms=1,
@@ -287,7 +297,8 @@ def main() -> int:
             handle = store.cohort(cohort)
             ingestor = Ingestor(handle, blobs, reader, TRANSCRIBER, SamplingParams(temperature=0.0),
                                 PdfiumRasterizer(), residency=ResidencySlot.for_policy(("transcriber",)),
-                                sanitizer=PypdfSanitizer())
+                                sanitizer=PypdfSanitizer(),
+                                package_catalog=catalog, package_version=version)
             blob = blobs.put(files[f"{test_id}/01-test-paper.pdf"])
             reader.stage(blob, [assessment_transcript(test_id)])
             ingestor.ingest_document([blob], kind="assessment", order_hint=[blob])
@@ -313,6 +324,7 @@ def main() -> int:
                                     f"{report.ingest_status!r}")
             if not ANSWERS_ONLY:
                 failures += check_methods(store, test_id, catalog, version, cohort)
+        failures += [f"page request: {problem}" for problem in sorted(set(reader.request_problems))]
         store.close()
     finally:
         shutil.rmtree(home_tmp, ignore_errors=True)

@@ -197,8 +197,15 @@ class AssessmentMatchMixin:
         else:
             # The assessment artifact's regions are not tagged by question: fall back
             # to the whole papers, recorded as such rather than passed off as
-            # per-question correspondence.
-            aggregate = _v4_lexical_affinity(assessment["markdown"], answer_text)
+            # per-question correspondence. Whole paper against whole paper — the
+            # submission's every present text region, the printed questions it carries
+            # included, not only its tagged answers: a student's answers alone ("C", "the
+            # forces balance") share few words with an entire test paper, and once the
+            # v5 reader tagged its answers every good live sheet fell under the floor
+            # (0.02–0.07 tagged-only against 0.28–0.35 whole-sheet; the wrong test 0.03,
+            # TC-REG-15).
+            aggregate = _v4_lexical_affinity(assessment["markdown"],
+                                             _present_answers(lambda row: True))
             basis = ("whole-paper overlap (the assessment artifact carries no "
                      "question-tagged regions)")
         floor = self._configured_float(V4_SEMANTIC_FLOOR_ENV,

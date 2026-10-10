@@ -404,12 +404,12 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # (#144's re-pin: `select_document_head` gained its `markdown` column, one
     # statement line grown to two above every site; the statements are the same
     # fifteen. Re-read from the walker, never hand-unioned.)
-    "aeh.ingest.documents:414",
+    "aeh.ingest.documents:436",
     "aeh.ingest.documents:425",
-    "aeh.ingest.documents:448",
-    "aeh.ingest.revision:249",
-    "aeh.ingest.revision:272",
-    "aeh.ingest.revision:299",
+    "aeh.ingest.documents:459",
+    "aeh.ingest.revision:254",
+    "aeh.ingest.revision:277",
+    "aeh.ingest.revision:304",
     "aeh.ingest.submissions:51",
     # #355's per-kind split (FR-INGEST-36): `resolve_selection_region` writes a matched
     # option's selection and state together, and `update_region_text` (below) replaces the
@@ -421,10 +421,10 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.ingest.clusters:131",
     "aeh.ingest.clusters:136",
     "aeh.ingest.submissions:215",
-    "aeh.ingest.submissions:440",
-    "aeh.ingest.submissions:452",
-    "aeh.ingest.assessment_match:387",
-    "aeh.ingest.assessment_match:410",
+    "aeh.ingest.submissions:441",
+    "aeh.ingest.submissions:453",
+    "aeh.ingest.assessment_match:394",
+    "aeh.ingest.assessment_match:417",
     "aeh.ingest.uploads:19",
     # The pkg sites are #230's line numbers (the verbatim revision copy and the
     # copied-counts statement shifted the module; the tripwire diff being the

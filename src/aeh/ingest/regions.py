@@ -276,6 +276,7 @@ def _parse_regions(transcript: str, source_hash: str, page_no: int,
         # never mapped to an option or to an incorrect answer.
         mark_state: str | None = None
         mark_option: str | None = None
+        declared_state = None
         if kind == "selection_mark":
             declared_state = attributes.get("selection_state")
             if declared_state in ("ambiguous", "multiple_marks"):
@@ -306,6 +307,8 @@ def _parse_regions(transcript: str, source_hash: str, page_no: int,
             # otherwise — never `element_kind`, which carries the question id only when it
             # was declared and a generic kind the rest of the time.
             question_id=current_question,
+            # The state the model wrote, read (and removed) by `_fold_option_marks`.
+            _declared_selection_state=declared_state,
         ))
         if supersedes:
             supersede_requests.append(len(regions) - 1)
@@ -322,7 +325,96 @@ def _parse_regions(transcript: str, source_hash: str, page_no: int,
             # fact and is not overwritten by the supersession link.
             regions[index - 1]["retraction"] = (
                 f"superseded_by:{regions[index]['region_id']}")
-    return _backfill_region_conf(regions)
+    return _backfill_region_conf(_fold_option_marks(regions, position_start))
+
+
+#: ONE printed option's tick box as a reader transcribes it: `[X] C`, `[ ] A`,
+#: `[✓] B. newton`. Group 1 is the box (empty = unticked), group 2 the option id — a
+#: single letter or a one- or two-digit number. Deliberately narrow: a body with a second
+#: box (`[X] A [X] C`), a note (`(circled)`, `(crossed out)`), a multi-line body or a
+#: word-length id is not ONE plain box, and folding it could hide a second mark or a
+#: correction — such a region is left as parsed (unresolved), never read as a box.
+_TICK_BOX = re.compile(
+    r"^\[\s*([xX✓✔]?)\s*\]\s*([A-Za-z]|\d{1,2})(?:[.):]?(?:\s+[^\[\]()\n]*)?)?$")
+
+
+def _tick_box(region: dict) -> tuple[bool, str] | None:
+    """`(ticked, option id)` when the region is one printed option's tick box with no
+    `selection=` of its own — the shape a reader writes when it transcribes the option list
+    rather than the mark — else None."""
+    if (region["region_kind"] != "selection_mark" or region["selection"] is not None
+            or region["retraction"] is not None or region["supersedes_previous"]
+            or region["element_kind"] in ("text", "graphic")):
+        return None
+    match = _TICK_BOX.match((region["content"] or "").strip())
+    if match is None:
+        return None
+    return bool(match.group(1)), match.group(2)
+
+
+def _fold_option_marks(regions: list[dict], position_start: int) -> list[dict]:
+    """Fold each run of tick-box regions for one question into ONE mark (TC-INGEST-57).
+
+    A reader that writes the printed options as separate mark regions (`[ ] A`, `[X] C`, …)
+    has still reported, box by box, what the page shows. Read as written, each box would be a
+    mark with no option — `ambiguous` — and the question would never score (TC-REG-15). The
+    run becomes the one mark the protocol asks for, decided only from the boxes: exactly one
+    ticked → `resolved` with that option; two or more → `multiple_marks`; none → a blank
+    answer, unless the reader called a box `resolved` (it saw a mark it did not draw as a
+    tick), which is `ambiguous`.
+    A box the reader itself called `ambiguous` or `multiple_marks` carries that state to the
+    whole mark. Nothing is guessed: `selection` is set only when resolved (CT-INGEST-05), every
+    box stays in the body as read, and the confidence is the run's lowest. Anything that is not
+    an unbroken run of tick boxes under one declared question is left exactly as parsed.
+    The folded region records `folded_boxes`, so the stage detail can say it happened."""
+    folded: list[dict] = []
+    index = 0
+    while index < len(regions):
+        region = regions[index]
+        box = _tick_box(region)
+        if box is None:
+            folded.append(region)
+            index += 1
+            continue
+        run = [(region, box)]
+        while index + len(run) < len(regions):
+            following = regions[index + len(run)]
+            following_box = _tick_box(following)
+            if (following_box is None
+                    or following["element_kind"] != region["element_kind"]):
+                break
+            run.append((following, following_box))
+        index += len(run)
+        declared = {member.get("_declared_selection_state") for member, _ in run}
+        ticked = [option for _, (is_ticked, option) in run if is_ticked]
+        mark = dict(region)
+        if "multiple_marks" in declared or len(ticked) > 1:
+            state, selection = "multiple_marks", None
+        elif "ambiguous" in declared:
+            state, selection = "ambiguous", None
+        elif len(ticked) == 1:
+            state, selection = "resolved", ticked[0]
+        elif "resolved" in declared:
+            # No box ticked, yet the reader said it saw a resolved mark: it saw something
+            # it did not draw as a tick (a circle, an odd glyph). Unreadable, never blank —
+            # a blank scores as no answer (FR-INGEST-17).
+            state, selection = "ambiguous", None
+        else:
+            state, selection = None, None
+        confs = [member["ocr_conf"] for member, _ in run if member["ocr_conf"] is not None]
+        mark.update(
+            content="\n".join(member["content"].strip() for member, _ in run),
+            ocr_conf=min(confs) if confs else None,
+            content_state="present" if (ticked or state is not None) else "blank",
+            selection_state=state,
+            selection=selection,
+            folded_boxes=len(run),
+        )
+        folded.append(mark)
+    for offset, region in enumerate(folded):
+        region.pop("_declared_selection_state", None)
+        region["position"] = position_start + offset
+    return folded
 
 
 def _backfill_region_conf(regions: list[dict]) -> list[dict]:

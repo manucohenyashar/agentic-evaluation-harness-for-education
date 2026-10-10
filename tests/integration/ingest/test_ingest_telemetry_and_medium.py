@@ -453,7 +453,7 @@ def test_tc_ingest_41_the_document_row_records_the_exact_prompt_template_version
     """`TC-INGEST-41` — *"Every `document` row records the exact
     prompt-template version used for its transcription."*
 
-    Oracle: **exact value**. The shipped constant is `"ingest-transcribe-v4"`,
+    Oracle: **exact value**. The shipped constant is `"ingest-transcribe-v5"`,
     the row carries it, and the transcription request's payload carries the same
     version — recorded at request time, not reconstructed later. Because both
     call sites read the module constant at call time, changing the template
@@ -464,7 +464,7 @@ def test_tc_ingest_41_the_document_row_records_the_exact_prompt_template_version
     import aeh.ingest as ingest_module
 
     fx = _Fixture(tmp_data_dir, "prompt-version", "c-41")
-    assert TRANSCRIPTION_PROMPT_VERSION == "ingest-transcribe-v4", (
+    assert TRANSCRIPTION_PROMPT_VERSION == "ingest-transcribe-v5", (
         "TC-INGEST-41: the shipped prompt-template version is not the exact "
         f"value the design pins: {TRANSCRIPTION_PROMPT_VERSION!r}.")
 
@@ -473,11 +473,11 @@ def test_tc_ingest_41_the_document_row_records_the_exact_prompt_template_version
                                              filenames={source_a: "scan-a.md"})
     row_a = fx.handle.query("SELECT prompt_template_version FROM document "
                             "WHERE document_id = :d", d=document_a)[0]
-    assert row_a["prompt_template_version"] == "ingest-transcribe-v4", (
+    assert row_a["prompt_template_version"] == "ingest-transcribe-v5", (
         "TC-INGEST-41: the document row does not record the exact "
         "prompt-template version.")
     assert fx.provider.fields and all(
-        fields.get("prompt_template_version") == "ingest-transcribe-v4"
+        fields.get("prompt_template_version") == "ingest-transcribe-v5"
         for fields in fx.provider.fields), (
         "TC-INGEST-41: the transcription request payload does not carry the "
         "prompt-template version — the version must be recorded at request "
@@ -492,7 +492,7 @@ def test_tc_ingest_41_the_document_row_records_the_exact_prompt_template_version
                                              filenames={source_b: "scan-b.md"})
     rows = {row["prompt_template_version"] for row in fx.handle.query(
         "SELECT prompt_template_version FROM document")}
-    assert rows == {"ingest-transcribe-v4", "ingest-transcribe-v9"}, (
+    assert rows == {"ingest-transcribe-v5", "ingest-transcribe-v9"}, (
         "TC-INGEST-41: after the template changed, the two rows must record "
         f"the two versions they were each transcribed with, got {rows}.")
     row_b = fx.handle.query("SELECT prompt_template_version FROM document "

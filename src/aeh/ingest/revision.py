@@ -58,6 +58,9 @@ class RevisionMixin:
         # versions.
         raw_parts: list[str] = []
         transcriber_ref: str | None = None
+        # The re-transcribed pages name the same declared questions the first read did,
+        # from the package bound at construction (TC-INGEST-56).
+        declared = self._declared_inventory()
         new_provenance_pages: list[dict] = []
         layers: list[str] = []
         revision_regions_all: list[dict] = []
@@ -117,7 +120,8 @@ class RevisionMixin:
                                          width_px=rescan[0].width_px,
                                          height_px=rescan[0].height_px)
                         blob_hash, page_no = replacement, 1
-                    completion = self._transcribe_page(page, blob_hash)
+                    completion = self._transcribe_page(
+                        page, blob_hash, declared=declared)
                     if (transcriber_ref is not None
                             and completion.resolved_build != transcriber_ref):
                         raise IngestError(
@@ -194,7 +198,8 @@ class RevisionMixin:
                                              png=rescan[0].png,
                                              width_px=rescan[0].width_px,
                                              height_px=rescan[0].height_px)
-                        completion = self._transcribe_page(page, blob_hash)
+                        completion = self._transcribe_page(
+                            page, blob_hash, declared=declared)
                         if (transcriber_ref is not None
                                 and completion.resolved_build != transcriber_ref):
                             raise IngestError(

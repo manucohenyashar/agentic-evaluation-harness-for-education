@@ -236,6 +236,7 @@ class SubmissionIngestionMixin:
                     package_version=package_version, filenames=filenames,
                     submission_id=submission_id, report_detail=raster_detail,
                     high_risk_question_ids=high_risk_questions,
+                    package_catalog=package_catalog,
                 )
                 gates["v1"] = "pass"
             except IngestTranscriptionError as error:

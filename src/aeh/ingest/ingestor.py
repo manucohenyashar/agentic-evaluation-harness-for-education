@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import os
+import re
 from typing import Any, Sequence
 
 from aeh.conf import ModelRef
@@ -201,16 +202,54 @@ class Ingestor(DocumentIngestionMixin, SourceChecksMixin, RevisionMixin, TokenCl
 
     # -- the transcription step ------------------------------------------------------------------
 
+    def _declared_inventory(self, package_catalog: Any | None = None,
+                            package_version: str | None = None) -> str | None:
+        """The package's question ids for the page request (TC-INGEST-56): one line per declared
+        question in package order, naming each multiple-choice question's option ids, so the
+        reader tags answers with the ids V2 and V4 compare against (`Q5a`, not the printed `5`).
+        Read from the package only — the same rows V4's structural signal reads — and never from
+        the roster (CT-INGEST-23). None when no package is bound: the request then keeps its
+        package-free shape rather than carrying an invented inventory."""
+        catalog = package_catalog if package_catalog is not None else self._package_catalog
+        version = package_version or self._package_version
+        if catalog is None or not version:
+            return None
+        first_row: dict[str, Any] = {}
+        for row in catalog.criteria(version):
+            if row["question_id"] and row["question_id"] not in first_row:
+                first_row[row["question_id"]] = row
+        if not first_row:
+            return None
+        lines: list[str] = []
+        # Natural order (Q2 before Q10): the criteria come back sorted by criterion id as text.
+        for question_id in sorted(first_row, key=lambda qid: [
+                int(part) if part.isdigit() else part
+                for part in re.split(r"(\d+)", qid)]):
+            row = first_row[question_id]
+            if row["kind"] == "mcq":
+                options = " ".join(option_id for option_id, _ in
+                                   catalog.mcq_options(version, row["criterion_id"]))
+                lines.append(f"{question_id}: multiple choice"
+                             + (f", options {options}" if options else ""))
+            else:
+                lines.append(f"{question_id}: written answer")
+        return ("The questions this paper's package declares. Tag each answer region "
+                "with one of these ids exactly:\n" + "\n".join(lines))
+
     def _transcribe_page(self, page: PageImage, source_hash: str,
-                         attempt_log: list | None = None) -> Completion:
+                         attempt_log: list | None = None,
+                         declared: str | None = None) -> Completion:
         """Transcribe one page with one vision-model call (FR-INGEST-02), retrying up to
         `HARNESS_INGEST_TRANSCRIPTION_ATTEMPTS` times (NFR-INGEST-02). Running out of attempts
         raises `IngestTranscriptionError`, and the caller quarantines the submission, never the
-        run. The request carries the page image and the pinned transcription prompt. Each failed
+        run. The request carries the page image, the pinned transcription prompt and, when a
+        package is bound, its declared question ids (`_declared_inventory`). Each failed
         attempt, and a recovery, is added to `attempt_log` when one is given."""
         payload = PromptPayload(fields=(
             ("instruction", TRANSCRIPTION_PROMPT),
             ("prompt_template_version", TRANSCRIPTION_PROMPT_VERSION),
+            # Same for every page of a cohort, so it sits in the cacheable prefix.
+            *((("declared_questions", declared),) if declared else ()),
             ("source_blob_hash", source_hash),
             ("page_no", str(page.page_no)),
             ("image_png_base64", base64.b64encode(page.png).decode("ascii")),

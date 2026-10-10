@@ -1321,6 +1321,8 @@ escalation into a model call; assert the escalation happens only in the `uncerta
 | TC-INGEST-47 | NFR-INGEST-01 | Performance / 4 | 350 submissions at about four pages each | Ingestion wall clock is **measured and recorded**, and is within the same order of magnitude as the scoring pass. See `PERF-02` | Metric, measured not estimated | P1 |
 | TC-INGEST-48 | FR-INGEST-04, FR-INGEST-06 | Regression / 2 | The `F-SYNTH` and `F-GRAPHIC` corpora | Canonical assembled Markdown per fixture document matches its committed golden file byte for byte; any diff is reviewed deliberately per §6.9 | Golden file | P0 |
 | TC-INGEST-49 | FR-INGEST-13, FR-STORE-06 | Regression / 2 | A one-page PDF ingested through the LIVE `PdfiumRasterizer` (pypdfium2), its transcript carrying a `described_graphic` region | The live `crop(pdf_bytes, page_no, box, dpi)` matches the test doubles' contract; `crop_ref` and the persisted full-page rasters resolve in the blob store at the requested geometry; an out-of-bounds crop is refused, never clamped; the retention knob off skips rasters while crops still flow | Blob resolution plus exact PNG dimensions | P0 |
+| TC-INGEST-56 | FR-INGEST-17, FR-INGEST-23, NFR-INGEST-05 | Contract / 2 | A one-page submission and the printed test paper ingested against the PS9 package (Q1–Q3 mcq A–D, Q4 open, Q5a mcq A–C, Q5b open), through a reader that records each request; and the same submission with no package bound | Every page request carries `prompt_template_version = ingest-transcribe-v5` and a `declared_questions` field listing exactly the package's ids in natural order, each mcq with its option ids; the instruction asks for exactly one `selection_mark` per multiple-choice question carrying `selection=`, never one per printed option, and shows a written answer tagged `kind=transcribed_text question_id=`. With no package bound the field is absent | Exact field values, pattern match on the instruction | P0 |
+| TC-INGEST-57 | FR-INGEST-17, CT-INGEST-05 | Unit / 1 | Runs of tick-box mark regions under one question (`[ ] A` … `[X] C`), each with no `selection=`; boundary inputs: well-formed marks, a run that names its own selection, non-box bodies, boxes of two questions | A run becomes ONE mark: one ticked box → `resolved` with that option; two or more → `multiple_marks`; none → `content_state = blank` with no state, unless the reader tagged a box `resolved` without ticking any (→ `ambiguous`); a box the reader called `ambiguous` makes the mark `ambiguous`. Only a body that is ONE plain box (`[X] C`, optional printed option text) folds: two boxes in one region, a note such as `(circled)`, or a word-length id leave the region unresolved, never read as a clean answer. `selection` is set iff resolved; every box stays in the body; confidence is the run's lowest; the fold is reported in the stage detail. Anything that is not an unbroken tick-box run under one declared question is untouched | Decision table, exact values | P0 |
 
 ### 5.6 Module: Assessment Setup — Stage A (`M-SETUP`)
 
@@ -2680,6 +2682,7 @@ gains its case here, in the PR that fixes it:
 | ID | Req | Case | Expected |
 |---|---|---|---|
 | TC-REG-14 | NFR-PROV-08 (#668; the R21 shape #593 fixed in `M-JUDGE` and `M-EXTRACT`, found by #593's reviewer as an `M-SYNTH` follow-up) | A run on the `edge-local` profile whose roster names the student (`Zelda Quartermaine`, ref `ref-SYN-001`); the stored script carries the name in its body beneath a `Student:` head that carries the ref, and one evidence unit's span payload carries it too. `M-SYNTH` synthesizes the question's L1 narrative against a capturing provider | The captured request payload carries no roster name and does carry the `student_ref` — asserted over the payload at the transport seam, not the report (`M-SYNTH` takes no profile branch, so the edge-local run is the all-profiles assertion). The `Student:`-head redaction stays the first layer; the body/span replacement routes through `aeh.ingest.identity.pseudonymize_name`, the one boundary helper |
+| TC-REG-15 | FR-INGEST-17, FR-INGEST-23, FR-INGEST-25 (the first live run, 2026-10-09: every physics sheet parked) | The live run's stored transcript of `S9-002-middle.pdf` (`tests/regression/data/reg_15_live_s9_002.md`, verbatim: one mark region per printed option, untagged written answers, `Q5` for `Q5a`/`Q5b`), ingested against the PS9 package; the same reading with the v5 ids but the tick boxes left as written; and the same reading in v5-conformant form | Verbatim: Q1–Q3 store one resolved mark each (C, B, B) and V2 names none of them, only the untagged answers and `Q5`. With the v5 ids — tick boxes or conformant marks alike — every gate passes (V4 `match`), status `ok`, selections Q1=C, Q2=B, Q3=B, Q5a=A. Before the fix every box stored `ambiguous` and the sheet parked. (c) The second live run's v5 transcripts (`reg_15_live_v5_*.md`: the printed test paper read into the store first, S9-001, the wrong-test S9-005): the reader followed v5 exactly, and S9-001 is `ok` with V4's semantic signal `match` (≥ 0.2) — the whole-paper fallback compares the whole sheet, not only its tagged answers, with the untagged test paper (it scored 0.07 under the 0.10 floor before); S9-005 stays a semantic `mismatch` and `unmatched_assessment`. A live case (`tests/integration/ingest/test_tc_reg_15_live_reader.py`, `live`) runs README step 2c against OpenRouter and asserts the guide's outcome, reporting — not failing — a sheet parked only because the reader misread the printed test name (at most one in six) |
 
 **Permanent contract baselines.** Separate from the artifact baselines above, because they are not
 snapshots and **no diff to them is ever acceptable**: each is a named regression entry for one of the
@@ -4582,12 +4585,14 @@ python .claude/skills/create-test-plan/scripts/check_traceability.py --design do
 | FR-INGEST-15 | TC-INGEST-21 | Integration | P0 |
 | FR-INGEST-16 | TC-INGEST-17, FUZZ-02 | Integration, Property | P0 |
 | FR-INGEST-17 | TC-INGEST-18 | Integration | P0 |
+| FR-INGEST-17 | TC-INGEST-56, TC-INGEST-57, TC-REG-15 | Contract, Unit, Regression | P0 |
 | FR-INGEST-18 | TC-INGEST-19 | Integration | P1 |
 | FR-INGEST-19 | TC-INGEST-20 | Integration | P0 |
 | FR-INGEST-20 | TC-INGEST-22 | Integration | P1 |
 | FR-INGEST-21 | TC-INGEST-23, SEC-08 | Integration, Security | P0 |
 | FR-INGEST-22 | TC-INGEST-24 | Integration | P0 |
 | FR-INGEST-23 | TC-INGEST-26 | Integration | P0 |
+| FR-INGEST-23 | TC-INGEST-56, TC-REG-15 | Contract, Regression | P0 |
 | FR-INGEST-24 | TC-INGEST-27, TC-ORCH-59, TC-PIPE-30, TC-PIPE-32, TC-CONSOLE-52 | Integration, Unit | P0 |
 | FR-INGEST-25 | TC-INGEST-25, ADV-07, TC-PIPE-29, TC-PIPE-30 | Integration, Adversarial | P0 |
 | FR-INGEST-26 | TC-INGEST-25, TC-INGEST-39 | Integration | P0 |
@@ -4605,6 +4610,7 @@ python .claude/skills/create-test-plan/scripts/check_traceability.py --design do
 | NFR-INGEST-03 | TC-INGEST-45 — measured, not gated; see §7.4 (Q-05) | Integration(live) | P0 |
 | NFR-INGEST-04 | TC-INGEST-42 | Security | P0 |
 | NFR-INGEST-05 | TC-INGEST-41 | Art | P1 |
+| NFR-INGEST-05 | TC-INGEST-56 | Contract | P0 |
 | NFR-INGEST-06 | TC-INGEST-46 | Performance | P1 |
 | NFR-INGEST-07 | TC-INGEST-43, TC-STATS-13 | Observability, Integration | P1 |
 | NFR-INGEST-08 | TC-INGEST-33, TC-INGEST-34, SEC-07 | Security | P0 |

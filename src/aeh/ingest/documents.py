@@ -52,6 +52,7 @@ class DocumentIngestionMixin:
         filenames: dict[str, str] | None = None,
         report_detail: dict | None = None,
         high_risk_question_ids: Sequence[str] | None = None,
+        package_catalog: Any | None = None,
     ) -> DocumentId:
         """Ingest one logical document: rasterize every page of every source PDF, make exactly one
         vision-model transcription call per page, and write exactly one immutable Markdown
@@ -63,8 +64,10 @@ class DocumentIngestionMixin:
         transcripts > fiducial markers > `filenames` (blob hash -> source filename,
         natural-sorted). With no tier available the call refuses — the module never
         guesses (FR-INGEST-31). `kind` is one of the four artifact kinds — there is
-        no per-kind alternative path: the pipeline below is the only one. Returns the
-        new `DocumentId`."""
+        no per-kind alternative path: the pipeline below is the only one. When a package
+        is known (`package_catalog`/`package_version`, else the ones bound at
+        construction), every page request names its declared questions (TC-INGEST-56).
+        Returns the new `DocumentId`."""
         if kind not in DOCUMENT_KINDS:
             raise IngestError(
                 f"document kind {kind!r} is not one of {DOCUMENT_KINDS}. There are "
@@ -73,6 +76,7 @@ class DocumentIngestionMixin:
         if not blobs:
             raise IngestError("ingest_document needs at least one source blob.")
         document_id = f"doc-{uuid.uuid4().hex[:12]}"
+        declared = self._declared_inventory(package_catalog, package_version)
         transcriber_ref: str | None = None
         # The per-page transcription strike log (#220): strikes and recoveries
         # land in the report's stage detail when a report_detail dict is given.
@@ -122,7 +126,7 @@ class DocumentIngestionMixin:
                 page_images.extend(pages)
                 for page in pages:
                     completion = self._transcribe_page(page, blob_hash,
-                                                       attempt_log)
+                                                       attempt_log, declared)
                     if (transcriber_ref is not None
                             and completion.resolved_build != transcriber_ref):
                         raise IngestError(
@@ -333,7 +337,7 @@ class DocumentIngestionMixin:
                 re_requests += 1
                 completion = self._transcribe_page(record["image"],
                                                    record["blob_hash"],
-                                                   attempt_log)
+                                                   attempt_log, declared)
                 record["transcript"] = completion.text
                 if kind == "submission":  # the FR-INGEST-35 demarcation gate, not a path
                     record["transcript"] = _mark_untrusted_content(
@@ -353,6 +357,13 @@ class DocumentIngestionMixin:
                 )
             all_regions.extend(regions)
             position_cursor += len(regions)
+        # TC-INGEST-57: a tick-box run the parser folded into one mark is said in the stage
+        # detail, so the operator sees the reader wrote options rather than marks.
+        folds = [{"question_id": region["element_kind"], "page_no": region["page_no"],
+                  "boxes": region.pop("folded_boxes")}
+                 for region in all_regions if "folded_boxes" in region]
+        if report_detail is not None and folds:
+            report_detail["folded_option_marks"] = folds
         # B1: the crops are IMAGE crops (FR-INGEST-13) — the region's box carved from
         # the page raster through the rasterizer seam, or the whole page raster when
         # the model emitted no box. Never the description text. The crop reads the

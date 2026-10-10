@@ -77,6 +77,27 @@ What is still missing is the record itself. Nothing stores **which student** a n
 | The Jev decision engine | The config pins its build (`openrouter/typesafe/jev-1.13@2026-09-17`), but that pin has not answered a real call yet | The live acceptance (`TC-CONFORM-17/18`) exercises the Jev leg on the nightly; read the per-criterion accept/fallback rates and band agreement off its report |
 | Real cost and real run time | No live run has happened | Read them off the first run, using the cost ceiling as the guard |
 
+## Found on the first live run (2026-10-09) and fixed: the page reader's markup parked every sheet
+
+**What happened.** The first live physics intake (`gpt-6-luna` reading the six PS9 sheets) parked all six. The model read the pages correctly. Its markup, though, was not in the shape the intake checks read:
+* it wrote one mark region per printed option (`[ ] A`, `[X] C`, …) with no `selection=`, so every tick was stored as unreadable;
+* it left the written answers untagged;
+* it called question 5's parts `Q5` instead of the package's `Q5a`/`Q5b`.
+
+The prompt (v4) never asked for any of those, and the page request never named the package's question ids. Every stand-in for the model returned perfect markup whatever it was asked, so the offline check could not catch it.
+
+**The fix** (`ingest-transcribe-v5`):
+* The prompt states the rules: one mark region per multiple-choice question with `selection=<letter>`, and `question_id=` on every answer.
+* Every page request names the package's questions and their option letters (`declared_questions`).
+* The intake also reads a run of tick boxes written one per option as the single mark it describes: one ticked box is the answer, two or more is a double mark, none is blank. The stage detail records this as `folded_option_marks`.
+* The stand-ins now check that each page request states the rules and names the questions.
+
+**The second live run (v5)** confirmed the reader now writes exactly that markup. It also exposed a knock-on effect: the test paper's regions carry no question tags, so the right-test check fell back to comparing the whole test paper with only the sheet's *tagged answers*. Good sheets scored 0.02–0.07, under the 0.10 floor. That fallback now compares the whole sheet with the whole paper: good sheets score 0.28–0.35 and the wrong test 0.03.
+
+On both runs the reader also **misread the printed test name on one sheet of six** (`S9-FORCES-01`, `PS9-FORCE-01`). The gate deliberately stays strict, so such a sheet parks as `uncertain` for the operator to confirm. Expect it, and record it as a reading error.
+
+Regression cases: `TC-REG-15`, `TC-INGEST-56`, `TC-INGEST-57`. `TC-REG-15` includes a live case, run with a key set. Re-run the live test in a **new** data folder: one that was already read skips its sheets and keeps the old transcripts.
+
 ## A risk to plan around, not a blocker: right-test check can park good papers
 
 The right-test gate (V4) compares the words in a student's answers with the words in the question. Its floor is `0.10` (`HARNESS_INGEST_V4_SEMANTIC_FLOOR`). If the page reader returns **only** the handwriting for each answer, most good papers score `0.00` to `0.04` and are **parked**. Reproduce it with `python docs/live-tests/sample-materials/verify_sample_materials.py --answers-only`: in that mode six of the seven good sheets are parked as `unmatched_assessment` (the seventh, `E7-001`, passes at `0.108`, just over the floor), and the two sheets that should have been `incomplete` also come out as `unmatched_assessment`. If the answer sheet reprints each question and the reader transcribes the page verbatim, the same papers score `0.24` to `0.93` and pass (the ten sample sheets, as an ideal reader would return them). So:
