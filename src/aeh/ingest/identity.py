@@ -38,10 +38,31 @@ UNRESOLVED_REF = "unknown"
 #: resolved ref is there to stand in for it.
 REDACTED_IDENTITY = "[student]"
 
-#: The identity head: a `Student:` label, tolerating Markdown emphasis around it (`**Student:**`),
-#: then the value on the same line. `Student ID:` is not this label (no colon after `Student`).
-_STUDENT_HEAD = re.compile(r"^[ \t]*[*_]*Student[*_]*:[*_]*[ \t]*(?P<value>[^\n]*?)[ \t]*$",
-                           re.MULTILINE)
+#: ONE region marker (TC-INGEST-58): `<!--`, then text that never contains `-->`, then `-->`.
+#: Tempered so a marker can never stretch across another marker's close and swallow the text
+#: between them (a name between `<!-- a -->` and `<!-- /a -->` stays text), and bounded so a
+#: line of `<!--` runs cannot make the match quadratic.
+MARKER = r"<!--(?:(?!-->)[^\n]){0,200}-->"
+
+#: A marker sharing a header's line: a reader may write
+#: `<!-- region: … -->Student: Amara<!-- /region -->` on one line. One such marker is allowed
+#: before the label and one after the value.
+INLINE_MARKER = rf"(?:{MARKER}[ \t]*)"
+
+
+def strip_markers(text: str) -> str:
+    """`text` without its region markers — for READING a header value. Redaction never uses it:
+    it replaces the whole value, markers inside it included, so it fails closed."""
+    return " ".join(re.sub(MARKER, " ", text).split())
+
+
+#: The identity head: a `Student:` label, tolerating Markdown emphasis around it (`**Student:**`)
+#: and one inline region marker before the label and one after the value; the value is the rest
+#: of the line, any marker INSIDE it included (redaction replaces all of it). `Student ID:` is
+#: not this label (no colon after `Student`).
+_STUDENT_HEAD = re.compile(
+    rf"^[ \t]*{INLINE_MARKER}?[*_]*Student[*_]*:[*_]*[ \t]*(?P<value>[^\n]*?)[ \t]*"
+    rf"(?P<tail>{MARKER})?[ \t]*$", re.MULTILINE)
 
 #: A line that cannot be the value of a bare `Student:` label: another header or region markup.
 _NOT_A_VALUE = re.compile(r"^[ \t]*(<!--|[*_]*(Student ID|Assessment)[*_]*:)")
@@ -49,7 +70,9 @@ _NOT_A_VALUE = re.compile(r"^[ \t]*(<!--|[*_]*(Student ID|Assessment)[*_]*:)")
 #: The line after a position, stripped of its surrounding blanks.
 _NEXT_LINE = re.compile(r"\n[ \t]*(?P<line>[^\n]*?)[ \t]*(?=\n|$)")
 
-_STUDENT_ID_LINE = re.compile(r"^[ \t]*[*_]*Student ID[*_]*:[*_]*[ \t]*(.+)$", re.MULTILINE)
+_STUDENT_ID_LINE = re.compile(
+    rf"^[ \t]*{INLINE_MARKER}?[*_]*Student ID[*_]*:[*_]*[ \t]*(.+?)[ \t]*(?:{MARKER})?[ \t]*$",
+    re.MULTILINE)
 
 
 # --- Tier C, migration 33 (#620, ADR-38): the roster carries names -----------------------------
@@ -94,6 +117,11 @@ def _identity_head_values(markdown: str) -> list[tuple[int, int]]:
         if head.group("value").strip():
             spans.append(head.span("value"))
             continue
+        if head.group("tail"):
+            # The label's only value is a marker (`Student: <!-- illegible -->`): it IS the
+            # value, as before markers were understood — the next line is never adopted.
+            spans.append(head.span("tail"))
+            continue
         position = head.end()
         while (line := _NEXT_LINE.match(markdown, position)) is not None:
             position = line.end()
@@ -109,9 +137,10 @@ def written_identity(markdown: str) -> tuple[str | None, str | None]:
     """The name on the paper's first `Student:` head and the ID on its `Student ID:` line (each
     None when absent or blank)."""
     heads = _identity_head_values(markdown)
-    name = markdown[heads[0][0]:heads[0][1]].strip() if heads else ""
+    # Read without its markers (TC-INGEST-58); the redaction still replaces the whole value.
+    name = strip_markers(markdown[heads[0][0]:heads[0][1]]) if heads else ""
     match = _STUDENT_ID_LINE.search(markdown)
-    student_id = match.group(1).strip() if match else ""
+    student_id = strip_markers(match.group(1)) if match else ""
     return name or None, student_id or None
 
 

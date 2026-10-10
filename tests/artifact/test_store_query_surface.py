@@ -410,7 +410,7 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.ingest.revision:254",
     "aeh.ingest.revision:277",
     "aeh.ingest.revision:304",
-    "aeh.ingest.submissions:51",
+    "aeh.ingest.submissions:52",
     # #355's per-kind split (FR-INGEST-36): `resolve_selection_region` writes a matched
     # option's selection and state together, and `update_region_text` (below) replaces the
     # content of a region that resolved to no declared option — both declared statements,
@@ -420,9 +420,9 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.ingest.clusters:113",
     "aeh.ingest.clusters:131",
     "aeh.ingest.clusters:136",
-    "aeh.ingest.submissions:215",
-    "aeh.ingest.submissions:441",
-    "aeh.ingest.submissions:453",
+    "aeh.ingest.submissions:216",
+    "aeh.ingest.submissions:442",
+    "aeh.ingest.submissions:454",
     "aeh.ingest.assessment_match:394",
     "aeh.ingest.assessment_match:417",
     "aeh.ingest.uploads:19",

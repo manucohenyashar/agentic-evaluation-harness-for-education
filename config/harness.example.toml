@@ -19,7 +19,7 @@
 # OpenRouter build such as "vendor/model@2026-09-01"; no floating tag), default the panel's first
 # judge. On edge-local it is always the panel's first judge; there is no knob.
 
-prompt_template_v = "judge-prompt/2"
+prompt_template_v = "judge-prompt/3"
 
 # --- local configuration: OpenJev on loopback ------------------------------------------------------
 # unified-large, because unified-small cannot hold OpenJev beside the judge (FR-CONF-28). On

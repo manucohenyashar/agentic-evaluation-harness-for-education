@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from aeh.integ import verify_span
-from aeh.prov import MalformedResponseError, PromptPayload
+from aeh.prov import MalformedResponseError, PromptPayload, json_from_reply
 from aeh.setup import SETUP_MAGNITUDE_PHRASES
 
 from .errors import ProseAssessmentError
@@ -108,7 +108,8 @@ def _verdict_of(text: str, request: ScoringRequest) -> _Verdict:
     fallback band (`CT-JUDGE-11`, `NFR-JUDGE-05`).
     """
     try:
-        reply = json.loads(text)
+        # A fenced or prefaced JSON reply reads as its JSON, key order kept (TC-REG-16).
+        reply = json_from_reply(text)
     except json.JSONDecodeError as error:
         raise MalformedResponseError(
             f"judge reply is not valid JSON: {error}"
@@ -272,7 +273,8 @@ _AMENDMENT_TEXT = (
     " the spans that support the band you chose (by their text or their byte offsets)"
     " or state the band condition that holds. An assessment that only grades the work"
     " in overall terms, naming no span and no band condition, is refused under the"
-    " response contract. Reply again with all five fields in their pinned order."
+    " response contract. Reply again with JSON only, all five keys in this order: "
+    + ", ".join(REPLY_FIELDS) + "."
 )
 
 

@@ -96,7 +96,18 @@ The prompt (v4) never asked for any of those, and the page request never named t
 
 On both runs the reader also **misread the printed test name on one sheet of six** (`S9-FORCES-01`, `PS9-FORCE-01`). The gate deliberately stays strict, so such a sheet parks as `uncertain` for the operator to confirm. Expect it, and record it as a reading error.
 
-Regression cases: `TC-REG-15`, `TC-INGEST-56`, `TC-INGEST-57`. `TC-REG-15` includes a live case, run with a key set. Re-run the live test in a **new** data folder: one that was already read skips its sheets and keeps the old transcripts.
+Regression cases: `TC-REG-15`, `TC-INGEST-56`, `TC-INGEST-57`. `TC-REG-15` includes a live case, run with a key set.
+
+## Found on the third live run (2026-10-10) and fixed: inline headers, and reply formats nobody stated
+
+* **Headers on the same line as their region marker.** On S9-005 the reader wrote `<!-- region: … -->Assessment: ENG7-READ-01<!-- /region -->`. The header readers only looked at the start of a line, so the sheet seemed to name no test and no student. It was parked as `incomplete` ("no student identity found") instead of `unmatched_assessment`. The same parse decides what is redacted, so the written name also reached a model unredacted. Both are fixed; the readers accept a marker on either side (`TC-INGEST-58`).
+* **The extractor and the judge were never told the reply format.** The extraction prompt said only "Reply with the byte offsets…", and the live model answered in prose, so every written answer failed to extract and the run stalled with no grades. The judge prompt said "the reply fields in their pinned order" but never named them. Both prompts now state the exact JSON (`extract-prompt/3`, `judge-prompt/3`). The extract, judge and synthesis parsers also accept JSON wrapped in a code fence or after a sentence. Prose is still refused. Regression case: `TC-REG-16`.
+
+**Result of a fresh live pass with both fixes (`Data\aeh-live-2`).** Intake gave exactly the guide's outcome (3 `ok`; S9-004, S9-006 `incomplete`; S9-005 `unmatched_assessment`). The run reached `complete`. S9-001 scored **10 / A** and S9-002 **7 / B**, both exactly as expected. S9-003 is missing its Q4 mark (2 so far, against the expected 3 / D).
+
+**gpt-6-luna misreads identifiers often.** Over four live intakes it misread the printed test name on one or two sheets of six each time (`S9-FORCES-01`, `PS9-FORCE-01`, `P9-FORCES-01`), and once a written student ID (`PS9-002` for `S9-002`). The gates park each one for the operator rather than guess, which is correct, but it means extra operator work on every class. On the latest run two sheets of six were misread, so the live check `TC-REG-15` failed its one-in-six limit. Consider comparing reader models on this before the teacher test.
+
+**Still open: model-counted byte offsets are not reliable.** The extractor now quotes the right passage, but the offsets it gives point a little earlier in the transcript, and the system derives the evidence text from the offsets. S9-003's Q4 was not graded because the judge cited a range that failed the exact-match check. A likely fix is to locate the quoted passage in the transcript instead of trusting the counted offsets. That is a design decision, still to be made. Re-run the live test in a **new** data folder: one that was already read skips its sheets and keeps the old transcripts.
 
 ## A risk to plan around, not a blocker: right-test check can park good papers
 

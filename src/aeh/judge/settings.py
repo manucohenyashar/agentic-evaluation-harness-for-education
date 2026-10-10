@@ -12,7 +12,9 @@ from __future__ import annotations
 #: through the id — this constant is what the render is actually built from, and the
 #: fixture contract keys on it (a fixture recorded against an old render misses rather
 #: than mis-replays). Changing the render changes this string, in the same change.
-JUDGE_PROMPT_TEMPLATE_V = "judge-prompt/2"
+#: `judge-prompt/2` → `judge-prompt/3` by TC-REG-16: the directive now names the five reply
+#: fields, in order, as a JSON object.
+JUDGE_PROMPT_TEMPLATE_V = "judge-prompt/3"
 
 
 #: The strike budget's env knob (`FR-JUDGE-10`): production default three, adjustable

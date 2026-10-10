@@ -34,6 +34,12 @@ the 4 transcription fixture keys moved (re-captured at HEAD; every request they 
 page read). The other 44 keys, the verdict rows, run row, work ids, trace and every other value
 are byte-identical, checked by diff.
 
+**Re-blessed at TC-REG-16 (2026-10-10), consciously.** The extraction directive now states its
+JSON reply shape (`extract-prompt/3`) and the judge directive names its five reply fields
+(`judge-prompt/3`), so the 12 extraction and 26 judge fixture keys moved (re-captured at HEAD).
+The other 10 keys and every other value, the verdict rows included, are byte-identical, checked
+by diff; every recorded reply in the five corpora is byte-identical too.
+
 Every value in the snapshot is deterministic across drives (three captures at `fb12d1e` were
 byte-identical). Two things are projected. Measured latency is dropped. A wall-clock stamp
 (`*_at`) is reduced to whether it is set, because set-versus-null is behaviour and the instant

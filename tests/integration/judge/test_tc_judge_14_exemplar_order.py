@@ -57,7 +57,7 @@ SUBMISSIONS = ("s-14a", "s-14b", "s-14c", "s-14d")
 
 #: Salts verified empirically under this world's digest key (sha256 over
 #: `salt||C1`, base order ex-00..ex-03) to give THREE pairwise-distinct permutations:
-#: the unset default (`judge-prompt/2`) -> (01,02,03,00), "salt-a" -> (01,03,00,02),
+#: the unset default (`judge-prompt/3`, TC-REG-16; was `/2` -> (01,02,03,00)) -> (03,01,02,00), "salt-a" -> (01,03,00,02),
 #: "salt-b" -> (00,02,01,03). If a rename ever makes two coincide, the fixture-bug
 #: assertion in 14_b names it.
 SALT_A = "salt-a"

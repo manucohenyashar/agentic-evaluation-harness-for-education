@@ -7,6 +7,7 @@ import re
 from typing import Sequence
 
 from aeh.ingest import REGION_CLOSE, REGION_KINDS, REGION_OPEN
+from aeh.prov import json_from_reply
 
 from .records import ExtractionSpan, _offset_of
 
@@ -67,7 +68,8 @@ def parse_spans(
     artifact's region headers, else `transcribed_text`.
     """
     try:
-        reply = json.loads(reply_text)
+        # A fenced or prefaced JSON reply reads as its JSON (TC-REG-16); prose never does.
+        reply = json_from_reply(reply_text)
     except json.JSONDecodeError as error:
         raise ValueError(f"extractor reply is not JSON: {error}") from error
     raw_spans = reply.get("spans") if isinstance(reply, dict) else reply

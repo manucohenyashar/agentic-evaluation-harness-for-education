@@ -78,7 +78,7 @@ ISSUE = "#78"
 #: The pinned template version — the version pin the clause names, and the salt base
 #: the exemplar presentation derives from (`TC-JUDGE-23` asserts the pairing; this
 #: file asserts the pinned value the contract ships).
-TEMPLATE_PIN = "judge-prompt/2"
+TEMPLATE_PIN = "judge-prompt/3"  # TC-REG-16: the directive names the reply fields
 
 #: The escaped forms both `aeh.ingest` and `aeh.judge` pin identically (`_ESCAPED_`
 #: constants, judge.py beside ingest.py): a delimiter the content carries renders

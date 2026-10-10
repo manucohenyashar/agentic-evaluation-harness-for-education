@@ -101,7 +101,7 @@ STATED_N = len(SUBMISSIONS)
 
 #: The permutation salt. Verified empirically under this world's digest key (sha256
 #: over `salt|question_id|criterion_id`, base order ex-00..ex-03): the shipped default
-#: (`judge-prompt/2`) -> (01,02,03,00), "salt-a" -> (01,03,00,02) — pairwise distinct
+#: (`judge-prompt/3`, TC-REG-16) -> (03,01,02,00), "salt-a" -> (01,03,00,02) — pairwise distinct
 #: (`TC-JUDGE-14`'s verified pair). If a template bump ever makes them coincide, the
 #: precondition assertion below names it rather than measuring a vacuous rate.
 PERMUTATION_SALT = "salt-a"

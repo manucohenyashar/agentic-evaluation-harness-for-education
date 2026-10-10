@@ -180,7 +180,7 @@ def test_tc_stats_17_self_agreement_is_reported_beside_the_backend_declaration(
 
         # One salt, held fixed for the whole case — the byte-identical request is
         # what makes three dispatches a replication (the salt knob stays unset,
-        # the shipped default `judge-prompt/2`).
+        # the shipped default `judge-prompt/3`).
         monkeypatch.delenv(EXEMPLAR_SEED_KNOB, raising=False)
         requests = {unit.submission_id: worker.assemble(unit) for unit in units}
 

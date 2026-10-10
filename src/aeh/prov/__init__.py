@@ -163,6 +163,7 @@ from .openjev_local import (
 )
 from .fixtures import FIXTURE_SCHEMA, RecordedFixtureProvider
 from .factories import decision_provider_for, describe_provider, provider_for
+from .replies import json_from_reply
 
 
 __all__ = [
@@ -189,6 +190,7 @@ __all__ = [
     "Transport",
     "dispatch_with_retries",
     "jittered_backoff",
+    "json_from_reply",
     "parse_retry_after",
     "FIXTURE_MAX_CONCURRENCY_ENV",
     "FIXTURE_SCHEMA",

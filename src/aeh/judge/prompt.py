@@ -85,8 +85,30 @@ _ESCAPED_UNTRUSTED_CLOSE = "<\\/" + UNTRUSTED_CLOSE[2:]
 _ESCAPED_UNTRUSTED_OPEN = "<\\/" + UNTRUSTED_OPEN[1:]
 
 
+#: What each reply field holds, keyed by `REPLY_FIELDS` (TC-REG-16). Numeral-free, like the
+#: rest of the invariant prefix.
+_REPLY_FIELD_SHAPES: dict[str, str] = {
+    "cited_spans": '[{"start": <byte offset>, "end": <byte offset>}]',
+    "evidence_assessment": '"<which cited spans support the band, or the band condition that'
+                           ' holds>"',
+    "evidence_sufficient": "true or false",
+    "band": '"<exactly one of the declared band names>"',
+    "self_confidence": "<a number from zero to one>",
+}
+
+#: The reply format, built from `REPLY_FIELDS` so the prompt can never name a different order
+#: than the parser enforces. The directive used to say only "the reply fields in their pinned
+#: order", with the names rendered nowhere — no model could have known them (TC-REG-16).
+_REPLY_FORMAT = (
+    " Reply with JSON only — no prose before or after it, no code fences — as one object"
+    " with exactly these keys, in exactly this order: {"
+    + ", ".join(f'"{name}": {_REPLY_FIELD_SHAPES[name]}' for name in REPLY_FIELDS)
+    + "}."
+)
+
+
 def _render_directive() -> str:
-    return _DIRECTIVE
+    return _DIRECTIVE + _REPLY_FORMAT
 
 
 def _render_criterion(criterion: CriterionView) -> str:

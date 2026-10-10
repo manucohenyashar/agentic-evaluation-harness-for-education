@@ -186,7 +186,7 @@ You pass one file with `--config`. It can hold a section for each profile, so on
 | Setting | What it means | Needed for |
 |---|---|---|
 | `HARNESS_PROFILE` | Which mode: `edge-local`, `cloud-hosted` or `dev-ci`. No default. | All |
-| `prompt_template_v` | The version of the wording given to the judges. Use `judge-prompt/2`, as the shipped files do. | All |
+| `prompt_template_v` | The version of the wording given to the judges. Use `judge-prompt/3`, as the shipped files do. | All |
 | `HARNESS_DECISION_ENGINE` | `off` or `jev`. Default: `jev` on `cloud-hosted` and `dev-ci`, `off` on `edge-local`. `off` means the page reader and the judges do all the grading. | All |
 | `HARNESS_JEV_CONFIDENCE_THRESHOLD` | Jev's confidence bar, 0.50 up to (not including) 1.00. Default 0.80 (0.85 for `openjev-small`). Also settable as `decision_confidence_threshold` in the profile's section of the config file; the environment wins. | All, with Jev on |
 | `HARNESS_QA_MODEL` | The help assistant's model: a pinned OpenRouter build (`vendor/model@2026-09-01`). Default: the first judge. Ignored on `edge-local`, where the assistant is always the first judge. | `cloud-hosted`, `dev-ci` |
@@ -252,7 +252,7 @@ Save this as `~/aeh-config/edge-local.toml` (any folder you like). It is accepte
 
 ```toml
 HARNESS_PROFILE = "edge-local"
-prompt_template_v = "judge-prompt/2"
+prompt_template_v = "judge-prompt/3"
 
 [profiles.edge-local]
 HARNESS_HARDWARE_PROFILE = "unified-large"
@@ -370,7 +370,7 @@ So use `dev-ci`. The two files are almost the same; the differences are in the t
 
 ```toml
 HARNESS_PROFILE = "dev-ci"
-prompt_template_v = "judge-prompt/2"
+prompt_template_v = "judge-prompt/3"
 
 [profiles.dev-ci]
 HARNESS_COST_CEILING = 5
@@ -392,7 +392,7 @@ build_id = "openrouter/qwen/qwen3-30b-a3b@2026-06-01"
 
 ```toml
 HARNESS_PROFILE = "cloud-hosted"
-prompt_template_v = "judge-prompt/2"
+prompt_template_v = "judge-prompt/3"
 
 [profiles.cloud-hosted]
 HARNESS_COST_CEILING = 5

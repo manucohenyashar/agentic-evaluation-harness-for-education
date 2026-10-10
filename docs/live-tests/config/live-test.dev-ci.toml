@@ -26,7 +26,7 @@
 # wins if both are set.) Set here so that `aeh console` and `aeh run` work without extra typing.
 HARNESS_PROFILE = "dev-ci"
 
-prompt_template_v = "judge-prompt/2"
+prompt_template_v = "judge-prompt/3"
 
 [profiles.dev-ci]
 # Spending limit for the whole run, in the currency below. The run stops dispatching when it is

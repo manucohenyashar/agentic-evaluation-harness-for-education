@@ -19,7 +19,9 @@ from aeh.conf import ModelRef
 #: #81's escape fix below (the constant's own contract: the render changed in the same
 #: change — transcripts carrying a raw marker now render the well-formed escape, so
 #: dependent extract units invalidate and re-extract rather than compare stale bytes).
-EXTRACTION_PROMPT_TEMPLATE_VERSION = "extract-prompt/2"
+#: `extract-prompt/2` → `extract-prompt/3` by TC-REG-16: the directive now states the JSON
+#: reply shape and where the offsets are counted from.
+EXTRACTION_PROMPT_TEMPLATE_VERSION = "extract-prompt/3"
 
 
 # --- the second family (FR-EXTRACT-07) ------------------------------------------------------------

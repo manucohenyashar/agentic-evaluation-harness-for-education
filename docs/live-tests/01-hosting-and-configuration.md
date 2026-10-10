@@ -126,7 +126,7 @@ The ready-made file is [`config/live-test.dev-ci.toml`](config/live-test.dev-ci.
 | `HARNESS_PROFILE` (top of the file) | Which profile this file selects when the terminal does not say. The terminal wins if both are set. | `dev-ci` |
 | `[profiles.dev-ci.transcriber]` | The model that reads page images | the repository's example model, **unconfirmed** |
 | `[[profiles.dev-ci.panel]]` | The judges. **Must be 1, 3 or 5** (an even panel cannot break a tie). | one judge, **unconfirmed** |
-| `prompt_template_v` | The wording version the judges are given | `judge-prompt/2` |
+| `prompt_template_v` | The wording version the judges are given | `judge-prompt/3` |
 
 Rules the system enforces, checked:
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from aeh.prov import PromptPayload
+from aeh.prov import PromptPayload, json_from_reply
 
 from .settings import LEVEL_L1, LEVEL_L2, LOGGER, SYNTH_PROMPT_TEMPLATE_V
 from .records import L1Request, L2Request
@@ -77,7 +77,7 @@ def parse_narrative(text: str) -> tuple[str, tuple[str, ...]]:
     list the criterion ids the narrative anchors to (`FR-SYNTH-04`). A reply that is
     not that shape raises `ValueError` — one strike, never a half-parsed narrative."""
     try:
-        payload = json.loads(text)
+        payload = json_from_reply(text)  # fenced or prefaced JSON reads as JSON (TC-REG-16)
     except (TypeError, ValueError) as error:
         raise ValueError(f"synthesis reply is not JSON: {error}") from None
     if not isinstance(payload, dict) or "narrative" not in payload:

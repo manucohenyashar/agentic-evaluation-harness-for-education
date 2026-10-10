@@ -23,7 +23,8 @@ from .errors import (
     IngestGapError,
     IngestTranscriptionError,
 )
-from .identity import V3_PASS, resolve_identity, triage_finding, written_identity
+from .identity import (INLINE_MARKER, MARKER, V3_PASS, resolve_identity, strip_markers,
+                       triage_finding, written_identity)
 from .schema import INGEST_STATEMENTS
 from .records import IngestReport
 
@@ -516,5 +517,9 @@ class SubmissionIngestionMixin:
         """The assessment named on the paper: a leading `Assessment: <name>` line copied exactly
         (FR-INGEST-25). None when the paper names none; the signal then reads `absent`. The same
         reading is used on candidate assessment documents when a mismatch proposes alternatives."""
-        match = re.search(r"^Assessment:\s*(.+)$", markdown, re.MULTILINE)
-        return match.group(1).strip() if match else None
+        # An inline region marker may share the line, before the label or after the name
+        # (TC-INGEST-58); it is never part of the name.
+        match = re.search(
+            rf"^[ \t]*{INLINE_MARKER}?Assessment:\s*(.+?)[ \t]*(?:{MARKER})?[ \t]*$",
+            markdown, re.MULTILINE)
+        return (strip_markers(match.group(1)) or None) if match else None
