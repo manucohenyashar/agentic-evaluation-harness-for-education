@@ -66,10 +66,6 @@ PIPE_MODULE = f"{IMPLEMENTATION_PACKAGE}.pipeline"
 #: sentinel refusal lands. The module itself exists (#364); only the gate's refusal type is
 #: awaited, so the registry keys on a symbol inside it, not on the module.
 PIPE_PACKAGES_MODULE = f"{IMPLEMENTATION_PACKAGE}.pipeline.packages"
-#: `M-AUTHOR`, package authoring (package-authoring design delta §3.1). The module does not
-#: exist yet — #690 builds the headless draft, #691 the chain resolution, #692 the reasoning
-#: steps, #696 the review walk — so the TS-166 pairwise cases probe it by name.
-AUTHOR_MODULE = f"{IMPLEMENTATION_PACKAGE}.author"
 
 # §4.2: "RecordedFixtureProvider (FR-PROV-10) is a *shipped implementation*, not a test fake."
 # The fast tier binds this class by name; the harness self-test asserts the binding.
@@ -130,6 +126,162 @@ _AUTHOR_CLI_PROBE = (
     "raise SystemExit(0 if ok else 1)\""
 )
 
+# --- TS-162 (#713), TC-AUTHOR-23/24: the review walk and the ready gate — the probe limbs ----
+# Built from the same `author_vocabulary` constants as the #689 probes above (the TS26
+# construction), plus the one limb that is genuinely #696's: the `review` method on
+# `AuthoringService`. AF-08 joins the rung-1 corpus limbs for the Q-O9 rejected-answer
+# variant — see the registry entry's comment block for why it is there.
+_AUTHOR_REVIEW_METHOD_LIMB = "ok = ok and hasattr(m.AuthoringService, 'review');"
+_AUTHOR_23_CORPUS_LIMBS = ("AF-07", "AF-08", "recordings")
+_AUTHOR_23_PROBE = (
+    "python -c \"import importlib, pathlib;"
+    f"m = importlib.import_module('{_AUTHOR_MODULE}');"
+    f"ok = all(hasattr(m, n) for n in {_AUTHOR_SURFACE!r});"
+    + _AUTHOR_REVIEW_METHOD_LIMB +
+    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
+    f"ok = ok and all((root / d).is_dir() for d in {_AUTHOR_23_CORPUS_LIMBS!r});"
+    # the capture signal, not just the tree (the TS-168 precedent): a `recordings/` holding
+    # only its README must not resolve the blocker.
+    "ok = ok and (root / 'recordings' / 'coverage.json').is_file();"
+    "raise SystemExit(0 if ok else 1)\""
+)
+_AUTHOR_24_PROBE = (
+    "python -c \"import argparse, importlib, pathlib;"
+    "from aeh.pipeline import cli;"
+    f"m = importlib.import_module('{_AUTHOR_MODULE}');"
+    f"ok = all(hasattr(m, n) for n in {_AUTHOR_SURFACE!r});"
+    + _AUTHOR_REVIEW_METHOD_LIMB +
+    "import aeh.conf; ok = ok and hasattr(aeh.conf, 'panel_for_profile');"
+    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
+    "ok = ok and all((root / d).is_dir() for d in ('AF-07', 'recordings'));"
+    "ok = ok and (root / 'recordings' / 'coverage.json').is_file();"
+    "sub = next(a for a in cli._build_parser()._actions"
+    " if isinstance(a, argparse._SubParsersAction));"
+    "ok = ok and 'author' in sub.choices;"
+    "asub = next((a for a in sub.choices['author']._actions"
+    " if isinstance(a, argparse._SubParsersAction)), None);"
+    "ok = ok and asub is not None and {'draft', 'review'} <= set(asub.choices);"
+    "raise SystemExit(0 if ok else 1)\""
+)
+
+# --- TS-155 (#707), the draft front door: TC-AUTHOR-01/02/03/16/19/30 — the probe limbs ------
+# Built from the same `author_vocabulary` constants as the #689/#713 probes above (the TS26
+# construction): `_AUTHOR_CLAUSE_NAMES` is exactly the surface the files' `require()` gates
+# resolve (`AUTHOR_SURFACE` + `AuthoringInputError`), so the registry cannot name a symbol
+# the tests stopped using. The corpus limbs are each entry's own (AF-01/AF-10/AF-12 plus the
+# recordings where a case replays them) rather than `_AUTHOR_CORPUS_LIMBS`'s union — a
+# narrower limb set keeps one file's blocker from depending on a fixture only another file's
+# case reads (the `_AUTHOR_23_CORPUS_LIMBS` precedent).
+_AUTHOR_DRAFT_RECORDED_FILES = (
+    "tests/unit/author/test_tc_author_01_headless_draft.py",
+    "tests/unit/author/test_tc_author_02_transcriber_ride.py",
+)
+_AUTHOR_DRAFT_SCRIPTED_FILES = (
+    "tests/unit/author/test_tc_author_03_transcribe_off_refusal.py",
+    "tests/unit/author/test_tc_author_19_knob_contract.py",
+    "tests/unit/author/test_tc_author_30_resilience_sweep.py",
+)
+_AUTHOR_DRAFT_RECORDED_LIMBS = ("AF-01", "AF-10", "AF-12", "recordings")
+_AUTHOR_DRAFT_SCRIPTED_LIMBS = ("AF-01", "AF-10")
+_AUTHOR_DRAFT_HEAD = (
+    "python -c \"import importlib, pathlib;"
+    f"m = importlib.import_module('{_AUTHOR_MODULE}');"
+    f"ok = all(hasattr(m, n) for n in {_AUTHOR_CLAUSE_NAMES!r});"
+    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
+)
+_AUTHOR_DRAFT_RECORDED_PROBE = (
+    _AUTHOR_DRAFT_HEAD
+    + f"ok = ok and all((root / d).is_dir() for d in {_AUTHOR_DRAFT_RECORDED_LIMBS!r});"
+    # The capture signal, the same limb the `#686 authoring corpus recordings` entry keys on:
+    # `recordings/` exists as a directory today (a README, no captures), so a directory
+    # check alone would resolve at #690's landing while the corpus is still empty and the
+    # recorded pair would red inside TEST_CMD on `FixtureMissingError`.
+    "ok = ok and (root / 'recordings' / 'coverage.json').is_file();"
+    "raise SystemExit(0 if ok else 1)\""
+)
+_AUTHOR_DRAFT_SCRIPTED_PROBE = (
+    _AUTHOR_DRAFT_HEAD
+    + f"ok = ok and all((root / d).is_dir() for d in {_AUTHOR_DRAFT_SCRIPTED_LIMBS!r});"
+    "raise SystemExit(0 if ok else 1)\""
+)
+_AUTHOR_DRAFT_CLI_PROBE = (
+    _AUTHOR_DRAFT_HEAD
+    + f"ok = ok and all((root / d).is_dir() for d in {_AUTHOR_DRAFT_SCRIPTED_LIMBS!r});"
+    "import argparse; from aeh.pipeline import cli;"
+    "sub = next(a for a in cli._build_parser()._actions"
+    " if isinstance(a, argparse._SubParsersAction));"
+    "ok = ok and 'author' in sub.choices;"
+    "asub = next((a for a in sub.choices['author']._actions"
+    " if isinstance(a, argparse._SubParsersAction)), None);"
+    "ok = ok and asub is not None and 'draft' in asub.choices;"
+    "raise SystemExit(0 if ok else 1)\""
+)
+
+# --- TS-169 (#702), the live fixture tier and the recorded performance ceilings --------------
+# The limbs TS-169's two files drive: the `aeh.author` draft surface #690 ships (`AuthoringService`
+# with `draft`, `DraftResult`, `AuthoringSettings` — the names both files construct through),
+# `validate_draft` (#693's deterministic gate), `panel_for_profile` (#687's chain resolution,
+# landed — the live file resolves the chain through the production path), and the corpus with
+# its `expected.toml` files (committed by #686). The perf file adds the captured-recordings
+# limb: the recorded tier has nothing to replay until #690's capture pass writes
+# `recordings/coverage.json`, the same signal the #686 path entry keys on.
+#
+# Keyed `command`, not `symbol`, for the same reason the #689 entries are: the red spans
+# several stories (#690 the surface, #692 the steps, #693 the gate), and a `symbol` key on any
+# one story's name — `aeh.author:AuthoringService` — fires while the later stories are still
+# stubs, the #118 early-fire direction. The probe demands the whole surface the tests
+# construct through plus #693's mandated name, so it resolves only when the draft pipeline
+# they exercise exists; each test file's own guards re-check the same limbs at unmarking
+# time, each naming its issue there (the #635 re-check rule). The residual early-fire risk —
+# #692's step internals landing after the probe's limbs — is the #689 rung-1 entry's accepted
+# posture: the reader the gate names re-checks the case green before unmarking.
+_AUTHOR_AF_IDS = tuple(f"AF-{i:02d}" for i in range(1, 14))
+_AUTHOR_TS169_SURFACE = ("AuthoringService", "DraftResult", "AuthoringSettings", "validate_draft")
+_AUTHOR_TS169_PROBE_HEAD = (
+    "python -c \"import importlib, pathlib;"
+    f"m = importlib.import_module('{_AUTHOR_MODULE}');"
+    f"ok = all(hasattr(m, n) for n in {_AUTHOR_TS169_SURFACE!r});"
+    "ok = ok and callable(getattr(m.AuthoringService, 'draft', None));"
+    "import aeh.conf; ok = ok and hasattr(aeh.conf, 'panel_for_profile');"
+    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
+    f"ok = ok and all((root / d / 'expected.toml').is_file() for d in {_AUTHOR_AF_IDS!r});"
+)
+_AUTHOR_TS169_LIVE_PROBE = _AUTHOR_TS169_PROBE_HEAD + "raise SystemExit(0 if ok else 1)\""
+_AUTHOR_TS169_PERF_PROBE = (
+    _AUTHOR_TS169_PROBE_HEAD
+    + "ok = ok and (root / 'recordings' / 'coverage.json').is_file();"
+    "raise SystemExit(0 if ok else 1)\""
+)
+
+# --- TS-163 (#697), TC-AUTHOR-25/26/27: retry, recreate, overwrite protection, carry-over ----
+# The limbs the three files drive: the §3.1 surface, `draft` and `review` on the service,
+# `panel_for_profile` (#687), the corpus limbs they read (AF-01/02/07/13), the recordings'
+# `coverage.json` (#686's capture signal), #695's CLI registration, and the discriminator —
+# `--force` on `aeh author draft`, FR-AUTHOR-22's design-pinned flag. See the registry
+# entry's comment block for why this is a `command` probe and what fires early if it does.
+_AUTHOR_RETRY_CORPUS_LIMBS = ("AF-01", "AF-02", "AF-07", "AF-13", "recordings")
+_AUTHOR_RETRY_PROBE = (
+    "python -c \"import argparse, importlib, pathlib;"
+    "from aeh.pipeline import cli;"
+    f"m = importlib.import_module('{_AUTHOR_MODULE}');"
+    f"ok = all(hasattr(m, n) for n in {_AUTHOR_SURFACE!r});"
+    "ok = ok and hasattr(m.AuthoringService, 'draft')"
+    " and hasattr(m.AuthoringService, 'review');"
+    "import aeh.conf; ok = ok and hasattr(aeh.conf, 'panel_for_profile');"
+    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
+    f"ok = ok and all((root / d).is_dir() for d in {_AUTHOR_RETRY_CORPUS_LIMBS!r});"
+    "ok = ok and (root / 'recordings' / 'coverage.json').is_file();"
+    "sub = next(a for a in cli._build_parser()._actions"
+    " if isinstance(a, argparse._SubParsersAction) and a.dest == 'command');"
+    "ok = ok and 'author' in sub.choices;"
+    "asub = next((a for a in sub.choices['author']._actions"
+    " if isinstance(a, argparse._SubParsersAction)), None);"
+    "ok = ok and asub is not None and {'draft', 'review'} <= set(asub.choices);"
+    "draft = asub.choices['draft'];"
+    "ok = ok and any('--force' in getattr(a, 'option_strings', ()) for a in draft._actions);"
+    "raise SystemExit(0 if ok else 1)\""
+)
+
 # --- TS-159 (#711), TC-AUTHOR-15/20/21/22: the report, summary, logger and prompt pins --------
 # #694's four deliverables share no design-mandated Python name that separates them from
 # what earlier authoring stories ship, so the probe is the behaviour itself — one real
@@ -168,6 +320,185 @@ _AUTHOR_REPORT_PROBE = (
     f" ok = ok and any(getattr(x, 'name', '').startswith({_AUTHOR_MODULE!r})"
     " for x in records);"
     " raise SystemExit(0 if ok else 1)\""
+)
+
+# --- TS-168 (#701), SEC-26 + ADV-18: the credential sweep and the injection fail-safe --------
+# The limbs the two security files drive: the §3.1 surface with `AuthoringInputError`
+# (the sweep's fail-fast arm) and `validate_draft` (ADV-18's second layer, #693's gate),
+# `panel_for_profile` (#687, landed — the chain both files resolve through), the WHOLE
+# thirteen-fixture corpus (the sweep's precondition is "all 13 fixtures", not a subset)
+# and the recordings' `coverage.json` (#686's capture signal — the sweep replays the
+# recorded tier, and a replay sweep without the manifest is vacuous).
+_AUTHOR_TS168_SURFACE = (
+    "AuthoringService", "DraftResult", "AuthoringSettings", "AuthoringInputError",
+    "validate_draft",
+)
+_AUTHOR_TS168_PROBE = (
+    "python -c \"import importlib, pathlib;"
+    f"m = importlib.import_module('{_AUTHOR_MODULE}');"
+    f"ok = all(hasattr(m, n) for n in {_AUTHOR_TS168_SURFACE!r});"
+    "import aeh.conf; ok = ok and hasattr(aeh.conf, 'panel_for_profile');"
+    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
+    f"ok = ok and all((root / d).is_dir() for d in {_AUTHOR_AF_IDS!r});"
+    "ok = ok and (root / 'recordings' / 'coverage.json').is_file();"
+    "raise SystemExit(0 if ok else 1)\""
+)
+
+# --- TS-170 (#703), TC-E2E-07 + UAT-14: the three journeys and the teacher walkthrough -------
+# The limbs the two rung-4 files drive, in the family shape the #689/#697/#701 probes set:
+# the §3.1 surface with `AuthoringInputError`, `draft` and `review` on the service,
+# `panel_for_profile` (#687, landed), the build-gate sentinel the journeys' refusals read
+# (#688, landed — probed BY NAME for self-documentation, not because it blocks: a probe limb
+# that names the refusal the gate walks into states the dependency the issue DoD asks for),
+# the corpus limbs (#686), and #695's CLI registration. The E2E probe adds the one
+# BEHAVIOURAL limb, keyed to #697 per the issue's DoD ("the retry/recreate story the journeys
+# traverse"): it re-drafts AF-01 twice into a scratch directory and exits 0 only when the
+# first draft lands and the second, `--force`-less and with stdin at EOF, is refused —
+# FR-AUTHOR-22's overwrite protection, which no symbol names. The limb is short-circuited
+# behind the static ones so it runs (two offline recorded drafts, seconds) only when
+# everything else already holds. The UAT probe carries no #697 limb — the walkthrough drafts
+# once and never re-drafts — and no build-gate limb — it ends at the ready review, which is
+# the walkthrough's own end state.
+_AUTHOR_E2E_CORPUS_LIMBS = ("AF-02", "AF-09", "AF-11", "recordings")
+_AUTHOR_E2E_PROBE = (
+    "python -c \"import argparse, importlib, os, pathlib, subprocess, sys, tempfile;"
+    f"m = importlib.import_module('{_AUTHOR_MODULE}');"
+    f"ok = all(hasattr(m, n) for n in {_AUTHOR_CLAUSE_NAMES!r});"
+    "ok = ok and hasattr(m.AuthoringService, 'draft')"
+    " and hasattr(m.AuthoringService, 'review');"
+    "import aeh.conf; ok = ok and hasattr(aeh.conf, 'panel_for_profile');"
+    "pkgs = importlib.import_module('aeh.pipeline.packages');"
+    "ok = ok and hasattr(pkgs, 'PLACEHOLDER_SENTINEL');"
+    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
+    f"ok = ok and all((root / d).is_dir() for d in {_AUTHOR_E2E_CORPUS_LIMBS!r});"
+    "ok = ok and (root / 'recordings' / 'coverage.json').is_file();"
+    "from aeh.pipeline import cli;"
+    "sub = next(a for a in cli._build_parser()._actions"
+    " if isinstance(a, argparse._SubParsersAction));"
+    "ok = ok and 'author' in sub.choices;"
+    "asub = next((a for a in sub.choices['author']._actions"
+    " if isinstance(a, argparse._SubParsersAction)), None);"
+    "ok = ok and asub is not None and {'draft', 'review'} <= set(asub.choices);"
+    "ok = ok and ((scratch := pathlib.Path(tempfile.mkdtemp()))"
+    " and (env := {**os.environ, 'HARNESS_FIXTURE_DIR': str(root / 'recordings')})"
+    " and (argv := ['author', 'draft', '--config',"
+    " 'docs/live-tests/config/live-test.dev-ci.toml', '--docs',"
+    " *sorted(str(p) for p in (root / 'AF-01').glob('*.pdf')),"
+    " '--out', str(scratch / 'out')])"
+    " and (first := subprocess.run([sys.executable, '-m', 'aeh', *argv], env=env,"
+    " stdin=subprocess.DEVNULL, capture_output=True)).returncode == 0"
+    " and (second := subprocess.run([sys.executable, '-m', 'aeh', *argv], env=env,"
+    " stdin=subprocess.DEVNULL, capture_output=True)).returncode != 0);"
+    "raise SystemExit(0 if ok else 1)\""
+)
+_AUTHOR_UAT_PROBE = (
+    "python -c \"import argparse, importlib, pathlib;"
+    f"m = importlib.import_module('{_AUTHOR_MODULE}');"
+    f"ok = all(hasattr(m, n) for n in {_AUTHOR_CLAUSE_NAMES!r});"
+    "ok = ok and hasattr(m.AuthoringService, 'draft')"
+    " and hasattr(m.AuthoringService, 'review');"
+    "import aeh.conf; ok = ok and hasattr(aeh.conf, 'panel_for_profile');"
+    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
+    "ok = ok and all((root / d).is_dir() for d in ('AF-07', 'recordings'));"
+    "ok = ok and (root / 'recordings' / 'coverage.json').is_file();"
+    "ok = ok and (root / 'AF-07' / 'expected.toml').is_file();"
+    "from aeh.pipeline import cli;"
+    "sub = next(a for a in cli._build_parser()._actions"
+    " if isinstance(a, argparse._SubParsersAction));"
+    "ok = ok and 'author' in sub.choices;"
+    "asub = next((a for a in sub.choices['author']._actions"
+    " if isinstance(a, argparse._SubParsersAction)), None);"
+    "ok = ok and asub is not None and {'draft', 'review'} <= set(asub.choices);"
+    "raise SystemExit(0 if ok else 1)\""
+)
+
+# --- TS-157 (#709), TC-AUTHOR-09..12: the three reasoning steps and approved_by ---------------
+# The limbs the four cases construct through: the §3.1 surface (`AUTHOR_SURFACE`), the three
+# step prompt constants (FR-AUTHOR-20's names; NFR-AUTHOR-06 lands each reasoning step file
+# with its own prompt constant, so these are #692's limbs — TC-AUTHOR-09's call-count oracle
+# discriminates the inventory step by the constant's value in the assembled payload, the
+# TC-AUTHOR-20 ride precedent), `AuthoringService.draft` (every case runs a recorded replay
+# draft), all thirteen corpus fixtures (TC-AUTHOR-12 sweeps every fixture's draft for the
+# approved_by placeholder), and the recordings' `coverage.json` (#686's capture signal — a
+# replay draft without it is vacuous).
+_AUTHOR_STEPS_PINS = (
+    "AUTHOR_INVENTORY_TEMPLATE_V",
+    "AUTHOR_RUBRIC_TEMPLATE_V",
+    "AUTHOR_GRADES_TEMPLATE_V",
+)
+#: All thirteen corpus fixtures — TC-AUTHOR-12 sweeps every fixture's draft. Defined here
+#: (not `_AUTHOR_AF_IDS`, which the TS-169 block owns) so this block is self-contained.
+_AUTHOR_TS157_AF_IDS = tuple(f"AF-{index:02d}" for index in range(1, 14))
+_AUTHOR_TS157_PROBE = (
+    "python -c \"import importlib, pathlib;"
+    f"m = importlib.import_module('{_AUTHOR_MODULE}');"
+    f"ok = all(hasattr(m, n) for n in {_AUTHOR_SURFACE!r});"
+    f"ok = ok and all(hasattr(m, n) for n in {_AUTHOR_STEPS_PINS!r});"
+    "ok = ok and callable(getattr(m.AuthoringService, 'draft', None));"
+    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
+    f"ok = ok and all((root / d).is_dir() for d in {_AUTHOR_TS157_AF_IDS!r});"
+    "ok = ok and (root / 'recordings' / 'coverage.json').is_file();"
+    "raise SystemExit(0 if ok else 1)\""
+)
+
+# --- TS-156 (#708), TC-AUTHOR-04..08: the fallback/repair probe limb --------------------------
+# Built like the other author probes but keyed on BEHAVIOUR, not names: the discriminator is
+# the repair attempt's payload shape — FR-AUTHOR-05's "the same prompt plus the validator's
+# rejection reason" — which only #691 ships. See the registry entry below for the full
+# early-fire/late-fire analysis. The payload is one draft of AF-01 against a double whose
+# every reply is unparseable; it exits 0 exactly when some later same-model call's prompt
+# extends the one before it (new fields, or one value appended to — the two encodings
+# "the same prompt plus the reason" admits) with the added text non-empty. The detector is
+# `tests/support.author_vocabulary.repair_pairs` reduced inline, so the gate and the tests
+# resolve together.
+_AUTHOR_REPAIR_PROBE = (
+    "python -c \"import sys; sys.path.insert(0, 'src');"
+    "import pathlib, tempfile"
+    "\n"
+    "import aeh.author as author\n"
+    "import aeh.conf, aeh.prov\n"
+    "class _D:\n"
+    "    def __init__(self):\n"
+    "        self.calls = []\n"
+    "    def complete(self, prompt, model_ref, params):\n"
+    "        self.calls.append((prompt, model_ref))\n"
+    "        return aeh.prov.Completion(text=': : not-a-proposal', tokens_in=1,"
+    " tokens_out=1, latency_ms=1, resolved_build=model_ref.build_id,"
+    " cached_prefix_tokens=0, cost=None)\n"
+    "    def capabilities(self, model_ref):\n"
+    "        return aeh.prov.Capabilities(supports_seed=False,"
+    " supports_prefix_cache=False, max_concurrency=1,"
+    " deterministic_at_temperature_zero=False, cost_per_token=None)\n"
+    "    def estimate_cost(self, plan):\n"
+    "        return aeh.prov.CostEstimate(calls=0, tokens_in=0, tokens_out=0, cost=None)\n"
+    "    def verify_retention(self, model_refs):\n"
+    "        return aeh.prov.RetentionReport(confirmed=tuple(model_refs), unconfirmed=())\n"
+    "d = _D()\n"
+    "ref = aeh.conf.ModelRef(role='judge', provider='openrouter',"
+    " build_id='openrouter/authoring-probe@2026-10-01', quantization=None)\n"
+    "svc = author.AuthoringService(chain=[ref], provider=d, transcriber=None,"
+    " settings=author.AuthoringSettings())\n"
+    "out = pathlib.Path(tempfile.mkdtemp())\n"
+    "svc.draft(documents=sorted(pathlib.Path('fixtures', 'F-AUTHOR', 'AF-01').glob('*.pdf')),"
+    " output_dir=out)\n"
+    "pairs = 0\n"
+    "for i in range(len(d.calls) - 1):\n"
+    "    p1, r1 = d.calls[i]\n"
+    "    p2, r2 = d.calls[i + 1]\n"
+    "    if r1.build_id != r2.build_id:\n"
+    "        continue\n"
+    "    f1 = list(p1.fields)\n"
+    "    f2 = list(p2.fields)\n"
+    "    s1 = set(f1)\n"
+    "    hit = s1 <= set(f2) and f1 != f2 and any(str(v).strip() for x, v in f2"
+    " if (x, v) not in s1)\n"
+    "    if not hit and [x for x, v in f1] == [x for x, v in f2]:\n"
+    "        ext = [(a, b) for (x, a), (y, b) in zip(f1, f2) if b != a and b.startswith(a)]\n"
+    "        unch = all(a == b for (x, a), (y, b) in zip(f1, f2)"
+    " if not (b != a and b.startswith(a)))\n"
+    "        hit = len(ext) == 1 and unch and bool(str(ext[0][1]).strip())\n"
+    "    pairs += 1 if hit else 0\n"
+    "raise SystemExit(0 if pairs else 1)\""
 )
 WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # issue: (kind, target, tests to unmark)
@@ -1541,97 +1872,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/browser/spa/test_tc_e2e_06_teachers_day.py::test_tc_e2e_06_teachers_day_journey",
         ),
     ),
-# --- TS-166 (#699), the pairwise Requires cases (M-CONF, M-PROV, M-PKG) ----------------
-    #
-    # Three cases, three keys, each on the surface whose landing makes that ONE case runnable
-    # and non-vacuous — the doctrine: which single blocker, resolved, turns the red into a run.
-    #
-    # TC-REQ-134 asserts M-CONF's `panel_for_profile` clause itself (CT-CONF-23: ordered
-    # panel-then-escalation chain, de-duplicated, empty panel raises before any provider call)
-    # AND the consumer half of the pair (FR-AUTHOR-04: M-AUTHOR builds its chain FROM
-    # `panel_for_profile` — an AST limb over `aeh.author`'s source, the TC-REQ-67 precedent, so a
-    # hand-rolled chain cannot pass vacuously). Its green condition is therefore the symbol's
-    # existence (#687) plus the authoring module's (#690) plus #691's chain wiring actually
-    # naming the call — three limbs the `symbol` and `symbols` kinds cannot combine with a
-    # source scan, so this is one `command` probe (the #641 precedent): it exits 0 exactly when
-    # `panel_for_profile` is defined and `aeh.author`'s package source calls it, which is
-    # precisely when the case runs and proves both halves.
-    #
-    # TC-REQ-135 asserts that every call M-AUTHOR makes rides `InferenceProvider` (CT-PROV-10/15)
-    # by a record-then-replay construction: whatever the service asks of its provider is
-    # recorded, and a second draft run must run entirely from the replay. Its drive builds the
-    # declared authoring surface — `AuthoringService`, `DraftResult` and `AuthoringSettings`
-    # (the `__init__` signature the design fixes) — so the key is a `symbols` conjunction on all
-    # three: a single `symbol` on `AuthoringService` could fire while the constructor's settings
-    # surface is still missing and the case cannot even be built. All three are #690's surface
-    # by construction (the signature names them), so the conjunction resolves with #690 and
-    # never earlier. The case also carries the consumer half of the M-CONF pair (every
-    # dispatched request addresses a model of the declared chain, first the chain head), but
-    # that limb rides the same #690 surface, so the key is unchanged.
-    #
-    # TC-REQ-136 needs the corpus (#686 — `fixtures/F-AUTHOR/AF-01..AF-13` with `expected.toml`
-    # each, and `recordings/`), the authoring surface (#690), and the review walk (#696, whose
-    # scripted form — `review()` with `ReviewAnswer` — is what re-completes each fixture draft
-    # before the build). None alone is sufficient, and the `path` and `symbol(s)` kinds cannot
-    # mix, so this is one `command` probe (the #641 precedent) that resolves only when EVERY
-    # limb exists. #688's build-gate clause is deliberately NOT a limb: it has no name of its
-    # own (a substring check at the top of the existing build path), and its red is the case's
-    # own refusal oracle — a sentinel-carrying draft that builds is exactly the failure
-    # TC-REQ-136 asserts, so keying on #688 would be a tautology. The probe also does NOT
-    # include #693's `validate_draft`: the case drives the real `aeh package build` as its
-    # oracle (test plan §4.5) and never calls the validator. Two corpus-shape bets are disclosed
-    # in the test's docstring and fail legibly (naming the corpus clause) rather than crashing:
-    # the per-fixture `[build] outcome` key and the scripted `[review] answers` table of each
-    # fixture's `expected.toml`.
-    "#699 TS-166 TC-REQ-134 the authoring chain is M-CONF's panel_for_profile": (
-        "command",
-        "python -c \"import sys, pathlib; sys.path.insert(0, 'src');"
-        "import importlib.util as u;"
-        "import aeh.conf as c;"
-        "ok = hasattr(c, 'panel_for_profile');"
-        "m = __import__('aeh.author', fromlist=['AuthoringService'])"
-        " if u.find_spec('aeh.author') else None;"
-        "f = pathlib.Path(m.__file__) if m is not None else None;"
-        "files = [f] + (sorted(p for p in f.parent.rglob('*.py')"
-        " if '__pycache__' not in p.parts) if m is not None"
-        " and hasattr(m, '__path__') else []);"
-        "ok = ok and m is not None and hasattr(m, 'AuthoringService') and any("
-        "'panel_for_profile(' in p.read_text(encoding='utf-8')"
-        " for p in files);"
-        "raise SystemExit(0 if ok else 1)\"",
-        (
-            "tests/contract/requires/test_req_author.py::"
-            "test_tc_req_134_the_authoring_chain_is_panel_for_profile",
-        ),
-    ),
-    "#699 TS-166 TC-REQ-135 the authoring module rides M-PROV for every call": (
-        "symbols",
-        "aeh.author:AuthoringService,aeh.author:DraftResult,aeh.author:AuthoringSettings",
-        (
-            "tests/contract/requires/test_req_author.py::"
-            "test_tc_req_135_every_authoring_call_rides_m_prov",
-        ),
-    ),
-    "#699 TS-166 TC-REQ-136 the fixture drafts face the real build gate": (
-        "command",
-        "python -c \"import sys, pathlib; sys.path.insert(0, 'src');"
-        "root = pathlib.Path('fixtures/F-AUTHOR');"
-        "ok = all((root / ('AF-%02d' % i)).is_dir()"
-        " and (root / ('AF-%02d' % i) / 'expected.toml').is_file() for i in range(1, 14))"
-        " and (root / 'recordings').is_dir();"
-        "import importlib.util as u;"
-        "m = __import__('aeh.author', fromlist=['AuthoringService'])"
-        " if u.find_spec('aeh.author') else None;"
-        "ok = ok and m is not None"
-        " and all(hasattr(m, n) for n in"
-        " ('AuthoringService', 'DraftResult', 'ReviewAnswer', 'AuthoringSettings'))"
-        " and hasattr(m.AuthoringService, 'review');"
-        "raise SystemExit(0 if ok else 1)\"",
-        (
-            "tests/contract/requires/test_req_author.py::"
-            "test_tc_req_136_the_fixture_drafts_face_the_real_build_gate",
-        ),
-    ),
 # --- TS-165 (#689), the CS-AUTHOR clause suite and TC-AUTHOR-29's conformance case -----
     #
     # Keyed to the M-AUTHOR implementation stories as the DoD says — but as conjunctions,
@@ -1672,6 +1912,67 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         _AUTHOR_CLI_PROBE,
         (
             "tests/contract/author/test_cs_author_c02_c18_cli.py",
+        ),
+    ),
+    # --- TS-158 (#693), the validation gate and the placeholder emission ---------------------
+    #
+    # #710's prescribed key, as its (whitespace-mangled) technical note decodes it: kind
+    # `symbol`, `aeh.author:validate_draft`. The choice: `validate_draft` is the gate #693
+    # is named for — §3.1's Interfaces block pins the exact signature and #693's own note
+    # repeats it (`validate_draft(spec: Mapping[str, Any]) -> list[DraftIssue]`, pure) —
+    # and `aeh.author` does not exist today, so the key cannot fire early. The other limbs
+    # the two files need land strictly earlier: the recordings (#686) close with #690's
+    # capture pass, and #693 depends on #691/#692, which depend on it. The residual
+    # early-fire risk — #691's repair budget says "the repair prompt carries the
+    # validator's issues", so that story could ship the public validator before #693's
+    # emission half — is the accepted #689/#702 posture: re-check the cases green before
+    # unmarking, never on the notice alone.
+    #
+    # Rename path: if #693 spells the name differently, one line here (the target, built
+    # from `author_vocabulary`'s AUTHOR_MODULE — the TS26 construction) plus the `require`
+    # calls in the two files.
+    "#693 validation gate": (
+        "symbol",
+        f"{_AUTHOR_MODULE}:validate_draft",
+        (
+            "tests/unit/author/test_tc_author_13_validation_gate.py",
+            "tests/unit/author/test_tc_author_14_placeholder_emission.py",
+        ),
+    ),
+    # --- TS-169 (#702), TC-AUTHOR-31's live fixture tier --------------------------------------
+    #
+    # The live tier (nightly, `@live`) drafts all thirteen fixtures against real OpenRouter and
+    # asserts outcome classes. Its limbs: the `aeh.author` draft surface #690 ships (the names
+    # the cases construct through), `validate_draft` (#693's gate), `panel_for_profile`
+    # (#687's chain resolution — landed), and the corpus with its `expected.toml` files
+    # (#686). Keyed `command`, not `symbol`, for the same reason the #689 rung-1 entry above:
+    # the red spans several stories, and a symbol key on one story's name (`aeh.author:AuthoringService`)
+    # would fire while the later stories are still stubs — the #118 early-fire direction. The
+    # probe demands the whole construct-through surface plus the corpus, so it resolves only
+    # when the draft pipeline the tier exercises exists; the file's own guards re-check the
+    # same limbs at unmarking time, naming their issues there (the #635 re-check rule). The
+    # residual early-fire risk — #692's step internals landing after these limbs — is the
+    # #689 rung-1 entry's accepted posture: the reader the gate names re-checks the case
+    # green before unmarking.
+    "#702 TS-169 TC-AUTHOR-31 the live fixture tier (aeh.author's draft surface, the F-AUTHOR corpus, #687's chain resolution)": (
+        "command",
+        _AUTHOR_TS169_LIVE_PROBE,
+        (
+            "tests/integration/author/test_tc_author_31_live_fixtures.py",
+        ),
+    ),
+    # --- TS-169 (#702), PERF-20's recorded ceilings -------------------------------------------
+    #
+    # The recorded half measures the whole thirteen-fixture set's wall clock and call budget
+    # against the captured recordings. Same limbs as the live entry plus the recordings
+    # coverage index: the recorded tier has nothing to replay until #690's capture pass writes
+    # `recordings/coverage.json` — the same signal the #686 entry below keys on, so this probe
+    # resolves exactly when that entry does, together with the surface.
+    "#702 TS-169 PERF-20 the recorded ceilings (aeh.author's draft surface, the corpus, #686's captured recordings)": (
+        "command",
+        _AUTHOR_TS169_PERF_PROBE,
+        (
+            "tests/perf/test_perf_20_authoring_recorded_ceilings.py",
         ),
     ),
 # --- TS-153 (#686), the authoring corpus's recordings half ------------------------------
@@ -1725,43 +2026,152 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         " raise SystemExit(0 if ok else 1)\"",
         ("tests/unit/pipe/test_tc_pipe_37_author_subcommands.py",),
         ),
-    # --- Package-authoring delta, TS-167 (#716), TC-CONSOLE-58 -------------------------------
+    # --- TS-164 (#698), the determinism and write-ownership snapshot diffs -------------------
     #
-    # FR-CONSOLE-46 lists `aeh author draft` / `aeh author review` present-and-unavailable —
-    # the reason that the authoring screens are future console work — so the parity census
-    # (#632's, TC-CONSOLE-54) passes with the author commands registered (#695) but no console
-    # path invented. The amendment is DATA in `aeh/console/parity.py`'s census tables; it
-    # creates no new symbol, so the issue's suggested `symbol` key
-    # (`console.parity:CLI_CONSOLE_PATHS`) cannot work: that name exists today, the key would
-    # read resolved on landing day one, and a resolved blocker left in this dict fails the
-    # gate by design — the exact early-fire direction the `#118`/TS-56 entries document. A
-    # `symbols` key on a name #700 might introduce fires in the opposite, never-resolves
-    # direction (a P0 case outside the gate forever). So the key is `command`, this
-    # registry's kind for "a blocker that is a change to existing code rather than a missing
-    # name" (`#96 c09`), probing the generated inventory (`parity_inventory()`, the same
-    # surface `GET /api/v1/cli-help` serves) for the two author rows: present, with a reason,
-    # with a what-it-is-for line (`NFR-CONSOLE-09`'s other half, which the named cases
-    # assert), and not a console path. If #700 renders the listing through a third table
-    # instead, the inventory must be taught to read it for the census to pass anyway — the
-    # probe's reconciliation is then one line here.
-    "#700 console census": (
-        "command",
-        "python -c \"import sys; sys.path.insert(0, 'src');"
-        "import aeh.console.parity as p;"
-        "rows = {e['command']: e for e in p.parity_inventory()['commands']};"
-        "need = ('author draft', 'author review');"
-        "ok = set(need) <= set(rows)"
-        " and all(rows[k].get('surface') == 'debugging-only' and rows[k].get('reason')"
-        " and rows[k].get('purpose') for k in need);"
-        "raise SystemExit(0 if ok else 1)\"",
+    # #715 is the written-ahead test pair for TS-164 (#698: byte-identical re-runs,
+    # TC-AUTHOR-18; write-ownership snapshot diffs, TC-AUTHOR-17 — ADR-43's no-store
+    # clause, asserted over row counts, not over absence of error).
+    #
+    # Keyed `symbol` on `aeh.author:AuthoringService`, per the issue's technical note, and
+    # that survives contact with the tree — the opposite of the `#700` case above. The
+    # design delta §3.1 declares the class **by name** in its Interfaces block, and it
+    # exists nowhere today (`aeh.author` itself is absent), so the key reads unresolved on
+    # landing day one and cannot fire early against code that already exists.
+    #
+    # **Landing-timing disclosure — read before acting on the gate's notice.** The class
+    # lands with #690, the first M-AUTHOR service story, which also captures the corpus
+    # recordings (#686's capture pass rides #690's PR, per that entry) — the same landing
+    # that resolves the two test files' own corpus gates (`require_path` on the recordings
+    # and their `coverage.json`). So when this key fires, the files' replay guards resolve
+    # with it and the unmark re-check ("case green before unmarking — never on the notice
+    # alone") is meaningful. Two limbs may still be open at that landing. One: the scripted
+    # review half of TC-AUTHOR-17 (#696's review walk). Two: TC-AUTHOR-18's force-overwrite
+    # limb — the re-run's `**{FORCE_KWARG: True}` rides #697's overwrite-confirmation
+    # behaviour (TS-163), which TS-164 does not depend on, and the design pins
+    # `draft(self, documents, output_dir)` with no third parameter, so against a
+    # design-conformant implementation the keyword is a `TypeError` until #697 spells the
+    # library mechanism (the vocabulary's `FORCE_KWARG` row discloses the same). If the
+    # cases run red on either limb, do NOT unmark red cases and do not drop the entry
+    # either — re-key, the `#368`/`#10` re-key precedent, to a `symbols` conjunction adding
+    # the last-landing limb. #698 itself introduces no new symbol (determinism is
+    # behaviour, not a name), so no later key exists: this is the last design-named symbol
+    # the pair can ride.
+    #
+    # One-line rename path: if the service ships under a different name (the design would
+    # have to change with it), the rename is this target string plus `AUTHOR_SURFACE` in
+    # `tests/support/author_vocabulary.py` — nowhere else.
+    "#698 determinism snapshots": (
+        "symbol",
+        "aeh.author:AuthoringService",
         (
-            "tests/unit/console/test_tc_console_54_parity_census.py"
-            "::test_tc_console_58_author_draft_is_listed_present_and_unavailable",
-            "tests/unit/console/test_tc_console_54_parity_census.py"
-            "::test_tc_console_58_author_review_is_listed_present_and_unavailable",
-            "tests/unit/console/test_tc_console_54_parity_census.py"
-            "::test_tc_console_58_the_census_passes_once_the_author_commands_are_listed",
-),
+            "tests/integration/author/test_tc_author_17_write_ownership_snapshot_diffs.py",
+            "tests/integration/author/test_tc_author_18_byte_identical_rerun.py",
+        ),
+    ),
+    # --- TC-AUTHOR-23/24 (#713), the review walk and the ready gate ---------------------------
+    #
+    # TS-162's review surface is design-named — §3.1's Interfaces block declares
+    # `AuthoringService.review(draft_path, answers=None|[...])` — and the issue's technical
+    # note says kind `symbol`, target `aeh.author:AuthoringService` "with the review surface
+    # the design names". Taken literally the note is the early-fire trap this registry
+    # exists for: `AuthoringService` is §3.1 surface the FIRST M-AUTHOR service story lands
+    # (the `#698` entry above is keyed on exactly that class for that reason, read the other
+    # way) — a symbol key on it resolves the day the module exists, weeks before the walk,
+    # and a resolved blocker left in this dict fails the gate by design. The genuinely-new
+    # symbol of #696 is the `review` method, and the note's own words point there ("with the
+    # review surface the design names").
+    #
+    # But a bare `symbol` on `aeh.author:AuthoringService.review` is still not the whole
+    # blocker, for either file. Both start from a CLI- or library-drafted AF-07, so both
+    # also wait on the corpus and its recordings (#686/#690); the rung-3 file additionally
+    # drives `aeh author review` through `cli.main`, so it waits on #695's registration and
+    # #687's `panel_for_profile` the chain resolution rides; and no single `symbol` can
+    # carry a conjunction. So the entries are `command` probes (the `#689 TS-165`
+    # construction), each a conjunction of design-named limbs built from the same
+    # `author_vocabulary` constants, so they cannot drift from the tests:
+    #   rung 1 — the §3.1 surface + `AuthoringService.review` + AF-07/AF-08 + the captured
+    #            `recordings/` (its `coverage.json` signal, the TS-168 precedent) — the
+    #            scripted-review case and its Q-O9 variant;
+    #   rung 3 — the same surface and review-method limbs + `panel_for_profile` + the corpus
+    #            limbs + the `aeh author` parser group carrying both subcommands, because
+    #            the exit-code matrix drafts AF-07 and reviews it through the CLI.
+    #
+    # **Why AF-08 is a rung-1 limb.** The plan's Q-O9 variant is "an answer that fails
+    # re-validation", and AF-07's placeholders (`model_answer`, `approved_by`) are free text
+    # no deterministic rule can reject — a "rejected" answer there would be theatre. AF-08
+    # is the corpus's key-placeholder fixture ("key placeholders for the unkeyed items 3 and
+    # 5"), the one field the key-in-options rule (FR-AUTHOR-10) can reject, which is what
+    # makes the variant more than a second happy path.
+    #
+    # Rename path: if #696 spells the surface differently (a separate review service, a
+    # renamed method or parameter), the probe's `aeh.author` limbs are the one-line change
+    # here and the tests' own `require()` gates fail naming what moved. At resolution,
+    # re-check both cases green before unmarking — never on the notice alone.
+    "#713 review walk, rung 1 (the scripted review: #696's review surface, #686's AF-07/AF-08 corpus and recordings)": (
+        "command",
+        _AUTHOR_23_PROBE,
+        (
+            "tests/unit/author/test_tc_author_23_scripted_review_walk.py",
+        ),
+    ),
+    "#713 ready gate, rung 3 (the exit-code matrix through the CLI: #696's review surface, #695's registration, #687's chain, #686's corpus and recordings)": (
+        "command",
+        _AUTHOR_24_PROBE,
+        (
+            "tests/unit/author/test_tc_author_24_ready_gate_exit_codes.py",
+        ),
+    ),
+    # --- TC-AUTHOR-25/26/27 (#714), TS-163 (#697): retry, recreate, overwrite protection, -----
+    # --- carry-over ----------------------------------------------------------------------------
+    #
+    # #714 is the written-ahead test pair for TS-163 (#697: FR-AUTHOR-21 the fresh-run
+    # guarantee — re-running the draft command is always the retry; FR-AUTHOR-22 overwrite
+    # protection — the refusal names what would be replaced and notes carry-over, `--force`
+    # or interactive `y` proceeds; FR-AUTHOR-23 carry-over — carried iff the item exists and
+    # the content fingerprint matches, dropped answers named with a reason, provisional
+    # until review confirms).
+    #
+    # Keyed `command`, NOT the `symbol` (`aeh.author:AuthoringService`) the issue's
+    # technical note prescribes, and the direction of that error matters: a symbol key on
+    # the service class resolves the moment the FIRST M-AUTHOR service story lands (#690,
+    # the draft-extraction story that ships the class — the `#698` entry above is keyed on
+    # exactly that class, read the other way) — before the recordings capture finishes
+    # (#686/#690's `coverage.json`, which TC-25/26's replay runs need to be non-vacuous),
+    # before #695's CLI registration (TC-25/26 drive `aeh author draft` as fresh
+    # subprocesses), and long before #697's own overwrite/carry-over behaviour. That is the
+    # early-fire direction (`#118`/TS-56): the gate fires, a reader who follows the notice
+    # unmarks, and three red P0/P1 cases land inside TEST_CMD blaming the wrong story. The
+    # TS-165 precedent is this module's own answer: both clause-suite entries are multi-limb
+    # `command` probes, and this one follows them (the `#713` entries above, same module,
+    # same construction). The probe demands, conjoined: the §3.1 surface (`AUTHOR_SURFACE`),
+    # `draft` and `review` on the service (TC-25/26 drive both), `panel_for_profile`
+    # (#687), the corpus limbs the three files read (AF-01/02/07/13), the recordings'
+    # `coverage.json` (#686's capture signal — a replay draft without it is vacuous), the
+    # `author` group carrying both subcommands (#695), and the discriminator: `--force` on
+    # `aeh author draft`, FR-AUTHOR-22's design-pinned flag and the one thing #697 is first
+    # to ship.
+    #
+    # **Disclosed residual early-fire risk.** If #695 registers the draft subcommand WITH
+    # `--force` (same subcommand table), the probe resolves at #695's landing and the gate
+    # fires while #697's behaviour is still open. The unmark rule is then the `#635`
+    # re-check, and it is load-bearing here: re-run the three files, and only unmark the
+    # ones that pass — never unmark on the notice alone, and never unmark red cases
+    # (re-key instead, the `#368`/`#10` precedent, e.g. to a `symbols` conjunction on a
+    # later-landing name if one exists).
+    #
+    # One-line rename path: the surface lives in `AUTHOR_SURFACE`
+    # (`tests/support/author_vocabulary.py`); if `--force` ships under a different spelling,
+    # `FORCE_KWARG` there and the flag limb in `_AUTHOR_RETRY_PROBE` are the two lines. The
+    # three files' own `require()` gates re-check the same limbs at unmarking time, each
+    # naming its issue there.
+    "#697 retry recreate": (
+        "command",
+        _AUTHOR_RETRY_PROBE,
+        (
+            "tests/integration/author/test_tc_author_25_fresh_redraft.py",
+            "tests/integration/author/test_tc_author_26_overwrite_matrix.py",
+            "tests/unit/author/test_tc_author_27_carry_over_variants.py",
+        ),
     ),
     # --- TS-159 (#711), TC-AUTHOR-15/20/21/22 — the report, summary, logger and prompt pins ----
     #
@@ -1800,6 +2210,223 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/unit/author/test_tc_author_22_author_logging.py",
         ),
     ),
+    # --- SEC-26 + ADV-18 (#701), TS-168: the credential sweep and the injection fail-safe -----
+    #
+    # #701 is the written-ahead test pair for TS-168: the SEC-26 canary sweep over every
+    # output channel of all thirteen fixtures (NFR-AUTHOR-04, CT-AUTHOR-16) and the ADV-18
+    # injection/forgery case with the validator's second layer (FR-AUTHOR-10, CT-AUTHOR-08).
+    #
+    # Keyed `command`, following the module's TS-165/TS-163 precedent, for three reasons.
+    # First, the red spans several stories (#690 the module and service, #693 the validation
+    # gate, #686 the recordings), so a `symbol` key on any one name —
+    # `aeh.author:AuthoringService`, say — fires the day #690 lands, while the sweep still
+    # has no corpus to run over and the injection case no validator: the #118 early-fire
+    # direction. Second, no single `symbol`/`symbols` conjunction can carry the
+    # corpus-and-recordings limbs (they are paths, not module attributes). Third, the DoD
+    # keys this entry to "the validation-gate implementing story the injection case
+    # exercises (and the fixture corpus it sweeps)" — a conjunction, which is exactly what
+    # the multi-limb probe construction is for. The probe (`_AUTHOR_TS168_PROBE`, above,
+    # built from the same `author_vocabulary` constants) demands, conjoined: the §3.1
+    # surface plus `AuthoringInputError` (the sweep's fail-fast arm) plus `validate_draft`
+    # (the injection case's second layer), `panel_for_profile` (#687, already landed — kept
+    # so the probe's shape matches the family and cannot resolve before the chain the tests
+    # resolve), all thirteen AF fixture directories, and `recordings/coverage.json` (#686's
+    # capture signal). Nothing earlier than #693+#686 resolves that conjunction.
+    #
+    # Disclosed residual: if the validation-gate or capture-pass stories land everything
+    # the probe demands while behaviour a case still needs is spelled differently (e.g. the
+    # fail-fast exception type), the probe resolves and the two files may still be red —
+    # the `#635` re-check rule is load-bearing here: re-run both files green before
+    # unmarking, never unmark on the notice alone.
+    #
+    # Rename path: the surface lives in `_AUTHOR_TS168_SURFACE` (built from
+    # `AUTHOR_MODULE`/`AUTHOR_SURFACE` in `tests/support/author_vocabulary.py`); each
+    # file's own `require()` gates re-check the same limbs at unmarking time, naming its
+    # issue there.
+    "#701 TS-168 the SEC-26 credential sweep and the ADV-18 injection fail-safe (#690's module, #693's validation gate, #686's corpus and recordings)": (
+        "command",
+        _AUTHOR_TS168_PROBE,
+        (
+            "tests/security/author/test_sec_26_authoring_credential_sweep.py",
+            "tests/security/author/test_adv_18_authoring_prompt_injection.py",
+        ),
+    ),
+    # --- TS-170 (#703), TC-E2E-07 + UAT-14: the journeys and the teacher walkthrough ------------
+    #
+    # Two entries, one per file, both keyed `command` — the family shape the #689/#697/#701
+    # authoring entries settled, and for the same recorded reasons. The red spans several
+    # stories (#689 the surface, #686 the corpus and its captured recordings, #695 the CLI
+    # registration, #696 the review the walkthrough completes, #697 the overwrite refusal
+    # journey (b) re-drafts through), so a `symbol` key on any one name —
+    # `aeh.author:AuthoringService`, say — fires the day #690 lands, while the journeys still
+    # have no recordings to replay and no CLI to drive: the #118 early-fire direction. No
+    # single `symbols` conjunction can carry the path limbs (corpus directories and
+    # `recordings/coverage.json` are paths, not module attributes). The issue's DoD keys the
+    # entry to the implementing stories the journeys traverse — the build gate, the CLI, and
+    # the retry/recreate story — so the probes demand, conjoined: the §3.1 surface with
+    # `AuthoringInputError`, `draft` and `review` on the service, `panel_for_profile`
+    # (#687, landed), `aeh.pipeline.packages:PLACEHOLDER_SENTINEL` (#688, LANDED — probed by
+    # name as self-documentation of the gate the journeys walk into, not as a blocker),
+    # the corpus limbs plus the recordings' `coverage.json` (#686's capture signal), and
+    # #695's `aeh author draft`/`review` registration.
+    #
+    # The E2E probe adds the BEHAVIOURAL limb the DoD's third story asks for: #697 ships no
+    # mandated Python symbol for overwrite protection (FR-AUTHOR-22 is CLI behaviour), so —
+    # the `#635`/`#638`/`#695` precedent — the limb is the behaviour itself. It runs
+    # `python -m aeh author draft` over AF-01's documents against the dev-ci configuration
+    # with `HARNESS_FIXTURE_DIR` pointed at the recordings (the design's declared provider
+    # resolution, no egress) twice into a scratch directory, and exits 0 only when the first
+    # draft lands and the second — `--force`-less, stdin at DEVNULL so the confirmation
+    # prompt reads EOF — is refused. The limb is short-circuited behind the static limbs, so
+    # it only executes (two offline recorded drafts, seconds, bounded by
+    # HARNESS_BLOCKER_COMMAND_TIMEOUT_S) once everything else already holds. The corpus is
+    # recorded against the dev-ci chain (`chain_from_config`'s disclosed coupling), so the
+    # config path here and the one the tests inject must stay the same file.
+    #
+    # The UAT probe carries no #697 limb — the walkthrough drafts once and never re-drafts —
+    # and no build-gate limb: its end state is the ready review, which is what the walkthrough's
+    # own guards assert. It does demand AF-07's `expected.toml`, which the walkthrough's
+    # checklist reads.
+    #
+    # Disclosed residual: if an implementing story lands every limb while behaviour a case
+    # still needs is spelled differently (the stdin walk protocol, the report's Unresolved
+    # rendering), the probe resolves and the files may still be red — the `#635` re-check
+    # rule is load-bearing: re-run both files green before unmarking, never on the notice
+    # alone. Rename path: the surface lives in `AUTHOR_SURFACE`
+    # (`tests/support/author_vocabulary.py`); if the overwrite refusal ships a library name,
+    # the behavioural limb in `_AUTHOR_E2E_PROBE` is the line to swap.
+    "#703 TS-170 TC-E2E-07 the three authoring journeys (the surface, #695's CLI, #697's overwrite refusal, #686's corpus and recordings)": (
+        "command",
+        _AUTHOR_E2E_PROBE,
+        ("tests/e2e/test_tc_e2e_07_authoring_journeys.py",),
+    ),
+    "#703 TS-170 UAT-14 the teacher walkthrough (the surface, #695's CLI, #686's AF-07 corpus and recordings)": (
+        "command",
+        _AUTHOR_UAT_PROBE,
+        ("tests/uat/acceptance/test_uat_14_walkthrough.py",),
+    ),
+    # --- TS-155 (#707), the draft front door: TC-AUTHOR-01/02/03/16/19/30 ---------------------
+    #
+    # The issue's technical note keyed these cases `symbol` / `aeh.author:AuthoringService`,
+    # and that name IS genuinely new (`aeh.author` does not exist; nothing else ships the
+    # class) — but the note was written before the tree had the TS26 construction, and the
+    # narrower key has the early-fire direction these files make real: a bare
+    # `AuthoringService` symbol resolves the moment #690 lands the class, while the files'
+    # `require()` gates resolve the whole §3.1 surface plus `AuthoringInputError` (the same
+    # limbs the #689 clause suite resolves) — and TC-AUTHOR-01/02 additionally replay the
+    # corpus, which does not exist until #686's capture pass. The day #690 lands its class,
+    # a symbol key reads resolved, a reader unmarks six cases, and they red inside TEST_CMD
+    # on the dataclass surface or the missing recordings. The probes therefore key on the
+    # surface the tests actually resolve, built from `_AUTHOR_CLAUSE_NAMES` (the TS26
+    # construction), split by what each file-set additionally waits on:
+    #
+    # - the recorded pair (TC-AUTHOR-01/02) replays the corpus through
+    #   `RecordedFixtureProvider`, so its probe adds the recordings limb (#686's capture
+    #   pass, the same limb the `#686 authoring corpus recordings` entry keys on);
+    # - the scripted set (TC-AUTHOR-03/19/30) injects failures at the provider boundary
+    #   (`tests/support/taxonomy.py`) and needs no recordings — only the committed
+    #   AF-01/AF-10 limbs;
+    # - the fail-fast matrix (TC-AUTHOR-16) drives its CLI limb through `aeh author draft`,
+    #   whose registration is #695's deliverable — a surface-only key would fire at #690 and
+    #   leave the case red inside TEST_CMD on #695, so the probe adds the registration limb
+    #   (the `#695 cli registration` entry's own probe, narrowed to `draft`, which is all
+    #   TC-AUTHOR-16's CLI arm drives).
+    #
+    # Disclosed residual: if an implementing story lands every limb while behaviour a case
+    # still needs is spelled differently (the transcribe=off refusal's page wording, the
+    # refusal type for an out-of-range knob), the probe resolves and the files may still be
+    # red — the `#635` re-check rule is load-bearing: re-run all six files green before
+    # unmarking, never on the notice alone.
+    #
+    # Rename path: the surface lives in `_AUTHOR_CLAUSE_NAMES` (built from
+    # `AUTHOR_MODULE`/`AUTHOR_SURFACE` in `tests/support/author_vocabulary.py`); if #690
+    # ships the draft path without the full §3.1 dataclass surface, the reconciliation is a
+    # narrower tuple there plus this probe — nowhere else.
+    "#707 TS-155 the draft front door, recorded corpus (TC-AUTHOR-01/02: #690's surface, #686's recordings)": (
+        "command",
+        _AUTHOR_DRAFT_RECORDED_PROBE,
+        _AUTHOR_DRAFT_RECORDED_FILES,
+    ),
+    "#707 TS-155 the draft front door, scripted boundary (TC-AUTHOR-03/19/30: #690's surface)": (
+        "command",
+        _AUTHOR_DRAFT_SCRIPTED_PROBE,
+        _AUTHOR_DRAFT_SCRIPTED_FILES,
+    ),
+    "#707 TS-155 the draft front door's fail-fast matrix (TC-AUTHOR-16: #690's surface + #695's author draft registration)": (
+        "command",
+        _AUTHOR_DRAFT_CLI_PROBE,
+        ("tests/unit/author/test_tc_author_16_fail_fast_matrix.py",),
+    ),
+    # --- TC-AUTHOR-09..12 (#709), TS-157 (#692): the three reasoning steps and approved_by -----
+    #
+    # #709 is the written-ahead test pair for TS-157 (#692: FR-AUTHOR-06 the inventory step —
+    # paper order, full field set, one call per document set; FR-AUTHOR-07 the rubric mapping
+    # — exactly one supported shape, derivation_description byte-verbatim from the reply,
+    # weighted scores never proposed, dependency-implying prose an unresolved note;
+    # FR-AUTHOR-08 the grades table — derived from the stated, whole-table placeholder when
+    # nothing is stated, Q-O8's adopted default; FR-AUTHOR-09 — approved_by always a
+    # placeholder, never model-generated).
+    #
+    # Keyed `command`, NOT the `symbol` (`aeh.author:AuthoringService`) the issue's technical
+    # note prescribes, and the direction of that error matters: the service class lands with
+    # #690, the FIRST M-AUTHOR service story (the `#698` entry above is keyed on exactly that
+    # class, read the other way), while these cases wait on #692's steps — a symbol key on
+    # the class resolves two stories early, and a reader who follows the notice unmarks four
+    # red P0 cases into TEST_CMD blaming the wrong story (the `#118` early-fire direction).
+    # The TS-165/#689 construction applies: the probe is the conjunction of the design-named
+    # limbs the four cases construct through, built from the same `author_vocabulary`
+    # constants so it cannot drift from the tests — see `_AUTHOR_TS157_PROBE` above for the
+    # limb list and why each is there.
+    #
+    # **Disclosed residual early-fire risk.** If the three prompt constants land with #690's
+    # service skeleton rather than with #692's step files (NFR-AUTHOR-06 ties them to the
+    # step files, but a skeleton could ship them first), the probe resolves one story early;
+    # the unmark rule is then the `#635` re-check — re-run all four cases and unmark only
+    # the ones that pass, never on the notice alone.
+    #
+    # One-line rename path: the surface lives in `AUTHOR_SURFACE`
+    # (`tests/support/author_vocabulary.py`); if FR-AUTHOR-20's constants ship under a
+    # different spelling, `_AUTHOR_STEPS_PINS` here and `STEP_PROMPT_PINS` in the test file
+    # are the two lines. At resolution, re-check all four cases green before unmarking —
+    # never on the notice alone.
+    "#692 reasoning steps": (
+        "command",
+        _AUTHOR_TS157_PROBE,
+        (
+            "tests/unit/author/test_tc_author_09_12_reasoning_steps.py",
+        ),
+    ),
+    # --- TC-AUTHOR-04..08 (#708), TS-156 (#691): chain resolution, fallback, the repair ------
+    # --- budget --------------------------------------------------------------------------------
+    #
+    # #691 builds the fallback and repair behaviour ON TOP of the AuthoringService surface
+    # #690 lands, so the issue's suggested `symbol` key (`aeh.author:AuthoringService`) has
+    # the early-fire direction the `#713` entry documents from the other side: the class
+    # exists from #690, a symbol key on it resolves the day THAT story lands, and a resolved
+    # blocker left in this dict fails the gate by design — five red cases would sit inside
+    # TEST_CMD blaming #690. Nor does #691 mandate any new Python name: every §3.1 name is
+    # the shared surface, and `HARNESS_AUTHOR_ATTEMPTS` itself arrives with #690's knobs
+    # (TC-AUTHOR-19). So the key is `command`, probing the behaviour only #691 ships: the
+    # repair attempt is THE SAME PROMPT PLUS the rejection reason (FR-AUTHOR-05). The probe
+    # drafts AF-01 against a double whose every reply is unparseable and exits 0 exactly when
+    # some later same-model call's prompt extends the one before it — new fields, or one
+    # value appended to, the two encodings "the same prompt plus the reason" admits — with
+    # the added text non-empty. #690's acceptance criteria never mention the repair payload,
+    # so its attempt loop cannot satisfy this probe; the residual early-fire risk — #690
+    # shipping the complaint-carrying payload ahead of its own story boundary — is handled by
+    # the standing rule: re-check the five cases GREEN before unmarking, never on the notice
+    # alone. The residual late risks are the two the `#635`/`#638` entries state verbatim: a
+    # repair implemented by REWRITING the prompt rather than extending it never resolves this
+    # probe (reconcile `repair_pairs` in `tests/support/author_vocabulary.py` and this probe
+    # together, at the landing), and the probe bets `AuthoringSettings()` is zero-argument
+    # and `transcriber=None` is legal — both the vocabulary's disclosed bets, so a
+    # differently-spelled surface is the same one-line reconciliation here.
+    "#691 chain fallback": (
+        "command",
+        _AUTHOR_REPAIR_PROBE,
+        ("tests/unit/author/test_tc_author_04_08_chain_fallback_and_repair.py",),
+    ),
+
 }
 
 
