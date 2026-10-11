@@ -1,0 +1,7 @@
+af = "AF-05"
+description = "one document; evidence-checklist wording"
+documents = ["hist8-sources-01-test.pdf"]
+outcome = "resolved"
+placeholders = []
+build = "publishes"
+notes = "evidence_sum composite of binary aspect criteria"

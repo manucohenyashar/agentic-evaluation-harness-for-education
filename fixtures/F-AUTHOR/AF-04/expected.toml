@@ -1,0 +1,7 @@
+af = "AF-04"
+description = "one document; grading in the teacher's own words"
+documents = ["eng7-poetry-01-test.pdf"]
+outcome = "resolved"
+placeholders = []
+build = "publishes"
+notes = "general criterion: derivation_description verbatim, derived bands"

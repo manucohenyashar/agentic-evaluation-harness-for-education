@@ -1,0 +1,7 @@
+af = "AF-10"
+description = "one document; scan-style, no text layer"
+documents = ["geo7-mapwork-01-scanned-test.pdf"]
+outcome = "resolved"
+placeholders = []
+build = "publishes"
+notes = "resolved via the transcriber path (FR-AUTHOR-02)"
