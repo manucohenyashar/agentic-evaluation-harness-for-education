@@ -1453,6 +1453,38 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/browser/spa/test_tc_e2e_06_teachers_day.py::test_tc_e2e_06_teachers_day_journey",
         ),
     ),
+    # --- TC-PIPE-37 (#712), the `aeh author` subcommand registration --------------------------
+    #
+    # #695 registers `aeh author draft` / `aeh author review` (FR-PIPE-10, design delta §3.3).
+    # Keyed `command`, not `symbol`, and here is why the issue's own note (`symbol`,
+    # `aeh.pipe:_build_parser`) does not survive contact with the tree: the module does not
+    # exist (the registration site is `aeh.pipeline.cli`, landed with #364), and
+    # `_build_parser` itself is a long-shipped name — a symbol key on it resolves
+    # immediately, and a resolved blocker left in this dict fails the gate by design. Nor is
+    # there a mandated new name to key instead: #695's acceptance criteria say only
+    # "registered in `_build_parser`'s `author` subcommand group, following the existing
+    # `package` group pattern", and the house group handlers admit several plausible names
+    # (`_author_command`, `_author_draft_command`, ...) — an invented symbol bet has the
+    # late direction, a P0 case outside the gate forever if #695 spells it differently.
+    # That is the `#635`/`#638` situation exactly: the story ships a behaviour with no
+    # mandated Python name, so the probe is the behaviour itself. This probe builds the
+    # parser and exits 0 exactly when the `author` group carries BOTH `draft` and `review`
+    # — the thing #695 is the first to ship; no other open story touches the `aeh`
+    # subcommand table. At resolution, re-check the case green before unmarking — never on
+    # the notice alone.
+    "#695 cli registration": (
+        "command",
+        "python -c \"import argparse; import sys; sys.path.insert(0, 'src');"
+        " import aeh.pipeline.cli as cli;"
+        " top = [a for a in cli._build_parser()._actions"
+        " if isinstance(a, argparse._SubParsersAction) and a.dest == 'command'][0].choices;"
+        " author = top.get('author');"
+        " inner = [a for a in author._actions"
+        " if isinstance(a, argparse._SubParsersAction)] if author else [];"
+        " ok = bool(inner) and {'draft', 'review'} <= set(inner[0].choices);"
+        " raise SystemExit(0 if ok else 1)\"",
+        ("tests/unit/pipe/test_tc_pipe_37_author_subcommands.py",),
+    ),
 }
 
 
