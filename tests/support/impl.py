@@ -259,6 +259,29 @@ _AUTHOR_TS169_PERF_PROBE = (
 )
 
 
+# --- TS-168 (#701), SEC-26 + ADV-18: the credential sweep and the injection fail-safe --------
+# The limbs the two security files drive: the §3.1 surface with `AuthoringInputError`
+# (the sweep's fail-fast arm) and `validate_draft` (ADV-18's second layer, #693's gate),
+# `panel_for_profile` (#687, landed — the chain both files resolve through), the WHOLE
+# thirteen-fixture corpus (the sweep's precondition is "all 13 fixtures", not a subset)
+# and the recordings' `coverage.json` (#686's capture signal — the sweep replays the
+# recorded tier, and a replay sweep without the manifest is vacuous).
+_AUTHOR_TS168_AF_IDS = tuple(f"AF-{i:02d}" for i in range(1, 14))
+_AUTHOR_TS168_SURFACE = (
+    "AuthoringService", "DraftResult", "AuthoringSettings", "AuthoringInputError",
+    "validate_draft",
+)
+_AUTHOR_TS168_PROBE = (
+    "python -c \"import importlib, pathlib;"
+    f"m = importlib.import_module('{_AUTHOR_MODULE}');"
+    f"ok = all(hasattr(m, n) for n in {_AUTHOR_TS168_SURFACE!r});"
+    "import aeh.conf; ok = ok and hasattr(aeh.conf, 'panel_for_profile');"
+    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
+    f"ok = ok and all((root / d).is_dir() for d in {_AUTHOR_TS168_AF_IDS!r});"
+    "ok = ok and (root / 'recordings' / 'coverage.json').is_file();"
+    "raise SystemExit(0 if ok else 1)\""
+)
+
 WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # issue: (kind, target, tests to unmark)
     #
@@ -1986,6 +2009,15 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         _AUTHOR_TS169_PERF_PROBE,
         (
             "tests/perf/test_perf_20_authoring_recorded_ceilings.py",
+        ),
+    ),
+
+    "#701 TS-168 the SEC-26 credential sweep and the ADV-18 injection fail-safe (#690's module, #693's validation gate, #686's corpus and recordings)": (
+        "command",
+        _AUTHOR_TS168_PROBE,
+        (
+            "tests/security/author/test_sec_26_authoring_credential_sweep.py",
+            "tests/security/author/test_adv_18_authoring_prompt_injection.py",
         ),
     ),
 }
