@@ -130,6 +130,29 @@ _AUTHOR_CLI_PROBE = (
     "raise SystemExit(0 if ok else 1)\""
 )
 
+# --- TS-168 (#701), SEC-26 + ADV-18: the credential sweep and the injection fail-safe --------
+# The limbs the two security files drive: the §3.1 surface with `AuthoringInputError`
+# (the sweep's fail-fast arm) and `validate_draft` (ADV-18's second layer, #693's gate),
+# `panel_for_profile` (#687, landed — the chain both files resolve through), the WHOLE
+# thirteen-fixture corpus (the sweep's precondition is "all 13 fixtures", not a subset)
+# and the recordings' `coverage.json` (#686's capture signal — the sweep replays the
+# recorded tier, and a replay sweep without the manifest is vacuous).
+_AUTHOR_TS168_AF_IDS = tuple(f"AF-{i:02d}" for i in range(1, 14))
+_AUTHOR_TS168_SURFACE = (
+    "AuthoringService", "DraftResult", "AuthoringSettings", "AuthoringInputError",
+    "validate_draft",
+)
+_AUTHOR_TS168_PROBE = (
+    "python -c \"import importlib, pathlib;"
+    f"m = importlib.import_module('{_AUTHOR_MODULE}');"
+    f"ok = all(hasattr(m, n) for n in {_AUTHOR_TS168_SURFACE!r});"
+    "import aeh.conf; ok = ok and hasattr(aeh.conf, 'panel_for_profile');"
+    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
+    f"ok = ok and all((root / d).is_dir() for d in {_AUTHOR_TS168_AF_IDS!r});"
+    "ok = ok and (root / 'recordings' / 'coverage.json').is_file();"
+    "raise SystemExit(0 if ok else 1)\""
+)
+
 WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # issue: (kind, target, tests to unmark)
     #
@@ -1723,6 +1746,47 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/unit/console/test_tc_console_54_parity_census.py"
             "::test_tc_console_58_the_census_passes_once_the_author_commands_are_listed",
 ),
+    ),
+    # --- SEC-26 + ADV-18 (#701), TS-168: the credential sweep and the injection fail-safe -----
+    #
+    # #701 is the written-ahead test pair for TS-168: the SEC-26 canary sweep over every
+    # output channel of all thirteen fixtures (NFR-AUTHOR-04, CT-AUTHOR-16) and the ADV-18
+    # injection/forgery case with the validator's second layer (FR-AUTHOR-10, CT-AUTHOR-08).
+    #
+    # Keyed `command`, following the module's TS-165/TS-163 precedent, for three reasons.
+    # First, the red spans several stories (#690 the module and service, #693 the validation
+    # gate, #686 the recordings), so a `symbol` key on any one name —
+    # `aeh.author:AuthoringService`, say — fires the day #690 lands, while the sweep still
+    # has no corpus to run over and the injection case no validator: the #118 early-fire
+    # direction. Second, no single `symbol`/`symbols` conjunction can carry the
+    # corpus-and-recordings limbs (they are paths, not module attributes). Third, the DoD
+    # keys this entry to "the validation-gate implementing story the injection case
+    # exercises (and the fixture corpus it sweeps)" — a conjunction, which is exactly what
+    # the multi-limb probe construction is for. The probe (`_AUTHOR_TS168_PROBE`, above,
+    # built from the same `author_vocabulary` constants) demands, conjoined: the §3.1
+    # surface plus `AuthoringInputError` (the sweep's fail-fast arm) plus `validate_draft`
+    # (the injection case's second layer), `panel_for_profile` (#687, already landed — kept
+    # so the probe's shape matches the family and cannot resolve before the chain the tests
+    # resolve), all thirteen AF fixture directories, and `recordings/coverage.json` (#686's
+    # capture signal). Nothing earlier than #693+#686 resolves that conjunction.
+    #
+    # Disclosed residual: if the validation-gate or capture-pass stories land everything
+    # the probe demands while behaviour a case still needs is spelled differently (e.g. the
+    # fail-fast exception type), the probe resolves and the two files may still be red —
+    # the `#635` re-check rule is load-bearing here: re-run both files green before
+    # unmarking, never unmark on the notice alone.
+    #
+    # Rename path: the surface lives in `_AUTHOR_TS168_SURFACE` (built from
+    # `AUTHOR_MODULE`/`AUTHOR_SURFACE` in `tests/support/author_vocabulary.py`); each
+    # file's own `require()` gates re-check the same limbs at unmarking time, naming its
+    # issue there.
+    "#701 TS-168 the SEC-26 credential sweep and the ADV-18 injection fail-safe (#690's module, #693's validation gate, #686's corpus and recordings)": (
+        "command",
+        _AUTHOR_TS168_PROBE,
+        (
+            "tests/security/author/test_sec_26_authoring_credential_sweep.py",
+            "tests/security/author/test_adv_18_authoring_prompt_injection.py",
+        ),
     ),
 }
 
