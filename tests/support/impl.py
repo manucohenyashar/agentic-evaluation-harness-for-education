@@ -22,6 +22,11 @@ import importlib
 import importlib.util
 from typing import Any
 
+from tests.support.author_vocabulary import (
+    AF01_VARIANT_RECORDINGS as _AUTHOR_VARIANT_RECORDINGS,
+    AUTHOR_MODULE as _AUTHOR_MODULE,
+    AUTHOR_SURFACE as _AUTHOR_SURFACE,
+)
 from tests.support.extract_vocabulary import (
     ASSEMBLE as _EXTRACT_ASSEMBLE,
     PROMPT_FIELDS as _EXTRACT_PROMPT_FIELDS,
@@ -81,6 +86,42 @@ FIXTURE_PROVIDER_CLASS = "RecordedFixtureProvider"
 # `symbol` is what a module split across several stories needs. `aeh.conf` landed with #4, so
 # `find_spec` has said "resolved" since then — but `RunConfig.profile_summary` arrives with #5
 # and `rehydrate_run_config` with #6, and until they do their cases are correctly red.
+
+# --- TS-165 (#689), the CS-AUTHOR clause suite: the probe limbs ------------------------------
+# Built from `tests/support/author_vocabulary.py` — the TS26 construction, so the probes
+# cannot name a symbol the tests stopped using. `AuthoringInputError` is added: it is not in
+# the §3.1 dataclass surface but every clause file resolves it (FR-AUTHOR-13 names it).
+_AUTHOR_CLAUSE_NAMES = (*_AUTHOR_SURFACE, "AuthoringInputError")
+#: The corpus limbs the rung-1 guards `require_path` (issue #686's), unioned over the files.
+_AUTHOR_CORPUS_LIMBS = (
+    "AF-01", "AF-06", "AF-07", "AF-09", "AF-10", "AF-11", "AF-13",
+    "recordings", _AUTHOR_VARIANT_RECORDINGS.name,
+)
+_AUTHOR_RUNG1_PROBE = (
+    "python -c \"import importlib, pathlib;"
+    f"m = importlib.import_module('{_AUTHOR_MODULE}');"
+    f"ok = all(hasattr(m, n) for n in {_AUTHOR_CLAUSE_NAMES!r});"
+    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
+    f"ok = ok and all((root / d).is_dir() for d in {_AUTHOR_CORPUS_LIMBS!r});"
+    "raise SystemExit(0 if ok else 1)\""
+)
+_AUTHOR_CLI_PROBE = (
+    "python -c \"import argparse, importlib, pathlib;"
+    "from aeh.pipeline import cli;"
+    f"m = importlib.import_module('{_AUTHOR_MODULE}');"
+    f"ok = all(hasattr(m, n) for n in {_AUTHOR_CLAUSE_NAMES!r});"
+    "import aeh.conf; ok = ok and hasattr(aeh.conf, 'panel_for_profile');"
+    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
+    "ok = ok and all((root / d).is_dir() for d in ('AF-01', 'AF-07', 'recordings'));"
+    "sub = next(a for a in cli._build_parser()._actions"
+    " if isinstance(a, argparse._SubParsersAction));"
+    "ok = ok and 'author' in sub.choices;"
+    "asub = next((a for a in sub.choices['author']._actions"
+    " if isinstance(a, argparse._SubParsersAction)), None);"
+    "ok = ok and asub is not None and {'draft', 'review'} <= set(asub.choices);"
+    "raise SystemExit(0 if ok else 1)\""
+)
+
 WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # issue: (kind, target, tests to unmark)
     #
@@ -1451,6 +1492,48 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "raise SystemExit(0 if ok else 1)\"",
         (
             "tests/browser/spa/test_tc_e2e_06_teachers_day.py::test_tc_e2e_06_teachers_day_journey",
+        ),
+    ),
+    # --- TS-165 (#689), the CS-AUTHOR clause suite and TC-AUTHOR-29's conformance case -----
+    #
+    # Keyed to the M-AUTHOR implementation stories as the DoD says — but as conjunctions,
+    # not to one story. The suite's red has three layers (#689 `aeh.author`'s surface,
+    # #686 the F-AUTHOR corpus and its recordings, #687 `panel_for_profile`) plus #695's CLI
+    # registration, and a key on any single one would fire while the rest still blocked —
+    # the #118 defect. So both entries are #641-style `command` probes that resolve only
+    # when EVERY limb does; the limbs are built from `tests/support/author_vocabulary.py`
+    # (the TS26 construction: the registry cannot name a symbol the tests stopped using),
+    # and each test file's own guards re-check the same limbs at unmarking time, each
+    # naming its issue there (the #635 re-check rule).
+    #
+    # CT-AUTHOR-02's console half (#700, FR-CONSOLE-46) gates NO clause of this suite: the
+    # cases assert the CLI registration M-PIPE owns (#695), and the console's
+    # present-and-unavailable parity rows for authoring are the parity census's own case
+    # (TS-167, #716, TC-CONSOLE-58). Disclosed in the PR body.
+    #
+    # Corpus coupling (the vocabulary docstring's disclosure): the rung-1 cases inject the
+    # dev-ci profile's reasoning chain via `chain_from_config()`, so #686 must record the
+    # F-AUTHOR corpus through that chain — or reconcile that one helper.
+    "#689 TS-165 the CS-AUTHOR clause suite, rung 1 (aeh.author's surface + the F-AUTHOR corpus)": (
+        "command",
+        _AUTHOR_RUNG1_PROBE,
+        (
+            "tests/contract/author/test_cs_author_c01_c03_headless_surface.py",
+            "tests/contract/author/test_cs_author_c04_c05_artifacts.py",
+            "tests/contract/author/test_cs_author_c06_c07_c08_chain_rules.py",
+            "tests/contract/author/test_cs_author_c09_c10_c11_errors_and_state.py",
+            "tests/contract/author/test_cs_author_c12_review_mutates_only.py",
+            "tests/contract/author/test_cs_author_c13_c14_budget_and_knobs.py",
+            "tests/contract/author/test_cs_author_c15_c16_observability.py",
+            "tests/contract/author/test_cs_author_c17_c19_c20_carry_over.py",
+            "tests/contract/author/test_cs_author_c29_non_promise_conformance.py",
+        ),
+    ),
+    "#689 TS-165 the CS-AUTHOR clause suite, rung 3 (the aeh author CLI): #695's registration, #687's chain resolution, #686's corpus, #689's surface": (
+        "command",
+        _AUTHOR_CLI_PROBE,
+        (
+            "tests/contract/author/test_cs_author_c02_c18_cli.py",
         ),
     ),
 }
