@@ -24,6 +24,10 @@ rename is one line here and nowhere else.
 | `AF01_VARIANT_RECORDINGS` | `fixtures/F-AUTHOR/recordings-af01-variant/` | **path guessed here** — TC-AUTHOR-29's second recorded set for AF-01; the design fixes neither the name nor the layout, so the path is declared once and #686 reconciles it here if it lands elsewhere |
 | `AF13_PAIR` | the carry-over pair is (AF-01 documents, AF-13 documents) | **design-named** (§5.1: "AF-01's test with one question reworded") — same package id, so the re-draft sees the prior report |
 | `AuthoringSettings()` | a zero-argument constructor | **assumed** — §3.1 declares the parameter but no fields; the knobs are env-read per invocation |
+| `FALLBACK_ISSUE` | TC-AUTHOR-04..08's blocking story is #691 | **design-named** — TS-156's implementing story (test plan §8); the fallback/repair file's require gates and registry entry name it |
+| `ABSENT_SECOND_BUILD` | a SECOND pinned build id recorded nowhere | **invented here** — TC-AUTHOR-06's order oracle needs two absent heads so `failures[0]` and `failures[1]` are each pinned by cross-run equality against that head's solo run (the CS-C06 technique); see `ABSENT_HEAD_BUILD` |
+| `GarbageProvider` / `ScriptedProvider` | provider doubles for the unparseable and validator-failing repair triggers | **invented here** — FR-AUTHOR-05b needs no recording: a fixed unparseable reply, and a parseable-proposal-then-invalid-proposal script, exhaust the budget deterministically |
+| `repair_pairs()` | a repair attempt is the same prompt PLUS the rejection reason | **assumed, two encodings** — the design pins the shape ("the same prompt plus the validator's rejection reason"), not its representation; a repair implemented by REWRITING the prompt reconciles this one helper (the #635 rule) |
 
 Nothing here imports `aeh.author`; resolution happens inside the test bodies via
 `tests.support.impl.require`, so a missing module is a stated failure, not a collection error.
@@ -38,6 +42,7 @@ from pathlib import Path
 from typing import Any
 
 from aeh.conf import ModelRef
+from aeh.prov import Capabilities, Completion, CostEstimate, RetentionReport
 
 AUTHOR_ISSUE = "#689"
 CORPUS_ISSUE = "#686"
@@ -225,3 +230,169 @@ def sha256_of(path: Path) -> str:
     import hashlib
 
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+# --- TS-156 (#708), TC-AUTHOR-04..08: the fallback, repair and payload doubles ---------------
+
+#: The fixed unparseable reply — deliberately not JSON, not TOML, and not a sentinel: no
+#: parser the module plausibly runs accepts it, and no placeholder scan mistakes it.
+GARBAGE_REPLY = ": : not-a-proposal"
+
+#: TC-AUTHOR-04..08's blocking story — chain resolution, fallback and the repair budget
+#: (test plan §8, TS-156). The fallback/repair file's require gates and registry entry name it.
+FALLBACK_ISSUE = "#691"
+
+#: A SECOND pinned build id recorded nowhere, for TC-AUTHOR-06's order oracle: with two absent
+#: heads, the fallback run's `failures[0]` and `failures[1]` are each pinned by cross-run
+#: equality against that head's own solo run (the CS-C06 technique). Date-pinned so `ModelRef`
+#: accepts it as a resolved build; recorded nowhere, like `ABSENT_HEAD_BUILD`.
+ABSENT_SECOND_BUILD = "openrouter/devci-authoring-absent-head-2@0001-01-02"
+
+
+def absent_ref(build_id: str = ABSENT_HEAD_BUILD) -> ModelRef:
+    """The judge `ModelRef` for a never-recorded build id — FR-AUTHOR-05a's trigger.
+
+    `RecordedFixtureProvider` raises `FixtureMissingError` (a `ProviderError`) for it, so the
+    provider-error fallback path needs no live flake and no extra recording.
+    """
+    return ModelRef(role="judge", provider="openrouter", build_id=build_id, quantization=None)
+
+
+class _StaticDouble:
+    """The `InferenceProvider` protocol methods that answer statically, shared by the two
+    TS-156 doubles below. `complete()` is each double's own; every other method has an
+    honest static answer, so the run's capability, cost and retention paths never see an
+    `AttributeError` masquerading as a finding. The double IS the egress point and delegates
+    to nothing — the socket guard proves nothing dials out around it (`CT-PROV-15`).
+    """
+
+    def capabilities(self, model_ref: Any) -> Any:
+        return Capabilities(
+            supports_seed=False,
+            supports_prefix_cache=False,
+            max_concurrency=1,
+            deterministic_at_temperature_zero=False,
+            cost_per_token=None,
+        )
+
+    def estimate_cost(self, plan: Any) -> Any:
+        return CostEstimate(calls=0, tokens_in=0, tokens_out=0, cost=None)
+
+    def verify_retention(self, model_refs: Any) -> Any:
+        return RetentionReport(confirmed=tuple(model_refs), unconfirmed=())
+
+    @property
+    def models_called(self) -> list[str]:
+        return [model_ref.build_id for _prompt, model_ref, _params in self.calls]
+
+    def _completion(self, reply: str, model_ref: Any) -> Any:
+        return Completion(
+            text=reply,
+            tokens_in=1,
+            tokens_out=1,
+            latency_ms=1,
+            resolved_build=model_ref.build_id,
+            cached_prefix_tokens=0,
+            cost=None,
+        )
+
+
+class GarbageProvider(_StaticDouble):
+    """A provider double whose every reply is unparseable (TC-AUTHOR-04, TC-AUTHOR-07a).
+
+    FR-AUTHOR-05b's trigger with no recording at all: the reply is a fixed non-JSON,
+    non-TOML, non-sentinel string, so the parser's complaint path fires on every call and
+    the repair budget is spent to exhaustion against a single model — which is what makes
+    the repair payload inspectable without any captured recording. Records every
+    `(prompt, model_ref, params)`; the payload inspection and `repair_pairs` read `calls`.
+    """
+
+    def __init__(self, reply: str = GARBAGE_REPLY) -> None:
+        self.reply = reply
+        self.calls: list[tuple[Any, Any, Any]] = []
+
+    def complete(self, prompt: Any, model_ref: Any, params: Any) -> Any:
+        self.calls.append((prompt, model_ref, params))
+        return self._completion(self.reply, model_ref)
+
+
+class ScriptedProvider(_StaticDouble):
+    """A provider double replaying replies in order, repeating the last once exhausted
+    (TC-AUTHOR-07b).
+
+    The script serves a PARSEABLE proposal first and a parseable-but-INVALID one second —
+    the validator-failing half of FR-AUTHOR-05 needs a reply the parser accepts and the
+    deterministic rules reject, which no recorded fixture provides (the corpus records
+    converging runs). Replies go to calls for `build_id` only; every other call (the
+    transcriber's, if transcription rides the provider) gets `other_reply`, so the script
+    cannot be desynced by a pre-step the design may or may not route through the provider.
+    Repeating the last reply once exhausted is what spends the budget: every repair attempt
+    re-proposes the same failing shape.
+    """
+
+    def __init__(self, replies: list[str], build_id: str,
+                 other_reply: str = GARBAGE_REPLY) -> None:
+        self.replies = list(replies)
+        self.build_id = build_id
+        self.other_reply = other_reply
+        self.calls: list[tuple[Any, Any, Any]] = []
+        self._served = 0
+
+    def complete(self, prompt: Any, model_ref: Any, params: Any) -> Any:
+        self.calls.append((prompt, model_ref, params))
+        if model_ref.build_id == self.build_id:
+            reply = self.replies[min(self._served, len(self.replies) - 1)]
+            self._served += 1
+        else:
+            reply = self.other_reply
+        return self._completion(reply, model_ref)
+
+
+def repair_pairs(calls: list, build_id: str | None = None) -> list:
+    """The consecutive same-model call pairs where the second prompt EXTENDS the first —
+    the "same prompt plus the rejection reason" shape of FR-AUTHOR-05's repair attempts.
+
+    The design pins the shape but not its representation, so two encodings are unioned:
+
+    1. **superset** — the later payload's `(name, value)` pairs are a strict superset of the
+       earlier's (the reason arrives as new fields);
+    2. **append** — the same field names in order, and exactly one value is a strict
+       extension of the earlier one (the reason is appended to the prompt).
+
+    A repair is same-model by definition, so only consecutive calls for one build id pair
+    up; `build_id` narrows further (to the reasoning chain's head, away from any
+    transcription calls that may share the provider). Deliberately NOT detected: a repair
+    that REWRITES the prompt rather than extending it — if #691 ships that shape, the
+    reconciliation is this one helper and the assertions that use it (the `#635` rule), not
+    a loosening of the oracle. The command-probe entry for this file runs the same two
+    encodings, so the gate and the tests resolve together.
+    """
+    pairs: list = []
+    for index in range(len(calls) - 1):
+        p1, r1, _params = calls[index]
+        p2, r2, _params2 = calls[index + 1]
+        if r1.build_id != r2.build_id:
+            continue
+        if build_id is not None and r1.build_id != build_id:
+            continue
+        fields1, fields2 = list(p1.fields), list(p2.fields)
+        set1 = set(fields1)
+        if set1 <= set(fields2) and fields1 != fields2:
+            added = [pair[1] for pair in fields2 if pair not in set1]
+            if any(str(value).strip() for value in added):
+                pairs.append((p1, p2))
+                continue
+        if [name for name, _value in fields1] == [name for name, _value in fields2]:
+            extensions = [
+                (v1, v2)
+                for (_n1, v1), (_n2, v2) in zip(fields1, fields2)
+                if v2 != v1 and v2.startswith(v1)
+            ]
+            unchanged = all(
+                v1 == v2
+                for (_n1, v1), (_n2, v2) in zip(fields1, fields2)
+                if not (v2 != v1 and v2.startswith(v1))
+            )
+            if len(extensions) == 1 and unchanged and str(extensions[0][1]).strip():
+                pairs.append((p1, p2))
+    return pairs

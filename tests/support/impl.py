@@ -405,6 +405,69 @@ _AUTHOR_24_PROBE = (
 )
 
 
+# --- TS-156 (#708), TC-AUTHOR-04..08: the fallback/repair probe limbs -------------------------
+# Built like the other author probes but keyed on BEHAVIOUR, not names: TWO limbs, both
+# #691's. (1) The repair attempt's payload shape — FR-AUTHOR-05's "the same prompt plus the
+# validator's rejection reason": some later same-model call's prompt extends the one before
+# it (new fields, or one value appended to — the two encodings that wording admits) with the
+# added text non-empty. (2) The exhausted run's mark — the same run, every reply unparseable,
+# must leave the item unresolved/placeholder rather than credited (FR-AUTHOR-05's mark,
+# NFR-AUTHOR-01), so a repair-capable attempt loop that still credits the item does not
+# resolve the probe. See the registry entry below for the full early-fire/late-fire analysis.
+# The detector is `tests/support.author_vocabulary.repair_pairs` reduced inline, so the gate
+# and the tests resolve together.
+_AUTHOR_REPAIR_PROBE = (
+    "python -c \"import sys; sys.path.insert(0, 'src');"
+    "import pathlib, tempfile"
+    "\n"
+    "import aeh.author as author\n"
+    "import aeh.conf, aeh.prov\n"
+    "class _D:\n"
+    "    def __init__(self):\n"
+    "        self.calls = []\n"
+    "    def complete(self, prompt, model_ref, params):\n"
+    "        self.calls.append((prompt, model_ref))\n"
+    "        return aeh.prov.Completion(text=': : not-a-proposal', tokens_in=1,"
+    " tokens_out=1, latency_ms=1, resolved_build=model_ref.build_id,"
+    " cached_prefix_tokens=0, cost=None)\n"
+    "    def capabilities(self, model_ref):\n"
+    "        return aeh.prov.Capabilities(supports_seed=False,"
+    " supports_prefix_cache=False, max_concurrency=1,"
+    " deterministic_at_temperature_zero=False, cost_per_token=None)\n"
+    "    def estimate_cost(self, plan):\n"
+    "        return aeh.prov.CostEstimate(calls=0, tokens_in=0, tokens_out=0, cost=None)\n"
+    "    def verify_retention(self, model_refs):\n"
+    "        return aeh.prov.RetentionReport(confirmed=tuple(model_refs), unconfirmed=())\n"
+    "d = _D()\n"
+    "ref = aeh.conf.ModelRef(role='judge', provider='openrouter',"
+    " build_id='openrouter/authoring-probe@2026-10-01', quantization=None)\n"
+    "svc = author.AuthoringService(chain=[ref], provider=d, transcriber=None,"
+    " settings=author.AuthoringSettings())\n"
+    "out = pathlib.Path(tempfile.mkdtemp())\n"
+    "res = svc.draft(documents=sorted(pathlib.Path('fixtures', 'F-AUTHOR', 'AF-01').glob('*.pdf')),"
+    " output_dir=out)\n"
+    "pairs = 0\n"
+    "for i in range(len(d.calls) - 1):\n"
+    "    p1, r1 = d.calls[i]\n"
+    "    p2, r2 = d.calls[i + 1]\n"
+    "    if r1.build_id != r2.build_id:\n"
+    "        continue\n"
+    "    f1 = list(p1.fields)\n"
+    "    f2 = list(p2.fields)\n"
+    "    s1 = set(f1)\n"
+    "    hit = s1 <= set(f2) and f1 != f2 and any(str(v).strip() for x, v in f2"
+    " if (x, v) not in s1)\n"
+    "    if not hit and [x for x, v in f1] == [x for x, v in f2]:\n"
+    "        ext = [(a, b) for (x, a), (y, b) in zip(f1, f2) if b != a and b.startswith(a)]\n"
+    "        unch = all(a == b for (x, a), (y, b) in zip(f1, f2)"
+    " if not (b != a and b.startswith(a)))\n"
+    "        hit = len(ext) == 1 and unch and bool(str(ext[0][1]).strip())\n"
+    "    pairs += 1 if hit else 0\n"
+    "u = getattr(res, 'unresolved', 0)\n"
+    "marked = len(u) if isinstance(u, (list, tuple, set, frozenset)) else"
+    " (u if isinstance(u, int) and u else 0)\n"
+    "raise SystemExit(0 if pairs and marked else 1)\""
+)
 WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # issue: (kind, target, tests to unmark)
     #
@@ -2106,6 +2169,7 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         ("tests/unit/author/test_tc_author_16_fail_fast_matrix.py",),
     ),
 
+
     # --- TS-159 (#711), TC-AUTHOR-15/20/21/22 — the report, summary, logger and prompt pins ----
     #
     # Keyed `command`, not the issue's suggested `symbol` on `aeh.author:AuthoringService`,
@@ -2142,6 +2206,40 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/unit/author/test_tc_author_21_completion_summary.py",
             "tests/unit/author/test_tc_author_22_author_logging.py",
         ),
+    ),
+
+    # --- TC-AUTHOR-04..08 (#708), TS-156 (#691): chain resolution, fallback, the repair ------
+    # --- budget --------------------------------------------------------------------------------
+    #
+    # #691 builds the fallback and repair behaviour ON TOP of the AuthoringService surface
+    # #690 lands, so the issue's suggested `symbol` key (`aeh.author:AuthoringService`) has
+    # the early-fire direction the `#713` entry documents from the other side: the class
+    # exists from #690, a symbol key on it resolves the day THAT story lands, and a resolved
+    # blocker left in this dict fails the gate by design — five red cases would sit inside
+    # TEST_CMD blaming #690. Nor does #691 mandate any new Python name: every §3.1 name is
+    # the shared surface, and `HARNESS_AUTHOR_ATTEMPTS` itself arrives with #690's knobs
+    # (TC-AUTHOR-19). So the key is `command`, probing the behaviour only #691 ships: the
+    # repair attempt is THE SAME PROMPT PLUS the rejection reason (FR-AUTHOR-05). The probe
+    # drafts AF-01 against a double whose every reply is unparseable and exits 0 exactly when
+    # some later same-model call's prompt extends the one before it — new fields, or one
+    # value appended to, the two encodings "the same prompt plus the reason" admits — with
+    # the added text non-empty — AND the same exhausted run must leave the item
+    # unresolved/placeholder rather than credited (FR-AUTHOR-05's mark, NFR-AUTHOR-01), so a
+    # repair-capable attempt loop that still credits the item fails the second limb. The
+    # residual early-fire risk is that a skeleton may carry BOTH behaviours ahead of its own
+    # story boundary; that is handled by the standing rule — re-check the five cases GREEN
+    # before unmarking, never on the notice alone (and the recorded cases 05a/06/08 stay red
+    # until #691's corpus recordings exist regardless). The residual late risks are the two
+    # the `#635`/`#638` entries state verbatim: a
+    # repair implemented by REWRITING the prompt rather than extending it never resolves this
+    # probe (reconcile `repair_pairs` in `tests/support/author_vocabulary.py` and this probe
+    # together, at the landing), and the probe bets `AuthoringSettings()` is zero-argument
+    # and `transcriber=None` is legal — both the vocabulary's disclosed bets, so a
+    # differently-spelled surface is the same one-line reconciliation here.
+    "#691 chain fallback": (
+        "command",
+        _AUTHOR_REPAIR_PROBE,
+        ("tests/unit/author/test_tc_author_04_08_chain_fallback_and_repair.py",),
     ),
 
     "#702 TS-169 TC-AUTHOR-31 the live fixture tier (aeh.author's draft surface, the F-AUTHOR corpus, #687's chain resolution)": (
