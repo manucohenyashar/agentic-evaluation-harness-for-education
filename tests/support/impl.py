@@ -468,6 +468,164 @@ _AUTHOR_REPAIR_PROBE = (
     " (u if isinstance(u, int) and u else 0)\n"
     "raise SystemExit(0 if pairs and marked else 1)\""
 )
+# --- TS-170 (#703), TC-E2E-07 + UAT-14: the three journeys and the teacher walkthrough -------
+# The limbs the two rung-4 files drive, in the family shape the #689/#697/#701 probes set:
+# the §3.1 surface with `AuthoringInputError`, `draft` and `review` on the service,
+# `panel_for_profile` (#687, landed), the build-gate sentinel the journeys' refusals read
+# (#688, landed — probed BY NAME for self-documentation, not because it blocks: a probe limb
+# that names the refusal the gate walks into states the dependency the issue DoD asks for),
+# the corpus limbs (#686), and #695's CLI registration. The E2E probe adds the one
+# BEHAVIOURAL limb, keyed to #697 per the issue's DoD ("the retry/recreate story the journeys
+# traverse"): it re-drafts AF-01 twice into a scratch directory and exits 0 only when the
+# first draft lands and the second, `--force`-less and with stdin at EOF, is refused —
+# FR-AUTHOR-22's overwrite protection, which no symbol names. The limb is short-circuited
+# behind the static ones so it runs (two offline recorded drafts, seconds) only when
+# everything else already holds. The UAT probe carries no #697 limb — the walkthrough drafts
+# once and never re-drafts — and no build-gate limb — it ends at the ready review, which is
+# the walkthrough's own end state.
+_AUTHOR_E2E_CORPUS_LIMBS = ("AF-02", "AF-09", "AF-11", "recordings")
+_AUTHOR_E2E_PROBE = (
+    "python -c \"import argparse, importlib, os, pathlib, subprocess, sys, tempfile;"
+    f"m = importlib.import_module('{_AUTHOR_MODULE}');"
+    f"ok = all(hasattr(m, n) for n in {_AUTHOR_CLAUSE_NAMES!r});"
+    "ok = ok and hasattr(m.AuthoringService, 'draft')"
+    " and hasattr(m.AuthoringService, 'review');"
+    "import aeh.conf; ok = ok and hasattr(aeh.conf, 'panel_for_profile');"
+    "pkgs = importlib.import_module('aeh.pipeline.packages');"
+    "ok = ok and hasattr(pkgs, 'PLACEHOLDER_SENTINEL');"
+    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
+    f"ok = ok and all((root / d).is_dir() for d in {_AUTHOR_E2E_CORPUS_LIMBS!r});"
+    "ok = ok and (root / 'recordings' / 'coverage.json').is_file();"
+    "from aeh.pipeline import cli;"
+    "sub = next(a for a in cli._build_parser()._actions"
+    " if isinstance(a, argparse._SubParsersAction));"
+    "ok = ok and 'author' in sub.choices;"
+    "asub = next((a for a in sub.choices['author']._actions"
+    " if isinstance(a, argparse._SubParsersAction)), None);"
+    "ok = ok and asub is not None and {'draft', 'review'} <= set(asub.choices);"
+    "ok = ok and ((scratch := pathlib.Path(tempfile.mkdtemp()))"
+    " and (env := {**os.environ, 'HARNESS_FIXTURE_DIR': str(root / 'recordings')})"
+    " and (argv := ['author', 'draft', '--config',"
+    " 'docs/live-tests/config/live-test.dev-ci.toml', '--docs',"
+    " *sorted(str(p) for p in (root / 'AF-01').glob('*.pdf')),"
+    " '--out', str(scratch / 'out')])"
+    " and (first := subprocess.run([sys.executable, '-m', 'aeh', *argv], env=env,"
+    " stdin=subprocess.DEVNULL, capture_output=True)).returncode == 0"
+    " and (second := subprocess.run([sys.executable, '-m', 'aeh', *argv], env=env,"
+    " stdin=subprocess.DEVNULL, capture_output=True)).returncode != 0);"
+    "raise SystemExit(0 if ok else 1)\""
+)
+_AUTHOR_UAT_PROBE = (
+    "python -c \"import argparse, importlib, pathlib;"
+    f"m = importlib.import_module('{_AUTHOR_MODULE}');"
+    f"ok = all(hasattr(m, n) for n in {_AUTHOR_CLAUSE_NAMES!r});"
+    "ok = ok and hasattr(m.AuthoringService, 'draft')"
+    " and hasattr(m.AuthoringService, 'review');"
+    "import aeh.conf; ok = ok and hasattr(aeh.conf, 'panel_for_profile');"
+    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
+    "ok = ok and all((root / d).is_dir() for d in ('AF-07', 'recordings'));"
+    "ok = ok and (root / 'recordings' / 'coverage.json').is_file();"
+    "ok = ok and (root / 'AF-07' / 'expected.toml').is_file();"
+    "from aeh.pipeline import cli;"
+    "sub = next(a for a in cli._build_parser()._actions"
+    " if isinstance(a, argparse._SubParsersAction));"
+    "ok = ok and 'author' in sub.choices;"
+    "asub = next((a for a in sub.choices['author']._actions"
+    " if isinstance(a, argparse._SubParsersAction)), None);"
+    "ok = ok and asub is not None and {'draft', 'review'} <= set(asub.choices);"
+    "raise SystemExit(0 if ok else 1)\""
+)
+
+# --- TS-157 (#709), TC-AUTHOR-09..12: the three reasoning steps and approved_by ---------------
+# The limbs the four cases construct through: the §3.1 surface (`AUTHOR_SURFACE`), the three
+# step prompt constants (FR-AUTHOR-20's names; NFR-AUTHOR-06 lands each reasoning step file
+# with its own prompt constant, so these are #692's limbs — TC-AUTHOR-09's call-count oracle
+# discriminates the inventory step by the constant's value in the assembled payload, the
+# TC-AUTHOR-20 ride precedent), `AuthoringService.draft` (every case runs a recorded replay
+# draft), all thirteen corpus fixtures (TC-AUTHOR-12 sweeps every fixture's draft for the
+# approved_by placeholder), and the recordings' `coverage.json` (#686's capture signal — a
+# replay draft without it is vacuous).
+_AUTHOR_STEPS_PINS = (
+    "AUTHOR_INVENTORY_TEMPLATE_V",
+    "AUTHOR_RUBRIC_TEMPLATE_V",
+    "AUTHOR_GRADES_TEMPLATE_V",
+)
+#: All thirteen corpus fixtures — TC-AUTHOR-12 sweeps every fixture's draft. Defined here
+#: (not `_AUTHOR_AF_IDS`, which the TS-169 block owns) so this block is self-contained.
+_AUTHOR_TS157_AF_IDS = tuple(f"AF-{index:02d}" for index in range(1, 14))
+_AUTHOR_TS157_PROBE = (
+    "python -c \"import importlib, pathlib;"
+    f"m = importlib.import_module('{_AUTHOR_MODULE}');"
+    f"ok = all(hasattr(m, n) for n in {_AUTHOR_SURFACE!r});"
+    f"ok = ok and all(hasattr(m, n) for n in {_AUTHOR_STEPS_PINS!r});"
+    "ok = ok and callable(getattr(m.AuthoringService, 'draft', None));"
+    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
+    f"ok = ok and all((root / d).is_dir() for d in {_AUTHOR_TS157_AF_IDS!r});"
+    "ok = ok and (root / 'recordings' / 'coverage.json').is_file();"
+    "raise SystemExit(0 if ok else 1)\""
+)
+
+# --- TS-156 (#708), TC-AUTHOR-04..08: the fallback/repair probe limb --------------------------
+# Built like the other author probes but keyed on BEHAVIOUR, not names: the discriminator is
+# the repair attempt's payload shape — FR-AUTHOR-05's "the same prompt plus the validator's
+# rejection reason" — which only #691 ships. See the registry entry below for the full
+# early-fire/late-fire analysis. The payload is one draft of AF-01 against a double whose
+# every reply is unparseable; it exits 0 exactly when some later same-model call's prompt
+# extends the one before it (new fields, or one value appended to — the two encodings
+# "the same prompt plus the reason" admits) with the added text non-empty. The detector is
+# `tests/support.author_vocabulary.repair_pairs` reduced inline, so the gate and the tests
+# resolve together.
+_AUTHOR_REPAIR_PROBE = (
+    "python -c \"import sys; sys.path.insert(0, 'src');"
+    "import pathlib, tempfile"
+    "\n"
+    "import aeh.author as author\n"
+    "import aeh.conf, aeh.prov\n"
+    "class _D:\n"
+    "    def __init__(self):\n"
+    "        self.calls = []\n"
+    "    def complete(self, prompt, model_ref, params):\n"
+    "        self.calls.append((prompt, model_ref))\n"
+    "        return aeh.prov.Completion(text=': : not-a-proposal', tokens_in=1,"
+    " tokens_out=1, latency_ms=1, resolved_build=model_ref.build_id,"
+    " cached_prefix_tokens=0, cost=None)\n"
+    "    def capabilities(self, model_ref):\n"
+    "        return aeh.prov.Capabilities(supports_seed=False,"
+    " supports_prefix_cache=False, max_concurrency=1,"
+    " deterministic_at_temperature_zero=False, cost_per_token=None)\n"
+    "    def estimate_cost(self, plan):\n"
+    "        return aeh.prov.CostEstimate(calls=0, tokens_in=0, tokens_out=0, cost=None)\n"
+    "    def verify_retention(self, model_refs):\n"
+    "        return aeh.prov.RetentionReport(confirmed=tuple(model_refs), unconfirmed=())\n"
+    "d = _D()\n"
+    "ref = aeh.conf.ModelRef(role='judge', provider='openrouter',"
+    " build_id='openrouter/authoring-probe@2026-10-01', quantization=None)\n"
+    "svc = author.AuthoringService(chain=[ref], provider=d, transcriber=None,"
+    " settings=author.AuthoringSettings())\n"
+    "out = pathlib.Path(tempfile.mkdtemp())\n"
+    "svc.draft(documents=sorted(pathlib.Path('fixtures', 'F-AUTHOR', 'AF-01').glob('*.pdf')),"
+    " output_dir=out)\n"
+    "pairs = 0\n"
+    "for i in range(len(d.calls) - 1):\n"
+    "    p1, r1 = d.calls[i]\n"
+    "    p2, r2 = d.calls[i + 1]\n"
+    "    if r1.build_id != r2.build_id:\n"
+    "        continue\n"
+    "    f1 = list(p1.fields)\n"
+    "    f2 = list(p2.fields)\n"
+    "    s1 = set(f1)\n"
+    "    hit = s1 <= set(f2) and f1 != f2 and any(str(v).strip() for x, v in f2"
+    " if (x, v) not in s1)\n"
+    "    if not hit and [x for x, v in f1] == [x for x, v in f2]:\n"
+    "        ext = [(a, b) for (x, a), (y, b) in zip(f1, f2) if b != a and b.startswith(a)]\n"
+    "        unch = all(a == b for (x, a), (y, b) in zip(f1, f2)"
+    " if not (b != a and b.startswith(a)))\n"
+    "        hit = len(ext) == 1 and unch and bool(str(ext[0][1]).strip())\n"
+    "    pairs += 1 if hit else 0\n"
+    "raise SystemExit(0 if pairs else 1)\""
+)
+
+
 WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # issue: (kind, target, tests to unmark)
     #
@@ -2300,6 +2458,19 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/unit/author/test_tc_author_24_ready_gate_exit_codes.py",
         ),
     ),
+
+    "#703 TS-170 TC-E2E-07 the three authoring journeys (the surface, #695's CLI, #697's overwrite refusal, #686's corpus and recordings)": (
+        "command",
+        _AUTHOR_E2E_PROBE,
+        ("tests/e2e/test_tc_e2e_07_authoring_journeys.py",),
+    ),
+
+    "#703 TS-170 UAT-14 the teacher walkthrough (the surface, #695's CLI, #686's AF-07 corpus and recordings)": (
+        "command",
+        _AUTHOR_UAT_PROBE,
+        ("tests/uat/acceptance/test_uat_14_walkthrough.py",),
+    ),
+
 }
 
 def blocker_is_resolved(kind: str, target: str, repo_root: Any) -> bool:

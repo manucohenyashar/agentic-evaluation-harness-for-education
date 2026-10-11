@@ -80,6 +80,9 @@ FORCE_KWARG = "force"
 #: TS-163’s implementing story — retry, recreate, overwrite protection, carry-over
 #: (test plan §8); the TC-AUTHOR-25/26/27 files’ require gates and registry entry name it.
 RETRY_ISSUE = "#697"
+#: The build-gate sentinel refusal (TS-160) — landed; the journeys name it because the
+#: refusal is what journey (b) and the pre-review build of journey (c) walk into.
+PKG_GATE_ISSUE = "#688"
 
 # --- the fixture corpus ----------------------------------------------------------------------
 
@@ -217,6 +220,34 @@ SENTINEL_RE = re.compile(r"<<PLACEHOLDER: ([^<>\n]+?)>>")
 PLACEHOLDER_COMMENT_RE = re.compile(r"#\s*PLACEHOLDER\(([^)\n]+)\):\s*(.+?)\s*$")
 #: A content fingerprint as the report renders it — a hex run of 12–64 characters (see the
 FINGERPRINT_RE = re.compile(r"\b[0-9a-f]{12,64}\b", re.IGNORECASE)
+
+def unresolved_fields(report_text: str) -> list[str]:
+    """The `<field>` of every sentinel the report's Unresolved section names, in review order.
+
+    The report's section set is pinned (`CT-AUTHOR-05`: Documents→Steps→Items→Unresolved→Next
+    command) and the Unresolved list is the review walk's order (`FR-AUTHOR-16`), so it is the
+    one section a teacher — or a walkthrough that must not read the draft — may take its
+    remaining items from. The disclosed assumption (see the module docstring's table): each
+    entry carries the sentinel it must fill, the same `<<PLACEHOLDER: <field>>>` the draft
+    carries, since the report is the draft's state description. If the report names items a
+    different way, the reconciliation is this one helper. The section cut treats a `#`-led
+    line as the next heading only when it is not a placeholder comment
+    (`PLACEHOLDER_COMMENT_RE`), so a draft excerpt quoted inside the list — comment lines
+    included — cannot truncate the section.
+    """
+    match = re.search(r"^#+\s*Unresolved\b[^\n]*\n", report_text, re.M)
+    if match is None:
+        return []
+    rest = report_text[match.end():]
+    section_end = None
+    for heading in re.finditer(r"^#+\s\S[^\n]*", rest, re.M):
+        line = rest[heading.start():heading.end()]
+        if PLACEHOLDER_COMMENT_RE.match(line) is None:
+            section_end = heading.start()
+            break
+    section = rest[:section_end] if section_end is not None else rest
+    return SENTINEL_RE.findall(section)
+
 
 
 def placeholder_fields(draft_text: str) -> list[str]:
