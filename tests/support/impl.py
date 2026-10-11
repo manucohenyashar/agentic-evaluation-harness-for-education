@@ -130,6 +130,54 @@ _AUTHOR_CLI_PROBE = (
     "raise SystemExit(0 if ok else 1)\""
 )
 
+# --- TS-155 (#707), the draft front door: TC-AUTHOR-01/02/03/16/19/30 — the probe limbs ------
+# Built from the same `author_vocabulary` constants as the #689/#713 probes above (the TS26
+# construction): `_AUTHOR_CLAUSE_NAMES` is exactly the surface the files' `require()` gates
+# resolve (`AUTHOR_SURFACE` + `AuthoringInputError`), so the registry cannot name a symbol
+# the tests stopped using. The corpus limbs are each entry's own (AF-01/AF-10/AF-12 plus the
+# recordings where a case replays them) rather than `_AUTHOR_CORPUS_LIMBS`'s union — a
+# narrower limb set keeps one file's blocker from depending on a fixture only another file's
+# case reads (the `_AUTHOR_23_CORPUS_LIMBS` precedent).
+_AUTHOR_DRAFT_RECORDED_FILES = (
+    "tests/unit/author/test_tc_author_01_headless_draft.py",
+    "tests/unit/author/test_tc_author_02_transcriber_ride.py",
+)
+_AUTHOR_DRAFT_SCRIPTED_FILES = (
+    "tests/unit/author/test_tc_author_03_transcribe_off_refusal.py",
+    "tests/unit/author/test_tc_author_19_knob_contract.py",
+    "tests/unit/author/test_tc_author_30_resilience_sweep.py",
+)
+_AUTHOR_DRAFT_RECORDED_LIMBS = ("AF-01", "AF-10", "AF-12", "recordings")
+_AUTHOR_DRAFT_SCRIPTED_LIMBS = ("AF-01", "AF-10")
+_AUTHOR_DRAFT_HEAD = (
+    "python -c \"import importlib, pathlib;"
+    f"m = importlib.import_module('{_AUTHOR_MODULE}');"
+    f"ok = all(hasattr(m, n) for n in {_AUTHOR_CLAUSE_NAMES!r});"
+    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
+)
+_AUTHOR_DRAFT_RECORDED_PROBE = (
+    _AUTHOR_DRAFT_HEAD
+    + f"ok = ok and all((root / d).is_dir() for d in {_AUTHOR_DRAFT_RECORDED_LIMBS!r});"
+    "raise SystemExit(0 if ok else 1)\""
+)
+_AUTHOR_DRAFT_SCRIPTED_PROBE = (
+    _AUTHOR_DRAFT_HEAD
+    + f"ok = ok and all((root / d).is_dir() for d in {_AUTHOR_DRAFT_SCRIPTED_LIMBS!r});"
+    "raise SystemExit(0 if ok else 1)\""
+)
+_AUTHOR_DRAFT_CLI_PROBE = (
+    _AUTHOR_DRAFT_HEAD
+    + f"ok = ok and all((root / d).is_dir() for d in {_AUTHOR_DRAFT_SCRIPTED_LIMBS!r});"
+    "import argparse; from aeh.pipeline import cli;"
+    "sub = next(a for a in cli._build_parser()._actions"
+    " if isinstance(a, argparse._SubParsersAction));"
+    "ok = ok and 'author' in sub.choices;"
+    "asub = next((a for a in sub.choices['author']._actions"
+    " if isinstance(a, argparse._SubParsersAction)), None);"
+    "ok = ok and asub is not None and 'draft' in asub.choices;"
+    "raise SystemExit(0 if ok else 1)\""
+)
+
 WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # issue: (kind, target, tests to unmark)
     #
@@ -1724,6 +1772,59 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_console_58_the_census_passes_once_the_author_commands_are_listed",
 ),
     ),
+    # --- TS-155 (#707), the draft front door: TC-AUTHOR-01/02/03/16/19/30 ---------------------
+    #
+    # The issue's technical note keyed these cases `symbol` / `aeh.author:AuthoringService`,
+    # and that name IS genuinely new (`aeh.author` does not exist; nothing else ships the
+    # class) — but the note was written before the tree had the TS26 construction, and the
+    # narrower key has the early-fire direction these files make real: a bare
+    # `AuthoringService` symbol resolves the moment #690 lands the class, while the files'
+    # `require()` gates resolve the whole §3.1 surface plus `AuthoringInputError` (the same
+    # limbs the #689 clause suite resolves) — and TC-AUTHOR-01/02 additionally replay the
+    # corpus, which does not exist until #686's capture pass. The day #690 lands its class,
+    # a symbol key reads resolved, a reader unmarks six cases, and they red inside TEST_CMD
+    # on the dataclass surface or the missing recordings. The probes therefore key on the
+    # surface the tests actually resolve, built from `_AUTHOR_CLAUSE_NAMES` (the TS26
+    # construction), split by what each file-set additionally waits on:
+    #
+    # - the recorded pair (TC-AUTHOR-01/02) replays the corpus through
+    #   `RecordedFixtureProvider`, so its probe adds the recordings limb (#686's capture
+    #   pass, the same limb the `#686 authoring corpus recordings` entry keys on);
+    # - the scripted set (TC-AUTHOR-03/19/30) injects failures at the provider boundary
+    #   (`tests/support/taxonomy.py`) and needs no recordings — only the committed
+    #   AF-01/AF-10 limbs;
+    # - the fail-fast matrix (TC-AUTHOR-16) drives its CLI limb through `aeh author draft`,
+    #   whose registration is #695's deliverable — a surface-only key would fire at #690 and
+    #   leave the case red inside TEST_CMD on #695, so the probe adds the registration limb
+    #   (the `#695 cli registration` entry's own probe, narrowed to `draft`, which is all
+    #   TC-AUTHOR-16's CLI arm drives).
+    #
+    # Disclosed residual: if an implementing story lands every limb while behaviour a case
+    # still needs is spelled differently (the transcribe=off refusal's page wording, the
+    # refusal type for an out-of-range knob), the probe resolves and the files may still be
+    # red — the `#635` re-check rule is load-bearing: re-run all six files green before
+    # unmarking, never on the notice alone.
+    #
+    # Rename path: the surface lives in `_AUTHOR_CLAUSE_NAMES` (built from
+    # `AUTHOR_MODULE`/`AUTHOR_SURFACE` in `tests/support/author_vocabulary.py`); if #690
+    # ships the draft path without the full §3.1 dataclass surface, the reconciliation is a
+    # narrower tuple there plus this probe — nowhere else.
+    "#707 TS-155 the draft front door, recorded corpus (TC-AUTHOR-01/02: #690's surface, #686's recordings)": (
+        "command",
+        _AUTHOR_DRAFT_RECORDED_PROBE,
+        _AUTHOR_DRAFT_RECORDED_FILES,
+    ),
+    "#707 TS-155 the draft front door, scripted boundary (TC-AUTHOR-03/19/30: #690's surface)": (
+        "command",
+        _AUTHOR_DRAFT_SCRIPTED_PROBE,
+        _AUTHOR_DRAFT_SCRIPTED_FILES,
+    ),
+    "#707 TS-155 the draft front door's fail-fast matrix (TC-AUTHOR-16: #690's surface + #695's author draft registration)": (
+        "command",
+        _AUTHOR_DRAFT_CLI_PROBE,
+        ("tests/unit/author/test_tc_author_16_fail_fast_matrix.py",),
+    ),
+
 }
 
 
