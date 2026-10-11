@@ -1,0 +1,7 @@
+af = "AF-08"
+description = "one document; the MCQ key is only partly stated"
+documents = ["sci6-circuits-01-mcq-test.pdf"]
+outcome = "partial"
+placeholders = ["key"]
+build = "publishes"
+notes = "key placeholders for the unkeyed items (3 and 5)"
