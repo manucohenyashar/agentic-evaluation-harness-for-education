@@ -1472,7 +1472,24 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/artifact/test_tc_author_28_recordings_honesty.py",
         ),
     ),
-# --- TC-PIPE-37 (#712), the `aeh author` subcommand registration --------------------------
+# --- FR-CONF-33 (#705), the panel_for_profile surface and its clause suite ---------------
+    #
+    # The package-authoring design delta (§3.2) adds the panel-resolution surface M-AUTHOR
+    # consumes: `panel_for_profile(cfg, backend_profile)` — the named profile's [[panel]] refs
+    # in declared order, then [[escalation_judge]] refs, de-duplicated by build identity, each
+    # resolved per CT-CONF-03, `ConfigurationError` on an empty panel, pure in `cfg`, writing
+    # no store rows. `symbol`, not `module`: `aeh.conf` has existed since #4, so a module-kind
+    # blocker would read as resolved the day any other conf symbol lands. #687 owns the symbol;
+    # #705 is its written-ahead test pair (test plan §5.3 rows, §6.2).
+    "#687 panel_for_profile": (
+        "symbol",
+        f"{CONF_MODULE}:panel_for_profile",
+        (
+            "tests/unit/conf/test_panel_for_profile.py",
+            "tests/contract/conf/test_ct_conf_c23_panel_for_profile.py",
+        ),
+    ),
+    # --- TC-PIPE-37 (#712), the `aeh author` subcommand registration --------------------------
     #
     # #695 registers `aeh author draft` / `aeh author review` (FR-PIPE-10, design delta §3.3).
     # Keyed `command`, not `symbol`, and here is why the issue's own note (`symbol`,
@@ -1540,7 +1557,7 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_console_58_author_review_is_listed_present_and_unavailable",
             "tests/unit/console/test_tc_console_54_parity_census.py"
             "::test_tc_console_58_the_census_passes_once_the_author_commands_are_listed",
-        ),
+),
     ),
 }
 
