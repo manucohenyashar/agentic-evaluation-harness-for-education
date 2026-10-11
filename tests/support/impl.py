@@ -130,6 +130,35 @@ _AUTHOR_CLI_PROBE = (
     "raise SystemExit(0 if ok else 1)\""
 )
 
+# --- TS-157 (#709), TC-AUTHOR-09..12: the three reasoning steps and approved_by ---------------
+# The limbs the four cases construct through: the §3.1 surface (`AUTHOR_SURFACE`), the three
+# step prompt constants (FR-AUTHOR-20's names; NFR-AUTHOR-06 lands each reasoning step file
+# with its own prompt constant, so these are #692's limbs — TC-AUTHOR-09's call-count oracle
+# discriminates the inventory step by the constant's value in the assembled payload, the
+# TC-AUTHOR-20 ride precedent), `AuthoringService.draft` (every case runs a recorded replay
+# draft), all thirteen corpus fixtures (TC-AUTHOR-12 sweeps every fixture's draft for the
+# approved_by placeholder), and the recordings' `coverage.json` (#686's capture signal — a
+# replay draft without it is vacuous).
+_AUTHOR_STEPS_PINS = (
+    "AUTHOR_INVENTORY_TEMPLATE_V",
+    "AUTHOR_RUBRIC_TEMPLATE_V",
+    "AUTHOR_GRADES_TEMPLATE_V",
+)
+#: All thirteen corpus fixtures — TC-AUTHOR-12 sweeps every fixture's draft. Defined here
+#: (not `_AUTHOR_AF_IDS`, which the TS-169 block owns) so this block is self-contained.
+_AUTHOR_TS157_AF_IDS = tuple(f"AF-{index:02d}" for index in range(1, 14))
+_AUTHOR_TS157_PROBE = (
+    "python -c \"import importlib, pathlib;"
+    f"m = importlib.import_module('{_AUTHOR_MODULE}');"
+    f"ok = all(hasattr(m, n) for n in {_AUTHOR_SURFACE!r});"
+    f"ok = ok and all(hasattr(m, n) for n in {_AUTHOR_STEPS_PINS!r});"
+    "ok = ok and callable(getattr(m.AuthoringService, 'draft', None));"
+    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
+    f"ok = ok and all((root / d).is_dir() for d in {_AUTHOR_TS157_AF_IDS!r});"
+    "ok = ok and (root / 'recordings' / 'coverage.json').is_file();"
+    "raise SystemExit(0 if ok else 1)\""
+)
+
 WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # issue: (kind, target, tests to unmark)
     #
@@ -1723,7 +1752,46 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/unit/console/test_tc_console_54_parity_census.py"
             "::test_tc_console_58_the_census_passes_once_the_author_commands_are_listed",
 ),
+    ),    # --- TC-AUTHOR-09..12 (#709), TS-157 (#692): the three reasoning steps and approved_by -----
+    #
+    # #709 is the written-ahead test pair for TS-157 (#692: FR-AUTHOR-06 the inventory step —
+    # paper order, full field set, one call per document set; FR-AUTHOR-07 the rubric mapping
+    # — exactly one supported shape, derivation_description byte-verbatim from the reply,
+    # weighted scores never proposed, dependency-implying prose an unresolved note;
+    # FR-AUTHOR-08 the grades table — derived from the stated, whole-table placeholder when
+    # nothing is stated, Q-O8's adopted default; FR-AUTHOR-09 — approved_by always a
+    # placeholder, never model-generated).
+    #
+    # Keyed `command`, NOT the `symbol` (`aeh.author:AuthoringService`) the issue's technical
+    # note prescribes, and the direction of that error matters: the service class lands with
+    # #690, the FIRST M-AUTHOR service story (the `#698` entry above is keyed on exactly that
+    # class, read the other way), while these cases wait on #692's steps — a symbol key on
+    # the class resolves two stories early, and a reader who follows the notice unmarks four
+    # red P0 cases into TEST_CMD blaming the wrong story (the `#118` early-fire direction).
+    # The TS-165/#689 construction applies: the probe is the conjunction of the design-named
+    # limbs the four cases construct through, built from the same `author_vocabulary`
+    # constants so it cannot drift from the tests — see `_AUTHOR_TS157_PROBE` above for the
+    # limb list and why each is there.
+    #
+    # **Disclosed residual early-fire risk.** If the three prompt constants land with #690's
+    # service skeleton rather than with #692's step files (NFR-AUTHOR-06 ties them to the
+    # step files, but a skeleton could ship them first), the probe resolves one story early;
+    # the unmark rule is then the `#635` re-check — re-run all four cases and unmark only
+    # the ones that pass, never on the notice alone.
+    #
+    # One-line rename path: the surface lives in `AUTHOR_SURFACE`
+    # (`tests/support/author_vocabulary.py`); if FR-AUTHOR-20's constants ship under a
+    # different spelling, `_AUTHOR_STEPS_PINS` here and `STEP_PROMPT_PINS` in the test file
+    # are the two lines. At resolution, re-check all four cases green before unmarking —
+    # never on the notice alone.
+    "#692 reasoning steps": (
+        "command",
+        _AUTHOR_TS157_PROBE,
+        (
+            "tests/unit/author/test_tc_author_09_12_reasoning_steps.py",
+        ),
     ),
+
 }
 
 
