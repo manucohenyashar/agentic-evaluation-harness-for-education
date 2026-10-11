@@ -1,0 +1,7 @@
+af = "AF-01"
+description = "single document; bands throughout; happy path"
+documents = ["hist7-rome-01-test-and-grading.pdf"]
+outcome = "resolved"
+placeholders = []
+build = "publishes"
+notes = "every criterion resolves to bands; zero placeholders"
