@@ -14,6 +14,11 @@ before anything is written: a key among its question's options, every question g
 line only on a question that can carry one, explicit band points, known dependencies and scoring
 models, and every field's type.
 
+Ahead of all of those, the spec text itself is scanned for the authoring flow's placeholder
+sentinel (`<<PLACEHOLDER:`, `FR-PKG-28`): a draft the author left incomplete is refused — naming
+the file, the field and the placeholder reason — before any structural check runs and before
+anything is written, however well-formed the rest of it is (`CT-PKG-23`).
+
 The question inventory is written, not skipped: a judge's criterion text and question come from
 it (`judge/assembly.py` reads `catalog.questions`), so a package without questions sends a real
 model nothing but band names.
@@ -33,6 +38,29 @@ from typing import Any, Mapping
 
 #: The spec's format version, recorded as the inventory "proposal" template.
 SPEC_TEMPLATE_VERSION = "aeh-package-spec/1"
+
+
+#: The placeholder sentinel the authoring flow emits for a field it could not determine
+#: (`FR-AUTHOR-11`): the value `<<PLACEHOLDER: <field>>>`, with a `# PLACEHOLDER(<reason>):`
+#: comment naming what the teacher must supply on the line above. The substring is designed
+#: to sit outside every legal TOML value, so its presence anywhere in the spec text means the
+#: draft is not complete and shall not build, however well-formed the rest of it is
+#: (`FR-PKG-28`, `CT-PKG-23`).
+PLACEHOLDER_SENTINEL = "<<PLACEHOLDER:"
+
+#: The field a sentinel names: everything between `<<PLACEHOLDER:` and the closing `>>` of
+#: `<<PLACEHOLDER: <field>>>` (`FR-AUTHOR-11`'s sentinel shape). A truncated sentinel is still
+#: refused; its field then reads as whatever follows the opening.
+_PLACEHOLDER_FIELD = re.compile(r"<<PLACEHOLDER:\s*(.*?)\s*>>")
+
+#: The reason comment that travels with a sentinel (`FR-AUTHOR-11`):
+#: `# PLACEHOLDER(<reason>): <what the teacher must supply>`; both halves are reported.
+_PLACEHOLDER_COMMENT = re.compile(r"#\s*PLACEHOLDER\s*\(([^)]*)\)\s*:?\s*(.*)")
+
+#: Said when a sentinel line carries no reason comment above it, so the refusal still names a
+#: reason (`CT-PKG-23`) — and points at the missing comment, which is itself a draft defect.
+_UNREASONED = ("no '# PLACEHOLDER(<reason>)' comment was found above the line, so the draft "
+               "is malformed as well as incomplete")
 
 
 #: What `M-SETUP`'s read back attaches when a judged criterion declares no evidence type.
@@ -65,10 +93,76 @@ class BuiltPackage:
     approved_by: str
 
 
+def _sentinel_field(line: str) -> str:
+    """The field the line's sentinel names (`FR-AUTHOR-11`'s `<<PLACEHOLDER: <field>>>`)."""
+    match = _PLACEHOLDER_FIELD.search(line)
+    if match and match.group(1).strip():
+        return match.group(1).strip()
+    # No `>>` terminator on the line: the field is whatever follows the opening.
+    after = line.split(PLACEHOLDER_SENTINEL, 1)[-1].strip()
+    return after.split(">>", 1)[0].strip() or "unknown field"
+
+
+def _sentinel_reason(lines: list[str], index: int) -> str:
+    """The reason the draft itself gives for the placeholder: the nearest
+    `# PLACEHOLDER(<reason>):` comment above the sentinel line (`FR-AUTHOR-11`'s companion
+    comment). A sentinel without one is still refused — the reason is then the missing
+    comment itself."""
+    for line in reversed(lines[:index]):
+        match = _PLACEHOLDER_COMMENT.search(line)
+        if match:
+            reason, supply = match.group(1).strip(), match.group(2).strip()
+            if reason and supply:
+                return f"{reason}; what the teacher must supply: {supply}"
+            return reason or supply or _UNREASONED
+    return _UNREASONED
+
+
+def _placeholder_refusal(path: str | Path, text: str) -> PackageSpecError | None:
+    """The refusal for a spec whose text carries the placeholder sentinel — naming the file,
+    the field and the placeholder reason (`FR-PKG-28`, `CT-PKG-23`) — or `None` when the text
+    is free of it. The presence check is over the whole text, as the clause states; the field
+    and reason are then read off the sentinel's own line, with the count saying whether other
+    placeholder lines remain, so the teacher completes the draft in one pass."""
+    if PLACEHOLDER_SENTINEL not in text:
+        return None
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if PLACEHOLDER_SENTINEL not in line:
+            continue
+        remaining = sum(1 for later in lines[index + 1:] if PLACEHOLDER_SENTINEL in later)
+        more = f" ({remaining} more placeholder line(s) remain)" if remaining else ""
+        return PackageSpecError(
+            f"{path}: the draft is not complete: field '{_sentinel_field(line)}' "
+            f"(line {index + 1}) still carries the placeholder sentinel "
+            f"{PLACEHOLDER_SENTINEL} ({_sentinel_reason(lines, index)}){more}. "
+            "A draft that is not complete does not build: resolve the field the "
+            "'# PLACEHOLDER' comment above the line names, then build again. "
+            "Nothing was created.")
+    # Defensive tail for the clause's literal guarantee: a hit in the text is always
+    # refused. The sentinel holds no line-break character, so a hit is contiguous on one
+    # line and the loop above reaches it; this names the refusal if that ever stops holding.
+    return PackageSpecError(
+        f"{path}: the draft is not complete: the placeholder sentinel "
+        f"{PLACEHOLDER_SENTINEL} is in the spec text, but on no single line "
+        f"({_UNREASONED}). A draft that is not complete does not build: resolve the "
+        "field the '# PLACEHOLDER' comment above the line names, then build again. "
+        "Nothing was created.")
+
+
 def read_package_spec(path: str | Path) -> dict[str, Any]:
-    """The spec file, parsed. TOML only; a parse error names the line."""
+    """The spec file, parsed. TOML only; a parse error names the line.
+
+    The placeholder sentinel is refused before the text is even parsed (`FR-PKG-28`,
+    `CT-PKG-23`): a draft the authoring flow left a `<<PLACEHOLDER:` value in is incomplete,
+    and no structural check or catalog write may run ahead of that refusal.
+    """
+    text = Path(path).read_text(encoding="utf-8-sig")
+    refusal = _placeholder_refusal(path, text)
+    if refusal is not None:
+        raise refusal
     try:
-        return tomllib.loads(Path(path).read_text(encoding="utf-8-sig"))
+        return tomllib.loads(text)
     except tomllib.TOMLDecodeError as error:
         raise PackageSpecError(f"{path}: not valid TOML: {error}. Nothing was created.") from None
 
