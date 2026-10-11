@@ -1,0 +1,7 @@
+af = "AF-06"
+description = "two documents; the rubric memo misses one question"
+documents = ["geo8-rivers-01-test-paper.pdf", "geo8-rivers-01-marking-memo.pdf"]
+outcome = "partial"
+placeholders = ["criterion Q4"]
+build = "publishes"
+notes = "Q4's criterion placeholders; Q1-Q3 resolve from the memo"

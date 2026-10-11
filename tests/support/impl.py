@@ -1453,6 +1453,112 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/browser/spa/test_tc_e2e_06_teachers_day.py::test_tc_e2e_06_teachers_day_journey",
         ),
     ),
+# --- TS-153 (#686), the authoring corpus's recordings half ------------------------------
+    #
+    # The corpus's documents and `expected.toml` files are committed and pinned green by the
+    # TC-AUTHOR-28 census (`tests/artifact/test_tc_author_28_authoring_fixture_corpus.py`).
+    # The `recordings/` half is captured, not generated: a recording is keyed on the sha256 of
+    # the assembled request *including M-AUTHOR's prompt templates*, so the keys do not exist
+    # until #690's implementation runs the capture pass. The double-honesty census
+    # (fallback path + placeholder paths declared in `coverage.json`, every declared key a
+    # file) is what `path` holds outside the gate: an empty or happy-path-only recordings
+    # tree must not satisfy it. #686's own landing PR ships the corpus with this marker red;
+    # the PR that captures the recordings (#690's) closes #686, and this entry is dropped —
+    # never the test — then.
+    "#686 authoring corpus recordings": (
+        "path",
+        "fixtures/F-AUTHOR/recordings/coverage.json",
+        (
+            "tests/artifact/test_tc_author_28_recordings_honesty.py",
+        ),
+    ),
+# --- FR-CONF-33 (#705), the panel_for_profile surface and its clause suite ---------------
+    #
+    # The package-authoring design delta (§3.2) adds the panel-resolution surface M-AUTHOR
+    # consumes: `panel_for_profile(cfg, backend_profile)` — the named profile's [[panel]] refs
+    # in declared order, then [[escalation_judge]] refs, de-duplicated by build identity, each
+    # resolved per CT-CONF-03, `ConfigurationError` on an empty panel, pure in `cfg`, writing
+    # no store rows. `symbol`, not `module`: `aeh.conf` has existed since #4, so a module-kind
+    # blocker would read as resolved the day any other conf symbol lands. #687 owns the symbol;
+    # #705 is its written-ahead test pair (test plan §5.3 rows, §6.2).
+    "#687 panel_for_profile": (
+        "symbol",
+        f"{CONF_MODULE}:panel_for_profile",
+        (
+            "tests/unit/conf/test_panel_for_profile.py",
+            "tests/contract/conf/test_ct_conf_c23_panel_for_profile.py",
+        ),
+    ),
+    # --- TC-PIPE-37 (#712), the `aeh author` subcommand registration --------------------------
+    #
+    # #695 registers `aeh author draft` / `aeh author review` (FR-PIPE-10, design delta §3.3).
+    # Keyed `command`, not `symbol`, and here is why the issue's own note (`symbol`,
+    # `aeh.pipe:_build_parser`) does not survive contact with the tree: the module does not
+    # exist (the registration site is `aeh.pipeline.cli`, landed with #364), and
+    # `_build_parser` itself is a long-shipped name — a symbol key on it resolves
+    # immediately, and a resolved blocker left in this dict fails the gate by design. Nor is
+    # there a mandated new name to key instead: #695's acceptance criteria say only
+    # "registered in `_build_parser`'s `author` subcommand group, following the existing
+    # `package` group pattern", and the house group handlers admit several plausible names
+    # (`_author_command`, `_author_draft_command`, ...) — an invented symbol bet has the
+    # late direction, a P0 case outside the gate forever if #695 spells it differently.
+    # That is the `#635`/`#638` situation exactly: the story ships a behaviour with no
+    # mandated Python name, so the probe is the behaviour itself. This probe builds the
+    # parser and exits 0 exactly when the `author` group carries BOTH `draft` and `review`
+    # — the thing #695 is the first to ship; no other open story touches the `aeh`
+    # subcommand table. At resolution, re-check the case green before unmarking — never on
+    # the notice alone.
+    "#695 cli registration": (
+        "command",
+        "python -c \"import argparse; import sys; sys.path.insert(0, 'src');"
+        " import aeh.pipeline.cli as cli;"
+        " top = [a for a in cli._build_parser()._actions"
+        " if isinstance(a, argparse._SubParsersAction) and a.dest == 'command'][0].choices;"
+        " author = top.get('author');"
+        " inner = [a for a in author._actions"
+        " if isinstance(a, argparse._SubParsersAction)] if author else [];"
+        " ok = bool(inner) and {'draft', 'review'} <= set(inner[0].choices);"
+        " raise SystemExit(0 if ok else 1)\"",
+        ("tests/unit/pipe/test_tc_pipe_37_author_subcommands.py",),
+        ),
+    # --- Package-authoring delta, TS-167 (#716), TC-CONSOLE-58 -------------------------------
+    #
+    # FR-CONSOLE-46 lists `aeh author draft` / `aeh author review` present-and-unavailable —
+    # the reason that the authoring screens are future console work — so the parity census
+    # (#632's, TC-CONSOLE-54) passes with the author commands registered (#695) but no console
+    # path invented. The amendment is DATA in `aeh/console/parity.py`'s census tables; it
+    # creates no new symbol, so the issue's suggested `symbol` key
+    # (`console.parity:CLI_CONSOLE_PATHS`) cannot work: that name exists today, the key would
+    # read resolved on landing day one, and a resolved blocker left in this dict fails the
+    # gate by design — the exact early-fire direction the `#118`/TS-56 entries document. A
+    # `symbols` key on a name #700 might introduce fires in the opposite, never-resolves
+    # direction (a P0 case outside the gate forever). So the key is `command`, this
+    # registry's kind for "a blocker that is a change to existing code rather than a missing
+    # name" (`#96 c09`), probing the generated inventory (`parity_inventory()`, the same
+    # surface `GET /api/v1/cli-help` serves) for the two author rows: present, with a reason,
+    # with a what-it-is-for line (`NFR-CONSOLE-09`'s other half, which the named cases
+    # assert), and not a console path. If #700 renders the listing through a third table
+    # instead, the inventory must be taught to read it for the census to pass anyway — the
+    # probe's reconciliation is then one line here.
+    "#700 console census": (
+        "command",
+        "python -c \"import sys; sys.path.insert(0, 'src');"
+        "import aeh.console.parity as p;"
+        "rows = {e['command']: e for e in p.parity_inventory()['commands']};"
+        "need = ('author draft', 'author review');"
+        "ok = set(need) <= set(rows)"
+        " and all(rows[k].get('surface') == 'debugging-only' and rows[k].get('reason')"
+        " and rows[k].get('purpose') for k in need);"
+        "raise SystemExit(0 if ok else 1)\"",
+        (
+            "tests/unit/console/test_tc_console_54_parity_census.py"
+            "::test_tc_console_58_author_draft_is_listed_present_and_unavailable",
+            "tests/unit/console/test_tc_console_54_parity_census.py"
+            "::test_tc_console_58_author_review_is_listed_present_and_unavailable",
+            "tests/unit/console/test_tc_console_54_parity_census.py"
+            "::test_tc_console_58_the_census_passes_once_the_author_commands_are_listed",
+),
+    ),
 }
 
 

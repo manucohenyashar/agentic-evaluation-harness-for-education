@@ -1,0 +1,7 @@
+af = "AF-03"
+description = "one document; MCQ section with the key stated"
+documents = ["sci7-cells-01-mcq-test.pdf"]
+outcome = "resolved"
+placeholders = []
+build = "publishes"
+notes = "mcq lines with key in options, fully resolved"
