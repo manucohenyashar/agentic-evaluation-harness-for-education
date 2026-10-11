@@ -1,0 +1,7 @@
+af = "AF-12"
+description = "one document; \"circle the answer and explain\""
+documents = ["lang7-vocab-01-test.pdf"]
+outcome = "resolved"
+placeholders = []
+build = "publishes"
+notes = "mixed mcq and judged lines, both resolved"
