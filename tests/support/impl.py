@@ -1791,8 +1791,8 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # Keyed `command` with a BEHAVIOURAL last limb, not the issue note's `symbol`
     # (`aeh.author:AuthoringService`), for two measured reasons. The symbol key is the
     # early-fire trap (`#118`/TS-56): the class is §3.1 surface the FIRST M-AUTHOR service
-    # story lands (#690 — the `#698` entry above is keyed on exactly that class, read the
-    # other way), weeks before #697's own behaviour. And the natural static discriminator
+    # story lands (#690 — the `#699 TS-166` entry above is keyed on a conjunction that
+    # includes exactly that class, read the other way), weeks before #697's own behaviour. And the natural static discriminator
     # does not exist: the issue note suggests `--force`, but #695's acceptance criteria
     # register `aeh author draft ... [--force]` and #697's technical notes say the flag "was
     # registered in the CLI-registration story; this story implements the behaviour behind
@@ -1801,7 +1801,8 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # (FR-AUTHOR-22): draft into a fresh scratch directory must exit 0 and write exactly the
     # two artifacts, and the same draft again — no `--force`, EOF on stdin — must exit
     # nonzero AND name both artifact filenames in its output. That limb is the probe's last
-    # line, short-circuited behind the cheap static limbs (the `_AUTHOR_E2E` construction):
+    # line, short-circuited behind the cheap static limbs (the
+    # `_AUTHOR_RUNG1_PROBE`/`_AUTHOR_CLI_PROBE` construction):
     # the §3.1 surface + `draft`/`review` on the service (#696's method — TC-27's carry-over
     # arms drive it), `panel_for_profile` (#687), the corpus limbs the three files read
     # (AF-01/02/07/13), the recordings' `coverage.json` (#686's capture signal — a replay
