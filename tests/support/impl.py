@@ -1453,6 +1453,25 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/browser/spa/test_tc_e2e_06_teachers_day.py::test_tc_e2e_06_teachers_day_journey",
         ),
     ),
+# --- TS-153 (#686), the authoring corpus's recordings half ------------------------------
+    #
+    # The corpus's documents and `expected.toml` files are committed and pinned green by the
+    # TC-AUTHOR-28 census (`tests/artifact/test_tc_author_28_authoring_fixture_corpus.py`).
+    # The `recordings/` half is captured, not generated: a recording is keyed on the sha256 of
+    # the assembled request *including M-AUTHOR's prompt templates*, so the keys do not exist
+    # until #690's implementation runs the capture pass. The double-honesty census
+    # (fallback path + placeholder paths declared in `coverage.json`, every declared key a
+    # file) is what `path` holds outside the gate: an empty or happy-path-only recordings
+    # tree must not satisfy it. #686's own landing PR ships the corpus with this marker red;
+    # the PR that captures the recordings (#690's) closes #686, and this entry is dropped —
+    # never the test — then.
+    "#686 authoring corpus recordings": (
+        "path",
+        "fixtures/F-AUTHOR/recordings/coverage.json",
+        (
+            "tests/artifact/test_tc_author_28_recordings_honesty.py",
+        ),
+    ),
     # --- FR-CONF-33 (#705), the panel_for_profile surface and its clause suite ---------------
     #
     # The package-authoring design delta (§3.2) adds the panel-resolution surface M-AUTHOR
