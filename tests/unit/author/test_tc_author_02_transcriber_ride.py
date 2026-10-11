@@ -101,7 +101,11 @@ def _report_section(report: str, title: str) -> str:
 
 
 def _guards() -> tuple:
-    author = require(AUTHOR_MODULE, *AUTHOR_SURFACE, issue=AUTHOR_ISSUE)
+    author = require(AUTHOR_MODULE, issue=AUTHOR_ISSUE)
+    # The surface guard: `require` with names returns the symbols (a tuple), not the module,
+    # so the module the tests drive comes from the zero-names call above and this call only
+    # asserts the §3.1 surface exists (the two-call pattern the landed sibling files use).
+    require(AUTHOR_MODULE, *AUTHOR_SURFACE, issue=AUTHOR_ISSUE)
     require_path(af("AF-10"), "the AF-10 authored fixture", issue=CORPUS_ISSUE)
     require_path(af("AF-12"), "the AF-12 authored fixture", issue=CORPUS_ISSUE)
     recordings = require_path(RECORDINGS, "the authoring recordings", issue=CORPUS_ISSUE)

@@ -71,6 +71,17 @@ SECOND_SEAT = ModelRef(role="judge", provider="openrouter",
 
 UNPARSEABLE_TEXT = "this is not JSON {"
 
+#: Scripted-queue depth, sized beyond CT-AUTHOR-13's call ceiling (steps × items × ATTEMPTS ×
+#: |chain|) so the boundary cannot exhaust mid-run: the limbs assert on call *prefixes* and
+#: per-build counts, so depth only keeps a fixture-exhaustion `AssertionError` from masking
+#: the assertion. AF-10 has two scanned pages (the corpus's own header text), and AF-01's
+#: legal worst case is a few dozen calls — 64 leaves the boundary unable to run dry.
+QUEUE_DEPTH = 64
+
+#: AF-10's committed page count — one transcriber reply per page without a text layer
+#: (FR-AUTHOR-02's per-page rule; TC-AUTHOR-02 pins the same count against the corpus).
+AF10_PAGE_COUNT = 2
+
 #: The refusal matrix: (env name, illegal value, strings the refusal message must carry).
 #: Each row's message must name the knob and its legal range (CT-AUTHOR-14).
 REFUSAL_ROWS = (
@@ -87,7 +98,11 @@ REFUSAL_ROWS = (
 
 
 def _guards() -> tuple:
-    author = require(AUTHOR_MODULE, *AUTHOR_SURFACE, issue=AUTHOR_ISSUE)
+    author = require(AUTHOR_MODULE, issue=AUTHOR_ISSUE)
+    # The surface guard: `require` with names returns the symbols (a tuple), not the module,
+    # so the module the limbs drive comes from the zero-names call above and this call only
+    # asserts the §3.1 surface exists (the two-call pattern the landed sibling files use).
+    require(AUTHOR_MODULE, *AUTHOR_SURFACE, issue=AUTHOR_ISSUE)
     require_path(af("AF-01"), "the AF-01 authored fixture", issue=CORPUS_ISSUE)
     require_path(af("AF-10"), "the AF-10 authored fixture", issue=CORPUS_ISSUE)
     return author
@@ -98,15 +113,16 @@ def _two_seat_chain() -> list:
     return chain + [SECOND_SEAT]
 
 
-def _unparseable_queue(build_id: str, depth: int) -> list:
+def _unparseable_queue(build_id: str) -> list:
     """A generous queue of parse-strike completions for one build.
 
     Generous on purpose: the boundary raises when a call exceeds the script, and the limbs
     here assert the *budget boundary* (how many head calls precede the first fallback call),
-    not the total call count — a queue deeper than any legal budget keeps an over-budget run
-    from failing on the fixture instead of on the assertion.
+    not the total call count — a queue deeper than CT-AUTHOR-13's legal ceiling (see
+    `QUEUE_DEPTH`) keeps an over-budget run from failing on the fixture instead of on the
+    assertion.
     """
-    return [completion(UNPARSEABLE_TEXT, build_id=build_id) for _ in range(depth)]
+    return [completion(UNPARSEABLE_TEXT, build_id=build_id) for _ in range(QUEUE_DEPTH)]
 
 
 @pytest.mark.parametrize(("knob", "value", "needles"), REFUSAL_ROWS)
@@ -146,7 +162,7 @@ def test_tc_author_19_the_default_attempts_budget_is_two_then_fallback(
         monkeypatch.delenv(knob, raising=False)
 
     chain = _two_seat_chain()
-    scripts = {ref.build_id: _unparseable_queue(ref.build_id, 6) for ref in chain}
+    scripts = {ref.build_id: _unparseable_queue(ref.build_id) for ref in chain}
     boundary = PerJudgeScript(scripts=scripts)
     output_dir = tmp_path / "af01-default-attempts"
     output_dir.mkdir()
@@ -177,10 +193,15 @@ def test_tc_author_19_the_default_transcribe_mode_is_auto(
     transcriber = transcriber_from_config()
     chain = chain_from_config()
     scripts = {
+        # One reply per scanned page (AF-10 has two): a single reply would leave page 2's
+        # call either escaping or swallowed as a second "failure" — the same per-page count
+        # TC-AUTHOR-02 pins against the corpus.
         transcriber.build_id: [
-            completion("GEO7-MAPWORK-01 scanned page text, transcribed", build_id=transcriber.build_id),
+            completion("GEO7-MAPWORK-01 scanned page text, transcribed",
+                       build_id=transcriber.build_id)
+            for _ in range(AF10_PAGE_COUNT)
         ],
-        chain[0].build_id: _unparseable_queue(chain[0].build_id, 4),
+        chain[0].build_id: _unparseable_queue(chain[0].build_id),
     }
     boundary = PerJudgeScript(scripts=scripts)
     output_dir = tmp_path / "af10-default-auto"
@@ -202,7 +223,7 @@ def test_tc_author_19_attempts_one_skips_the_repair(
     monkeypatch.setenv("HARNESS_AUTHOR_ATTEMPTS", "1")
 
     chain = _two_seat_chain()
-    scripts = {ref.build_id: _unparseable_queue(ref.build_id, 6) for ref in chain}
+    scripts = {ref.build_id: _unparseable_queue(ref.build_id) for ref in chain}
     boundary = PerJudgeScript(scripts=scripts)
     output_dir = tmp_path / "af01-attempts-1"
     output_dir.mkdir()
@@ -228,7 +249,7 @@ def test_tc_author_19_a_model_override_env_never_overrides_the_chain(
     monkeypatch.setenv("HARNESS_AUTHOR_MODEL", "openrouter/uninvited-model@2026-01-01")
 
     chain = _two_seat_chain()
-    scripts = {ref.build_id: _unparseable_queue(ref.build_id, 6) for ref in chain}
+    scripts = {ref.build_id: _unparseable_queue(ref.build_id) for ref in chain}
     boundary = PerJudgeScript(scripts=scripts)
     output_dir = tmp_path / "af01-override-ignored"
     output_dir.mkdir()

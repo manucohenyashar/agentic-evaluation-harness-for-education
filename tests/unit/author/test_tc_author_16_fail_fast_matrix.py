@@ -82,8 +82,12 @@ def _author_draft_registered() -> None:
 
 
 def _guards() -> tuple:
-    author = require(AUTHOR_MODULE, *AUTHOR_SURFACE, "AuthoringInputError",
-                     issue=AUTHOR_ISSUE)
+    author = require(AUTHOR_MODULE, issue=AUTHOR_ISSUE)
+    # The surface guard: `require` with names returns the symbols (a tuple), not the module,
+    # so the module the limbs drive comes from the zero-names call above and this call only
+    # asserts the §3.1 surface plus the refusal type exists (the two-call pattern the landed
+    # sibling files use).
+    require(AUTHOR_MODULE, *AUTHOR_SURFACE, "AuthoringInputError", issue=AUTHOR_ISSUE)
     require_path(af("AF-01"), "the AF-01 authored fixture", issue=CORPUS_ISSUE)
     require_path(af("AF-10"), "the AF-10 authored fixture", issue=CORPUS_ISSUE)
     return author

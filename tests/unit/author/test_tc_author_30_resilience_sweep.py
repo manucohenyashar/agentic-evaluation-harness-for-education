@@ -73,6 +73,12 @@ SECOND_SEAT_BUILD = "openrouter/qwen/qwen3-32b@2026-06-01"
 
 UNPARSEABLE_TEXT = "this is not JSON {"
 
+#: Scripted-queue depth, sized beyond CT-AUTHOR-13's call ceiling (steps × items × ATTEMPTS ×
+#: |chain|) so the boundary cannot exhaust mid-run: the arms assert on call prefixes, the
+#: fallback fact, and the recorded reasons, so depth only keeps a fixture-exhaustion
+#: `AssertionError` from masking the assertion.
+QUEUE_DEPTH = 64
+
 #: The design's report sections (§3.1). TC-AUTHOR-15 owns their order; this file only needs
 #: the Documents section's body, located tolerantly (see `_report_section`).
 SECTION_TITLES = ("Documents", "Steps", "Items", "Unresolved", "Next command")
@@ -111,7 +117,11 @@ def _report_section(report: str, title: str) -> str:
 
 
 def _guards() -> tuple:
-    author = require(AUTHOR_MODULE, *AUTHOR_SURFACE, issue=AUTHOR_ISSUE)
+    author = require(AUTHOR_MODULE, issue=AUTHOR_ISSUE)
+    # The surface guard: `require` with names returns the symbols (a tuple), not the module,
+    # so the module the arms drive comes from the zero-names call above and this call only
+    # asserts the §3.1 surface exists (the two-call pattern the landed sibling files use).
+    require(AUTHOR_MODULE, *AUTHOR_SURFACE, issue=AUTHOR_ISSUE)
     require_path(af("AF-01"), "the AF-01 authored fixture", issue=CORPUS_ISSUE)
     require_path(af("AF-10"), "the AF-10 authored fixture", issue=CORPUS_ISSUE)
     return author
@@ -127,7 +137,7 @@ def _two_seat_scripts(head_steps: list) -> tuple[list, dict, str]:
     scripts = {
         chain[0].build_id: head_steps,
         fallback: [completion(UNPARSEABLE_TEXT, build_id=fallback)
-                   for _ in range(6)],
+                   for _ in range(QUEUE_DEPTH)],
     }
     return chain, scripts, fallback
 
@@ -157,7 +167,8 @@ def test_tc_author_30_a_provider_timeout_falls_through_to_the_next_model(
     injected reason is recorded first, nothing escapes."""
     author = _guards()
     chain, scripts, fallback = _two_seat_scripts(
-        [TransportError(f"{TIMEOUT_TOKEN}: provider timeout") for _ in range(3)])
+        [TransportError(f"{TIMEOUT_TOKEN}: provider timeout")
+         for _ in range(QUEUE_DEPTH)])
     boundary = PerJudgeScript(scripts=scripts)
     output_dir = tmp_path / "af01-timeout"
     output_dir.mkdir()
@@ -185,7 +196,7 @@ def test_tc_author_30_head_model_500s_fall_back(
     oracles as the timeout arm."""
     author = _guards()
     chain, scripts, fallback = _two_seat_scripts(
-        [ProviderError(f"{SERVER_500_TOKEN}: provider 500") for _ in range(3)])
+        [ProviderError(f"{SERVER_500_TOKEN}: provider 500") for _ in range(QUEUE_DEPTH)])
     boundary = PerJudgeScript(scripts=scripts)
     output_dir = tmp_path / "af01-500s"
     output_dir.mkdir()
@@ -214,10 +225,11 @@ def test_tc_author_30_a_transcription_failure_is_recorded_and_survivable(
     chain = chain_from_config()
     scripts = {
         transcriber.build_id: [
-            TransportError(f"{TRANSCRIBE_TOKEN}: transcription failed") for _ in range(3)
+            TransportError(f"{TRANSCRIBE_TOKEN}: transcription failed")
+            for _ in range(QUEUE_DEPTH)
         ],
         chain[0].build_id: [completion(UNPARSEABLE_TEXT, build_id=chain[0].build_id)
-                            for _ in range(6)],
+                            for _ in range(QUEUE_DEPTH)],
     }
     boundary = PerJudgeScript(scripts=scripts)
     output_dir = tmp_path / "af10-transcribe-failure"

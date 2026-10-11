@@ -74,7 +74,11 @@ def test_tc_author_01_af01_drafts_headless_with_the_recorded_provider(
         tmp_path, make_fixture_provider, network_guard):
     """AF-01 through `AuthoringService.draft()`: populated result, chain-honest
     `models_used`, exactly two artifacts, zero egress."""
-    author = require(AUTHOR_MODULE, *AUTHOR_SURFACE, issue=AUTHOR_ISSUE)
+    author = require(AUTHOR_MODULE, issue=AUTHOR_ISSUE)
+    # The surface guard: `require` with names returns the symbols (a tuple), not the module,
+    # so the module the test drives comes from the zero-names call above and this call only
+    # asserts the §3.1 surface exists (the two-call pattern the landed sibling files use).
+    require(AUTHOR_MODULE, *AUTHOR_SURFACE, issue=AUTHOR_ISSUE)
     require_path(af("AF-01"), "the AF-01 authored fixture", issue=CORPUS_ISSUE)
     recordings = require_path(RECORDINGS, "the authoring recordings", issue=CORPUS_ISSUE)
 

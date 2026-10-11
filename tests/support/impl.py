@@ -158,6 +158,11 @@ _AUTHOR_DRAFT_HEAD = (
 _AUTHOR_DRAFT_RECORDED_PROBE = (
     _AUTHOR_DRAFT_HEAD
     + f"ok = ok and all((root / d).is_dir() for d in {_AUTHOR_DRAFT_RECORDED_LIMBS!r});"
+    # The capture signal, the same limb the `#686 authoring corpus recordings` entry keys on:
+    # `recordings/` exists as a directory today (a README, no captures), so a directory
+    # check alone would resolve at #690's landing while the corpus is still empty and the
+    # recorded pair would red inside TEST_CMD on `FixtureMissingError`.
+    "ok = ok and (root / 'recordings' / 'coverage.json').is_file();"
     "raise SystemExit(0 if ok else 1)\""
 )
 _AUTHOR_DRAFT_SCRIPTED_PROBE = (

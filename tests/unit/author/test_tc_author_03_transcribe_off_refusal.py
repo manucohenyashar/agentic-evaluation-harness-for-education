@@ -48,8 +48,12 @@ def test_tc_author_03_transcribe_off_refuses_af10_naming_document_and_page(
         tmp_path, monkeypatch, network_guard):
     """AF-10 with transcription off: `AuthoringInputError` naming document and page, zero
     provider calls, nothing written."""
-    author = require(AUTHOR_MODULE, *AUTHOR_SURFACE, "AuthoringInputError",
-                     issue=AUTHOR_ISSUE)
+    author = require(AUTHOR_MODULE, issue=AUTHOR_ISSUE)
+    # The surface guard: `require` with names returns the symbols (a tuple), not the module,
+    # so the module the test drives comes from the zero-names call above and this call only
+    # asserts the §3.1 surface plus the refusal type exists (the two-call pattern the landed
+    # sibling files use).
+    require(AUTHOR_MODULE, *AUTHOR_SURFACE, "AuthoringInputError", issue=AUTHOR_ISSUE)
     require_path(af("AF-10"), "the AF-10 authored fixture", issue=CORPUS_ISSUE)
     monkeypatch.setenv("HARNESS_AUTHOR_TRANSCRIBE", "off")
 
