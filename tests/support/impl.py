@@ -126,6 +126,133 @@ _AUTHOR_CLI_PROBE = (
     "raise SystemExit(0 if ok else 1)\""
 )
 
+# --- TS-169 (#702), the live fixture tier and the recorded performance ceilings --------------
+# The limbs TS-169's two files drive: the `aeh.author` draft surface #690 ships (`AuthoringService`
+# with `draft`, `DraftResult`, `AuthoringSettings` — the names both files construct through),
+# `validate_draft` (#693's deterministic gate), `panel_for_profile` (#687's chain resolution,
+# landed — the live file resolves the chain through the production path), and the corpus with
+# its `expected.toml` files (committed by #686). The perf file adds the captured-recordings
+# limb: the recorded tier has nothing to replay until #690's capture pass writes
+# `recordings/coverage.json`, the same signal the #686 path entry keys on.
+#
+# Keyed `command`, not `symbol`, for the same reason the #689 entries are: the red spans
+# several stories (#690 the surface, #692 the steps, #693 the gate), and a `symbol` key on any
+# one story's name — `aeh.author:AuthoringService` — fires while the later stories are still
+# stubs, the #118 early-fire direction. The probe demands the whole surface the tests
+# construct through plus #693's mandated name, so it resolves only when the draft pipeline
+# they exercise exists; each test file's own guards re-check the same limbs at unmarking
+# time, each naming its issue there (the #635 re-check rule). The residual early-fire risk —
+# #692's step internals landing after the probe's limbs — is the #689 rung-1 entry's accepted
+# posture: the reader the gate names re-checks the case green before unmarking.
+_AUTHOR_AF_IDS = tuple(f"AF-{i:02d}" for i in range(1, 14))
+_AUTHOR_TS169_SURFACE = ("AuthoringService", "DraftResult", "AuthoringSettings", "validate_draft")
+_AUTHOR_TS169_PROBE_HEAD = (
+    "python -c \"import importlib, pathlib;"
+    f"m = importlib.import_module('{_AUTHOR_MODULE}');"
+    f"ok = all(hasattr(m, n) for n in {_AUTHOR_TS169_SURFACE!r});"
+    "ok = ok and callable(getattr(m.AuthoringService, 'draft', None));"
+    "import aeh.conf; ok = ok and hasattr(aeh.conf, 'panel_for_profile');"
+    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
+    f"ok = ok and all((root / d / 'expected.toml').is_file() for d in {_AUTHOR_AF_IDS!r});"
+)
+_AUTHOR_TS169_LIVE_PROBE = _AUTHOR_TS169_PROBE_HEAD + "raise SystemExit(0 if ok else 1)\""
+_AUTHOR_TS169_PERF_PROBE = (
+    _AUTHOR_TS169_PROBE_HEAD
+    + "ok = ok and (root / 'recordings' / 'coverage.json').is_file();"
+    "raise SystemExit(0 if ok else 1)\""
+)
+
+# --- TS-163 (#697), TC-AUTHOR-25/26/27: retry, recreate, overwrite protection, carry-over ----
+# The limbs the three files drive: the §3.1 surface, `draft` and `review` on the service,
+# `panel_for_profile` (#687), the corpus limbs they read (AF-01/02/07/13), the recordings'
+# `coverage.json` (#686's capture signal), #695's CLI registration, and the discriminator —
+# `--force` on `aeh author draft`, FR-AUTHOR-22's design-pinned flag. See the registry
+# entry's comment block for why this is a `command` probe and what fires early if it does.
+_AUTHOR_RETRY_CORPUS_LIMBS = ("AF-01", "AF-02", "AF-07", "AF-13", "recordings")
+_AUTHOR_RETRY_PROBE = (
+    "python -c \"import argparse, importlib, pathlib;"
+    "from aeh.pipeline import cli;"
+    f"m = importlib.import_module('{_AUTHOR_MODULE}');"
+    f"ok = all(hasattr(m, n) for n in {_AUTHOR_SURFACE!r});"
+    "ok = ok and hasattr(m.AuthoringService, 'draft')"
+    " and hasattr(m.AuthoringService, 'review');"
+    "import aeh.conf; ok = ok and hasattr(aeh.conf, 'panel_for_profile');"
+    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
+    f"ok = ok and all((root / d).is_dir() for d in {_AUTHOR_RETRY_CORPUS_LIMBS!r});"
+    "ok = ok and (root / 'recordings' / 'coverage.json').is_file();"
+    "sub = next(a for a in cli._build_parser()._actions"
+    " if isinstance(a, argparse._SubParsersAction) and a.dest == 'command');"
+    "ok = ok and 'author' in sub.choices;"
+    "asub = next((a for a in sub.choices['author']._actions"
+    " if isinstance(a, argparse._SubParsersAction)), None);"
+    "ok = ok and asub is not None and {'draft', 'review'} <= set(asub.choices);"
+    "draft = asub.choices['draft'];"
+    "ok = ok and any('--force' in getattr(a, 'option_strings', ()) for a in draft._actions);"
+    "raise SystemExit(0 if ok else 1)\""
+)
+
+# --- TS-159 (#711), TC-AUTHOR-15/20/21/22: the report, summary, logger and prompt pins --------
+# #694's four deliverables share no design-mandated Python name that separates them from
+# what earlier authoring stories ship, so the probe is the behaviour itself — one real
+# `draft()` over AF-01's documents against `RecordedFixtureProvider` pointed at an EMPTY
+# fixture directory (the total-failure variant, zero recordings, no egress), exiting 0 only
+# when the three pin constants exist, the report carries all five sections, the printed
+# summary carries both next commands, and a record comes from the `aeh.author` logger
+# family. See the registry entry below for the early-fire analysis and the rename path.
+_AUTHOR_REPORT_PROBE = (
+    "python -c \"import sys; sys.path.insert(0, 'src');"
+    " import importlib, io, logging, pathlib, tempfile;"
+    f" m = importlib.import_module('{_AUTHOR_MODULE}');"
+    " ok = all(hasattr(m, n) for n in ('AUTHOR_INVENTORY_TEMPLATE_V',"
+    " 'AUTHOR_RUBRIC_TEMPLATE_V', 'AUTHOR_GRADES_TEMPLATE_V'));"
+    " records = [];"
+    " logging.getLogger('aeh.author').addHandler("
+    " type('H', (logging.Handler,), {'emit': lambda s, r: records.append(r)})());"
+    " logging.getLogger('aeh.author').setLevel(logging.DEBUG);"
+    " scratch = pathlib.Path(tempfile.mkdtemp());"
+    " (scratch / 'out').mkdir();"
+    " (scratch / 'recordings').mkdir();"
+    " from aeh.prov import RecordedFixtureProvider;"
+    " from tests.support.author_vocabulary import chain_from_config, transcriber_from_config;"
+    " buf = io.StringIO(); real = sys.stdout; sys.stdout = buf;"
+    " res = m.AuthoringService(chain=chain_from_config(),"
+    " provider=RecordedFixtureProvider(fixture_dir=scratch / 'recordings'),"
+    " transcriber=transcriber_from_config(), settings=m.AuthoringSettings())"
+    ".draft(documents=sorted(pathlib.Path('fixtures', 'F-AUTHOR', 'AF-01').glob('*.pdf')),"
+    " output_dir=scratch / 'out');"
+    " sys.stdout = real;"
+    " report = res.report_path.read_text(encoding='utf-8');"
+    " ok = ok and all(s in report for s in"
+    " ('Documents', 'Steps', 'Items', 'Unresolved', 'Next command'));"
+    " printed = buf.getvalue();"
+    " ok = ok and 'aeh author review' in printed and 'aeh package build' in printed;"
+    f" ok = ok and any(getattr(x, 'name', '').startswith({_AUTHOR_MODULE!r})"
+    " for x in records);"
+    " raise SystemExit(0 if ok else 1)\""
+)
+
+# --- TS-168 (#701), SEC-26 + ADV-18: the credential sweep and the injection fail-safe --------
+# The limbs the two security files drive: the §3.1 surface with `AuthoringInputError`
+# (the sweep's fail-fast arm) and `validate_draft` (ADV-18's second layer, #693's gate),
+# `panel_for_profile` (#687, landed — the chain both files resolve through), the WHOLE
+# thirteen-fixture corpus (the sweep's precondition is "all 13 fixtures", not a subset)
+# and the recordings' `coverage.json` (#686's capture signal — the sweep replays the
+# recorded tier, and a replay sweep without the manifest is vacuous).
+_AUTHOR_TS168_SURFACE = (
+    "AuthoringService", "DraftResult", "AuthoringSettings", "AuthoringInputError",
+    "validate_draft",
+)
+_AUTHOR_TS168_PROBE = (
+    "python -c \"import importlib, pathlib;"
+    f"m = importlib.import_module('{_AUTHOR_MODULE}');"
+    f"ok = all(hasattr(m, n) for n in {_AUTHOR_TS168_SURFACE!r});"
+    "import aeh.conf; ok = ok and hasattr(aeh.conf, 'panel_for_profile');"
+    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
+    f"ok = ok and all((root / d).is_dir() for d in {_AUTHOR_AF_IDS!r});"
+    "ok = ok and (root / 'recordings' / 'coverage.json').is_file();"
+    "raise SystemExit(0 if ok else 1)\""
+)
+
 WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # issue: (kind, target, tests to unmark)
     #
@@ -1538,6 +1665,42 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         _AUTHOR_CLI_PROBE,
         (
             "tests/contract/author/test_cs_author_c02_c18_cli.py",
+        ),
+    ),
+    # --- TS-169 (#702), TC-AUTHOR-31's live fixture tier --------------------------------------
+    #
+    # The live tier (nightly, `@live`) drafts all thirteen fixtures against real OpenRouter and
+    # asserts outcome classes. Its limbs: the `aeh.author` draft surface #690 ships (the names
+    # the cases construct through), `validate_draft` (#693's gate), `panel_for_profile`
+    # (#687's chain resolution — landed), and the corpus with its `expected.toml` files
+    # (#686). Keyed `command`, not `symbol`, for the same reason the #689 rung-1 entry above:
+    # the red spans several stories, and a symbol key on one story's name (`aeh.author:AuthoringService`)
+    # would fire while the later stories are still stubs — the #118 early-fire direction. The
+    # probe demands the whole construct-through surface plus the corpus, so it resolves only
+    # when the draft pipeline the tier exercises exists; the file's own guards re-check the
+    # same limbs at unmarking time, naming their issues there (the #635 re-check rule). The
+    # residual early-fire risk — #692's step internals landing after these limbs — is the
+    # #689 rung-1 entry's accepted posture: the reader the gate names re-checks the case
+    # green before unmarking.
+    "#702 TS-169 TC-AUTHOR-31 the live fixture tier (aeh.author's draft surface, the F-AUTHOR corpus, #687's chain resolution)": (
+        "command",
+        _AUTHOR_TS169_LIVE_PROBE,
+        (
+            "tests/integration/author/test_tc_author_31_live_fixtures.py",
+        ),
+    ),
+    # --- TS-169 (#702), PERF-20's recorded ceilings -------------------------------------------
+    #
+    # The recorded half measures the whole thirteen-fixture set's wall clock and call budget
+    # against the captured recordings. Same limbs as the live entry plus the recordings
+    # coverage index: the recorded tier has nothing to replay until #690's capture pass writes
+    # `recordings/coverage.json` — the same signal the #686 entry below keys on, so this probe
+    # resolves exactly when that entry does, together with the surface.
+    "#702 TS-169 PERF-20 the recorded ceilings (aeh.author's draft surface, the corpus, #686's captured recordings)": (
+        "command",
+        _AUTHOR_TS169_PERF_PROBE,
+        (
+            "tests/perf/test_perf_20_authoring_recorded_ceilings.py",
         ),
     ),
 # --- TS-153 (#686), the authoring corpus's recordings half ------------------------------
