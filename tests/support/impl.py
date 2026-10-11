@@ -1787,6 +1787,31 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/contract/author/test_cs_author_c02_c18_cli.py",
         ),
     ),
+    # --- TS-158 (#693), the validation gate and the placeholder emission ---------------------
+    #
+    # #710's prescribed key, as its (whitespace-mangled) technical note decodes it: kind
+    # `symbol`, `aeh.author:validate_draft`. The choice: `validate_draft` is the gate #693
+    # is named for — §3.1's Interfaces block pins the exact signature and #693's own note
+    # repeats it (`validate_draft(spec: Mapping[str, Any]) -> list[DraftIssue]`, pure) —
+    # and `aeh.author` does not exist today, so the key cannot fire early. The other limbs
+    # the two files need land strictly earlier: the recordings (#686) close with #690's
+    # capture pass, and #693 depends on #691/#692, which depend on it. The residual
+    # early-fire risk — #691's repair budget says "the repair prompt carries the
+    # validator's issues", so that story could ship the public validator before #693's
+    # emission half — is the accepted #689/#702 posture: re-check the cases green before
+    # unmarking, never on the notice alone.
+    #
+    # Rename path: if #693 spells the name differently, one line here (the target, built
+    # from `author_vocabulary`'s AUTHOR_MODULE — the TS26 construction) plus the `require`
+    # calls in the two files.
+    "#693 validation gate": (
+        "symbol",
+        f"{_AUTHOR_MODULE}:validate_draft",
+        (
+            "tests/unit/author/test_tc_author_13_validation_gate.py",
+            "tests/unit/author/test_tc_author_14_placeholder_emission.py",
+        ),
+    ),
 # --- TS-153 (#686), the authoring corpus's recordings half ------------------------------
     #
     # The corpus's documents and `expected.toml` files are committed and pinned green by the
