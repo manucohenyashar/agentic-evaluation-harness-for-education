@@ -1,0 +1,7 @@
+af = "AF-02"
+description = "two documents: test paper + rubric memo; happy path"
+documents = ["geo8-climate-01-test-paper.pdf", "geo8-climate-01-marking-memo.pdf"]
+outcome = "resolved"
+placeholders = []
+build = "publishes"
+notes = "the rubric memo carries every question's grading"

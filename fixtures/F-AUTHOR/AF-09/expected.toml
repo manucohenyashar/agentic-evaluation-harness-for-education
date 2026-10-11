@@ -1,0 +1,7 @@
+af = "AF-09"
+description = "one document; contradictory grading description"
+documents = ["eng8-essay-01-test-and-grading.pdf"]
+outcome = "unresolved"
+placeholders = ["bands", "grades"]
+build = "refused"
+notes = "the reasoning does not converge; flagged first in the report"

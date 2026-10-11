@@ -22,6 +22,11 @@ import importlib
 import importlib.util
 from typing import Any
 
+from tests.support.author_vocabulary import (
+    AF01_VARIANT_RECORDINGS as _AUTHOR_VARIANT_RECORDINGS,
+    AUTHOR_MODULE as _AUTHOR_MODULE,
+    AUTHOR_SURFACE as _AUTHOR_SURFACE,
+)
 from tests.support.extract_vocabulary import (
     ASSEMBLE as _EXTRACT_ASSEMBLE,
     PROMPT_FIELDS as _EXTRACT_PROMPT_FIELDS,
@@ -57,6 +62,10 @@ INTEG_MODULE = f"{IMPLEMENTATION_PACKAGE}.integ"
 #: does not exist yet — #364 builds it and #365 adds `recover` — so every TS-83/TS-84 case
 #: probes it by name.
 PIPE_MODULE = f"{IMPLEMENTATION_PACKAGE}.pipeline"
+#: `M-PIPE`'s spec-to-package module (`pipeline/packages.py`), where #688's build-gate
+#: sentinel refusal lands. The module itself exists (#364); only the gate's refusal type is
+#: awaited, so the registry keys on a symbol inside it, not on the module.
+PIPE_PACKAGES_MODULE = f"{IMPLEMENTATION_PACKAGE}.pipeline.packages"
 #: `M-AUTHOR`, package authoring (package-authoring design delta §3.1). The module does not
 #: exist yet — #690 builds the headless draft, #691 the chain resolution, #692 the reasoning
 #: steps, #696 the review walk — so the TS-166 pairwise cases probe it by name.
@@ -85,6 +94,42 @@ FIXTURE_PROVIDER_CLASS = "RecordedFixtureProvider"
 # `symbol` is what a module split across several stories needs. `aeh.conf` landed with #4, so
 # `find_spec` has said "resolved" since then — but `RunConfig.profile_summary` arrives with #5
 # and `rehydrate_run_config` with #6, and until they do their cases are correctly red.
+
+# --- TS-165 (#689), the CS-AUTHOR clause suite: the probe limbs ------------------------------
+# Built from `tests/support/author_vocabulary.py` — the TS26 construction, so the probes
+# cannot name a symbol the tests stopped using. `AuthoringInputError` is added: it is not in
+# the §3.1 dataclass surface but every clause file resolves it (FR-AUTHOR-13 names it).
+_AUTHOR_CLAUSE_NAMES = (*_AUTHOR_SURFACE, "AuthoringInputError")
+#: The corpus limbs the rung-1 guards `require_path` (issue #686's), unioned over the files.
+_AUTHOR_CORPUS_LIMBS = (
+    "AF-01", "AF-06", "AF-07", "AF-09", "AF-10", "AF-11", "AF-13",
+    "recordings", _AUTHOR_VARIANT_RECORDINGS.name,
+)
+_AUTHOR_RUNG1_PROBE = (
+    "python -c \"import importlib, pathlib;"
+    f"m = importlib.import_module('{_AUTHOR_MODULE}');"
+    f"ok = all(hasattr(m, n) for n in {_AUTHOR_CLAUSE_NAMES!r});"
+    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
+    f"ok = ok and all((root / d).is_dir() for d in {_AUTHOR_CORPUS_LIMBS!r});"
+    "raise SystemExit(0 if ok else 1)\""
+)
+_AUTHOR_CLI_PROBE = (
+    "python -c \"import argparse, importlib, pathlib;"
+    "from aeh.pipeline import cli;"
+    f"m = importlib.import_module('{_AUTHOR_MODULE}');"
+    f"ok = all(hasattr(m, n) for n in {_AUTHOR_CLAUSE_NAMES!r});"
+    "import aeh.conf; ok = ok and hasattr(aeh.conf, 'panel_for_profile');"
+    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
+    "ok = ok and all((root / d).is_dir() for d in ('AF-01', 'AF-07', 'recordings'));"
+    "sub = next(a for a in cli._build_parser()._actions"
+    " if isinstance(a, argparse._SubParsersAction));"
+    "ok = ok and 'author' in sub.choices;"
+    "asub = next((a for a in sub.choices['author']._actions"
+    " if isinstance(a, argparse._SubParsersAction)), None);"
+    "ok = ok and asub is not None and {'draft', 'review'} <= set(asub.choices);"
+    "raise SystemExit(0 if ok else 1)\""
+)
+
 WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # issue: (kind, target, tests to unmark)
     #
@@ -1457,7 +1502,7 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/browser/spa/test_tc_e2e_06_teachers_day.py::test_tc_e2e_06_teachers_day_journey",
         ),
     ),
-    # --- TS-166 (#699), the pairwise Requires cases (M-CONF, M-PROV, M-PKG) ----------------
+# --- TS-166 (#699), the pairwise Requires cases (M-CONF, M-PROV, M-PKG) ----------------
     #
     # Three cases, three keys, each on the surface whose landing makes that ONE case runnable
     # and non-vacuous — the doctrine: which single blocker, resolved, turns the red into a run.
@@ -1547,6 +1592,137 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/contract/requires/test_req_author.py::"
             "test_tc_req_136_the_fixture_drafts_face_the_real_build_gate",
         ),
+    ),
+# --- TS-165 (#689), the CS-AUTHOR clause suite and TC-AUTHOR-29's conformance case -----
+    #
+    # Keyed to the M-AUTHOR implementation stories as the DoD says — but as conjunctions,
+    # not to one story. The suite's red has three layers (#689 `aeh.author`'s surface,
+    # #686 the F-AUTHOR corpus and its recordings, #687 `panel_for_profile`) plus #695's CLI
+    # registration, and a key on any single one would fire while the rest still blocked —
+    # the #118 defect. So both entries are #641-style `command` probes that resolve only
+    # when EVERY limb does; the limbs are built from `tests/support/author_vocabulary.py`
+    # (the TS26 construction: the registry cannot name a symbol the tests stopped using),
+    # and each test file's own guards re-check the same limbs at unmarking time, each
+    # naming its issue there (the #635 re-check rule).
+    #
+    # CT-AUTHOR-02's console half (#700, FR-CONSOLE-46) gates NO clause of this suite: the
+    # cases assert the CLI registration M-PIPE owns (#695), and the console's
+    # present-and-unavailable parity rows for authoring are the parity census's own case
+    # (TS-167, #716, TC-CONSOLE-58). Disclosed in the PR body.
+    #
+    # Corpus coupling (the vocabulary docstring's disclosure): the rung-1 cases inject the
+    # dev-ci profile's reasoning chain via `chain_from_config()`, so #686 must record the
+    # F-AUTHOR corpus through that chain — or reconcile that one helper.
+    "#689 TS-165 the CS-AUTHOR clause suite, rung 1 (aeh.author's surface + the F-AUTHOR corpus)": (
+        "command",
+        _AUTHOR_RUNG1_PROBE,
+        (
+            "tests/contract/author/test_cs_author_c01_c03_headless_surface.py",
+            "tests/contract/author/test_cs_author_c04_c05_artifacts.py",
+            "tests/contract/author/test_cs_author_c06_c07_c08_chain_rules.py",
+            "tests/contract/author/test_cs_author_c09_c10_c11_errors_and_state.py",
+            "tests/contract/author/test_cs_author_c12_review_mutates_only.py",
+            "tests/contract/author/test_cs_author_c13_c14_budget_and_knobs.py",
+            "tests/contract/author/test_cs_author_c15_c16_observability.py",
+            "tests/contract/author/test_cs_author_c17_c19_c20_carry_over.py",
+            "tests/contract/author/test_cs_author_c29_non_promise_conformance.py",
+        ),
+    ),
+    "#689 TS-165 the CS-AUTHOR clause suite, rung 3 (the aeh author CLI): #695's registration, #687's chain resolution, #686's corpus, #689's surface": (
+        "command",
+        _AUTHOR_CLI_PROBE,
+        (
+            "tests/contract/author/test_cs_author_c02_c18_cli.py",
+        ),
+    ),
+# --- TS-153 (#686), the authoring corpus's recordings half ------------------------------
+    #
+    # The corpus's documents and `expected.toml` files are committed and pinned green by the
+    # TC-AUTHOR-28 census (`tests/artifact/test_tc_author_28_authoring_fixture_corpus.py`).
+    # The `recordings/` half is captured, not generated: a recording is keyed on the sha256 of
+    # the assembled request *including M-AUTHOR's prompt templates*, so the keys do not exist
+    # until #690's implementation runs the capture pass. The double-honesty census
+    # (fallback path + placeholder paths declared in `coverage.json`, every declared key a
+    # file) is what `path` holds outside the gate: an empty or happy-path-only recordings
+    # tree must not satisfy it. #686's own landing PR ships the corpus with this marker red;
+    # the PR that captures the recordings (#690's) closes #686, and this entry is dropped —
+    # never the test — then.
+    "#686 authoring corpus recordings": (
+        "path",
+        "fixtures/F-AUTHOR/recordings/coverage.json",
+        (
+            "tests/artifact/test_tc_author_28_recordings_honesty.py",
+        ),
+    ),
+    # --- TC-PIPE-37 (#712), the `aeh author` subcommand registration --------------------------
+    #
+    # #695 registers `aeh author draft` / `aeh author review` (FR-PIPE-10, design delta §3.3).
+    # Keyed `command`, not `symbol`, and here is why the issue's own note (`symbol`,
+    # `aeh.pipe:_build_parser`) does not survive contact with the tree: the module does not
+    # exist (the registration site is `aeh.pipeline.cli`, landed with #364), and
+    # `_build_parser` itself is a long-shipped name — a symbol key on it resolves
+    # immediately, and a resolved blocker left in this dict fails the gate by design. Nor is
+    # there a mandated new name to key instead: #695's acceptance criteria say only
+    # "registered in `_build_parser`'s `author` subcommand group, following the existing
+    # `package` group pattern", and the house group handlers admit several plausible names
+    # (`_author_command`, `_author_draft_command`, ...) — an invented symbol bet has the
+    # late direction, a P0 case outside the gate forever if #695 spells it differently.
+    # That is the `#635`/`#638` situation exactly: the story ships a behaviour with no
+    # mandated Python name, so the probe is the behaviour itself. This probe builds the
+    # parser and exits 0 exactly when the `author` group carries BOTH `draft` and `review`
+    # — the thing #695 is the first to ship; no other open story touches the `aeh`
+    # subcommand table. At resolution, re-check the case green before unmarking — never on
+    # the notice alone.
+    "#695 cli registration": (
+        "command",
+        "python -c \"import argparse; import sys; sys.path.insert(0, 'src');"
+        " import aeh.pipeline.cli as cli;"
+        " top = [a for a in cli._build_parser()._actions"
+        " if isinstance(a, argparse._SubParsersAction) and a.dest == 'command'][0].choices;"
+        " author = top.get('author');"
+        " inner = [a for a in author._actions"
+        " if isinstance(a, argparse._SubParsersAction)] if author else [];"
+        " ok = bool(inner) and {'draft', 'review'} <= set(inner[0].choices);"
+        " raise SystemExit(0 if ok else 1)\"",
+        ("tests/unit/pipe/test_tc_pipe_37_author_subcommands.py",),
+        ),
+    # --- Package-authoring delta, TS-167 (#716), TC-CONSOLE-58 -------------------------------
+    #
+    # FR-CONSOLE-46 lists `aeh author draft` / `aeh author review` present-and-unavailable —
+    # the reason that the authoring screens are future console work — so the parity census
+    # (#632's, TC-CONSOLE-54) passes with the author commands registered (#695) but no console
+    # path invented. The amendment is DATA in `aeh/console/parity.py`'s census tables; it
+    # creates no new symbol, so the issue's suggested `symbol` key
+    # (`console.parity:CLI_CONSOLE_PATHS`) cannot work: that name exists today, the key would
+    # read resolved on landing day one, and a resolved blocker left in this dict fails the
+    # gate by design — the exact early-fire direction the `#118`/TS-56 entries document. A
+    # `symbols` key on a name #700 might introduce fires in the opposite, never-resolves
+    # direction (a P0 case outside the gate forever). So the key is `command`, this
+    # registry's kind for "a blocker that is a change to existing code rather than a missing
+    # name" (`#96 c09`), probing the generated inventory (`parity_inventory()`, the same
+    # surface `GET /api/v1/cli-help` serves) for the two author rows: present, with a reason,
+    # with a what-it-is-for line (`NFR-CONSOLE-09`'s other half, which the named cases
+    # assert), and not a console path. If #700 renders the listing through a third table
+    # instead, the inventory must be taught to read it for the census to pass anyway — the
+    # probe's reconciliation is then one line here.
+    "#700 console census": (
+        "command",
+        "python -c \"import sys; sys.path.insert(0, 'src');"
+        "import aeh.console.parity as p;"
+        "rows = {e['command']: e for e in p.parity_inventory()['commands']};"
+        "need = ('author draft', 'author review');"
+        "ok = set(need) <= set(rows)"
+        " and all(rows[k].get('surface') == 'debugging-only' and rows[k].get('reason')"
+        " and rows[k].get('purpose') for k in need);"
+        "raise SystemExit(0 if ok else 1)\"",
+        (
+            "tests/unit/console/test_tc_console_54_parity_census.py"
+            "::test_tc_console_58_author_draft_is_listed_present_and_unavailable",
+            "tests/unit/console/test_tc_console_54_parity_census.py"
+            "::test_tc_console_58_author_review_is_listed_present_and_unavailable",
+            "tests/unit/console/test_tc_console_54_parity_census.py"
+            "::test_tc_console_58_the_census_passes_once_the_author_commands_are_listed",
+),
     ),
 }
 
