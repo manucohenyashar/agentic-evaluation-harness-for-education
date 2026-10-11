@@ -57,6 +57,10 @@ INTEG_MODULE = f"{IMPLEMENTATION_PACKAGE}.integ"
 #: does not exist yet — #364 builds it and #365 adds `recover` — so every TS-83/TS-84 case
 #: probes it by name.
 PIPE_MODULE = f"{IMPLEMENTATION_PACKAGE}.pipeline"
+#: `M-AUTHOR`, package authoring (package-authoring design delta §3.1). The module does not
+#: exist yet — #690 builds the headless draft, #691 the chain resolution, #692 the reasoning
+#: steps, #696 the review walk — so the TS-166 pairwise cases probe it by name.
+AUTHOR_MODULE = f"{IMPLEMENTATION_PACKAGE}.author"
 
 # §4.2: "RecordedFixtureProvider (FR-PROV-10) is a *shipped implementation*, not a test fake."
 # The fast tier binds this class by name; the harness self-test asserts the binding.
@@ -1451,6 +1455,97 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "raise SystemExit(0 if ok else 1)\"",
         (
             "tests/browser/spa/test_tc_e2e_06_teachers_day.py::test_tc_e2e_06_teachers_day_journey",
+        ),
+    ),
+    # --- TS-166 (#699), the pairwise Requires cases (M-CONF, M-PROV, M-PKG) ----------------
+    #
+    # Three cases, three keys, each on the surface whose landing makes that ONE case runnable
+    # and non-vacuous — the doctrine: which single blocker, resolved, turns the red into a run.
+    #
+    # TC-REQ-134 asserts M-CONF's `panel_for_profile` clause itself (CT-CONF-23: ordered
+    # panel-then-escalation chain, de-duplicated, empty panel raises before any provider call)
+    # AND the consumer half of the pair (FR-AUTHOR-04: M-AUTHOR builds its chain FROM
+    # `panel_for_profile` — an AST limb over `aeh.author`'s source, the TC-REQ-67 precedent, so a
+    # hand-rolled chain cannot pass vacuously). Its green condition is therefore the symbol's
+    # existence (#687) plus the authoring module's (#690) plus #691's chain wiring actually
+    # naming the call — three limbs the `symbol` and `symbols` kinds cannot combine with a
+    # source scan, so this is one `command` probe (the #641 precedent): it exits 0 exactly when
+    # `panel_for_profile` is defined and `aeh.author`'s package source calls it, which is
+    # precisely when the case runs and proves both halves.
+    #
+    # TC-REQ-135 asserts that every call M-AUTHOR makes rides `InferenceProvider` (CT-PROV-10/15)
+    # by a record-then-replay construction: whatever the service asks of its provider is
+    # recorded, and a second draft run must run entirely from the replay. Its drive builds the
+    # declared authoring surface — `AuthoringService`, `DraftResult` and `AuthoringSettings`
+    # (the `__init__` signature the design fixes) — so the key is a `symbols` conjunction on all
+    # three: a single `symbol` on `AuthoringService` could fire while the constructor's settings
+    # surface is still missing and the case cannot even be built. All three are #690's surface
+    # by construction (the signature names them), so the conjunction resolves with #690 and
+    # never earlier. The case also carries the consumer half of the M-CONF pair (every
+    # dispatched request addresses a model of the declared chain, first the chain head), but
+    # that limb rides the same #690 surface, so the key is unchanged.
+    #
+    # TC-REQ-136 needs the corpus (#686 — `fixtures/F-AUTHOR/AF-01..AF-13` with `expected.toml`
+    # each, and `recordings/`), the authoring surface (#690), and the review walk (#696, whose
+    # scripted form — `review()` with `ReviewAnswer` — is what re-completes each fixture draft
+    # before the build). None alone is sufficient, and the `path` and `symbol(s)` kinds cannot
+    # mix, so this is one `command` probe (the #641 precedent) that resolves only when EVERY
+    # limb exists. #688's build-gate clause is deliberately NOT a limb: it has no name of its
+    # own (a substring check at the top of the existing build path), and its red is the case's
+    # own refusal oracle — a sentinel-carrying draft that builds is exactly the failure
+    # TC-REQ-136 asserts, so keying on #688 would be a tautology. The probe also does NOT
+    # include #693's `validate_draft`: the case drives the real `aeh package build` as its
+    # oracle (test plan §4.5) and never calls the validator. Two corpus-shape bets are disclosed
+    # in the test's docstring and fail legibly (naming the corpus clause) rather than crashing:
+    # the per-fixture `[build] outcome` key and the scripted `[review] answers` table of each
+    # fixture's `expected.toml`.
+    "#699 TS-166 TC-REQ-134 the authoring chain is M-CONF's panel_for_profile": (
+        "command",
+        "python -c \"import sys, pathlib; sys.path.insert(0, 'src');"
+        "import importlib.util as u;"
+        "import aeh.conf as c;"
+        "ok = hasattr(c, 'panel_for_profile');"
+        "m = __import__('aeh.author', fromlist=['AuthoringService'])"
+        " if u.find_spec('aeh.author') else None;"
+        "f = pathlib.Path(m.__file__) if m is not None else None;"
+        "files = [f] + (sorted(p for p in f.parent.rglob('*.py')"
+        " if '__pycache__' not in p.parts) if m is not None"
+        " and hasattr(m, '__path__') else []);"
+        "ok = ok and m is not None and hasattr(m, 'AuthoringService') and any("
+        "'panel_for_profile(' in p.read_text(encoding='utf-8')"
+        " for p in files);"
+        "raise SystemExit(0 if ok else 1)\"",
+        (
+            "tests/contract/requires/test_req_author.py::"
+            "test_tc_req_134_the_authoring_chain_is_panel_for_profile",
+        ),
+    ),
+    "#699 TS-166 TC-REQ-135 the authoring module rides M-PROV for every call": (
+        "symbols",
+        "aeh.author:AuthoringService,aeh.author:DraftResult,aeh.author:AuthoringSettings",
+        (
+            "tests/contract/requires/test_req_author.py::"
+            "test_tc_req_135_every_authoring_call_rides_m_prov",
+        ),
+    ),
+    "#699 TS-166 TC-REQ-136 the fixture drafts face the real build gate": (
+        "command",
+        "python -c \"import sys, pathlib; sys.path.insert(0, 'src');"
+        "root = pathlib.Path('fixtures/F-AUTHOR');"
+        "ok = all((root / ('AF-%02d' % i)).is_dir()"
+        " and (root / ('AF-%02d' % i) / 'expected.toml').is_file() for i in range(1, 14))"
+        " and (root / 'recordings').is_dir();"
+        "import importlib.util as u;"
+        "m = __import__('aeh.author', fromlist=['AuthoringService'])"
+        " if u.find_spec('aeh.author') else None;"
+        "ok = ok and m is not None"
+        " and all(hasattr(m, n) for n in"
+        " ('AuthoringService', 'DraftResult', 'ReviewAnswer', 'AuthoringSettings'))"
+        " and hasattr(m.AuthoringService, 'review');"
+        "raise SystemExit(0 if ok else 1)\"",
+        (
+            "tests/contract/requires/test_req_author.py::"
+            "test_tc_req_136_the_fixture_drafts_face_the_real_build_gate",
         ),
     ),
 }
