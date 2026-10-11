@@ -183,6 +183,45 @@ _AUTHOR_DRAFT_CLI_PROBE = (
     "raise SystemExit(0 if ok else 1)\""
 )
 
+# --- TS-159 (#711), TC-AUTHOR-15/20/21/22: the report, summary, logger and prompt pins --------
+# #694's four deliverables share no design-mandated Python name that separates them from
+# what earlier authoring stories ship, so the probe is the behaviour itself — one real
+# `draft()` over AF-01's documents against `RecordedFixtureProvider` pointed at an EMPTY
+# fixture directory (the total-failure variant, zero recordings, no egress), exiting 0 only
+# when the three pin constants exist, the report carries all five sections, the printed
+# summary carries both next commands, and a record comes from the `aeh.author` logger
+# family. See the registry entry below for the early-fire analysis and the rename path.
+_AUTHOR_REPORT_PROBE = (
+    "python -c \"import sys; sys.path.insert(0, 'src');"
+    " import importlib, io, logging, pathlib, tempfile;"
+    f" m = importlib.import_module('{_AUTHOR_MODULE}');"
+    " ok = all(hasattr(m, n) for n in ('AUTHOR_INVENTORY_TEMPLATE_V',"
+    " 'AUTHOR_RUBRIC_TEMPLATE_V', 'AUTHOR_GRADES_TEMPLATE_V'));"
+    " records = [];"
+    " logging.getLogger('aeh.author').addHandler("
+    " type('H', (logging.Handler,), {'emit': lambda s, r: records.append(r)})());"
+    " logging.getLogger('aeh.author').setLevel(logging.DEBUG);"
+    " scratch = pathlib.Path(tempfile.mkdtemp());"
+    " (scratch / 'out').mkdir();"
+    " (scratch / 'recordings').mkdir();"
+    " from aeh.prov import RecordedFixtureProvider;"
+    " from tests.support.author_vocabulary import chain_from_config, transcriber_from_config;"
+    " buf = io.StringIO(); real = sys.stdout; sys.stdout = buf;"
+    " res = m.AuthoringService(chain=chain_from_config(),"
+    " provider=RecordedFixtureProvider(fixture_dir=scratch / 'recordings'),"
+    " transcriber=transcriber_from_config(), settings=m.AuthoringSettings())"
+    ".draft(documents=sorted(pathlib.Path('fixtures', 'F-AUTHOR', 'AF-01').glob('*.pdf')),"
+    " output_dir=scratch / 'out');"
+    " sys.stdout = real;"
+    " report = res.report_path.read_text(encoding='utf-8');"
+    " ok = ok and all(s in report for s in"
+    " ('Documents', 'Steps', 'Items', 'Unresolved', 'Next command'));"
+    " printed = buf.getvalue();"
+    " ok = ok and 'aeh author review' in printed and 'aeh package build' in printed;"
+    f" ok = ok and any(getattr(x, 'name', '').startswith({_AUTHOR_MODULE!r})"
+    " for x in records);"
+    " raise SystemExit(0 if ok else 1)\""
+)
 WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # issue: (kind, target, tests to unmark)
     #
@@ -1859,6 +1898,43 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         ("tests/unit/author/test_tc_author_16_fail_fast_matrix.py",),
     ),
 
+    # --- TS-159 (#711), TC-AUTHOR-15/20/21/22 — the report, summary, logger and prompt pins ----
+    #
+    # Keyed `command`, not the issue's suggested `symbol` on `aeh.author:AuthoringService`,
+    # and here is why the note does not survive contact with the tree: `AuthoringService` is
+    # §3.1-declared surface that the FIRST M-AUTHOR service story ships — #690 builds the
+    # module and its `draft()` (the `#118`/TS-56 early-fire direction: the day #690 lands, a
+    # symbol key reads resolved, a reader unmarks these four cases, and they red inside
+    # TEST_CMD on sections/summary/pins nobody has shipped yet). The three pin constants are
+    # design-named, but #692's own technical note ("each reasoning step is its own module
+    # file with its own prompt constant") makes them plausibly #692's to declare — a
+    # `symbols` conjunction on them fires one story early for the same reason. What the
+    # design mandates for #694 is BEHAVIOUR with no Python name: the report's five sections
+    # written even on total step failure (FR-AUTHOR-12), the printed one-paragraph summary
+    # with both next commands (FR-AUTHOR-18), the `aeh.author` logger (FR-AUTHOR-19) and the
+    # pins carried into the assembled request text (FR-AUTHOR-20). That is the
+    # `#635`/`#638`/`#695` situation exactly, so the probe (`_AUTHOR_REPORT_PROBE`, above)
+    # is the behaviour itself: it runs one real `draft()` over AF-01's documents against
+    # `RecordedFixtureProvider` pointed at an EMPTY fixture directory — the total-failure
+    # variant, zero recordings needed, no egress — and exits 0 exactly when the three pin
+    # constants exist, the report carries all five sections, the printed summary carries
+    # both `aeh author review` and `aeh package build`, and a record comes from the
+    # `aeh.author` logger family. Nothing earlier ships all four deliverables at once; if
+    # #694 spells the summary or the logger differently the probe simply stays unresolved
+    # (the conservative direction). Rename path: one line in
+    # `tests/support/author_vocabulary.py` (`AUTHOR_MODULE` or the pin names) plus this
+    # probe — nowhere else. At resolution, re-check the four cases green before unmarking —
+    # never on the notice alone.
+    "#694 report logging": (
+        "command",
+        _AUTHOR_REPORT_PROBE,
+        (
+            "tests/unit/author/test_tc_author_15_authoring_report.py",
+            "tests/unit/author/test_tc_author_20_prompt_pins.py",
+            "tests/unit/author/test_tc_author_21_completion_summary.py",
+            "tests/unit/author/test_tc_author_22_author_logging.py",
+        ),
+    ),
 }
 
 
