@@ -282,6 +282,36 @@ _AUTHOR_TS168_PROBE = (
     "raise SystemExit(0 if ok else 1)\""
 )
 
+# --- TS-157 (#709), TC-AUTHOR-09..12: the three reasoning steps and approved_by ---------------
+# The limbs the four cases construct through: the §3.1 surface (`AUTHOR_SURFACE`), the three
+# step prompt constants (FR-AUTHOR-20's names; NFR-AUTHOR-06 lands each reasoning step file
+# with its own prompt constant, so these are #692's limbs — TC-AUTHOR-09's call-count oracle
+# discriminates the inventory step by the constant's value in the assembled payload, the
+# TC-AUTHOR-20 ride precedent), `AuthoringService.draft` (every case runs a recorded replay
+# draft), all thirteen corpus fixtures (TC-AUTHOR-12 sweeps every fixture's draft for the
+# approved_by placeholder), and the recordings' `coverage.json` (#686's capture signal — a
+# replay draft without it is vacuous).
+_AUTHOR_STEPS_PINS = (
+    "AUTHOR_INVENTORY_TEMPLATE_V",
+    "AUTHOR_RUBRIC_TEMPLATE_V",
+    "AUTHOR_GRADES_TEMPLATE_V",
+)
+#: All thirteen corpus fixtures — TC-AUTHOR-12 sweeps every fixture's draft. Defined here
+#: (not `_AUTHOR_AF_IDS`, which the TS-169 block owns) so this block is self-contained.
+_AUTHOR_TS157_AF_IDS = tuple(f"AF-{index:02d}" for index in range(1, 14))
+_AUTHOR_TS157_PROBE = (
+    "python -c \"import importlib, pathlib;"
+    f"m = importlib.import_module('{_AUTHOR_MODULE}');"
+    f"ok = all(hasattr(m, n) for n in {_AUTHOR_SURFACE!r});"
+    f"ok = ok and all(hasattr(m, n) for n in {_AUTHOR_STEPS_PINS!r});"
+    "ok = ok and callable(getattr(m.AuthoringService, 'draft', None));"
+    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
+    f"ok = ok and all((root / d).is_dir() for d in {_AUTHOR_TS157_AF_IDS!r});"
+    "ok = ok and (root / 'recordings' / 'coverage.json').is_file();"
+    "raise SystemExit(0 if ok else 1)\""
+)
+
+
 WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # issue: (kind, target, tests to unmark)
     #
@@ -2043,6 +2073,14 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         (
             "tests/security/author/test_sec_26_authoring_credential_sweep.py",
             "tests/security/author/test_adv_18_authoring_prompt_injection.py",
+        ),
+    ),
+
+    "#692 reasoning steps": (
+        "command",
+        _AUTHOR_TS157_PROBE,
+        (
+            "tests/unit/author/test_tc_author_09_12_reasoning_steps.py",
         ),
     ),
 }
