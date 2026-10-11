@@ -1453,6 +1453,44 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/browser/spa/test_tc_e2e_06_teachers_day.py::test_tc_e2e_06_teachers_day_journey",
         ),
     ),
+    # --- Package-authoring delta, TS-167 (#716), TC-CONSOLE-58 -------------------------------
+    #
+    # FR-CONSOLE-46 lists `aeh author draft` / `aeh author review` present-and-unavailable —
+    # the reason that the authoring screens are future console work — so the parity census
+    # (#632's, TC-CONSOLE-54) passes with the author commands registered (#695) but no console
+    # path invented. The amendment is DATA in `aeh/console/parity.py`'s census tables; it
+    # creates no new symbol, so the issue's suggested `symbol` key
+    # (`console.parity:CLI_CONSOLE_PATHS`) cannot work: that name exists today, the key would
+    # read resolved on landing day one, and a resolved blocker left in this dict fails the
+    # gate by design — the exact early-fire direction the `#118`/TS-56 entries document. A
+    # `symbols` key on a name #700 might introduce fires in the opposite, never-resolves
+    # direction (a P0 case outside the gate forever). So the key is `command`, this
+    # registry's kind for "a blocker that is a change to existing code rather than a missing
+    # name" (`#96 c09`), probing the generated inventory (`parity_inventory()`, the same
+    # surface `GET /api/v1/cli-help` serves) for the two author rows: present, with a reason,
+    # with a what-it-is-for line (`NFR-CONSOLE-09`'s other half, which the named cases
+    # assert), and not a console path. If #700 renders the listing through a third table
+    # instead, the inventory must be taught to read it for the census to pass anyway — the
+    # probe's reconciliation is then one line here.
+    "#700 console census": (
+        "command",
+        "python -c \"import sys; sys.path.insert(0, 'src');"
+        "import aeh.console.parity as p;"
+        "rows = {e['command']: e for e in p.parity_inventory()['commands']};"
+        "need = ('author draft', 'author review');"
+        "ok = set(need) <= set(rows)"
+        " and all(rows[k].get('surface') == 'debugging-only' and rows[k].get('reason')"
+        " and rows[k].get('purpose') for k in need);"
+        "raise SystemExit(0 if ok else 1)\"",
+        (
+            "tests/unit/console/test_tc_console_54_parity_census.py"
+            "::test_tc_console_58_author_draft_is_listed_present_and_unavailable",
+            "tests/unit/console/test_tc_console_54_parity_census.py"
+            "::test_tc_console_58_author_review_is_listed_present_and_unavailable",
+            "tests/unit/console/test_tc_console_54_parity_census.py"
+            "::test_tc_console_58_the_census_passes_once_the_author_commands_are_listed",
+        ),
+    ),
 }
 
 
