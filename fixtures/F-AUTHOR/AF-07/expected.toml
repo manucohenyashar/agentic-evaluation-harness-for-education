@@ -1,0 +1,7 @@
+af = "AF-07"
+description = "one document; no model answers given"
+documents = ["math7-fractions-01-test.pdf"]
+outcome = "partial"
+placeholders = ["model_answer"]
+build = "publishes"
+notes = "model_answer placeholders; the review walk completes to ready"

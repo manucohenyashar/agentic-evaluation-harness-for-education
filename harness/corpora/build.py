@@ -26,6 +26,16 @@ the runs apart. All three are re-captured by driving the pipeline once each::
 `_RECORDED_GOLDEN_TREES` below exempts those directories from `--check` for the same reason
 `F-SCHEMA`'s checksums are exempt, and `tests/integration/pipe/test_f_dev_pipe_corpus.py` is
 what actually pins them: a run driven from the committed bytes must miss no recording.
+
+`F-AUTHOR/` is a third kind, a hybrid: its documents and `expected.toml` files *are* generated,
+but by a committed stdlib generator living inside the corpus itself —
+`fixtures/F-AUTHOR/build_authoring_fixtures.py` (the `build_sample_materials.py` pattern,
+package-authoring design delta §5.1) — rather than by this module, whose generators all live
+under `harness/corpora/`. `_IN_TREE_GENERATED_TREES` exempts the whole tree from `--check`,
+and the pin moves to `TC-AUTHOR-28`'s census (`tests/artifact/`), which re-runs the in-tree
+generator into a temp dir and byte-diffs it against the committed tree — the same mechanism
+`--check` uses, pointed at the other generator. The `recordings/` half is captured, not
+generated, for the same reason `F-DEV-PIPE/recordings/` is.
 """
 
 from __future__ import annotations
@@ -470,6 +480,7 @@ To change a corpus, change its generator under `harness/corpora/` and rebuild.
 | `F-JEV-SYNTH/recordings/` | **Captured, not generated.** F-SYNTH's first 8 submissions, engine on, base panel of 1 (TC-E2E-05) |
 | `F-JEV-DECISIONS/recordings/` | **Captured, not generated.** F-DEV-PIPE with the fixture decision engine on; `python -m tests.support.pipe_world` re-captures it |
 | `baselines/` | The §6.9 golden-baseline registry: which artifact, whose signature, on what grounds |
+| `F-AUTHOR/` | **Generated in-tree, not here.** The 13 authoring fixtures (AF-01..AF-13) for the package-authoring capability — documents + `expected.toml` per fixture, emitted by `fixtures/F-AUTHOR/build_authoring_fixtures.py` (§5.1 of the authoring design delta). Pinned by TC-AUTHOR-28's census, not by this module's `--check`; its `recordings/` half is captured, not generated |
 
 `F-ADV-PDF/` holds no `.pdf` files, deliberately: §4.7 says the corpus is *"generated, not
 committed as binaries"*. `tests.support.corpora.materialize_adv_pdfs()` writes them into a
@@ -611,6 +622,27 @@ _RECORDED_GOLDEN_TREES = (
     "F-JEV-SYNTH/recordings/",
 )
 
+#: Trees emitted by a committed generator that lives *inside* the corpus, not under
+#: `harness/corpora/`. `F-AUTHOR/`'s generator is `fixtures/F-AUTHOR/build_authoring_fixtures.py`
+#: — the authoring design delta's `build_sample_materials.py` pattern — so this module neither
+#: emits nor can check it. `--check` exempts the whole tree; TC-AUTHOR-28's census
+#: (`tests/artifact/test_tc_author_28_authoring_fixture_corpus.py`) is what pins it instead,
+#: re-running the in-tree generator and byte-diffing against the committed tree.
+_IN_TREE_GENERATED_TREES = ("F-AUTHOR/",)
+
+
+def _is_in_tree_generated(path: str) -> bool:
+    """Is this file emitted by a generator committed inside its corpus, not by this module?
+
+    `F-AUTHOR/`'s generator is `fixtures/F-AUTHOR/build_authoring_fixtures.py`, committed
+    beside its outputs (the authoring design delta §5.1's `build_sample_materials.py`
+    pattern). `--check` regenerates corpora by importing *this* module's generators, so it
+    can neither emit nor verify that tree; exempting it here and pinning it with
+    TC-AUTHOR-28's census — which re-runs the in-tree generator and byte-diffs the results —
+    keeps the reproducibility claim true instead of falsely green.
+    """
+    return path.startswith(_IN_TREE_GENERATED_TREES)
+
 
 def _is_recorded_baseline(path: str) -> bool:
     """Is this a §6.9 golden that a producer recorded, rather than generated corpus data?
@@ -654,7 +686,7 @@ def check(committed_root: Path) -> list[str]:
     for path in sorted(set(fresh) - set(committed)):
         problems.append(f"missing from the repo: {path}")
     for path in sorted(set(committed) - set(fresh)):
-        if _is_recorded_baseline(path):
+        if _is_recorded_baseline(path) or _is_in_tree_generated(path):
             continue
         problems.append(f"in the repo but not emitted by the generator: {path}")
     for path in sorted(set(fresh) & set(committed)):
