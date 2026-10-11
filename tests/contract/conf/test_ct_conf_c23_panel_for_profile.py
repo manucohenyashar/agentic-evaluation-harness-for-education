@@ -56,7 +56,7 @@ from tests.support.profile_switching import (
     f_profiles,
 )
 
-pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.contract]
 
 
 def _surface() -> tuple:
