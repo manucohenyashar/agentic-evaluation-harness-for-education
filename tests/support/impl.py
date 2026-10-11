@@ -1737,7 +1737,12 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         " if isinstance(a, argparse._SubParsersAction)] if author else [];"
         " ok = bool(inner) and {'draft', 'review'} <= set(inner[0].choices);"
         " raise SystemExit(0 if ok else 1)\"",
-        ("tests/unit/pipe/test_tc_pipe_37_author_subcommands.py",),
+        ("tests/unit/pipe/test_tc_pipe_37_author_subcommands.py",
+         "tests/unit/console/test_tc_console_54_parity_census.py"),
+        # The TC-CONSOLE-54 census joins this blocker from #700: the parity inventory now
+        # lists `aeh author draft`/`aeh author review` (debugging-only), which the parser
+        # does not have until this issue registers the `author` group — the same landing
+        # this entry already waits on. Unmark both files when it lands.
         ),
     # --- Package-authoring delta, TS-167 (#716), TC-CONSOLE-58 -------------------------------
     #
