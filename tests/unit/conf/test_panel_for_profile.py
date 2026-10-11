@@ -13,9 +13,9 @@ The §5.3 row pins the surface M-AUTHOR consumes, before M-AUTHOR exists to cons
 - **purity** — two calls over the same cfg return equal chains.
 
 **Written ahead of implementation: yes.** `panel_for_profile` is #687's story, so every body
-opens with `require(...)` and this file carries the `writtenahead` marker: red with
-`NotImplementedYet` naming #687 is the expected state, and when #687 lands the marker (never
-the test) and the `WRITTEN_AHEAD_BLOCKERS` entry come off.
+opens with `require(...)`: red with `NotImplementedYet` naming #687 is the expected
+state, and when #687 landed, the marker (never the test) and the `WRITTEN_AHEAD_BLOCKERS`
+entry came off.
 
 **Disclosed bets**, each reconcilable without touching what the cases assert:
 
@@ -50,7 +50,6 @@ from tests.support.impl import CONF_MODULE, require
 from tests.support.orch_run import ORCH_COHORT_ID, seed_cohort, seed_package
 from tests.support.profile_switching import FIXTURE_JUDGE, f_profiles
 
-pytestmark = pytest.mark.writtenahead
 
 _CRITERIA = ({"criterion_id": "C1", "kind": "open", "scoring_model": "atomic"},)
 
