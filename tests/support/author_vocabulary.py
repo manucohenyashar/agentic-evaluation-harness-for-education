@@ -21,6 +21,7 @@ rename is one line here and nowhere else.
 | `AF01_VARIANT_RECORDINGS` | `fixtures/F-AUTHOR/recordings-af01-variant/` | **path guessed here** — TC-AUTHOR-29's second recorded set for AF-01; the design fixes neither the name nor the layout, so the path is declared once and #686 reconciles it here if it lands elsewhere |
 | `AF13_PAIR` | the carry-over pair is (AF-01 documents, AF-13 documents) | **design-named** (§5.1: "AF-01's test with one question reworded") — same package id, so the re-draft sees the prior report |
 | `AuthoringSettings()` | a zero-argument constructor | **assumed** — §3.1 declares the parameter but no fields; the knobs are env-read per invocation |
+| `RETRY_ISSUE` | the retry/recreate/overwrite/carry-over story is #697 | **design-named** — TS-163's implementing story (`docs/design/package_authoring_test_plan.md` §8); the TC-AUTHOR-25/26/27 files' require gates and registry entry name it |
 
 Nothing here imports `aeh.author`; resolution happens inside the test bodies via
 `tests.support.impl.require`, so a missing module is a stated failure, not a collection error.
@@ -40,6 +41,9 @@ AUTHOR_ISSUE = "#689"
 CORPUS_ISSUE = "#686"
 CLI_ISSUE = "#695"
 CHAIN_ISSUE = "#687"
+#: TS-163's implementing story — retry, recreate, overwrite protection, carry-over
+#: (test plan §8); the TC-AUTHOR-25/26/27 files' require gates and registry entry name it.
+RETRY_ISSUE = "#697"
 
 AUTHOR_MODULE = "aeh.author"
 

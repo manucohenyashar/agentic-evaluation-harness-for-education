@@ -130,6 +130,60 @@ _AUTHOR_CLI_PROBE = (
     "raise SystemExit(0 if ok else 1)\""
 )
 
+# --- TS-163 (#697), TC-AUTHOR-25/26/27: retry, recreate, overwrite protection, carry-over ----
+# The static limbs the three files construct through, then the #697-only behavioural limb:
+# the overwrite refusal (FR-AUTHOR-22) — draft into a fresh scratch directory exits 0 with
+# exactly the two artifacts, and the same draft again (no `--force`, EOF on stdin) exits
+# nonzero naming both artifact filenames. See the registry entry's comment block for why the
+# discriminator is behaviour and not the `--force` flag (whose registration is #695's).
+_AUTHOR_RETRY_CORPUS_LIMBS = ("AF-01", "AF-02", "AF-07", "AF-13", "recordings")
+_AUTHOR_RETRY_PROBE = (
+    "python -c \"import argparse, importlib, os, pathlib, subprocess, sys, tempfile;"
+    f"m = importlib.import_module('{_AUTHOR_MODULE}');\n"
+    f"ok = all(hasattr(m, n) for n in {_AUTHOR_SURFACE!r});"
+    "ok = ok and hasattr(m.AuthoringService, 'draft')"
+    " and hasattr(m.AuthoringService, 'review');"
+    "import aeh.conf; ok = ok and hasattr(aeh.conf, 'panel_for_profile');"
+    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
+    f"ok = ok and all((root / d).is_dir() for d in {_AUTHOR_RETRY_CORPUS_LIMBS!r});"
+    "ok = ok and (root / 'recordings' / 'coverage.json').is_file();"
+    "from aeh.pipeline import cli;"
+    "sub = next((a for a in cli._build_parser()._actions"
+    " if isinstance(a, argparse._SubParsersAction) and a.dest == 'command'), None);"
+    "ok = ok and sub is not None and 'author' in sub.choices;"
+    "asub = next((a for a in sub.choices['author']._actions"
+    " if isinstance(a, argparse._SubParsersAction)), None) if ok else None;"
+    "ok = ok and asub is not None and {'draft', 'review'} <= set(asub.choices);\n"
+    "def _refusal_lives() -> bool:\n"
+    "    env = dict(os.environ)\n"
+    "    env['HARNESS_FIXTURE_DIR'] = str((root / 'recordings').resolve())\n"
+    "    env.pop('OPENROUTER_API_KEY', None)\n"
+    "    cfg = pathlib.Path('docs') / 'live-tests' / 'config' / 'live-test.dev-ci.toml'\n"
+    "    docs = sorted((root / 'AF-01').glob('*.pdf'))\n"
+    "    timeout = float(os.environ.get('HARNESS_TEST_AUTHOR_CHILD_TIMEOUT_S', '300'))\n"
+    "    with tempfile.TemporaryDirectory() as td:\n"
+    "        out = pathlib.Path(td) / 'out'\n"
+    "        args = [sys.executable, '-m', 'aeh', 'author', 'draft', '--config', str(cfg),"
+    " '--docs', *[str(p) for p in docs], '--out', str(out)]\n"
+    "        try:\n"
+    "            first = subprocess.run(args, capture_output=True, text=True, env=env,"
+    " timeout=timeout)\n"
+    "        except Exception:\n"
+    "            return False\n"
+    "        made = sorted(p.name for p in out.iterdir()) if out.is_dir() else []\n"
+    "        if first.returncode != 0 or len(made) != 2:\n"
+    "            return False\n"
+    "        try:\n"
+    "            second = subprocess.run(args, capture_output=True, text=True, env=env,"
+    " timeout=timeout, stdin=subprocess.DEVNULL)\n"
+    "        except Exception:\n"
+    "            return False\n"
+    "        said = second.stdout + second.stderr\n"
+    "        return second.returncode != 0 and all(n in said for n in made)\n"
+    "ok = ok and _refusal_lives()\n"
+    "raise SystemExit(0 if ok else 1)\""
+)
+
 WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # issue: (kind, target, tests to unmark)
     #
@@ -1723,6 +1777,52 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/unit/console/test_tc_console_54_parity_census.py"
             "::test_tc_console_58_the_census_passes_once_the_author_commands_are_listed",
 ),
+    ),
+    # --- TC-AUTHOR-25/26/27 (#714), TS-163 (#697): retry, recreate, overwrite protection, -----
+    # --- carry-over ----------------------------------------------------------------------------
+    #
+    # #714 is the written-ahead test pair for TS-163 (#697: FR-AUTHOR-21 the fresh-run
+    # guarantee — re-running the draft command is always the retry; FR-AUTHOR-22 overwrite
+    # protection — the refusal names what would be replaced and notes carry-over, `--force`
+    # or interactive `y` proceeds; FR-AUTHOR-23 carry-over — carried iff the item exists and
+    # the content fingerprint matches, dropped answers named with a reason, provisional
+    # until review confirms).
+    #
+    # Keyed `command` with a BEHAVIOURAL last limb, not the issue note's `symbol`
+    # (`aeh.author:AuthoringService`), for two measured reasons. The symbol key is the
+    # early-fire trap (`#118`/TS-56): the class is §3.1 surface the FIRST M-AUTHOR service
+    # story lands (#690 — the `#698` entry above is keyed on exactly that class, read the
+    # other way), weeks before #697's own behaviour. And the natural static discriminator
+    # does not exist: the issue note suggests `--force`, but #695's acceptance criteria
+    # register `aeh author draft ... [--force]` and #697's technical notes say the flag "was
+    # registered in the CLI-registration story; this story implements the behaviour behind
+    # it" — a `--force` limb fires at #695's landing, the certain early-fire, not a residual
+    # risk. The only #697-only, design-pinned signal is the refusal BEHAVIOUR itself
+    # (FR-AUTHOR-22): draft into a fresh scratch directory must exit 0 and write exactly the
+    # two artifacts, and the same draft again — no `--force`, EOF on stdin — must exit
+    # nonzero AND name both artifact filenames in its output. That limb is the probe's last
+    # line, short-circuited behind the cheap static limbs (the `_AUTHOR_E2E` construction):
+    # the §3.1 surface + `draft`/`review` on the service (#696's method — TC-27's carry-over
+    # arms drive it), `panel_for_profile` (#687), the corpus limbs the three files read
+    # (AF-01/02/07/13), the recordings' `coverage.json` (#686's capture signal — a replay
+    # draft without it is vacuous), and #695's `author` group with both subcommands. Nothing
+    # else touches overwrite protection, so the probe resolves when — and only when — the
+    # refusal behaviour exists. If the landing ships the refusal behind a different CLI shape
+    # (exit code, output), the probe's last limb and TC-AUTHOR-26's oracle are the
+    # reconciliation, read together.
+    #
+    # The three files' own `require()` gates re-check the static limbs at unmarking time,
+    # each naming its issue there (the `#635` re-check rule); the behavioural limb is
+    # re-checked by TC-AUTHOR-26 itself. One-line rename path: the surface lives in
+    # `AUTHOR_SURFACE` (`tests/support/author_vocabulary.py`).
+    "#697 retry recreate": (
+        "command",
+        _AUTHOR_RETRY_PROBE,
+        (
+            "tests/integration/author/test_tc_author_25_fresh_redraft.py",
+            "tests/integration/author/test_tc_author_26_overwrite_matrix.py",
+            "tests/unit/author/test_tc_author_27_carry_over_variants.py",
+        ),
     ),
 }
 
