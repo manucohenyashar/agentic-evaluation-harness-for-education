@@ -1744,6 +1744,49 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         # does not have until this issue registers the `author` group — the same landing
         # this entry already waits on. Unmark both files when it lands.
         ),
+
+    # --- TS-164 (#698), the determinism and write-ownership snapshot diffs -------------------
+    #
+    # #715 is the written-ahead test pair for TS-164 (#698: byte-identical re-runs,
+    # TC-AUTHOR-18; write-ownership snapshot diffs, TC-AUTHOR-17 — ADR-43's no-store
+    # clause, asserted over row counts, not over absence of error).
+    #
+    # Keyed `symbol` on `aeh.author:AuthoringService`, per the issue's technical note, and
+    # that survives contact with the tree — the opposite of the `#700` case above. The
+    # design delta §3.1 declares the class **by name** in its Interfaces block, and it
+    # exists nowhere today (`aeh.author` itself is absent), so the key reads unresolved on
+    # landing day one and cannot fire early against code that already exists.
+    #
+    # **Landing-timing disclosure — read before acting on the gate's notice.** The class
+    # lands with #690, the first M-AUTHOR service story, which also captures the corpus
+    # recordings (#686's capture pass rides #690's PR, per that entry) — the same landing
+    # that resolves the two test files' own corpus gates (`require_path` on the recordings
+    # and their `coverage.json`). So when this key fires, the files' replay guards resolve
+    # with it and the unmark re-check ("case green before unmarking — never on the notice
+    # alone") is meaningful. Two limbs may still be open at that landing. One: the scripted
+    # review half of TC-AUTHOR-17 (#696's review walk). Two: TC-AUTHOR-18's force-overwrite
+    # limb — the re-run's `**{FORCE_KWARG: True}` rides #697's overwrite-confirmation
+    # behaviour (TS-163), which TS-164 does not depend on, and the design pins
+    # `draft(self, documents, output_dir)` with no third parameter, so against a
+    # design-conformant implementation the keyword is a `TypeError` until #697 spells the
+    # library mechanism (the vocabulary's `FORCE_KWARG` row discloses the same). If the
+    # cases run red on either limb, do NOT unmark red cases and do not drop the entry
+    # either — re-key, the `#368`/`#10` re-key precedent, to a `symbols` conjunction adding
+    # the last-landing limb. #698 itself introduces no new symbol (determinism is
+    # behaviour, not a name), so no later key exists: this is the last design-named symbol
+    # the pair can ride.
+    #
+    # One-line rename path: if the service ships under a different name (the design would
+    # have to change with it), the rename is this target string plus `AUTHOR_SURFACE` in
+    # `tests/support/author_vocabulary.py` — nowhere else.
+    "#698 determinism snapshots": (
+        "symbol",
+        "aeh.author:AuthoringService",
+        (
+            "tests/integration/author/test_tc_author_17_write_ownership_snapshot_diffs.py",
+            "tests/integration/author/test_tc_author_18_byte_identical_rerun.py",
+        ),
+    ),
     # --- Package-authoring delta, TS-167 (#716), TC-CONSOLE-58 -------------------------------
     #
     # FR-CONSOLE-46 lists `aeh author draft` / `aeh author review` present-and-unavailable —
