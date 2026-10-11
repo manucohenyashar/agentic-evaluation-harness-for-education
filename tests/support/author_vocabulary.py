@@ -21,6 +21,8 @@ rename is one line here and nowhere else.
 | `AF01_VARIANT_RECORDINGS` | `fixtures/F-AUTHOR/recordings-af01-variant/` | **path guessed here** — TC-AUTHOR-29's second recorded set for AF-01; the design fixes neither the name nor the layout, so the path is declared once and #686 reconciles it here if it lands elsewhere |
 | `AF13_PAIR` | the carry-over pair is (AF-01 documents, AF-13 documents) | **design-named** (§5.1: "AF-01's test with one question reworded") — same package id, so the re-draft sees the prior report |
 | `AuthoringSettings()` | a zero-argument constructor | **assumed** — §3.1 declares the parameter but no fields; the knobs are env-read per invocation |
+| `REVIEW_ISSUE` | the review walk's blocking story is #696 | **design-named** — TS-162's implementing story (`docs/design/package_authoring_test_plan.md` §8); the TC-AUTHOR-23/24 files' require gates and registry entry name it |
+| `FINGERPRINT_RE` | a content fingerprint renders as a hex run of 12–64 chars | **assumed** — FR-AUTHOR-12/CT-AUTHOR-19 pin that the report's Items section carries "the content fingerprint it was given against", "the hash over the item's id and underlying content", but not its rendering; if #696 renders it base64 or prefixed/truncated, the regex here and the TC-AUTHOR-23 oracle are the one-line change |
 
 Nothing here imports `aeh.author`; resolution happens inside the test bodies via
 `tests.support.impl.require`, so a missing module is a stated failure, not a collection error.
@@ -40,6 +42,9 @@ AUTHOR_ISSUE = "#689"
 CORPUS_ISSUE = "#686"
 CLI_ISSUE = "#695"
 CHAIN_ISSUE = "#687"
+
+#: TS-162's implementing story — the review walk and the ready gate (test plan §8).
+REVIEW_ISSUE = "#696"
 
 AUTHOR_MODULE = "aeh.author"
 
@@ -202,6 +207,11 @@ class CountingProvider:
 #: often: once per placeholder item, each with its reason comment on the line above.
 SENTINEL_RE = re.compile(r"<<PLACEHOLDER: ([^<>\n]+?)>>")
 PLACEHOLDER_COMMENT_RE = re.compile(r"#\s*PLACEHOLDER\(([^)\n]+)\):\s*(.+?)\s*$")
+
+#: A content fingerprint as the report renders it — a hex run of 12–64 characters (see the
+#: module docstring's table: assumed, not design-pinned; FR-AUTHOR-12/CT-AUTHOR-19 pin the
+#: record's existence, not its rendering).
+FINGERPRINT_RE = re.compile(r"\b[0-9a-f]{12,64}\b", re.IGNORECASE)
 
 
 def placeholder_fields(draft_text: str) -> list[str]:
