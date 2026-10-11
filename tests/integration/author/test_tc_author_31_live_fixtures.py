@@ -148,6 +148,7 @@ def _live_draft(af_id: str, tmp_path_factory) -> dict:
     require(AUTHOR_MODULE, issue=SURFACE_ISSUE)
     require(AUTHOR_MODULE, "AuthoringService", "DraftResult", "AuthoringSettings",
             issue=SURFACE_ISSUE)
+    require(AUTHOR_MODULE, "validate_draft", issue="#693")
     require_path(af(af_id), f"the {af_id} authored fixture", issue=CORPUS_ISSUE)
 
     if af_id in _RUNS:
@@ -263,9 +264,10 @@ def test_tc_author_31_outcome_classes_hold_on_live_openrouter(af_id, tmp_path_fa
       behind are the corpus's.
 
     `build = "refused"` — the draft carries a graded sentinel, which is the whole of
-    FR-PKG-28's refusal trigger; `build = "publishes"` — for resolved fixtures, the zero-
-    placeholder draft is what the gate accepts (the partial fixtures publish after review,
-    which is #704's live-workflow extension).
+    FR-PKG-28's refusal trigger; `build = "publishes"` — a fixture expecting no placeholders
+    (resolved ones, and AF-13's partial) must draft sentinel-free, the zero-placeholder draft
+    the gate accepts (partial fixtures WITH named placeholders publish after review, which is
+    #704's live-workflow extension).
     """
     entry = _live_draft(af_id, tmp_path_factory)
     result = entry["result"]
@@ -310,6 +312,19 @@ def test_tc_author_31_outcome_classes_hold_on_live_openrouter(af_id, tmp_path_fa
             f"sentinel-free draft would publish, which is exactly the incomplete-package "
             f"failure RISK-121 names."
         )
+    elif expected["build"] == "publishes" and not expected.get("placeholders"):
+        # The buildable-as-drafted class: a fixture whose outcome expects no placeholders
+        # (AF-13's partial) must draft sentinel-free — the gate accepts the zero-placeholder
+        # draft, so a graded sentinel here means the live run left a gap the corpus's class
+        # says does not exist (a changed outcome class, RISK-122, never silent). Partial
+        # fixtures WITH named placeholders publish after review (#704's extension) and are
+        # exempt — their drafted draft legitimately carries sentinels.
+        assert not graded, (
+            f"{CASE}: {af_id} is expected to build as drafted (build=publishes, no expected "
+            f"placeholders) — the gate accepts a zero-placeholder draft — but the live draft "
+            f"carries the graded placeholders {graded}. A sentinel on a class that should be "
+            f"sentinel-free is a changed outcome class."
+        )
     if outcome == "resolved":
         models_used = tuple(getattr(result, "models_used", None) or ())
         assert models_used, (
@@ -334,7 +349,8 @@ def test_perf_20_live_p95_wall_clock_fails_openly_if_the_assumption_breaks(tmp_p
     past the assumption is the trap. Loosening this bound is RISK-33's most-missed breaking
     change and must be an edit to this case, visible in review.
     """
-    times = sorted(_live_draft(af_id, tmp_path_factory)["elapsed"] for af_id in AF_IDS)
+    per_fixture = {af_id: _live_draft(af_id, tmp_path_factory)["elapsed"] for af_id in AF_IDS}
+    times = sorted(per_fixture.values())
     # Nearest-rank p95 over the fixture set; with thirteen samples the rank is the maximum.
     p95 = times[max(0, math.ceil(0.95 * len(times)) - 1)]
     assert p95 < LIVE_P95_LIMIT_S, (
@@ -342,5 +358,5 @@ def test_perf_20_live_p95_wall_clock_fails_openly_if_the_assumption_breaks(tmp_p
         f"(NFR-AUTHOR-02, RISK-129) was under {LIVE_P95_LIMIT_S:.0f}s. The assumption failed "
         f"openly, as designed: re-pin HARNESS_AUTHOR_TIMEOUT_S and re-state the bound in this "
         f"case with the measured figure — never silence the failure. Per-fixture seconds: "
-        f"{ {af_id: round(entry, 1) for af_id, entry in zip(AF_IDS, times)} }"
+        f"{ {af_id: round(entry, 1) for af_id, entry in per_fixture.items()} }"
     )

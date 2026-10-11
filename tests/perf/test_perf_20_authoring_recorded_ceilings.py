@@ -81,6 +81,7 @@ def _guards():
     """
     author = require(AUTHOR_MODULE, issue="#690")
     require(AUTHOR_MODULE, "AuthoringService", "DraftResult", "AuthoringSettings", issue="#690")
+    require(AUTHOR_MODULE, "validate_draft", issue="#693")
     require_path(af("AF-01"), "the AF-01 authored fixture", issue="#686")
     require_path(
         RECORDINGS / "coverage.json",
@@ -200,7 +201,7 @@ def test_perf_20_the_call_ceiling_holds_at_the_stated_load(tmp_path, monkeypatch
     recordings = RECORDINGS
 
     results = _draft_the_set(author, recordings, tmp_path, chain)
-    total_calls = 0
+    total_reasoning = 0
     total_ceiling = 0
     for af_id, (result, provider, _elapsed, pages) in results.items():
         items = _items_count(result)
@@ -222,11 +223,16 @@ def test_perf_20_the_call_ceiling_holds_at_the_stated_load(tmp_path, monkeypatch
             f"transcription is recorded, never retried above M-PROV (TC-AUTHOR-30) — a red "
             f"here is a design conversation, not a bound to loosen (RISK-33)."
         )
-        total_calls += len(provider.calls)
+        # The set total is summed over the same quantity the per-fixture ceilings bound:
+        # reasoning calls only. Transcription is bounded separately above (one per page), so
+        # folding it in here would compare a reasoning ceiling against a reasoning-plus-
+        # transcription count — the two limbs must read the test plan's call-count bound the
+        # same way (RISK-33: a bound read two ways is not a bound).
+        total_reasoning += reasoning_calls
         total_ceiling += ceiling
 
-    assert total_calls <= total_ceiling, (
-        f"{CASE}: the full set made {total_calls} authoring-level calls against a summed "
+    assert total_reasoning <= total_ceiling, (
+        f"{CASE}: the full set made {total_reasoning} reasoning calls against a summed "
         f"ceiling of {total_ceiling} — the stated load's call budget (PERF-20) does not hold "
         f"even though every fixture holds its own"
     )
