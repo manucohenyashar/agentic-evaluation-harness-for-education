@@ -9,6 +9,13 @@ The two decision tables are the census's data and the debugging-only help sectio
 rendering: `GET /api/v1/cli-help` answers `parity_inventory()`, generated from the live
 `aeh` parser at request time, so a stale entry cannot hide. The design fixes none of the names;
 they are declared here once, and `tests/support/console_api_vocabulary.py` reads the same two.
+
+The authoring commands are listed **present-and-unavailable** (`FR-CONSOLE-46`, design delta
+§3.5): `aeh author draft` / `aeh author review` are CLI first (FR-PIPE-10), the authoring
+screens are future console work, and the listing says so instead of inventing a console path
+this delta does not build. While the `author` group is unregistered (#695), the inventory
+serves the declared rows and the census keeps naming the gap — a declared command the parser
+will never have cannot hide behind its row.
 """
 
 from __future__ import annotations
@@ -57,6 +64,23 @@ DEBUGGING_ONLY_COMMANDS: dict[str, str] = {
         "published package; the console's export gate delivers the school-facing package "
         "file instead"
     ),
+    # `aeh author draft` / `aeh author review` are CLI first (FR-PIPE-10); the authoring
+    # screens — upload the documents, render the report, collect the review answers — are
+    # future console work (FR-CONSOLE-46, design delta §3.5). This is the present-and-
+    # unavailable pattern (FR-CONSOLE-34): the command is listed, the console path is not
+    # invented, and the reason says why. Until the `author` group is registered in the
+    # parser (#695), `parity_inventory` serves these rows as declared-but-unregistered —
+    # the census keeps naming the gap until then.
+    "author draft": (
+        "turns teacher-authored documents into a draft package spec plus an authoring report "
+        "from the terminal; the authoring screens are future console work (FR-CONSOLE-46), so "
+        "the command is listed present-and-unavailable until they are built"
+    ),
+    "author review": (
+        "walks the teacher through every unresolved item of a draft before the package can be "
+        "built; the authoring screens are future console work (FR-CONSOLE-46), so the command "
+        "is listed present-and-unavailable until they are built"
+    ),
 }
 
 #: What each CLI command is *for*, console path or not (`NFR-CONSOLE-09`'s other half): the
@@ -86,6 +110,16 @@ CLI_COMMAND_PURPOSE: dict[str, str] = {
     "cohort show": DEBUGGING_ONLY_COMMANDS["cohort show"],
     "package build": DEBUGGING_ONLY_COMMANDS["package build"],
     "package export": DEBUGGING_ONLY_COMMANDS["package export"],
+    "author draft": (
+        "runs the authoring draft over teacher-authored documents from the terminal; the "
+        "console's authoring screens are future work (FR-CONSOLE-46), and a developer uses "
+        "the command to produce the draft spec and report without a browser"
+    ),
+    "author review": (
+        "walks a draft's unresolved items to resolution ahead of the package build from the "
+        "terminal; the console's authoring screens are future work (FR-CONSOLE-46), and a "
+        "developer uses the command to finish a review when no console session is open"
+    ),
     "ingest": (
         "reads scanned papers through the intake checks from the terminal; the console's "
         "loading-papers screen reads the same files through the same checks, and a developer "
@@ -132,6 +166,13 @@ def parity_inventory() -> dict[str, Any]:
     is for" line — lands in `gaps` beside the entries rather than being hidden: the census
     (`TC-CONSOLE-54`) fails on the same list, and a reader of the help sees the gap, not
     silence.
+
+    A debugging-only command the parser does not have *yet* is still served as a row
+    (FR-CONSOLE-46's present-and-unavailable listing): the listing — the reason and the
+    what-it-is-for line — is the console's decision, made when #700 amended the tables, and
+    the help section must show it even before the command is registered (#695). The census
+    gap for the unregistered name stays in `gaps` until the parser catches up, so a declared
+    command the parser will never have cannot hide behind its row.
     """
     from aeh.pipeline.cli import _build_parser
 
@@ -165,6 +206,18 @@ def parity_inventory() -> dict[str, Any]:
         commands.append(entry)
     for name in sorted(declared - set(leaves)):
         gaps.append(f"the inventory lists `aeh {name}`, which the parser does not have")
+        # A declared debugging-only command is served even while unregistered: the listing is
+        # the decision (FR-CONSOLE-46's present-and-unavailable pattern), and the reason and
+        # purpose rows above are what the help section renders. The gap stays until the
+        # parser registers the command, so the row can never hide a stale name.
+        reason = DEBUGGING_ONLY_COMMANDS.get(name)
+        if reason is not None:
+            commands.append({
+                "command": name,
+                "purpose": CLI_COMMAND_PURPOSE.get(name, ""),
+                "surface": "debugging-only",
+                "reason": reason,
+            })
     return {
         "rule": ("the console is the operator surface; the CLI is the debugging surface "
                  "(NFR-CONSOLE-09). Every `aeh` subcommand either has a console path or is "

@@ -19,12 +19,15 @@ authoring module present. `aeh author draft` / `aeh author review` arrive regist
 TS-161) before the console screens exist, and FR-CONSOLE-46 holds the parity door open by
 listing them **present-and-unavailable** — the FR-CONSOLE-34 pattern — with the reason that the
 authoring screens are future console work, so the census passes without inventing a console
-path this delta does not build. Until #700 makes that listing (a data edit to
-`aeh/console/parity.py`, no new symbol), the census **fails** — that failure is the feature
-forcing the listing, and the marked cases below are its designed red: each raises
-`NotImplementedYet` naming #700 before it asserts anything. The unmarked control plants the
-`author` group exactly as #695 registers it and proves the census discriminates: registered
-but unlisted, both author commands are reported as silently unrepresented.
+path this delta does not build. **#700 made that listing** (a data edit to
+`aeh/console/parity.py`, no new symbol): the two author commands are listed with that reason in
+`DEBUGGING_ONLY_COMMANDS`, `CLI_COMMAND_PURPOSE` carries their what-it-is-for lines, and
+`parity_inventory` serves the declared rows even while the parser does not register the
+commands yet — the census gap for the unregistered names stays until #695 catches up. While
+the listing was missing, each case raised `NotImplementedYet` naming #700 before it asserted
+anything; the marker came off when the story landed. The unmarked control plants the `author`
+group exactly as #695 registers it and proves the census discriminates: registered but
+unlisted, both author commands are reported as silently unrepresented.
 
 **Not implemented as specified, stated:** NFR-CONSOLE-09's documentation rewrite (onboarding
 and manuals written to the console-primary split) is prose quality, judged by #632's reviewer;
@@ -127,10 +130,10 @@ def test_tc_console_54_control_the_walk_reaches_nested_subcommands():
 # are explicitly future work (design delta §3.5), and FR-CONSOLE-46 keeps the parity census
 # honest in between: the author commands are listed present-and-unavailable, with the reason
 # that the authoring screens are future console work — never with an invented console path.
-# The listing is DATA in `aeh/console/parity.py` (its census tables), not a new symbol, which
-# is why the marked cases raise `NotImplementedYet` naming #700 on the missing rows rather
-# than on a missing module: before #700 there is nothing to assert on, and that guard IS the
-# designed red. Once the rows land, each case asserts the oracle exactly.
+# The listing is DATA in `aeh/console/parity.py` (its census tables), not a new symbol; #700
+# landed it and the marker came off. The `_author_listing` guard below stays as the oracle's
+# own tripwire: if the rows are ever dropped from the tables, the cases fail naming the data
+# edit that is missing rather than reporting a false pass.
 
 #: The author leaves, as FR-CONSOLE-46 names them.
 AUTHOR_LEAVES = ("author draft", "author review")
@@ -156,12 +159,13 @@ def _parser_with_author_group():
 
 
 def _author_listing(leaf: str, console_paths: dict, debugging_only: dict) -> str:
-    """The row's present-and-unavailable listing, or the `NotImplementedYet` that names #700.
+    """The row's present-and-unavailable listing, or the `NotImplementedYet` tripwire.
 
     Checks the *wrong* listing first — a console path would make the census fail on the
     route-table check (`FR-CONSOLE-46`: "without inventing a console path this delta does not
-    build") — and only then reports the missing row as the blocker it is: the listing is data
-    in `aeh/console/parity.py`, so its absence is #700's, not a missing module's.
+    build") — and only then reports a missing row: the listing is data in
+    `aeh/console/parity.py` (#700's amendment), and the guard names that data edit if the
+    rows are ever dropped, so the cases fail loudly instead of passing on a hollow table.
     """
     assert leaf not in console_paths, (
         f"TC-CONSOLE-58: `aeh {leaf}` is listed as a console path, but FR-CONSOLE-46 holds the "
@@ -200,7 +204,7 @@ def _assert_reason_names_future_console_work(leaf: str, reason: str) -> None:
 
 def _assert_purpose_line(leaf: str, purpose: dict) -> None:
     """`NFR-CONSOLE-09`'s other half reaches the author rows too: every leaf the parser has is
-    named in `CLI_COMMAND_PURPOSE`, and #700's AC updates that table with them."""
+    named in `CLI_COMMAND_PURPOSE`, and #700's amendment added the author rows to it."""
     line = purpose.get(leaf)
     assert line, (
         f"TC-CONSOLE-58: `aeh {leaf}` has no line in CLI_COMMAND_PURPOSE saying what it is for "
@@ -209,7 +213,6 @@ def _assert_purpose_line(leaf: str, purpose: dict) -> None:
         f"TC-CONSOLE-58: `aeh {leaf}`'s purpose line is a label, not a sentence: {line!r}")
 
 
-@pytest.mark.writtenahead
 def test_tc_console_58_author_draft_is_listed_present_and_unavailable():
     routes, console_paths, debugging_only = require(
         CONSOLE_MODULE, ROUTE_TABLE, PARITY_PATHS, DEBUGGING_ONLY, issue=PARITY_ISSUE)
@@ -229,7 +232,6 @@ def test_tc_console_58_author_draft_is_listed_present_and_unavailable():
         + "\n  ".join(row_problems))
 
 
-@pytest.mark.writtenahead
 def test_tc_console_58_author_review_is_listed_present_and_unavailable():
     routes, console_paths, debugging_only = require(
         CONSOLE_MODULE, ROUTE_TABLE, PARITY_PATHS, DEBUGGING_ONLY, issue=PARITY_ISSUE)
@@ -246,19 +248,18 @@ def test_tc_console_58_author_review_is_listed_present_and_unavailable():
         + "\n  ".join(row_problems))
 
 
-@pytest.mark.writtenahead
 def test_tc_console_58_the_census_passes_once_the_author_commands_are_listed():
     """The case's oracle, exact: census equality. The parser is the planted one (`_parser_with_
     author_group`), so the oracle is satisfiable by the listing alone — #695 registering the
-    same group changes nothing here — and once #700's rows land, the census with the author
+    same group changes nothing here — and with #700's rows landed, the census with the author
     commands present reports no problems at all, the way the existing TC-CONSOLE-54 census
     does for every other leaf."""
     routes, console_paths, debugging_only = require(
         CONSOLE_MODULE, ROUTE_TABLE, PARITY_PATHS, DEBUGGING_ONLY, issue=PARITY_ISSUE)
     console_paths, debugging_only = dict(console_paths), dict(debugging_only)
     for leaf in AUTHOR_LEAVES:
-        # The designed red: without the listing there is nothing to assert on, and the census
-        # would rightly fail — the guard names the data edit this case waits on.
+        # The tripwire: a dropped row fails here, naming the data edit that is missing,
+        # rather than letting the census-equality assert below pass on a hollow table.
         _author_listing(leaf, console_paths, debugging_only)
     problems = parity_census(cli_leaf_commands(_parser_with_author_group()),
                              console_paths, debugging_only, list(routes))
