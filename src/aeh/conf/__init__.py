@@ -18,6 +18,7 @@ Files:
     run_config.py      `RunConfig`, `CohortRef` and the profile summary shown to people
     sources.py         reading the environment and config files, and the start-up banner
     panel.py           the stable hash over the ordered judge panel
+    panel_profile.py   `panel_for_profile`: the profile's ordered judge chain for authoring
     consent.py         the consent gate for remote providers
     resolution.py      `resolve_run_config`: environment and file in, one frozen `RunConfig` out
     rehydrate.py       rebuilding a stored run's config and refusing a mismatched resume
@@ -88,6 +89,7 @@ from .sources import (
     select_profile_config,
 )
 from .panel import compute_panel_build_ref
+from .panel_profile import panel_for_profile
 from .consent import consent_override_for, CONSENTED_CLASSES, ConsentOverride, REMOTE_PROFILES
 from .qa_model import QA_MODEL_KEY
 from .resolution import resolve_run_config
@@ -127,6 +129,7 @@ __all__ = [
     "LOGGER_NAME",
     "ModelRef",
     "PANEL_SIZES",
+    "panel_for_profile",
     "parse_allow_remote_real_work",
     "ProfileSummary",
     "PROVIDER_MANAGED",

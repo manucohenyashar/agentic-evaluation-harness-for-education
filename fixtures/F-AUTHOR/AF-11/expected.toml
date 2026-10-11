@@ -1,0 +1,7 @@
+af = "AF-11"
+description = "one document; no grade boundaries stated"
+documents = ["math8-algebra-01-test.pdf"]
+outcome = "partial"
+placeholders = ["grades"]
+build = "refused"
+notes = "[grades] placeholder; the build is refused until it is filled (FR-PKG-28)"

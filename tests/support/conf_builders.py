@@ -150,6 +150,49 @@ HOSTED_JUDGE_3 = ModelRef(
 HOSTED_PANEL_3 = (HOSTED_JUDGE, HOSTED_JUDGE_2, HOSTED_JUDGE_3)
 
 
+# --- escalation judges (FR-CONF-33 / CT-CONF-23, package-authoring design delta §3.2) ---------
+
+#: Escalation judges for `panel_for_profile`'s chain, in the same **parsed** form the panel
+#: itself takes — `ModelRef` entries under the `escalation_judge` key, not the raw TOML tables
+#: M-PIPE's own `escalation_judge` key carries (`aeh.pipeline.runtime` reads mappings there).
+#: This is the bet #705 discloses: `[[escalation_judge]]` reaches M-CONF's surface converted to
+#: `ModelRef`s exactly as `[[panel]]` is, so a case can judge the chain and not the conversion.
+HOSTED_ESCALATION_A = ModelRef(
+    role="judge",
+    provider="openrouter",
+    build_id="deepseek/deepseek-r1@2025-05-28",
+    quantization=None,
+)
+
+#: A **re-constructed** ref equal by build identity — `provider` + `\x1f` + `build_id` +
+#: `\x1f` + `quantization`, the key `aeh.conf.panel._build_identity` deduplicates on — to panel
+#: member `HOSTED_JUDGE_3`, but a distinct object. `TC-CONF-39`'s duplicate limb needs exactly
+#: this: a dedup keyed on object identity (`is`) passes every test that reuses one constant,
+#: and the design's "de-duplicated by build identity" is a statement about *values*.
+HOSTED_ESCALATION_DUPLICATE = ModelRef(
+    role="judge",
+    provider="openrouter",
+    build_id="mistralai/mistral-large@2024-11-18",
+    quantization=None,
+)
+
+EDGE_ESCALATION_A = ModelRef(
+    role="judge",
+    provider="ollama",
+    build_id="/models/deepseek-r1-distill.gguf@sha256:7777",
+    quantization="q4",
+)
+
+#: The edge twin of `HOSTED_ESCALATION_DUPLICATE`: equal by build identity to panel member
+#: `EDGE_JUDGE_3` (weights path, hash and quantization all three), a distinct object.
+EDGE_ESCALATION_DUPLICATE = ModelRef(
+    role="judge",
+    provider="vllm-mlx",
+    build_id="/models/mistral-large.gguf@sha256:eeee",
+    quantization="q8",
+)
+
+
 # --- credential sentinels --------------------------------------------------------------------
 
 #: The exact value `TC-CONF-11`'s preconditions name.
