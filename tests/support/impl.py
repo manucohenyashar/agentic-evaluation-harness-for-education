@@ -1457,33 +1457,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/browser/spa/test_tc_e2e_06_teachers_day.py::test_tc_e2e_06_teachers_day_journey",
         ),
     ),
-    #
-    # `TC-PKG-38`/`TC-PKG-C23` (#706, `FR-PKG-28`/`CT-PKG-23`): the build-gate refusal of a
-    # spec carrying the `<<PLACEHOLDER:` sentinel. #688 pins the file (`pipeline/packages.py`,
-    # at the top of the build path, before `plan_package`/`build_package` do any work) and the
-    # behaviour (a substring check over the spec text, naming file + field + reason) but no
-    # Python name — so the kind/target must resolve exactly when that gate lands:
-    #   `command`  is wrong here (the issue's technical note says so): a text probe fires on
-    #              prose, pins the wording rather than the behaviour, and cannot watch a
-    #              placement rule at all;
-    #   `path`     cannot discriminate — `src/aeh/pipeline/packages.py` already exists, so a
-    #              path target reads as resolved today;
-    #   `module`   is spent — `aeh.pipeline` landed with #364;
-    #   `symbol`   on any name in the module today (`build_package`, `plan_package`,
-    #              `PackageSpecError`, `read_package_spec`) also reads as resolved today.
-    # The target is therefore the refusal **type** the story must add:
-    # `PlaceholderSentinelError`. It is invented-and-used-together: the two test files name it
-    # (in `pytest.raises` and via `require()`) and this entry names it, and the comment is the
-    # declaration of that invention. If #688 lands the refusal under `PackageSpecError` with
-    # no distinct type, the rename is one line here and one in each test file.
-    "#688 build-gate sentinel": (
-        "symbol",
-        f"{PIPE_PACKAGES_MODULE}:PlaceholderSentinelError",
-        (
-            "tests/integration/pkg/test_tc_pkg_38_build_gate_sentinel.py",
-            "tests/contract/pkg/test_ct_pkg_c23_build_gate_refusal_contract.py",
-        ),
-    ),
 # --- TS-153 (#686), the authoring corpus's recordings half ------------------------------
     #
     # The corpus's documents and `expected.toml` files are committed and pinned green by the

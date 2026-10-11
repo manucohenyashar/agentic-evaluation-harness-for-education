@@ -31,16 +31,13 @@ at the defect. A golden full message is not pinnable ahead of the implementation
 design pins the three names, not the wording — so "exact error text" is asserted as those
 three exact names; a golden can be added at the unmark if the design wants one.
 
-**Written ahead of #688** (`writtenahead`, keyed `#688 build-gate sentinel`): the registry
-entry pins the gate's arrival on `aeh.pipeline.packages:PlaceholderSentinelError`, the
-refusal type the story must add. The design names the file and the substring check and no
-Python name; every name in `pipeline/packages.py` predates the gate, so a `symbol` on any of
-them resolves immediately and breaks the registry's gate. The type is invented, but this
-file and `tests/contract/pkg/test_ct_pkg_c23_build_gate_refusal_contract.py` invent and use
-it together; if #688 lands the refusal under `PackageSpecError` with no distinct type, the
-rename is one line in `tests/support/impl.py` and one in each of the two files. Until then
-every body fails on `require()` — `NotImplementedYet` naming #688 — which is the designed
-red.
+**Written ahead of #688; the marker came off when the story landed.** While red, the
+registry pinned the gate's arrival on the invented refusal type
+`aeh.pipeline.packages:PlaceholderSentinelError` (every name in `pipeline/packages.py`
+predated the gate, so a `symbol` on any of them resolved immediately). #688 landed the
+refusal under the existing `PackageSpecError` with no distinct type, so the declared rename
+path was taken: the bodies now `require()` the gate's own new constant `PLACEHOLDER_SENTINEL`
+— the marker the gate exists to find — and the registry entry came off.
 """
 
 from __future__ import annotations
@@ -64,7 +61,7 @@ import aeh.synth  # noqa: F401
 from aeh.pipeline import cli
 from tests.support.impl import PIPE_PACKAGES_MODULE, require
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 REPO = Path(__file__).resolve().parents[3]
 SAMPLE_SPEC = REPO / "docs" / "live-tests" / "config" / "ps9-forces-01.package.toml"
@@ -172,7 +169,7 @@ def test_tc_pkg_38_a_sentinel_in_any_graded_field_refuses_the_build(
     """Every placement refused, naming file + field + reason (`FR-PKG-28`); where the same
     spec carries a structural defect too, the refusal is the sentinel's — the structural
     phrase is absent — and the data directory is byte-identical around the call."""
-    require(PIPE_PACKAGES_MODULE, "PlaceholderSentinelError", issue="#688")
+    require(PIPE_PACKAGES_MODULE, "PLACEHOLDER_SENTINEL", issue="#688")
     _, old, new, field, reason, structural = placement
     spec_path = _write_spec(tmp_path, [(old, new)])
     before = _data_state(tmp_data_dir)
@@ -202,7 +199,7 @@ def test_tc_pkg_38_a_sentinel_refusal_precedes_a_separate_structural_defect(
     count is `M-PKG`'s own publish-time rule (`TC-PIPE-28` — it fires after the package file
     exists), so if the gate ran anywhere after `plan_package` the operator would read the
     band-count refusal instead."""
-    require(PIPE_PACKAGES_MODULE, "PlaceholderSentinelError", issue="#688")
+    require(PIPE_PACKAGES_MODULE, "PLACEHOLDER_SENTINEL", issue="#688")
     _, old, new, _field, reason, _structural = PLACEMENTS[0]
     spec_path = _write_spec(
         tmp_path, [(C4_FULL_BAND, ""), (old, new)])
@@ -226,7 +223,7 @@ def test_tc_pkg_38_the_catalog_is_untouched_after_the_refusal(tmp_data_dir, tmp_
     domain, design delta §3.1). The sentinel-carrying spec for the same package id is then
     refused with the data directory byte-identical — and at the sentinel, not at the
     duplicate-id check `plan_package` would raise."""
-    require(PIPE_PACKAGES_MODULE, "PlaceholderSentinelError", issue="#688")
+    require(PIPE_PACKAGES_MODULE, "PLACEHOLDER_SENTINEL", issue="#688")
     _, old, new, _field, reason, _structural = PLACEMENTS[0]
     clean = _write_spec(tmp_path / "clean", [])
     sentinel = _write_spec(tmp_path / "sentinel", [(old, new)])
@@ -255,7 +252,7 @@ def test_tc_pkg_38_retrying_the_refused_build_is_refused_identically(
     """Variant: retry of the same build — the refusal is not retryable (`CT-PKG-23`'s last
     clause): a second attempt is refused again, identically, and nothing is written either
     time."""
-    require(PIPE_PACKAGES_MODULE, "PlaceholderSentinelError", issue="#688")
+    require(PIPE_PACKAGES_MODULE, "PLACEHOLDER_SENTINEL", issue="#688")
     _, old, new, _field, reason, _structural = PLACEMENTS[0]
     spec_path = _write_spec(tmp_path, [(old, new)])
     before = _data_state(tmp_data_dir)

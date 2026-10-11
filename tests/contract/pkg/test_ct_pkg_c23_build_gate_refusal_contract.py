@@ -27,15 +27,12 @@ placement and file state, which the library door cannot see: row 5 asserts the s
 refusal's own phrases are **absent** from a spec that is also structurally defective, and
 row 6 hashes every file under the data directory around the call.
 
-**Written ahead of #688** (`writtenahead`, keyed `#688 build-gate sentinel`): the registry
-pins the gate's arrival on `aeh.pipeline.packages:PlaceholderSentinelError`, the refusal
-type the story must add — the design names the file and the substring check and no Python
-name, and a `symbol` on any name the module already has would resolve immediately. The type
-is invented, but this file and
-`tests/integration/pkg/test_tc_pkg_38_build_gate_sentinel.py` invent and use it together;
-if #688 lands the refusal under `PackageSpecError` with no distinct type, the rename is one
-line in `tests/support/impl.py` and one in each of the two files. Until then every body
-fails on `require()` — `NotImplementedYet` naming #688 — which is the designed red.
+**Written ahead of #688; the marker came off when the story landed.** While red, the
+registry pinned the gate's arrival on the invented refusal type
+`aeh.pipeline.packages:PlaceholderSentinelError`; #688 landed the refusal under the
+existing `PackageSpecError` with no distinct type, so the declared rename path was taken —
+the bodies `require()` the gate's own new constant `PLACEHOLDER_SENTINEL` and the registry
+entry came off.
 """
 
 from __future__ import annotations
@@ -61,7 +58,7 @@ from aeh.pipeline import cli
 from aeh.pipeline.packages import PackageSpecError, plan_package, read_package_spec
 from tests.support.impl import PIPE_PACKAGES_MODULE, require
 
-pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.contract]
 
 REPO = Path(__file__).resolve().parents[3]
 SAMPLE_SPEC = REPO / "docs" / "live-tests" / "config" / "ps9-forces-01.package.toml"
@@ -132,17 +129,15 @@ def test_ct_pkg_c23_row_4_the_refusal_names_file_field_and_reason(tmp_path):
     the two raises — and the message names the three things the clause requires. The field is
     the text the sentinel carries and the reason is the text the comment above it carries
     (`FR-AUTHOR-11`), both planted to appear nowhere else in the sample spec, so the
-    assertion cannot pass on a structural refusal or on spec prose. The exception type is
-    read off the module after `require()`, not imported: before #688 lands, the name does not
-    exist, and the module-level import of it would be a collection error rather than the
-    designed red.
+    assertion cannot pass on a structural refusal or on spec prose. The exception type is the module's
+    `PackageSpecError`: the gate refuses with the type the build path already raises for a
+    bad spec, so the clause is asserted on the refusal the caller actually sees.
     """
-    require(PIPE_PACKAGES_MODULE, "PlaceholderSentinelError", issue="#688")
+    require(PIPE_PACKAGES_MODULE, "PLACEHOLDER_SENTINEL", issue="#688")
     spec_path = _write_spec(tmp_path, [(Q1_TEXT,
                                         SENTINEL_COMMENT + SENTINEL_VALUE)])
-    sentinel_error = packages_module.PlaceholderSentinelError
 
-    with pytest.raises((PackageSpecError, sentinel_error)) as caught:
+    with pytest.raises(PackageSpecError) as caught:
         spec = read_package_spec(spec_path)
         plan_package(spec, tmp_path / "packages")
 
@@ -167,7 +162,7 @@ def test_ct_pkg_c23_row_5_the_sentinel_check_precedes_every_other_spec_check(
     `M-PKG`'s own publish-time rule, `TC-PIPE-28` — it fires after the package file exists,
     the farthest a moved gate could be caught before a package is published.)
     """
-    require(PIPE_PACKAGES_MODULE, "PlaceholderSentinelError", issue="#688")
+    require(PIPE_PACKAGES_MODULE, "PLACEHOLDER_SENTINEL", issue="#688")
     edits: list[tuple[str, str]] = [(Q1_TEXT, SENTINEL_COMMENT + SENTINEL_VALUE)]
     # a key no option matches (C1's key, "C", is among Q1's options — "Z" is not)
     edits.append(('question = "Q1"\nkey = "C"', 'question = "Q1"\nkey = "Z"'))
@@ -215,7 +210,7 @@ def test_ct_pkg_c23_row_6_the_refusal_precedes_any_catalog_write_and_is_not_retr
     byte-identical. (The spec itself lives outside the data directory, so its own bytes are
     not part of the state the build must not change.)
     """
-    require(PIPE_PACKAGES_MODULE, "PlaceholderSentinelError", issue="#688")
+    require(PIPE_PACKAGES_MODULE, "PLACEHOLDER_SENTINEL", issue="#688")
     spec_path = _write_spec(tmp_path, [(Q1_TEXT,
                                         SENTINEL_COMMENT + SENTINEL_VALUE)])
     before = _data_state(tmp_data_dir)
