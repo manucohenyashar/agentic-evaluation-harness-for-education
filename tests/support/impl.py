@@ -366,6 +366,45 @@ _AUTHOR_RETRY_PROBE = (
     "raise SystemExit(0 if ok else 1)\""
 )
 
+# --- TS-162 (#713), TC-AUTHOR-23/24: the review walk and the ready gate — the probe limbs ----
+# Built from the same `author_vocabulary` constants as the #689 probes above (the TS26
+# construction), plus the one limb that is genuinely #696's: the `review` method on
+# `AuthoringService`. AF-08 joins the rung-1 corpus limbs for the Q-O9 rejected-answer
+# variant — see the registry entry's comment block for why it is there.
+_AUTHOR_REVIEW_METHOD_LIMB = "ok = ok and hasattr(m.AuthoringService, 'review');"
+_AUTHOR_23_CORPUS_LIMBS = ("AF-07", "AF-08", "recordings")
+_AUTHOR_23_PROBE = (
+    "python -c \"import importlib, pathlib;"
+    f"m = importlib.import_module('{_AUTHOR_MODULE}');"
+    f"ok = all(hasattr(m, n) for n in {_AUTHOR_SURFACE!r});"
+    + _AUTHOR_REVIEW_METHOD_LIMB +
+    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
+    f"ok = ok and all((root / d).is_dir() for d in {_AUTHOR_23_CORPUS_LIMBS!r});"
+    # the capture signal, not just the tree (the TS-168 precedent): a `recordings/` holding
+    # only its README must not resolve the blocker.
+    "ok = ok and (root / 'recordings' / 'coverage.json').is_file();"
+    "raise SystemExit(0 if ok else 1)\""
+)
+_AUTHOR_24_PROBE = (
+    "python -c \"import argparse, importlib, pathlib;"
+    "from aeh.pipeline import cli;"
+    f"m = importlib.import_module('{_AUTHOR_MODULE}');"
+    f"ok = all(hasattr(m, n) for n in {_AUTHOR_SURFACE!r});"
+    + _AUTHOR_REVIEW_METHOD_LIMB +
+    "import aeh.conf; ok = ok and hasattr(aeh.conf, 'panel_for_profile');"
+    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
+    "ok = ok and all((root / d).is_dir() for d in ('AF-07', 'recordings'));"
+    "ok = ok and (root / 'recordings' / 'coverage.json').is_file();"
+    "sub = next(a for a in cli._build_parser()._actions"
+    " if isinstance(a, argparse._SubParsersAction));"
+    "ok = ok and 'author' in sub.choices;"
+    "asub = next((a for a in sub.choices['author']._actions"
+    " if isinstance(a, argparse._SubParsersAction)), None);"
+    "ok = ok and asub is not None and {'draft', 'review'} <= set(asub.choices);"
+    "raise SystemExit(0 if ok else 1)\""
+)
+
+
 WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # issue: (kind, target, tests to unmark)
     #
@@ -2145,6 +2184,22 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/integration/author/test_tc_author_25_fresh_redraft.py",
             "tests/integration/author/test_tc_author_26_overwrite_matrix.py",
             "tests/unit/author/test_tc_author_27_carry_over_variants.py",
+        ),
+    ),
+
+    "#713 review walk, rung 1 (the scripted review: #696's review surface, #686's AF-07/AF-08 corpus and recordings)": (
+        "command",
+        _AUTHOR_23_PROBE,
+        (
+            "tests/unit/author/test_tc_author_23_scripted_review_walk.py",
+        ),
+    ),
+
+    "#713 ready gate, rung 3 (the exit-code matrix through the CLI: #696's review surface, #695's registration, #687's chain, #686's corpus and recordings)": (
+        "command",
+        _AUTHOR_24_PROBE,
+        (
+            "tests/unit/author/test_tc_author_24_ready_gate_exit_codes.py",
         ),
     ),
 }

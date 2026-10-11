@@ -19,6 +19,8 @@ rename is one line here and nowhere else.
 | `FORCE_KWARG` | `draft(..., force=True)` | **invented here** — FR-AUTHOR-22 pins the CLI's `--force` but not the library form CT-AUTHOR-18's rung-1 carry-over case needs; the keyword mirror of the flag is the smallest bet . Disclosed limitation: the design delta pins `draft(self, documents, output_dir)` — no third parameter — so the mechanism itself is #697's (overwrite confirmation, TS-163); if #697 ships it as a settings field, a confirm callback or CLI-only confirmation, the rename here cannot fix the call and the case re-keys per the `#698` registry entry's disclosure |
 | `RETRY_ISSUE` | the retry/recreate/overwrite/carry-over story is #697 | **design-named** — TS-163’s implementing story (`docs/design/package_authoring_test_plan.md` §8); the TC-AUTHOR-25/26/27 files’ require gates and registry entry name it |
 | `PLACEHOLDER_FIELDS_AS_ITEM_IDS` | a placeholder's review item id is the sentinel's `<field>` | **assumed** — the report names item ids (CT-AUTHOR-05) and `ReviewAnswer(item_id=...)` must use them; the sentinel's field name is the one id the draft itself states. The scripted-review cases derive answers from this |
+| `REVIEW_ISSUE` | the review walk's blocking story is #696 | **design-named** — TS-162's implementing story (`docs/design/package_authoring_test_plan.md` §8); the TC-AUTHOR-23/24 files' require gates and registry entry name it |
+| `FINGERPRINT_RE` | a content fingerprint renders as a hex run of 12–64 chars | **assumed** — FR-AUTHOR-12/CT-AUTHOR-19 pin that the report's Items section carries "the content fingerprint it was given against", "the hash over the item's id and underlying content", but not its rendering; if #696 renders it base64 or prefixed/truncated, the regex here and the TC-AUTHOR-23 oracle are the one-line change |
 | `AF01_VARIANT_RECORDINGS` | `fixtures/F-AUTHOR/recordings-af01-variant/` | **path guessed here** — TC-AUTHOR-29's second recorded set for AF-01; the design fixes neither the name nor the layout, so the path is declared once and #686 reconciles it here if it lands elsewhere |
 | `AF13_PAIR` | the carry-over pair is (AF-01 documents, AF-13 documents) | **design-named** (§5.1: "AF-01's test with one question reworded") — same package id, so the re-draft sees the prior report |
 | `AuthoringSettings()` | a zero-argument constructor | **assumed** — §3.1 declares the parameter but no fields; the knobs are env-read per invocation |
@@ -40,6 +42,8 @@ from aeh.conf import ModelRef
 AUTHOR_ISSUE = "#689"
 CORPUS_ISSUE = "#686"
 CLI_ISSUE = "#695"
+#: TS-162's implementing story — the review walk and the ready gate (test plan §8).
+REVIEW_ISSUE = "#696"
 CHAIN_ISSUE = "#687"
 
 AUTHOR_MODULE = "aeh.author"
@@ -206,6 +210,8 @@ class CountingProvider:
 #: often: once per placeholder item, each with its reason comment on the line above.
 SENTINEL_RE = re.compile(r"<<PLACEHOLDER: ([^<>\n]+?)>>")
 PLACEHOLDER_COMMENT_RE = re.compile(r"#\s*PLACEHOLDER\(([^)\n]+)\):\s*(.+?)\s*$")
+#: A content fingerprint as the report renders it — a hex run of 12–64 characters (see the
+FINGERPRINT_RE = re.compile(r"\b[0-9a-f]{12,64}\b", re.IGNORECASE)
 
 
 def placeholder_fields(draft_text: str) -> list[str]:
