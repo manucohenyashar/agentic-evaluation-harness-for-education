@@ -222,6 +222,43 @@ _AUTHOR_REPORT_PROBE = (
     " for x in records);"
     " raise SystemExit(0 if ok else 1)\""
 )
+# --- TS-169 (#702), the live fixture tier and the recorded performance ceilings --------------
+# The limbs TS-169's two files drive: the `aeh.author` draft surface #690 ships (`AuthoringService`
+# with `draft`, `DraftResult`, `AuthoringSettings` — the names both files construct through),
+# `validate_draft` (#693's deterministic gate), `panel_for_profile` (#687's chain resolution,
+# landed — the live file resolves the chain through the production path), and the corpus with
+# its `expected.toml` files (committed by #686). The perf file adds the captured-recordings
+# limb: the recorded tier has nothing to replay until #690's capture pass writes
+# `recordings/coverage.json`, the same signal the #686 path entry keys on.
+#
+# Keyed `command`, not `symbol`, for the same reason the #689 entries are: the red spans
+# several stories (#690 the surface, #692 the steps, #693 the gate), and a `symbol` key on any
+# one story's name — `aeh.author:AuthoringService` — fires while the later stories are still
+# stubs, the #118 early-fire direction. The probe demands the whole surface the tests
+# construct through plus #693's mandated name, so it resolves only when the draft pipeline
+# they exercise exists; each test file's own guards re-check the same limbs at unmarking
+# time, each naming its issue there (the #635 re-check rule). The residual early-fire risk —
+# #692's step internals landing after the probe's limbs — is the #689 rung-1 entry's accepted
+# posture: the reader the gate names re-checks the case green before unmarking.
+_AUTHOR_AF_IDS = tuple(f"AF-{i:02d}" for i in range(1, 14))
+_AUTHOR_TS169_SURFACE = ("AuthoringService", "DraftResult", "AuthoringSettings", "validate_draft")
+_AUTHOR_TS169_PROBE_HEAD = (
+    "python -c \"import importlib, pathlib;"
+    f"m = importlib.import_module('{_AUTHOR_MODULE}');"
+    f"ok = all(hasattr(m, n) for n in {_AUTHOR_TS169_SURFACE!r});"
+    "ok = ok and callable(getattr(m.AuthoringService, 'draft', None));"
+    "import aeh.conf; ok = ok and hasattr(aeh.conf, 'panel_for_profile');"
+    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
+    f"ok = ok and all((root / d / 'expected.toml').is_file() for d in {_AUTHOR_AF_IDS!r});"
+)
+_AUTHOR_TS169_LIVE_PROBE = _AUTHOR_TS169_PROBE_HEAD + "raise SystemExit(0 if ok else 1)\""
+_AUTHOR_TS169_PERF_PROBE = (
+    _AUTHOR_TS169_PROBE_HEAD
+    + "ok = ok and (root / 'recordings' / 'coverage.json').is_file();"
+    "raise SystemExit(0 if ok else 1)\""
+)
+
+
 WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # issue: (kind, target, tests to unmark)
     #
@@ -1935,8 +1972,23 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/unit/author/test_tc_author_22_author_logging.py",
         ),
     ),
-}
 
+    "#702 TS-169 TC-AUTHOR-31 the live fixture tier (aeh.author's draft surface, the F-AUTHOR corpus, #687's chain resolution)": (
+        "command",
+        _AUTHOR_TS169_LIVE_PROBE,
+        (
+            "tests/integration/author/test_tc_author_31_live_fixtures.py",
+        ),
+    ),
+
+    "#702 TS-169 PERF-20 the recorded ceilings (aeh.author's draft surface, the corpus, #686's captured recordings)": (
+        "command",
+        _AUTHOR_TS169_PERF_PROBE,
+        (
+            "tests/perf/test_perf_20_authoring_recorded_ceilings.py",
+        ),
+    ),
+}
 
 def blocker_is_resolved(kind: str, target: str, repo_root: Any) -> bool:
     """Has the thing a written-ahead test waits on landed?
