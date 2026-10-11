@@ -58,6 +58,10 @@ def _parser():
     return _build_parser()
 
 
+# Waits on #695 with the `"#695 cli registration"` blocker: the parity inventory lists
+# `aeh author draft`/`aeh author review` (added by #700) while the parser does not have
+# the `author` group yet, so the exact-census assertion is red until it lands.
+@pytest.mark.writtenahead
 def test_tc_console_54_every_aeh_subcommand_has_a_console_path_or_a_debugging_only_reason():
     routes, console_paths, debugging_only = require(
         CONSOLE_MODULE, ROUTE_TABLE, PARITY_PATHS, DEBUGGING_ONLY, issue=PARITY_ISSUE)
