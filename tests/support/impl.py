@@ -1763,25 +1763,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # assert), and not a console path. If #700 renders the listing through a third table
     # instead, the inventory must be taught to read it for the census to pass anyway — the
     # probe's reconciliation is then one line here.
-    "#700 console census": (
-        "command",
-        "python -c \"import sys; sys.path.insert(0, 'src');"
-        "import aeh.console.parity as p;"
-        "rows = {e['command']: e for e in p.parity_inventory()['commands']};"
-        "need = ('author draft', 'author review');"
-        "ok = set(need) <= set(rows)"
-        " and all(rows[k].get('surface') == 'debugging-only' and rows[k].get('reason')"
-        " and rows[k].get('purpose') for k in need);"
-        "raise SystemExit(0 if ok else 1)\"",
-        (
-            "tests/unit/console/test_tc_console_54_parity_census.py"
-            "::test_tc_console_58_author_draft_is_listed_present_and_unavailable",
-            "tests/unit/console/test_tc_console_54_parity_census.py"
-            "::test_tc_console_58_author_review_is_listed_present_and_unavailable",
-            "tests/unit/console/test_tc_console_54_parity_census.py"
-            "::test_tc_console_58_the_census_passes_once_the_author_commands_are_listed",
-),
-    ),
     # --- TS-155 (#707), the draft front door: TC-AUTHOR-01/02/03/16/19/30 ---------------------
     #
     # The issue's technical note keyed these cases `symbol` / `aeh.author:AuthoringService`,
