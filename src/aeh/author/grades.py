@@ -14,6 +14,8 @@ service owns the fallback-and-repair loop around them.
 
 from __future__ import annotations
 
+import math
+
 from typing import Any
 
 from aeh.prov import PromptPayload, json_from_reply
@@ -92,6 +94,13 @@ def parse_grades(reply: str) -> tuple[dict[str, float | None], list[str]]:
         if floor is not None and (isinstance(floor, bool) or not isinstance(floor, (int, float))):
             complaints.append(f"grade {name!r}: the boundary {floor!r} is not a number; use "
                               "the boundary exactly as the document states it.")
+            continue
+        if floor is not None and not math.isfinite(floor):
+            # `json.loads` parses the JSON `Infinity`/`NaN` literals, and the build refuses a
+            # non-finite floor (`set_boundaries`, FR-PKG-16) — so the proposal gate refuses it
+            # here, before it can enter the draft (FR-AUTHOR-10).
+            complaints.append(f"grade {name!r}: the boundary {floor!r} is not a finite number; "
+                              "boundary floors are finite scaled scores (FR-PKG-16).")
             continue
         checked[name.strip()] = None if floor is None else float(floor)
     if complaints:

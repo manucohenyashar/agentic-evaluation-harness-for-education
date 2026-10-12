@@ -1,9 +1,13 @@
-"""Draft validation: the structural rules of `M-PIPE` plus the band rules of `M-PKG`,
+"""Draft validation: the structural rules of `M-PIPE` plus the build-time rules of `M-PKG`,
 wrapped as a report of `DraftIssue`s instead of exceptions (FR-AUTHOR-10).
 
 `plan_package` is the authority on what a package spec may say — it is the same gate the
-build path runs a draft through — and `M-PKG` adds the band-set rules the build enforces at
-store time (`FR-PKG-06`: even count 2..6, ordinals contiguous, points non-decreasing).
+build path runs a draft through — and `M-PKG` adds the rules the build enforces later, at
+store/publish time, which `plan_package` does not carry: the band-set rules (`FR-PKG-06`:
+even count 2..6, ordinals contiguous, points non-decreasing), the composite-shape rule
+(`CT-PKG-21`/`FR-JUDGE-38`: an `evidence_sum` composite needs at least one aspect naming
+it) and the grade-boundary rules (`FR-PKG-16`: a named label for every boundary, finite
+floors, no two grades sharing one cut).
 `validate_draft` runs both layers over a draft **before** review, so a teacher is told
 every structural problem at once, in the report, rather than meeting them one `PackageSpecError`
 at a time. It never raises for a bad spec: it returns issues, and an empty list means the
@@ -13,6 +17,7 @@ left in a field is the one issue a structurally perfect draft can still carry.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,8 +53,12 @@ def validate_draft(spec: Mapping[str, Any]) -> list[DraftIssue]:
 
     1. `plan_package`'s full structural check (`FR-AUTHOR-10`), caught and converted — one
        issue per refusal, never an exception, because a teacher reads issues one by one;
-    2. `M-PKG`'s band-set rules (`FR-PKG-06`), which the build path enforces at store time:
-       an even count of 2..6 bands and points that never decrease down the worst-first list;
+    2. `M-PKG`'s build-time rules, which `plan_package` does not carry: the band-set rules
+       (`FR-PKG-06` — an even count of 2..6 bands and points that never decrease down the
+       worst-first list), the composite-shape rule (`CT-PKG-21` — an `evidence_sum`
+       composite needs at least one aspect naming it) and the grade-boundary rules
+       (`FR-PKG-16` — a named label per boundary, finite floors, no two grades sharing
+       one cut);
     3. the sentinel sweep: any `<<PLACEHOLDER: …>>` still standing, field by field —
        except `approved_by`, whose sentinel is the sign-off slot by design (the teacher
        approves the draft there; it is never counted as an unresolved placeholder).
@@ -60,6 +69,8 @@ def validate_draft(spec: Mapping[str, Any]) -> list[DraftIssue]:
     issues: list[DraftIssue] = []
     issues.extend(_plan_issues(spec))
     issues.extend(_band_issues(spec))
+    issues.extend(_composite_issues(spec))
+    issues.extend(_grades_issues(spec))
     issues.extend(_placeholder_issues(spec))
     return issues
 
@@ -132,6 +143,61 @@ def _band_issues(spec: Mapping[str, Any]) -> list[DraftIssue]:
                 where, f"the band points {points} are not non-decreasing down the "
                        "worst-first list (FR-PKG-06): M-AGG and M-GRADE assume the "
                        "monotone band-to-points mapping."))
+    return issues
+
+
+def _composite_issues(spec: Mapping[str, Any]) -> list[DraftIssue]:
+    """The composite-shape rule the build enforces at publish time (`_composite_problems`,
+    `CT-PKG-21`/`FR-JUDGE-38`): an `evidence_sum` criterion is a grouping record — it needs
+    at least one aspect criterion whose `component_of` names it. `plan_package` checks the
+    aspects' side (exactly two bands naming an `evidence_sum` line) but nothing demands the
+    composite be named, so the check lives here. The composite's own table is excluded from
+    the scan: a `component_of` on the composite itself never counts as an aspect."""
+    issues: list[DraftIssue] = []
+    criteria = _tables(spec, "criterion")
+    for table in criteria:
+        if table.get("score_method") != "evidence_sum":
+            continue
+        cid = table.get("id")
+        where = f"criterion {cid!r}" if cid else "criterion"
+        if not any(other is not table and other.get("component_of") == cid
+                   for other in criteria):
+            issues.append(DraftIssue(
+                where, f"{where} has no aspect criteria; it needs at least one 2-band "
+                       "aspect whose component_of names it (FR-JUDGE-38). A composite "
+                       "carries no bands — its aspects do."))
+    return issues
+
+
+def _grades_issues(spec: Mapping[str, Any]) -> list[DraftIssue]:
+    """The grade-boundary rules the build enforces when it sets the table (`set_boundaries`,
+    `FR-PKG-16`): every boundary names its grade, floors are finite, and no two grades share
+    one cut. `plan_package` only checks each value is a number, so these are wrapped here.
+    Non-numeric values are not this sweep's — `plan_package` refuses them — and a sentinel
+    is the placeholder sweep's finding."""
+    issues: list[DraftIssue] = []
+    grades = spec.get("grades")
+    if not isinstance(grades, Mapping):
+        return []  # a non-table (or a whole-table sentinel) `plan_package` already reported
+    floors: list[float] = []
+    for name, value in grades.items():
+        if not name:
+            issues.append(DraftIssue(
+                "grades", "a boundary table names each grade (FR-PKG-16) — an empty label "
+                          "resolves to nothing."))
+            continue
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            floor = float(value)
+            if not math.isfinite(floor):
+                issues.append(DraftIssue(
+                    f"grades {name!r}", "boundary floors are finite scaled scores "
+                                        "(FR-PKG-16)."))
+                continue
+            floors.append(floor)
+    if len(set(floors)) != len(floors):
+        issues.append(DraftIssue(
+            "grades", f"duplicate scaled floors {floors} — two grades sharing one cut is "
+                      "an ambiguous resolution (FR-PKG-16)."))
     return issues
 
 
