@@ -63,6 +63,38 @@ function dedupeKey(body: Record<string, unknown>): string | null {
   return null;
 }
 
+// --- the cards' content keys ---------------------------------------------------------------------------
+
+/** A question card's React key: the entry's id **and** the server values the card's
+ * form fields initialize from. The card keeps its edits in local state, so keying on
+ * the id alone would let a refreshed read arrive with new server values while the form
+ * still showed the old ones — and staging from that stale form would silently revert
+ * the just-saved change. A changed server value changes the key, which remounts the
+ * card on the fresh values. */
+function questionCardKey(question: DraftQuestion): string {
+  return [
+    question.id,
+    question.text,
+    question.type,
+    question.points === null ? "" : String(question.points),
+    question.model_answer ?? "",
+    question.options.join(","),
+  ].join("|");
+}
+
+/** The grading-point card's key, for the same reason: its form initializes from the
+ * criterion's question, points, key and score levels, so all of them belong in it. */
+function criterionCardKey(criterion: DraftCriterion): string {
+  return [
+    criterion.id,
+    criterion.question,
+    criterion.points === null ? "" : String(criterion.points),
+    criterion.key === undefined || criterion.key === null
+      ? "" : JSON.stringify(criterion.key),
+    criterion.score_levels.map((band) => `${band.name}:${band.points}`).join(","),
+  ].join("|");
+}
+
 // --- the question card -------------------------------------------------------------------------------
 
 function QuestionCard({
@@ -624,6 +656,164 @@ function AddQuestionForm({
   );
 }
 
+/** A new grading point's form. A grading point grades one question by one of two
+ * shapes, and the server's `add criterion` takes exactly those two: by the question's
+ * answer key (the chosen options, with the points a right answer carries) or by a set
+ * of score levels the draft already carries — copied, never typed, because the score
+ * levels are band selections only (`FR-UI-13`: no numeric entry stands on them). When
+ * the question carries no options and the draft carries no score levels, neither shape
+ * can stand, and the form says where score levels come from rather than taking a
+ * grading point it could not grade with. */
+function AddCriterionForm({
+  items,
+  criteria,
+  onStage,
+}: {
+  items: DraftQuestion[];
+  criteria: DraftCriterion[];
+  onStage: (label: string, body: Record<string, unknown>) => void;
+}) {
+  const [questionId, setQuestionId] = useState(items[0]?.id ?? "");
+  const [points, setPoints] = useState("");
+  const [copyFrom, setCopyFrom] = useState("");
+  const [keyLetters, setKeyLetters] = useState<string[]>([]);
+  const owner = items.find((question) => question.id === questionId);
+  const withLevels = criteria.filter((entry) => entry.score_levels.length > 0);
+  const keyPossible = owner !== undefined && owner.options.length > 0;
+
+  const addByKey = (): void => {
+    if (owner === undefined || keyLetters.length === 0) return;
+    const letters = [...keyLetters].sort();
+    onStage(
+      `Added a grading point for ${questionLabel(questionId)} — graded by its ` +
+        `answer key: ${letters.join(", ")}`,
+      {
+        operation: "add criterion",
+        question: questionId,
+        key: letters,
+        ...(points !== "" ? { points: Number(points) } : {}),
+      },
+    );
+    setKeyLetters([]);
+    setPoints("");
+  };
+
+  const addWithLevels = (): void => {
+    const source = withLevels.find((entry) => entry.id === copyFrom);
+    if (source === undefined) return;
+    onStage(
+      `Added a grading point for ${questionLabel(questionId)} — graded by the score ` +
+        `levels of ${criterionLabel(source.id)}`,
+      {
+        operation: "add criterion",
+        question: questionId,
+        bands: source.score_levels.map((band) => ({
+          name: band.name, points: band.points, descriptor: band.descriptor,
+        })),
+      },
+    );
+    setCopyFrom("");
+  };
+
+  if (items.length === 0) {
+    return (
+      <div className="editor-card">
+        <h3>Add a grading point</h3>
+        <p className="editor-card-note">
+          A grading point grades one of the questions. Add a question first.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="editor-card">
+      <h3>Add a grading point</h3>
+      <label htmlFor="add-c-question">The question it grades</label>{" "}
+      <select
+        id="add-c-question"
+        value={questionId}
+        onChange={(event) => setQuestionId(event.target.value)}
+      >
+        {items.map((question) => (
+          <option key={question.id} value={question.id}>
+            {questionLabel(question.id)}
+          </option>
+        ))}
+      </select>
+      {keyPossible && owner !== undefined && (
+        <div className="editor-options">
+          <h4>Grade it by its answer key</h4>
+          {owner.options.map((letter) => (
+            <p key={letter}>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={keyLetters.includes(letter)}
+                  onChange={(event) =>
+                    setKeyLetters(event.target.checked
+                      ? [...keyLetters, letter]
+                      : keyLetters.filter((item) => item !== letter))}
+                />{" "}
+                {letter}. {owner.option_labels?.[letter] ?? ""}
+              </label>
+            </p>
+          ))}
+          <label htmlFor="add-c-points">The points a right answer carries</label>{" "}
+          <input
+            id="add-c-points"
+            type="number"
+            min={0}
+            value={points}
+            onChange={(event) => setPoints(event.target.value)}
+          />{" "}
+          <button
+            type="button"
+            className="button"
+            disabled={keyLetters.length === 0}
+            onClick={addByKey}
+          >
+            Stage the grading point
+          </button>
+        </div>
+      )}
+      {withLevels.length > 0 && (
+        <div className="editor-options">
+          <h4>Or grade it by score levels</h4>
+          <label htmlFor="add-c-bands">Use the score levels of</label>{" "}
+          <select
+            id="add-c-bands"
+            value={copyFrom}
+            onChange={(event) => setCopyFrom(event.target.value)}
+          >
+            <option value="">(choose a grading point)</option>
+            {withLevels.map((entry) => (
+              <option key={entry.id} value={entry.id}>
+                {criterionLabel(entry.id)}
+              </option>
+            ))}
+          </select>{" "}
+          <button
+            type="button"
+            className="button"
+            disabled={copyFrom === ""}
+            onClick={addWithLevels}
+          >
+            Stage the grading point
+          </button>
+        </div>
+      )}
+      {!keyPossible && withLevels.length === 0 && (
+        <p className="editor-card-note">
+          A written question is graded by score levels, and this draft carries none to
+          copy. Score levels come from your documents: start the draft from your files
+          on the authoring screen, or give the question answer choices and grade it by
+          its key.
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** The save's confirm: the staged changes listed before/after, in the teacher's
  * language, and nothing posted until the confirming button is pressed. The apply
  * itself sends the staged operations one at a time, so this dialog only decides. */
@@ -695,17 +885,29 @@ export function DraftEditor({
   };
 
   // One immediate, non-staged operation — a move — applied at once through the same
-  // enumerated surface, and the read re-run so the outline moves with it.
+  // enumerated surface, and the read re-run so the outline moves with it. A dropped
+  // connection is caught here, not left as an unhandled rejection with the saving state
+  // stuck on: the change was not sent, and the screen says so.
   const applyNow = async (body: Record<string, unknown>): Promise<void> => {
     const draftId = read.data?.draft?.package_id ?? "";
     setApplying(true);
-    const result = await performAction("edit draft package", {
-      package_id: draftId, ...body,
-    });
-    setApplying(false);
-    action.finish(result);
-    if (result.refused !== true && result.error === undefined) {
-      read.retry();
+    try {
+      const result = await performAction("edit draft package", {
+        package_id: draftId, ...body,
+      });
+      action.finish(result);
+      if (result.refused !== true && result.error === undefined) {
+        read.retry();
+      }
+    } catch (failure: unknown) {
+      action.finish({
+        action: "edit draft package",
+        error: `the console could not be reached (${
+          failure instanceof Error ? failure.message : String(failure)
+        }); the change was not sent. Check that the console service is running.`,
+      });
+    } finally {
+      setApplying(false);
     }
   };
 
@@ -716,24 +918,35 @@ export function DraftEditor({
     setApplying(true);
     const lines: string[] = [];
     let stopped = false;
-    for (const op of ops) {
-      const result = await performAction("edit draft package", {
-        package_id: draftId, ...op.body,
-      });
-      if (result.refused === true || result.error !== undefined) {
-        lines.push(
-          `Refused: ${result.error ?? result.detail ?? "the console gave no reason."} — ` +
-            "the changes after this one were not sent.",
-        );
-        stopped = true;
-        break;
+    try {
+      for (const op of ops) {
+        const result = await performAction("edit draft package", {
+          package_id: draftId, ...op.body,
+        });
+        if (result.refused === true || result.error !== undefined) {
+          lines.push(
+            `Refused: ${result.error ?? result.detail ?? "the console gave no reason."} — ` +
+              "the changes after this one were not sent.",
+          );
+          stopped = true;
+          break;
+        }
+        lines.push(result.detail ?? "done.");
       }
-      lines.push(result.detail ?? "done.");
+    } catch (failure: unknown) {
+      lines.push(
+        `The console could not be reached (${
+          failure instanceof Error ? failure.message : String(failure)
+        }) — the changes after this one were not sent. Check that the console service ` +
+          "is running, then save again.",
+      );
+      stopped = true;
+    } finally {
+      setApplying(false);
     }
-    setApplying(false);
     setApplied(lines);
-    // A save that was refused part-way keeps the changes it never sent, so the
-    // teacher can correct and save again; a complete save clears the list.
+    // A save that was refused or interrupted part-way keeps the changes it never
+    // sent, so the teacher can correct and save again; a complete save clears the list.
     if (!stopped) {
       setStaged([]);
     }
@@ -787,11 +1000,25 @@ export function DraftEditor({
                   <p>Reading the published version's impact.</p>
                 )}
                 <p>
-                  Editing the draft does not change the published version. When the
-                  edited draft is approved, the package goes back to needs-approval: the
-                  published version stays exactly as it is, and the runs already graded
-                  under it stay graded under it.
+                  Editing the draft does not change the published version — a built
+                  package is never changed. Approving this edited draft will not publish
+                  it over the published version: the console will ask for the edits to go
+                  out as a new draft under a new package name instead. The published
+                  version stays exactly as it is, and the runs already graded under it
+                  stay graded under it.
                 </p>
+                {impact.data !== null && impact.data.run_records.length > 0 && (
+                  <div>
+                    <h3>The runs already graded under it</h3>
+                    <ul className="change-list">
+                      {impact.data.run_records.map((record) => (
+                        <li key={record.run_id}>
+                          {record.run_id} — {record.state} (cohort {record.cohort_id})
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             )}
             {generalIssues.length > 0 && (
@@ -810,7 +1037,7 @@ export function DraftEditor({
               <h2>Questions</h2>
               {draft.items.map((question, index) => (
                 <QuestionCard
-                  key={question.id}
+                  key={questionCardKey(question)}
                   question={question}
                   index={index}
                   count={draft.items.length}
@@ -830,7 +1057,7 @@ export function DraftEditor({
               )}
               {draft.criteria.map((criterion, index) => (
                 <CriterionCard
-                  key={criterion.id}
+                  key={criterionCardKey(criterion)}
                   criterion={criterion}
                   index={index}
                   count={draft.criteria.length}
@@ -843,6 +1070,11 @@ export function DraftEditor({
                     setDeletePending({ key: 0, label, body })}
                 />
               ))}
+              <AddCriterionForm
+                items={draft.items}
+                criteria={draft.criteria}
+                onStage={stage}
+              />
             </section>
             <section aria-label="The grade table" className="editor-section">
               <h2>The grade table</h2>

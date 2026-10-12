@@ -308,11 +308,13 @@ export async function fetchContext(signal?: AbortSignal): Promise<ContextDoc> {
   return fetchRead<ContextDoc>("/api/v1/context", signal);
 }
 
-/** What editing a package version would touch (FR-CONSOLE-49) — the wizard's IMPACT line. */
+/** What editing a package version would touch (FR-CONSOLE-49) — the wizard's IMPACT line,
+ * and the editor's banner's list of the runs already graded under it. */
 export interface ImpactDoc {
   package_version: string;
   runs: number;
   students: number;
+  run_records: { run_id: string; cohort_id: string; state: string }[];
   regrading: { triggered: boolean; detail: string };
 }
 

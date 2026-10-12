@@ -223,3 +223,7 @@ __marimo__/
 # M-UI: the SPA source tree keeps its installed toolchain out of the commit (Q-O3 pins the
 # toolchain through the lockfile, not the node_modules).
 ui/node_modules/
+
+# M-UI: the rebuild's scratch output — the bundle that ships lives at
+# src/aeh/console_assets/spa/, and the byte-identity gate rebuilds to its own temp dir.
+build-spa-out/

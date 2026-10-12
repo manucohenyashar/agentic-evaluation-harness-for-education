@@ -273,19 +273,59 @@ export function questionTypeLabel(type: string): string {
   }
 }
 
+/** The field words a locator's tail can carry, in the teacher's words. `bands` maps to
+ * "the score levels" — "band" is an explicitly forbidden term on a teacher surface —
+ * and an unknown token stands as it is, renamed as far as the known parts reach. */
+const FIELD_TAILS: Record<string, string> = {
+  model_answer: "the expected answer",
+  options: "the answer options",
+  key: "the answer key",
+  bands: "the score levels",
+  type: "the question type",
+  points: "the points",
+  question: "the question it grades",
+};
+
+function fieldTailLabel(tail: string): string {
+  return tail.trim().split(/\s+/).filter((part) => part !== "")
+    .map((part) => FIELD_TAILS[part] ?? part).join(" ");
+}
+
 /**
  * One entry of the server's own change list or validation list, reworded to the teacher's
- * vocabulary. The server's locators read `question 'Q3' options` — the same words the
+ * vocabulary. The server's locators read `question 'Q3' model_answer` — the same words the
  * draft's checks use — and the map's job is exactly what the state badges' is: the
- * internal name goes in, the teacher's words come out, and a locator this build does not
- * know still renders, renamed as far as the known parts reach.
+ * internal names go in (the entry's id *and* the field's word after it — a raw
+ * `model_answer` or `bands` on the screen is the same leak an id is), the teacher's words
+ * come out, and a locator this build does not know still renders, renamed as far as the
+ * known parts reach.
  */
 export function entryFieldLabel(field: string): string {
-  return field.replace(
-    /(question|criterion)\s+'([^']+)'/g,
-    (_all, kind: string, id: string) =>
-      kind === "question" ? questionLabel(id) : criterionLabel(id),
-  ).trim();
+  const text = field.trim();
+  if (text === "spec") {
+    return "the draft";
+  }
+  if (/^grades\b/.test(text)) {
+    const quoted = /^grades\s+'([^']+)'/.exec(text);
+    return quoted !== null
+      ? `the grade table — ${questionLabel(quoted[1] ?? "")}`
+      : "the grade table";
+  }
+  const entry = /^(question|criterion)\s+'([^']+)'((?:\s+(?:\w+|\[[^\]]*\]))*)$/.exec(text);
+  if (entry !== null) {
+    const kind = entry[1] ?? "";
+    const id = entry[2] ?? "";
+    const name = kind === "question" ? questionLabel(id) : criterionLabel(id);
+    const tail = fieldTailLabel(entry[3] ?? "");
+    return tail === "" ? name : `${name} — ${tail}`;
+  }
+  const bare = /^(question|criterion)\s+(.*)$/.exec(text);
+  if (bare !== null) {
+    const name = (bare[1] ?? "") === "question" ? "a question" : "a grading point";
+    const tail = fieldTailLabel(bare[2] ?? "");
+    return tail === "" ? name : `${name} — ${tail}`;
+  }
+  return text;
 }
 
 /** Where in the draft a missing piece stands, from the structure read's dotted location:

@@ -242,7 +242,10 @@ def authoring_draft_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     issue_rows = [
         {"field": issue.field, "message": issue.message} for issue in issues
     ]
-    questions = [item for item in (spec.get("questions") or ()) if isinstance(item, dict)]
+    # The draft's tables are `[[question]]` and `[[criterion]]` (singular, the grammar
+    # `render_draft` writes and the edit surface reads) — a plural key here reads an
+    # empty list and the editor and review outline would render a draft with no entries.
+    questions = [item for item in (spec.get("question") or ()) if isinstance(item, dict)]
     criteria = [item for item in (spec.get("criterion") or ()) if isinstance(item, dict)]
     return {
         "draft": {

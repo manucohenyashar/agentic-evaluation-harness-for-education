@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   fetchAuthoringDraft,
   fetchJob,
@@ -229,8 +229,8 @@ export function PackageAuthor({ packageId }: { packageId: string | null }) {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [scratchTitle, setScratchTitle] = useState("");
   const [dragOver, setDragOver] = useState(false);
-  const fileInput = useRef<HTMLInputElement>(null);
   const [mounted, setMounted] = useState(0);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   // First load: the draft read answers the upload ceiling (`CT-CONSOLE-36`) and whether a
   // draft already stands; the jobs read says whether a draft job of this console is still
@@ -245,6 +245,7 @@ export function PackageAuthor({ packageId }: { packageId: string | null }) {
     ]).then(
       ([draftDoc, jobsDoc]) => {
         if (!alive || controller.signal.aborted) return;
+        setLoadFailed(false);
         setCeiling(draftDoc.doc_max_bytes);
         setExisting(draftDoc.draft);
         const authoring = jobsDoc.jobs.filter((entry) =>
@@ -275,6 +276,7 @@ export function PackageAuthor({ packageId }: { packageId: string | null }) {
             failure instanceof Error ? failure.message : String(failure)
           }); check that the console service is running.`,
         });
+        setLoadFailed(true);
         setPhase("upload");
       },
     );
@@ -407,10 +409,16 @@ export function PackageAuthor({ packageId }: { packageId: string | null }) {
         setPreviewBusy(false);
         setPreview(answer.documents);
         // The per-file statuses follow the preview: a file the read took is Understood,
-        // one it refused carries the read's own reason and next step.
+        // one it refused carries the read's own reason and next step. The answers come
+        // back in the order the request named the files, so they bind by position —
+        // two files that happen to share a name must never share one answer.
         setFiles((current) => current.map((file) => {
-          const answered = answer.documents.find((doc) => doc.name === file.name);
-          if (file.status === "refused" || answered === undefined) {
+          const sentIndex = ready.findIndex((sent) => sent.key === file.key);
+          if (file.status === "refused" || sentIndex === -1) {
+            return file;
+          }
+          const answered = answer.documents[sentIndex];
+          if (answered === undefined) {
             return file;
           }
           return answered.accepted
@@ -508,6 +516,12 @@ export function PackageAuthor({ packageId }: { packageId: string | null }) {
   );
   const refusedFiles = files.filter((file) => file.status === "refused");
   const readingFiles = files.filter((file) => file.status === "reading");
+  // The report's "things we noticed while reading" is the preview's own warnings when
+  // this session ran one; after a reload straight into the report the session holds no
+  // reading, so the section stands down rather than claiming either way.
+  const reportWarnings = (preview ?? [])
+    .filter((doc) => doc.accepted)
+    .flatMap((doc) => (doc.warnings ?? []).map((warning) => warning.message));
 
   return (
     <Screen title="Author the package">
@@ -535,12 +549,28 @@ export function PackageAuthor({ packageId }: { packageId: string | null }) {
       {phase === "report" && existing !== null && (
         <ReportView
           draft={existing}
-          warnings={[]}
+          warnings={reportWarnings}
           onContinue={() => navigate("/package/review")}
         />
       )}
       {phase === "upload" && (
         <>
+          {loadFailed && (
+            <p>
+              The screen could not read the draft's state, so the upload limit is not
+              known yet.{" "}
+              <button
+                type="button"
+                className="button"
+                onClick={() => {
+                  setLoadFailed(false);
+                  setMounted((value) => value + 1);
+                }}
+              >
+                Try again
+              </button>
+            </p>
+          )}
           {existing !== null && (
             <section aria-label="An existing draft" className="editor-note">
               <p>
@@ -575,7 +605,6 @@ export function PackageAuthor({ packageId }: { packageId: string | null }) {
               <p>Drag your test files here, or choose them below.</p>
               <label>
                 <input
-                  ref={fileInput}
                   type="file"
                   multiple
                   accept=".docx,.txt,.pdf"
