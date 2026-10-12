@@ -6,6 +6,7 @@
  * (`CT-UI-07`).
  */
 
+import { CircleHelp } from "lucide-react";
 import type { ContextDoc } from "../api";
 import { ledgerEntries, type Selection } from "./derivation";
 import { EntityBadge } from "./StateBadge";
@@ -16,6 +17,10 @@ export interface ContextHeaderProps {
   selection: Selection;
   /** Patches the selection; a null value drops that ref from the address. */
   onSelection: (patch: Partial<Record<"class" | "package" | "run", string | null>>) => void;
+  /** Opens the help-everywhere panel (FR-UI-21) over whatever screen is showing. */
+  onHelp: () => void;
+  /** True while the panel is open — the button then says the panel can be closed. */
+  helpOpen?: boolean;
 }
 
 interface SwitcherOption {
@@ -61,7 +66,7 @@ function Switcher({
   );
 }
 
-export function ContextHeader({ context, selection, onSelection }: ContextHeaderProps) {
+export function ContextHeader({ context, selection, onSelection, onHelp, helpOpen = false }: ContextHeaderProps) {
   const classes = context === null ? [] : ledgerEntries(context);
   const packages = context?.packages ?? [];
   const runs = context?.runs ?? [];
@@ -117,6 +122,15 @@ export function ContextHeader({ context, selection, onSelection }: ContextHeader
         />
         {selectedRun !== null && <EntityBadge state={selectedRun.state} />}
       </div>
+      <button
+        type="button"
+        className="button help-button"
+        aria-expanded={helpOpen}
+        onClick={onHelp}
+      >
+        <CircleHelp size={16} aria-hidden="true" />
+        {helpOpen ? "Close help" : "Help"}
+      </button>
     </header>
   );
 }
