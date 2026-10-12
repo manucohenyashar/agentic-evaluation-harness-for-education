@@ -9,7 +9,11 @@ band set must satisfy FR-PKG-06's even 2..6 count and non-decreasing points; gra
 must be finite and distinct, FR-PKG-16), encoded into the spec vocabulary, and patched into
 the draft in place: the quoted sentinel span becomes the encoded value and the
 `# PLACEHOLDER(reason):` comment above it is removed. An answer that fails its checks is
-rejected — named in the report, the sentinel survives, nothing invalid lands (Q-O9).
+rejected — named in the report, the sentinel survives, nothing invalid lands (Q-O9) — and
+the checks run in two halves: the field's own rule first, then the whole-draft gate, where
+the patched draft is re-validated and an answer that introduces a failure the draft did not
+carry (a grade floor duplicating another grade's, a type whose question has no options) is
+refused with its sentinel restored, the item left open and re-askable.
 
 Two surfaces, one walk: `answers=None` reads the terminal (one answer line per item, EOF
 stops the walk keeping what it applied, a blank line skips the item); `answers=[...]` is the
@@ -23,15 +27,19 @@ reasoning happened at draft time; the walk mutates, validates and reports), so i
 exactly the two artifacts it was given — the draft and its report, nothing else
 (CT-AUTHOR-12, ADR-43). Every answer accepted is recorded in the report with a content
 fingerprint: the hash over the item's id and the underlying content it was given against —
-the owning question's id and text, or the package id for the package-level items — never
-over the answer itself, so the fingerprint follows the content across flows (FR-AUTHOR-23).
+the owning question's id and text as the FINAL draft carries it, or the package id for the
+package-level items — never over the answer itself, so the fingerprint follows the content
+across flows (FR-AUTHOR-23).
 
 Ready (FR-AUTHOR-17) is re-proved, never remembered: after the accepted answers are patched
 in, the updated draft is re-parsed and `validate_draft` runs over it again; the walk reports
 ready only when no sentinel of any kind survives (the `approved_by` sign-off included — it
 is a placeholder like any other at review, FR-AUTHOR-09) and every structural check passes.
 Otherwise it lists what remains — and never prints the build command, which is the ready
-wording.
+wording. A ready verdict also names, in stdout and the report, the report-only omissions
+the design leaves optional (spec.py's `in_draft=False` gaps — `points Q2`): the draft
+carries no placeholder for them, so they cannot block the gate, but ready never claims
+every item resolved while the report still names one.
 """
 
 from __future__ import annotations
@@ -68,6 +76,11 @@ _COMMENT_RE = re.compile(r"#\s*PLACEHOLDER\((.+)\):\s*(.+?)\s*$")
 
 #: The report's Items rows (`report._items`' rendering), parsed back for the rewrite.
 _ITEM_ROW_RE = re.compile(r"^- \*\*(.+?)\*\* — ([a-z]+)(?: — (.*))?\.$")
+#: The report's Answers-recorded rows, parsed back so a prior run's records merge.
+_ANSWER_ROW_RE = re.compile(r"^- \*\*(.+?)\*\* — (?:answered|rejected): ")
+#: The leading scope id of a non-sentinel Unresolved row (`- criterion Q1 — the reasoning
+#: did not converge: …`).
+_ROW_SCOPE_RE = re.compile(r"^- (.+?) — ")
 
 _NO_REASON = "a placeholder stands in the draft"
 _NO_SUPPLY = "the field's value"
@@ -133,8 +146,13 @@ def run_review(draft_path: Path, answers: Iterable[ReviewAnswer] | None) -> Revi
 
     accepted: list[_Accepted] = []
     rejected: list[_Rejected] = []
-    patches: list[tuple[int, int, str]] = []
+    committed: list[tuple[int, int, str]] = []
     applied: set[int] = set()
+    consumed: set[int] = set()
+
+    #: Locally accepted answers, in the order they were offered, awaiting the
+    #: re-validation gate — the second, whole-draft half of Q-O9.
+    tentative: list[tuple[int, _Pending, str, Any]] = []
 
     def consume(index: int, item: _Pending, raw: str) -> None:
         ok, value, reason = _evaluate(item, raw.strip(), spec)
@@ -143,18 +161,15 @@ def run_review(draft_path: Path, answers: Iterable[ReviewAnswer] | None) -> Revi
             LOGGER.warning("review/%s: rejected — %s", item.item_id, reason)
             return
         display = " ".join(raw.strip().split())
-        fingerprint = _fingerprint(item, spec, package_id)
-        accepted.append(_Accepted(item.item_id, display, fingerprint))
-        applied.add(index)
-        patches.append((item.value_span[0], item.value_span[1], _encode(item, value)))
-        if item.comment_span is not None:
-            patches.append((*item.comment_span, ""))
-        LOGGER.info("review/%s: accepted, fingerprint %s", item.item_id, fingerprint)
+        tentative.append((index, item, display, value))
+        consumed.add(index)
+        LOGGER.info("review/%s: accepted the local checks, awaiting re-validation",
+                    item.item_id)
 
     if scripted:
         for answer in answer_list:
             index = next((i for i, pending in enumerate(pendings)
-                          if pending.item_id == answer.item_id and i not in applied), None)
+                          if pending.item_id == answer.item_id and i not in consumed), None)
             if index is None:
                 rejected.append(_Rejected(
                     str(answer.item_id),
@@ -176,12 +191,73 @@ def run_review(draft_path: Path, answers: Iterable[ReviewAnswer] | None) -> Revi
                 continue
             consume(index, item, raw)
 
-    new_text = _apply(text, _merge(patches)) if patches else text
-    if patches:
+    # The re-validation gate (Q-O9's second half): each locally accepted answer is applied
+    # to the whole draft and `validate_draft` runs over the result — an answer that
+    # introduces a validation failure the draft did not carry is refused, its sentinel
+    # restored, the item left open and re-askable (the local per-field checks cannot see
+    # cross-item rules: a grade floor that duplicates another grade's, a type whose
+    # question carries no options). Patches are spans over the original text, so each
+    # candidate is the original text plus every patch committed so far plus this one.
+    def _issues_of(candidate_text: str) -> list[DraftIssue]:
+        return validate_draft(tomllib.loads(candidate_text))
+
+    def _answer_caused(issues: list[DraftIssue]) -> list[DraftIssue]:
+        """The issues the gate diffs, excluding the placeholder-driven ones.
+
+        A finding whose message quotes a sentinel exists only because some sentinel still
+        stands somewhere in the draft — it is the placeholder sweep's worklist, not a
+        failure an answer introduced. `plan_package` also refuses fast on the FIRST bad
+        criterion, so its sentinel refusals move from criterion to criterion as earlier
+        keys resolve (the baseline pairs C_Q3_key's sentinel refusal; the next candidate
+        carries C_Q5_key's instead) — pair-diffing those would reject a correct answer
+        for the sibling sentinel it did not touch. The final census and the report's
+        Unresolved section still count every standing sentinel, and the build re-runs
+        `plan_package` whole, so nothing here hides a gap; the duplicate-floors class the
+        gate exists for carries no sentinel in its message and stays caught.
+        """
+        return [issue for issue in issues if _PREFIX not in issue.message]
+
+    #: The issues the draft already carries, by field AND message: an answer may remove
+    #: findings but must never add one, on any field — a field-level diff alone would miss
+    #: a new failure hiding under a field the sentinel sweep already named.
+    committed_issues = {(issue.field, issue.message)
+                        for issue in _answer_caused(_issues_of(text))}
+    for index, item, display, value in tentative:
+        group: list[tuple[int, int, str]] = [
+            (item.value_span[0], item.value_span[1], _encode(item, value))]
+        if item.comment_span is not None:
+            group.append((*item.comment_span, ""))
+        candidate = _apply(text, _merge(committed + group))
+        candidate_issues = _issues_of(candidate)
+        new_issues = [issue for issue in _answer_caused(candidate_issues)
+                      if (issue.field, issue.message) not in committed_issues]
+        if new_issues:
+            fields = ", ".join(sorted({issue.field for issue in new_issues}))
+            reason = "; ".join(issue.message for issue in new_issues)
+            rejected.append(_Rejected(
+                item.item_id,
+                f"re-validation refused the answer: the updated draft fails {fields} "
+                f"({reason}) — the item stays open"))
+            LOGGER.warning("review/%s: rejected at re-validation — %s", item.item_id, reason)
+            continue
+        committed.extend(group)
+        committed_issues |= {(issue.field, issue.message)
+                             for issue in _answer_caused(candidate_issues)}
+        applied.add(index)
+
+    new_text = _apply(text, _merge(committed)) if committed else text
+    if committed:
         path.write_text(new_text, encoding="utf-8")
         LOGGER.info("review rewrote the draft in place: %s", path.name)
     new_spec = tomllib.loads(new_text)
     issues = validate_draft(new_spec)
+
+    # The fingerprints are computed against the FINAL draft (the content the answers were
+    # actually given against), never the walk-start spec an earlier answer's patch may
+    # have since changed (FR-AUTHOR-23: the fingerprint follows the content).
+    accepted = [_Accepted(item.item_id, display, _fingerprint(item, new_spec, package_id))
+                for _index, item, display, _value in tentative
+                if _index in applied]
 
     standing = [pending for index, pending in enumerate(pendings)
                 if index not in applied]
@@ -192,6 +268,11 @@ def run_review(draft_path: Path, answers: Iterable[ReviewAnswer] | None) -> Revi
         if pending.item_id not in remaining:
             remaining.append(pending.item_id)
     for issue in issues:
+        # A validator locator that already names a standing item ("question 'Q2'
+        # model_answer" beside the model_answer sentinel) is the same open item twice —
+        # the item id is what the teacher was asked, so it carries the listing.
+        if any(item_id in issue.field for item_id in remaining):
+            continue
         if issue.field not in remaining:
             remaining.append(issue.field)
     result = ReviewResult(ready=ready, remaining=tuple(remaining))
@@ -203,9 +284,9 @@ def run_review(draft_path: Path, answers: Iterable[ReviewAnswer] | None) -> Revi
         for item_id in remaining:
             LOGGER.warning("review: %s still stands in %s", item_id, path.name)
 
-    _rewrite_report(path, package_id, pendings, standing, accepted, rejected, issues,
-                    ready, new_spec)
-    _print_outcome(path, standing, issues, ready)
+    report_only = _rewrite_report(path, package_id, pendings, standing, accepted, rejected,
+                                  issues, ready, new_spec)
+    _print_outcome(path, standing, issues, ready, report_only)
     return result
 
 
@@ -221,13 +302,20 @@ def _prompt(item: _Pending) -> None:
 
 
 def _print_outcome(path: Path, standing: list[_Pending], issues: list[DraftIssue],
-                   ready: bool) -> None:
+                   ready: bool, report_only: list[str] = ()) -> None:
     """The walk's stdout outcome. Ready prints the build command — the ready wording,
-    which must appear only when the gate passed (FR-AUTHOR-17); otherwise the items that
-    remain are listed and the build command is never printed."""
+    which must appear only when the gate passed (FR-AUTHOR-17: zero placeholders in the
+    draft, every structural check passes) — and names the report-only omissions the walk
+    never asked about, so ready never reads as "every item resolved" while the report
+    still names one. Otherwise the items that remain are listed and the build command is
+    never printed."""
     if ready:
-        print(f"The draft is ready: every item resolved, every structural check passes "
-              f"(FR-AUTHOR-17).")
+        print("The draft is ready: zero placeholders remain in the draft, every "
+              "structural check passes (FR-AUTHOR-17).")
+        if report_only:
+            print("The report still names omission(s) the draft carries no placeholder "
+                  f"for — {', '.join(report_only)} — the walk cannot ask for them (the "
+                  "design leaves them optional); the build does not require them.")
         print(f"Next: `aeh package build --spec {path.name}`")
         return
     print(f"{len(standing)} item(s) still open in {path.name}:")
@@ -628,13 +716,21 @@ def _owner(item: _Pending, spec: Mapping[str, Any], package_id: str) -> tuple[st
 def _rewrite_report(path: Path, package_id: str, pendings: list[_Pending],
                     standing: list[_Pending], accepted: list[_Accepted],
                     rejected: list[_Rejected], issues: list[DraftIssue], ready: bool,
-                    new_spec: Mapping[str, Any]) -> None:
+                    new_spec: Mapping[str, Any]) -> list[str]:
     """The report, rewritten (FR-AUTHOR-16): the Documents and Steps head kept, the Items
-    section's question rows updated (a question whose sentinels all fell reads resolved),
-    an Answers-recorded section appended when the walk took or refused anything, the
-    Unresolved list rebuilt from what still stands, and the Next command stating the gate's
-    verdict. Written even when every answer was refused — the outcome is recorded either
-    way (Q-O9)."""
+    section's question rows updated (a question whose sentinels all fell reads resolved —
+    unless the report still names a report-only omission in its scope), an
+    Answers-recorded section rebuilt from this run's rows **merged with the prior report's
+    carryable rows** (FR-AUTHOR-12's "every item the teacher answered at review" spans
+    runs, and FR-AUTHOR-23's carry-over reads this section — a second review must never
+    erase the first one's records), the Unresolved list rebuilt from what still stands,
+    and the Next command stating the gate's verdict. Written even when every answer was
+    refused — the outcome is recorded either way (Q-O9).
+
+    Returns the item ids the rebuilt Unresolved section still names that the walk never
+    asked about — spec.py's `in_draft=False` omissions (`points Q2`): they stand in no
+    draft span, so the ready wording names them rather than implying everything resolved.
+    """
     report_path = path.parent / report_filename(package_id)
     old = report_path.read_text(encoding="utf-8") if report_path.is_file() else \
         f"# Authoring report — {package_id}\n"
@@ -648,9 +744,30 @@ def _rewrite_report(path: Path, package_id: str, pendings: list[_Pending],
     answered_ids = {record.item_id for record in accepted}
     standing_ids = {pending.item_id for pending in standing}
 
+    prior: list[str] = []
+    answers_at = next((index for index, line in enumerate(lines)
+                       if line.startswith("### Answers recorded at review")), None)
+    if answers_at is not None:
+        touched = answered_ids | {record.item_id for record in rejected}
+        for line in lines[answers_at + 1:]:
+            if line.startswith("#"):
+                break
+            if not line.strip():
+                continue
+            match = _ANSWER_ROW_RE.match(line)
+            if match is not None and match.group(1) in touched:
+                continue  # this run's row supersedes the prior one for the same item id
+            prior.append(line)
+
+    unresolved = _rebuilt_unresolved(lines, pendings, answered_ids, standing_ids, issues)
+    pending_ids = {pending.item_id for pending in pendings}
+    report_only = sorted({named for line in unresolved
+                          for named in _BARE_SENTINEL_RE.findall(line)
+                          if named not in pending_ids})
+
     out = [*head, "## Items", ""]
-    out.extend(_updated_item_rows(lines, items_at, new_spec))
-    if accepted or rejected:
+    out.extend(_updated_item_rows(lines, items_at, new_spec, report_only))
+    if accepted or rejected or prior:
         out.extend(["", "### Answers recorded at review", ""])
         for record in accepted:
             out.append(f"- **{record.item_id}** — answered: {record.display} "
@@ -658,9 +775,9 @@ def _rewrite_report(path: Path, package_id: str, pendings: list[_Pending],
         for record in rejected:
             out.append(f"- **{record.item_id}** — rejected: {record.reason} "
                        "The item stays open.")
+        out.extend(prior)
 
     out.extend(["", "## Unresolved", ""])
-    unresolved = _rebuilt_unresolved(lines, pendings, answered_ids, standing_ids, issues)
     out.extend(unresolved or [
         "Nothing: every item resolved. The draft is ready to build."])
 
@@ -674,13 +791,27 @@ def _rewrite_report(path: Path, package_id: str, pendings: list[_Pending],
                     f"`aeh package build --spec {path.name}`", ""])
     report_path.write_text("\n".join(out), encoding="utf-8")
     LOGGER.info("review rewrote the report: %s", report_path.name)
+    return report_only
 
 
-def _updated_item_rows(lines: list[str], items_at: int,
-                       new_spec: Mapping[str, Any]) -> list[str]:
+def _scope_of(item_id: str, spec: Mapping[str, Any]) -> str | None:
+    """The question an item id belongs to, the report's own longest-suffix attribution
+    (report.py's `priority`): ids are built as `<field> <qid>`, but a question id may
+    itself carry spaces, so the last rsplit word is not the id."""
+    qids = [str(question.get("id")) for question in _blocks(spec, "question")
+            if question.get("id") is not None]
+    return max((qid for qid in qids if item_id.endswith(" " + qid)), key=len, default=None)
+
+
+def _updated_item_rows(lines: list[str], items_at: int, new_spec: Mapping[str, Any],
+                       report_only: list[str]) -> list[str]:
     """The Items section's rows, parsed back and updated: a question row whose every
-    in-scope sentinel the review removed now reads resolved (its gaps were answered at
-    review); rows that still stand, and rows that are not rows, are kept as they were."""
+    in-scope sentinel the review removed now reads resolved — unless the report still
+    names a report-only omission in that question's scope (`points Q2`): the row then
+    stays as it was, so Items never claims every item answered while Unresolved names one
+    (the self-contradiction the #696 review found on AF-08). Rows that still stand, and
+    rows that are not rows, are kept as they were."""
+    gap_scopes = {_scope_of(item_id, new_spec) for item_id in report_only}
     rows: list[str] = []
     for line in lines[items_at + 1:]:
         if line.startswith("#"):
@@ -692,8 +823,10 @@ def _updated_item_rows(lines: list[str], items_at: int,
         if match is None:
             updated.append(line)
             continue
-        qid, status, detail = match.group(1), match.group(2), match.group(3) or ""
-        if status in ("placeholder", "unresolved") and not _scope_has_sentinel(new_spec, qid):
+        qid, status, _detail = match.group(1), match.group(2), match.group(3) or ""
+        if (status in ("placeholder", "unresolved")
+                and not _scope_has_sentinel(new_spec, qid)
+                and qid not in gap_scopes):
             updated.append(f"- **{qid}** — resolved — every item answered at review.")
         else:
             updated.append(line)
@@ -722,15 +855,20 @@ def _contains_sentinel(value: Any) -> bool:
 
 def _rebuilt_unresolved(lines: list[str], pendings: list[_Pending], answered_ids: set[str],
                         standing_ids: set[str], issues: list[DraftIssue]) -> list[str]:
-    """The Unresolved list, rebuilt: the old section's non-sentinel rows (the reasoning
-    steps' convergence failures) kept verbatim; a gap row dropped once every sentinel it
-    names is answered; the still-open items appended in walk order with their reason and
-    supply from the draft's own comments; the deterministic checks' findings last."""
+    """The Unresolved list, rebuilt from the current truth: a gap row whose every sentinel
+    it names was answered this run is dropped; a non-convergence row whose scope the walk
+    answered in full is dropped too (the human answer superseded the reasoning's failure —
+    a stale row must not survive a ready verdict, the #696 review's AF-09 finding); the
+    template "Nothing" line is dropped (the rebuilt list states the verdict itself). The
+    still-open items are appended in walk order with their reason and supply from the
+    draft's own comments; the deterministic checks' findings last, never doubling an item
+    id the list already carries."""
     try:
         unresolved_at = next(index for index, line in enumerate(lines)
                              if line.startswith("## Unresolved"))
     except StopIteration:
         unresolved_at = None
+    pending_ids = {pending.item_id for pending in pendings}
     kept: list[str] = []
     covered: set[str] = set()
     if unresolved_at is not None:
@@ -739,8 +877,15 @@ def _rebuilt_unresolved(lines: list[str], pendings: list[_Pending], answered_ids
                 break
             if not line.strip():
                 continue
+            if line.startswith("- Nothing:"):
+                continue
             named = _BARE_SENTINEL_RE.findall(line)
             if not named:
+                match = _ROW_SCOPE_RE.match(line)
+                scope = match.group(1) if match else None
+                if (scope is not None and scope in pending_ids
+                        and scope in answered_ids and scope not in standing_ids):
+                    continue  # the reasoning failure the walk's answers superseded
                 kept.append(line)
                 continue
             if all(item_id in answered_ids and item_id not in standing_ids
@@ -750,15 +895,18 @@ def _rebuilt_unresolved(lines: list[str], pendings: list[_Pending], answered_ids
             covered.update(named)
     rebuilt = list(kept)
     for pending in pendings:
-        if pending.item_id in answered_ids or pending.item_id in covered:
+        if pending.item_id in covered:
             continue
-        if pending.item_id not in standing_ids and pending.item_id in answered_ids:
+        if pending.item_id in answered_ids and pending.item_id not in standing_ids:
             continue
         rebuilt.append(f"- <<PLACEHOLDER: {pending.item_id}>> — {pending.reason}. "
                        f"What to supply: {pending.supply}.")
         covered.add(pending.item_id)
     for issue in issues:
+        if any(item_id in issue.field for item_id in covered):
+            continue
         rebuilt.append(f"- {issue.field} — {issue.message}")
+        covered.add(issue.field)
     return rebuilt
 
 
