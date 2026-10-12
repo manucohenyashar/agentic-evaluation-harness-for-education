@@ -38,6 +38,7 @@ from .vocabulary import (
     PAPERS_READ,
     PARKED_READ,
     READABLE_EXPORT_READ,
+    ROSTER_PREVIEW_READ,
     RESULTS_CLASS_READ,
     RESULTS_EXPORT_READ,
     RESULTS_SCREEN_READ,
@@ -190,6 +191,14 @@ def _build_routes() -> tuple[ApiRoute, ...]:
         ApiRoute("POST", f"{API_PREFIX}/authoring/preview", AUTHORING_PREVIEW_READ,
                  AUTHORING_PREVIEW_READ),
         ApiRoute("GET", f"{API_PREFIX}/authoring/draft", None, AUTHORING_DRAFT_READ),
+        # FR-CONSOLE-63 (#761): the roster file import's preview, the census's third named
+        # non-control row. Its body carries the uploaded roster file's text — file content
+        # can never travel in a URL or a query string (`CT-CONSOLE-34`) — and it writes
+        # nothing anywhere; the commit is the enumerated `import roster file` control above,
+        # so the row carries the read's label as its `control` the way the authoring
+        # preview's does.
+        ApiRoute("POST", f"{API_PREFIX}/roster/preview", ROSTER_PREVIEW_READ,
+                 ROSTER_PREVIEW_READ),
     )
     controls = tuple(
         ApiRoute("POST", f"{API_PREFIX}/actions/{action_slug(action)}", action)

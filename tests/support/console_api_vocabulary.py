@@ -80,6 +80,10 @@ READ_METHODS = frozenset({"GET", "HEAD"})
 NON_CONTROL_MUTATIONS: dict[str, str] = {
     "upload scans": "FR-CONSOLE-04 — uploads stream to the content-addressed blob store",
     "authoring preview": "FR-CONSOLE-50 — the intake preview read; a POST that writes nothing",
+    "roster preview": "FR-CONSOLE-63 — the roster file import's preview read; a POST whose "
+    "body carries the uploaded roster file's text (file content can never travel in a URL "
+    "or a query string, `CT-CONSOLE-34`), and which writes nothing anywhere; the commit is "
+    "the enumerated `import roster file` control",
 }
 
 #: Hosts that are this machine. A URL naming one of them is not an external origin.

@@ -168,6 +168,12 @@ DELTA_CONTROL_ACTIONS: dict[str, str] = {
     # confirmation is the API's — `CT-CONSOLE-30` admits it only as an enumerated control
     # row through M-SETUP's `publish` (the lock flip), never a route beside the enumeration.
     "publish package": "FR-UI-05",
+    # The console-redesign delta's class vocabulary (#761, ADR-48): a class is a cohort
+    # ledger in a roster-only state, so all three write the same Tier C rows `create cohort`
+    # writes — one storage concept, two states, no new table.
+    "create class": "FR-CONSOLE-53",
+    "create cohort from class": "FR-CONSOLE-54",
+    "import roster file": "FR-CONSOLE-63",
 }
 
 #: The control actions the console-redesign delta adds (`docs/design/

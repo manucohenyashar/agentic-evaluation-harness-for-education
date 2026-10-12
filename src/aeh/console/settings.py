@@ -106,6 +106,31 @@ def author_doc_max_bytes() -> int:
     return value
 
 
+#: The roster-file text ceiling (FR-CONSOLE-63, #761): `HARNESS_ROSTER_IMPORT_MAX_BYTES`,
+#: default 2 MB — a roster of thousands of students is a few hundred kilobytes of text, so
+#: a 2 MB ceiling is a mistake-sized file, not a class-sized one. Same declared-knob
+#: discipline as the document ceiling above: domain-checked, read at call time, and
+#: enforced on both sides of the import — the preview read refuses before it parses, and
+#: the `import roster file` commit refuses again before it writes, in bytes not characters.
+_ROSTER_MIN_BYTES = 1
+
+
+_ROSTER_CEILING_BYTES = 100 * 1024 * 1024
+
+
+def roster_import_max_bytes() -> int:
+    """The largest roster file's text the preview read will parse (the setting is read each
+    time)."""
+    value = _env_int("HARNESS_ROSTER_IMPORT_MAX_BYTES", 2 * 1024 * 1024)
+    if value < _ROSTER_MIN_BYTES or value > _ROSTER_CEILING_BYTES:
+        raise ValueError(
+            f"environment knob HARNESS_ROSTER_IMPORT_MAX_BYTES={value} is outside its "
+            f"domain (a whole number of bytes from {_ROSTER_MIN_BYTES} to "
+            f"{_ROSTER_CEILING_BYTES}); the roster-file size ceiling stays unconfigured."
+        )
+    return value
+
+
 #: Budgets the console declares (§6.11.19): the handler budget for uploads, the two page
 #: budgets for the screens the rollup story owns, the load they are sized for, and the
 #: memory bound an upload must stay under (a ratio, not an absolute, with a floor so a

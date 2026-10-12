@@ -180,12 +180,18 @@ from .composition import CompositionMixin
 from .reporting import ReportingMixin
 from .orchestrator import Orchestrator
 # Cohort creation (live-test blocker B3), the door both `aeh cohort create` and the console's
-# roster editor (FR-CONSOLE-42) write a cohort through.
+# roster editor (FR-CONSOLE-42) write a cohort through. `cohort_summary` is the read the
+# console's class vocabulary copies a class's roster from (#761, FR-CONSOLE-54, ADR-48), and
+# `check_student_refs` is the reference validation that commit runs — the preview read runs
+# the same one, so what it shows as ready is what the commit will accept. Both are doors the
+# CLI's own cohort path uses; the console names no second one.
 from .cohorts import (
     CONSENT_CLASSES,
     CohortSetupError,
     add_to_roster,
     check_cohort_id,
+    check_student_refs,
+    cohort_summary,
     create_cohort,
 )
 from .roster_entries import NAME_REQUIREMENT, RosterEntry

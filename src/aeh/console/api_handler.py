@@ -36,6 +36,7 @@ from .api import (
     READ_METHODS,
 )
 from .authoring_reads import authoring_draft_read, authoring_preview_read
+from .class_actions import roster_preview_read
 from .cohort_editor import roster_editor_payload
 from .config_read import config_read
 from .errors import ConsoleBindRefused
@@ -89,6 +90,7 @@ from .vocabulary import (
     RESULTS_SCREEN_READ,
     RESULTS_STUDENT_READ,
     REVIEW_QUEUE_READ,
+    ROSTER_PREVIEW_READ,
     RUN_START_PREVIEW_READ,
     RUN_START_STATE_READ,
     STUDENT_DETAIL_READ,
@@ -104,14 +106,20 @@ REFUSED_BODY_DRAIN_BYTES = 64 * 1024
 
 
 def outcome_json(action: str, outcome: Any) -> bytes:
-    """A control outcome as the JSON both transports answer with."""
-    return json.dumps({
+    """A control outcome as the JSON both transports answer with. `next_action` is carried
+    only when the action set one (a refusal's named next step, `CT-CONSOLE-33`, #761), so
+    no outcome that predates the field changes shape."""
+    answer = {
         "action": action,
         "dispatched": bool(getattr(outcome, "dispatched", False)),
         "refused": bool(getattr(outcome, "refused", False)),
         "detail": str(getattr(outcome, "detail", "")),
         "rows_written": len(getattr(outcome, "rows_written", ()) or ()),
-    }).encode("utf-8")
+    }
+    next_action = getattr(outcome, "next_action", None)
+    if next_action:
+        answer["next_action"] = str(next_action)
+    return json.dumps(answer).encode("utf-8")
 
 
 #: The reads the API answers, by the name a read route carries. Each takes the running
@@ -174,6 +182,11 @@ _READS = {
         _console, _app, body),
     AUTHORING_DRAFT_READ: lambda _console, app, _params, query: authoring_draft_read(
         _console, app, query),
+    # FR-CONSOLE-63 (#761): the roster file import's preview — the second POST read. Like
+    # the authoring preview, its `query` argument is the request's JSON body (the roster
+    # file's text cannot travel in a URL, `CT-CONSOLE-34`), and it writes nothing anywhere.
+    ROSTER_PREVIEW_READ: lambda _console, _app, _params, body: roster_preview_read(
+        _console, _app, body),
 }
 
 
