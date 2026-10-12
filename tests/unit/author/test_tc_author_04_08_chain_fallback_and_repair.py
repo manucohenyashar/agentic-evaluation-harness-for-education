@@ -56,7 +56,7 @@ import tomllib
 
 import pytest
 
-from aeh.conf import ConfigurationError, panel_for_profile, parse_config_document
+from aeh.conf import ConfigurationError, ModelRef, panel_for_profile, parse_config_document
 
 from tests.support.author_vocabulary import (
     ABSENT_HEAD_BUILD,
@@ -296,6 +296,42 @@ def test_tc_author_05b_three_judges_and_two_escalations_with_a_duplicate_resolve
         "an item with no accepted proposal is not marked unresolved")
     assert list(result.models_used) == [], (
         "nothing was accepted, yet models_used credits a model")
+    network_guard.assert_no_network()
+
+
+def test_tc_author_05b_service_arm_dedup_is_by_build_identity(tmp_path, network_guard):
+    """The service arm of FR-AUTHOR-04's de-dup rule: identity-distinct refs that share a
+    build id are distinct chain positions, and the fallback walks both.
+
+    The regression case for the #691 landing's correctness finding: the constructor kept its
+    own de-duplication keyed on `build_id` alone, so two refs the resolver's build identity
+    (`provider` + `build_id` + `quantization`, `aeh.conf.panel._build_identity`) holds apart
+    — two quantizations of the same weights, say — collapsed to one position and the second
+    silently dropped out of the fallback chain (FR-AUTHOR-04: the chain is the panel then
+    the escalations, de-duplicated by build identity).
+    """
+    author = _surface()
+    corpus = require_path(af("AF-01"), "the AF-01 authored fixture", issue=CORPUS_ISSUE)
+    quantized = ModelRef(role="judge", provider="openrouter",
+                         build_id="openrouter/devci-authoring-dual-quant@2026-01-01",
+                         quantization="fp8")
+    plain = ModelRef(role="judge", provider="openrouter",
+                     build_id="openrouter/devci-authoring-dual-quant@2026-01-01",
+                     quantization=None)
+    assert quantized != plain, (
+        "the two refs must be distinct objects of one build id, apart by quantization")
+
+    provider = GarbageProvider()
+    service = make_service(author, [quantized, plain], provider)
+    service.draft(documents=sorted(corpus.glob("*.pdf")), output_dir=tmp_path)
+
+    called = [ref for _prompt, ref, _params in provider.calls if
+              ref.build_id == quantized.build_id]
+    assert any(ref is quantized for ref in called), (
+        "the first identity-distinct position was never called")
+    assert any(ref is plain for ref in called), (
+        "the second identity-distinct position was de-duplicated away by build id alone "
+        "— the service arm dropped a resolver-legal chain position (FR-AUTHOR-04)")
     network_guard.assert_no_network()
 
 

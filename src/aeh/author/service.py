@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from aeh.conf import ConfigurationError, ModelRef, panel_for_profile, select_profile_config
+from aeh.conf.panel import _build_identity
 from aeh.prov import InferenceProvider, PromptPayload, SamplingParams
 
 from .errors import AuthoringInputError, OverwriteRefusedError
@@ -83,8 +84,15 @@ class AuthoringService:
         seen: set[str] = set()
         self._chain: list[ModelRef] = []
         for ref in chain:
-            if ref.build_id not in seen:
-                seen.add(ref.build_id)
+            # De-duplicated by build identity, the resolver's own rule (`panel_for_profile`'s
+            # `_build_identity`: provider + build id + quantization — FR-AUTHOR-04), not by
+            # build id alone: two quantizations of one build, or one build id on two
+            # providers, are distinct served models and distinct fallback positions. The
+            # identity helper is M-CONF's private canonical form, cited here so the two
+            # sites cannot drift — a hand-rolled copy would re-derive exactly this rule.
+            identity = _build_identity(ref)
+            if identity not in seen:
+                seen.add(identity)
                 self._chain.append(ref)
         self._provider = provider
         self._transcriber = transcriber
