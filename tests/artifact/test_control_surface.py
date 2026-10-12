@@ -250,8 +250,18 @@ _CONSOLE_BARE_MIGRATION_IMPORTS: frozenset[str] = frozenset(
 #:   resolved by the FR-CONF-30 rule (`aeh.conf.qa_model`). The console still starts with no
 #:   QA model: the assistant is constructed lazily at the first ask (`CT-HELP-02`'s
 #:   precondition), never at import.
+#: - `aeh.author.extraction`, `aeh.author.report`, `aeh.author.validation` — #755, the one
+#:   new module edge the console-redesign design delta declares (§4.1): the authoring reads
+#:   drive M-AUTHOR's library surface, never the CLI. `authoring/preview` runs the same
+#:   `extract_documents` the drafting job runs (minus the model calls, `FR-CONSOLE-50`),
+#:   the draft read names its file with the library's own `draft_filename` rule, and the
+#:   placeholder scan reads the sentinel through the library's `PLACEHOLDER_PREFIX` and
+#:   reports what `validate_draft` reports. The three names are not re-exported from
+#:   `aeh.author`'s `__init__`, so the submodule edges are declared directly rather than
+#:   widened on the package's public surface.
 _CONSOLE_SYMBOL_IMPORT_MODULES: frozenset[str] = frozenset(
-    {"aeh.conf", "aeh.conf.decision_engine", "aeh.conf.qa_model", "aeh.det", "aeh.grade",
+    {"aeh.author.extraction", "aeh.author.report", "aeh.author.validation",
+     "aeh.conf", "aeh.conf.decision_engine", "aeh.conf.qa_model", "aeh.det", "aeh.grade",
      "aeh.help", "aeh.orch", "aeh.pipeline", "aeh.pipeline.cli", "aeh.pipeline.driver",
      "aeh.pipeline.runtime", "aeh.pkg", "aeh.prov", "aeh.review", "aeh.setup",
      "aeh.stats", "aeh.store"}

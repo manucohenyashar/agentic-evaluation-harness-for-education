@@ -4,7 +4,10 @@
 dispatches `/api/` from: a route the table does not list does not exist. Every mutating row is
 built from `CONTROL_SURFACE_ACTIONS`, so the API cannot carry a mutation the enumeration does
 not — the API adds a transport, not a second write path. The one mutation beside the enumerated actions
-is the scan upload (`FR-CONSOLE-04`), which the server-rendered console already had.
+is the scan upload (`FR-CONSOLE-04`), which the server-rendered console already had. The one
+POST row beside the controls is not a mutation at all: the authoring preview (#755) is a read
+whose body must carry the uploaded documents, so it rides the census's named-exception
+mechanism rather than the control surface.
 
 The SPA itself (M-UI) ships as package data at `SPA_BUNDLE_DIR` (#634); this module only says
 where it lives and how a request path maps onto a file inside it.
@@ -17,13 +20,23 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 from .vocabulary import (
+    AUTHORING_DRAFT_READ,
+    AUTHORING_PREVIEW_READ,
     BLIND_SEATS_READ,
     CLASS_ROSTER_READ,
     CLI_HELP_READ,
+    CONTEXT_READ,
+    CONFIG_READ,
     CONTROL_SURFACE_ACTIONS,
+    IMPACT_READ,
+    ISSUES_READ,
+    JOB_READ,
+    JOBS_READ,
+    LOGS_READ,
     MONITOR_READ,
     PACKAGE_SETUP_READ,
     PAPERS_READ,
+    PARKED_READ,
     RESULTS_CLASS_READ,
     RESULTS_EXPORT_READ,
     RESULTS_SCREEN_READ,
@@ -148,6 +161,25 @@ def _build_routes() -> tuple[ApiRoute, ...]:
         ApiRoute("GET", f"{API_PREFIX}/results/screen", None, RESULTS_SCREEN_READ),
         ApiRoute("GET", f"{API_PREFIX}/results/student-detail", None, STUDENT_DETAIL_READ),
         ApiRoute("GET", f"{API_PREFIX}/system-status", None, SYSTEM_STATUS_READ),
+        # #755 (FR-CONSOLE-47…52, FR-CONSOLE-60): the redesign SPA's read surface. Each is
+        # a pure store/service projection — the context header's feed, the secondary pages'
+        # documents, the configuration projection and the authoring library's reads. The
+        # one POST row is the authoring preview: its body carries the uploaded documents,
+        # because document content can never travel in a URL or a query string
+        # (`CT-CONSOLE-34`); it writes nothing, and the census admits it as its second
+        # named exception, citing `FR-CONSOLE-50` — the row carries the label as its
+        # `control` so the census sees and admits it, while dispatch routes on `read`.
+        ApiRoute("GET", f"{API_PREFIX}/context", None, CONTEXT_READ),
+        ApiRoute("GET", f"{API_PREFIX}/impact", None, IMPACT_READ),
+        ApiRoute("GET", f"{API_PREFIX}/jobs", None, JOBS_READ),
+        ApiRoute("GET", f"{API_PREFIX}/jobs/{{job_id}}", None, JOB_READ),
+        ApiRoute("GET", f"{API_PREFIX}/issues", None, ISSUES_READ),
+        ApiRoute("GET", f"{API_PREFIX}/logs", None, LOGS_READ),
+        ApiRoute("GET", f"{API_PREFIX}/parked", None, PARKED_READ),
+        ApiRoute("GET", f"{API_PREFIX}/config", None, CONFIG_READ),
+        ApiRoute("POST", f"{API_PREFIX}/authoring/preview", AUTHORING_PREVIEW_READ,
+                 AUTHORING_PREVIEW_READ),
+        ApiRoute("GET", f"{API_PREFIX}/authoring/draft", None, AUTHORING_DRAFT_READ),
     )
     controls = tuple(
         ApiRoute("POST", f"{API_PREFIX}/actions/{action_slug(action)}", action)
@@ -194,7 +226,9 @@ def allowed_methods(path: str) -> tuple[str, ...]:
 
 
 def controls_payload() -> dict[str, Any]:
-    """The enumerated control surface as the API exposes it: each action and its route."""
+    """The enumerated control surface as the API exposes it: each action and its route.
+    The named exceptions ride here beside the enumerated actions, labelled — the census
+    admits them by label, so the payload shows the surface exactly as the census sees it."""
     return {
         "version": API_PREFIX.rsplit("/", 1)[-1],
         "controls": [

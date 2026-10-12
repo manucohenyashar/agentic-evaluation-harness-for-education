@@ -33,8 +33,11 @@ from .api import (
     controls_payload,
     FileAnswer,
     match_route,
+    READ_METHODS,
 )
+from .authoring_reads import authoring_draft_read, authoring_preview_read
 from .cohort_editor import roster_editor_payload
+from .config_read import config_read
 from .errors import ConsoleBindRefused
 from .hub_state import hub_payload
 from .parity import parity_inventory
@@ -53,13 +56,32 @@ from .screen_reads import (
     student_detail_read,
     system_status_read,
 )
+from .spa_reads import (
+    context_read,
+    impact_read,
+    issues_read,
+    job_read,
+    jobs_read,
+    logs_read,
+    parked_read,
+)
 from .vocabulary import (
+    AUTHORING_DRAFT_READ,
+    AUTHORING_PREVIEW_READ,
     BLIND_SEATS_READ,
     CLASS_ROSTER_READ,
     CLI_HELP_READ,
+    CONFIG_READ,
+    CONTEXT_READ,
+    IMPACT_READ,
+    ISSUES_READ,
+    JOB_READ,
+    JOBS_READ,
+    LOGS_READ,
     MONITOR_READ,
     PACKAGE_SETUP_READ,
     PAPERS_READ,
+    PARKED_READ,
     RESULTS_CLASS_READ,
     RESULTS_EXPORT_READ,
     RESULTS_SCREEN_READ,
@@ -128,6 +150,23 @@ _READS = {
     RESULTS_SCREEN_READ: lambda console, app, _params, query: results_screen_read(console, app, query),
     STUDENT_DETAIL_READ: lambda console, app, _params, query: student_detail_read(console, app, query),
     SYSTEM_STATUS_READ: lambda _console, app, _params, query: system_status_read(_console, app, query),
+    # #755 (FR-CONSOLE-47…52, FR-CONSOLE-60): the redesign SPA's read surface. Each takes
+    # the console, the app and the query like the reads above, and answers a document the
+    # SPA renders as is. The authoring preview is the one POST read: its `query` argument
+    # is the request's JSON body, because the uploaded documents cannot travel in a URL
+    # (`CT-CONSOLE-34`), and it writes nothing anywhere.
+    CONTEXT_READ: lambda console, app, _params, query: context_read(console, app, query),
+    IMPACT_READ: lambda _console, app, _params, query: impact_read(_console, app, query),
+    JOBS_READ: lambda _console, app, _params, query: jobs_read(_console, app, query),
+    JOB_READ: lambda _console, app, params, query: job_read(_console, app, {**query, **params}),
+    ISSUES_READ: lambda _console, app, _params, query: issues_read(_console, app, query),
+    LOGS_READ: lambda _console, app, _params, query: logs_read(_console, app, query),
+    PARKED_READ: lambda _console, app, _params, query: parked_read(_console, app, query),
+    CONFIG_READ: lambda _console, app, _params, query: config_read(_console, app, query),
+    AUTHORING_PREVIEW_READ: lambda _console, _app, _params, body: authoring_preview_read(
+        _console, _app, body),
+    AUTHORING_DRAFT_READ: lambda _console, app, _params, query: authoring_draft_read(
+        _console, app, query),
 }
 
 
@@ -171,6 +210,12 @@ class ApiRequestsMixin:
             else:
                 self._respond(404, b'{"error":"not found"}', JSON_TYPE, close=True)
             return
+        if matched.read is not None:
+            # A read dispatches on its read label, whatever verb it answers under: the
+            # authoring preview (#755) is a POST read whose census label sits in
+            # `control`, but it answers through the read path and writes nothing.
+            self._api_read(matched, params, query or {})
+            return
         if matched.control is None:
             self._api_read(matched, params, query or {})
             return
@@ -193,10 +238,27 @@ class ApiRequestsMixin:
         the caller's mistake, and the body carries the named gap; anything else is a 500
         with the connection closed, so a failed read is answered, never a dropped socket.
         The ask read (`M-HELP`) is dispatched here rather than in `_READS`: its only write
-        is the assistant's own Q&A log, written after the model answered."""
+        is the assistant's own Q&A log, written after the model answered. A POST read (the
+        authoring preview) takes the request's JSON body as its `query` argument — the
+        documents cannot travel in a URL (`CT-CONSOLE-34`) — and the body is read before
+        any answer is written, the way every body-bearing route must."""
         if route.read == "help ask":
             self._help_ask(query)
             return
+        if route.method not in READ_METHODS:
+            if self.headers.get("Transfer-Encoding"):
+                self._respond(411, b'{"error":"a JSON body requires Content-Length"}',
+                              JSON_TYPE, close=True)
+                return
+            length = self._declared_length()
+            if length is None:
+                self._respond(400, b'{"error":"invalid Content-Length"}', JSON_TYPE, close=True)
+                return
+            body = self._read_json_object(length)
+            if body is None:
+                self._respond(400, b'{"error":"the body must be a JSON object"}', JSON_TYPE)
+                return
+            query = body  # type: ignore[assignment] — a POST read's query is its body
         reader = _READS[str(route.read)]
         try:
             answer = reader(self._console, self._console.app, path_params, query)

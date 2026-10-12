@@ -62,6 +62,37 @@ def headless_batch_size() -> int:
     return max(1, _env_int("HARNESS_CONSOLE_HEADLESS_BATCH", 12))
 
 
+#: The logs read's page size (FR-CONSOLE-51, #755): how many store-held stage records one
+#: answer carries before it says more remain. Env-gated (seam 3) and read at call time,
+#: like every knob here — a slower box shrinks it without a code change.
+def logs_page_size() -> int:
+    """How many log records one logs-read answer carries (the setting is read each time)."""
+    return max(1, _env_int("HARNESS_CONSOLE_LOG_PAGE", 200))
+
+
+#: The teacher-document size ceiling (CT-CONSOLE-36): `HARNESS_AUTHOR_DOC_MAX_BYTES`,
+#: default 10 MB. Values at or below zero, or above 100 MB, are refused with a message
+#: naming the knob, the value and the domain — the declared knob discipline (seam 3) —
+#: and the bound is enforced before a document is read, not after.
+_AUTHOR_DOC_MIN_BYTES = 1
+
+
+_AUTHOR_DOC_CEILING_BYTES = 100 * 1024 * 1024
+
+
+def author_doc_max_bytes() -> int:
+    """The largest teacher document intake will read (the setting is read each time)."""
+    value = _env_int("HARNESS_AUTHOR_DOC_MAX_BYTES", 10 * 1024 * 1024)
+    if value < _AUTHOR_DOC_MIN_BYTES or value > _AUTHOR_DOC_CEILING_BYTES:
+        raise ValueError(
+            f"environment knob HARNESS_AUTHOR_DOC_MAX_BYTES={value} is outside its domain "
+            f"(a whole number of bytes from {_AUTHOR_DOC_MIN_BYTES} to "
+            f"{_AUTHOR_DOC_CEILING_BYTES}); the teacher-document size ceiling stays "
+            f"unconfigured."
+        )
+    return value
+
+
 #: Budgets the console declares (§6.11.19): the handler budget for uploads, the two page
 #: budgets for the screens the rollup story owns, the load they are sized for, and the
 #: memory bound an upload must stay under (a ratio, not an absolute, with a floor so a
