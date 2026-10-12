@@ -469,11 +469,11 @@ def _docx_warnings(name: str, parser: "_DocxHTMLParser",
                                  "into the draft — add it by hand if it matters."),
                 detail=f"a drawing/picture element in {entry[2]} (outside the document body)"))
     if scan["equations"]:
+        first_anchor = _anchor(scan["equations"][0][1])
         warnings.append(IntakeWarning(
             code="equation_not_carried",
-            message=_bounded("Equations were not carried into the draft — describe them "
-                             "in words where they belong"
-                             + _anchor(scan["equations"][0][1]) + "."),
+            message=_bounded(f"Equations were not carried over — write them out in words "
+                             f"in their place{first_anchor}."),
             detail=f"{len(scan['equations'])} OMML equation element(s) "
                    f"({', '.join(sorted({part for _, _, part in scan['equations']}))})"))
     for deleted, anchor, part in scan["deleted"]:
