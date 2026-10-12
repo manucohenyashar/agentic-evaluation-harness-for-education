@@ -238,3 +238,129 @@ export function issueTone(source: string): "success" | "warning" | "danger" | "i
 export function issueSeverityLabel(source: string): string {
   return issueTone(source) === "info" ? "Information" : "Needs attention";
 }
+
+// --- the authoring screens' vocabulary (FR-UI-11..13, #764) -----------------------------------------
+//
+// The draft's own entry ids (`Q3`, `C2`) and the structure read's dotted locations are
+// internal names, so they are renamed here before they reach a screen — the same rule the
+// state badges follow, and the one the vocabulary scan (CT-CONSOLE-31) enforces on every
+// teacher surface: no raw entry id, no TOML path, ever.
+
+/** A draft question's id, as the teacher reads it: "Q3" becomes "Question 3"; anything
+ * else is already a name and stands as it is. */
+export function questionLabel(id: string): string {
+  const numbered = /^Q(\d+)$/.exec(id.trim());
+  return numbered ? `Question ${numbered[1]}` : id.trim();
+}
+
+/** A grading point's id, the same rule: "C2" becomes "Grading point 2". */
+export function criterionLabel(id: string): string {
+  const numbered = /^C(\d+)$/.exec(id.trim());
+  return numbered ? `Grading point ${numbered[1]}` : id.trim();
+}
+
+/** A question's type, as the editor's form names it. */
+export function questionTypeLabel(type: string): string {
+  switch (type) {
+    case "mcq":
+      return "Multiple choice";
+    case "mixed":
+      return "Choice and written";
+    case "open":
+      return "Written answer";
+    default:
+      return "Written answer";
+  }
+}
+
+/** The field words a locator's tail can carry, in the teacher's words. `bands` maps to
+ * "the score levels" — "band" is an explicitly forbidden term on a teacher surface —
+ * and an unknown token stands as it is, renamed as far as the known parts reach. */
+const FIELD_TAILS: Record<string, string> = {
+  model_answer: "the expected answer",
+  options: "the answer options",
+  key: "the answer key",
+  bands: "the score levels",
+  type: "the question type",
+  points: "the points",
+  question: "the question it grades",
+};
+
+function fieldTailLabel(tail: string): string {
+  return tail.trim().split(/\s+/).filter((part) => part !== "")
+    .map((part) => FIELD_TAILS[part] ?? part).join(" ");
+}
+
+/**
+ * One entry of the server's own change list or validation list, reworded to the teacher's
+ * vocabulary. The server's locators read `question 'Q3' model_answer` — the same words the
+ * draft's checks use — and the map's job is exactly what the state badges' is: the
+ * internal names go in (the entry's id *and* the field's word after it — a raw
+ * `model_answer` or `bands` on the screen is the same leak an id is), the teacher's words
+ * come out, and a locator this build does not know still renders, renamed as far as the
+ * known parts reach.
+ */
+export function entryFieldLabel(field: string): string {
+  const text = field.trim();
+  if (text === "spec") {
+    return "the draft";
+  }
+  if (/^grades\b/.test(text)) {
+    const quoted = /^grades\s+'([^']+)'/.exec(text);
+    return quoted !== null
+      ? `the grade table — ${questionLabel(quoted[1] ?? "")}`
+      : "the grade table";
+  }
+  const entry = /^(question|criterion)\s+'([^']+)'((?:\s+(?:\w+|\[[^\]]*\]))*)$/.exec(text);
+  if (entry !== null) {
+    const kind = entry[1] ?? "";
+    const id = entry[2] ?? "";
+    const name = kind === "question" ? questionLabel(id) : criterionLabel(id);
+    const tail = fieldTailLabel(entry[3] ?? "");
+    return tail === "" ? name : `${name} — ${tail}`;
+  }
+  const bare = /^(question|criterion)\s+(.*)$/.exec(text);
+  if (bare !== null) {
+    const name = (bare[1] ?? "") === "question" ? "a question" : "a grading point";
+    const tail = fieldTailLabel(bare[2] ?? "");
+    return tail === "" ? name : `${name} — ${tail}`;
+  }
+  return text;
+}
+
+/** Where in the draft a missing piece stands, from the structure read's dotted location:
+ * the segment naming the entry becomes the entry's label, and the field it stands at
+ * becomes the field's teacher name. */
+export function placeholderLocationLabel(location: string, items: { id: string }[]): string {
+  const match = /^(question|criterion)\[(\d+)\](?:\.(.*))?$/.exec(location.trim());
+  if (match !== null) {
+    const entry = items[Number(match[2])];
+    const name = entry !== undefined
+      ? (match[1] === "question" ? questionLabel(entry.id) : criterionLabel(entry.id))
+      : (match[1] === "question" ? "a question" : "a grading point");
+    const field = placeholderFieldLabel(match[3] ?? "");
+    return field === "" ? name : `${name} — ${field}`;
+  }
+  if (location.trim().startsWith("grades")) {
+    return "The grade table";
+  }
+  return "In the draft";
+}
+
+/** The field a missing piece stands at, in the same words the answer form uses. */
+function placeholderFieldLabel(field: string): string {
+  switch (field) {
+    case "model_answer":
+      return "the expected answer";
+    case "options":
+      return "the answer options";
+    case "key":
+      return "the answer key";
+    case "bands":
+      return "the score levels";
+    case "type":
+      return "the question type";
+    default:
+      return "";
+  }
+}

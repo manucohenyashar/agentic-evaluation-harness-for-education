@@ -172,6 +172,11 @@ def test_the_write_field_map_covers_every_declared_control_action():
     assert empty == [
         "update configuration",
         "draft package from documents",
+        # the from-scratch start (#764, FR-UI-13): the empty skeleton is written to the
+        # draft file synchronously (no model call, no job), so the draft files are the
+        # state and no store row is written (ADR-45) — the same cited exception the
+        # authoring review trio above carries.
+        "draft package from scratch",
         "answer authoring review",
         "edit draft package",
     ], (
