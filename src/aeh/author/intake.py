@@ -828,6 +828,7 @@ class _DocxHTMLParser(HTMLParser):
         self._cell: list[str] | None = None
         self._cell_parts: list[str] = []
         self._list_depth = 0
+        self._deferred_images: list[tuple[str, str, int | None]] = []
 
     # -- capture helpers ----------------------------------------------------------------------
 
@@ -844,14 +845,21 @@ class _DocxHTMLParser(HTMLParser):
         text = _inline_text(pieces)
         kind, level = self._kind, self._level
         self._kind, self._level = "paragraph", None
-        if not text:
-            return
-        if self._cell is not None:
-            if self._cell_parts:
-                self._cell_parts.append(" ")  # multi-paragraph cells read on one line
-            self._cell_parts.append(text.replace("\n", " "))
-            return
-        self.blocks.append((kind, text, level))
+        if text:
+            if self._cell is not None:
+                if self._cell_parts:
+                    self._cell_parts.append(" ")  # multi-paragraph cells read on one line
+                self._cell_parts.append(text.replace("\n", " "))
+            else:
+                self.blocks.append((kind, text, level))
+        # A picture sighted inside an open heading capture lands after the heading block
+        # (`_deferred_images`), so the heading is whole and the placeholder stands under
+        # the section it belongs to — the block-position location lookup reads exactly
+        # this ordering. Empty text must not skip them: an image-only heading's capture
+        # flushes nothing but its deferred picture still belongs in the stream.
+        if self._deferred_images:
+            self.blocks.extend(self._deferred_images)
+            self._deferred_images = []
 
     # -- the parser's hooks ---------------------------------------------------------------------
 
@@ -875,8 +883,20 @@ class _DocxHTMLParser(HTMLParser):
             self._cell_parts = []
         elif tag == "img":
             self.image_count += 1
-            self.blocks.append(("image_ref", _clip(attributes.get("alt") or "", _ANCHOR_CHARS),
-                                None))
+            image = ("image_ref", _clip(attributes.get("alt") or "", _ANCHOR_CHARS),
+                     None)
+            if self._pieces is not None and self._kind == "heading":
+                # The picture stands inside the heading still being captured: appending
+                # the placeholder now would put it BEFORE its own heading, and the
+                # block-position location lookup would name the previous section
+                # (a heading like `Q3 SECTION <img>` is a reachable mammoth shape).
+                # Defer the placeholder to the heading's flush — the heading stays
+                # whole, and the placeholder lands directly under it. Paragraphs and
+                # list items keep the inline append: the image stands where it stood,
+                # and their section heading is unaffected either way.
+                self._deferred_images.append(image)
+            else:
+                self.blocks.append(image)
         elif tag == "br":
             if self._pieces is not None:
                 self._pieces.append("\n")
@@ -886,6 +906,15 @@ class _DocxHTMLParser(HTMLParser):
             self.handle_starttag(tag, attrs)
         elif tag == "br":
             self.handle_starttag(tag, attrs)
+
+    def close(self) -> None:
+        # mammoth's HTML is well-formed, so nothing is open at close in practice — but a
+        # deferred placeholder must never be lost to a truncated feed: `image_count` counts
+        # every sighting, and a picture whose block never lands would break the scan's
+        # one-to-one pairing from below. Flushing here keeps the two counts equal by
+        # construction.
+        self._flush()
+        super().close()
 
     def handle_endtag(self, tag: str) -> None:
         if tag in ("h1", "h2", "h3", "h4", "h5", "h6", "p", "li"):
