@@ -1,10 +1,11 @@
 """`TC-AUTHOR-32..38` — the intake corpus's expected outcomes, against the §3.1.1 intake tier.
 
-**Written ahead of #754** (the intake tier): `aeh.author` exists (#690) but carries no intake
-surface, so every case below fails with `NotImplementedYet` naming #754 — the stated red,
-never a collection error. `scripts/test.sh` filters the `writtenahead` marker out of the fast
-tier; the `"#754 intake tier"` registry entry in `tests/support/impl.py` tells whoever lands
-#754 to re-check this file green and then unmark (remove the marker, never the test).
+**Written ahead of #754** (the intake tier), and now landed: #754 shipped the §3.1.1 intake
+surface, and every case below ran green and lost its `writtenahead` marker — the two that
+could not (`TC-AUTHOR-34`/`TC-AUTHOR-36`, which assert the §5.1-declared `image_not_carried`
+and `structure_guessed` warnings the shipped intake did not emit) stayed marked under a
+`command`-kind registry entry in `tests/support/impl.py` naming exactly the behaviour that
+had to arrive, and lost their markers when the intake emitted both.
 
 The fixture corpus AF-14..21 is #753's deliverable and is pinned GREEN by the TC-AUTHOR-28
 census (`tests/artifact/test_tc_author_28_authoring_fixture_corpus.py`): the corpus is the
@@ -101,7 +102,6 @@ def test_tc_author_33_af14_rubric_table_is_carried() -> None:
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_author_34_af15_image_and_equation_named_not_lost() -> None:
     """`TC-AUTHOR-34` (RS-02): AF-15's image and equation are *named*, not lost.
 
@@ -160,7 +160,6 @@ def test_tc_author_35_af16_cp1252_encoding_fallback() -> None:
         assert word in text, f"{CASE}: the accented word {word!r} did not survive"
 
 
-@pytest.mark.writtenahead
 def test_tc_author_36_af17_structure_guessed() -> None:
     """`TC-AUTHOR-36`: AF-17's heading-less prose normalizes, and admits the guess.
 

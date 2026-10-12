@@ -28,11 +28,13 @@ unmarked, kept; one case per TC ID across the suite, not two — this file's TC-
 subsumes the fixture half's, and its TC-37 adds the rung-1 service limbs above the intake
 level the fixture half pins.)
 
-Two corpus-vs-implementation divergences were found while landing this suite and are
+Two corpus-vs-implementation divergences were found while landing this suite and were
 *disclosed findings*, not weakened assertions: AF-15's `image_not_carried` and AF-17's
 `structure_guessed` (both §5.1-declared, both absent from the shipped intake) — the
-fixture-half cases that assert them stay marked under a `command`-kind registry entry in
-`tests/support/impl.py` naming exactly the behaviour that must arrive before they unmark.
+fixture-half cases that assert them stayed marked under a `command`-kind registry entry in
+`tests/support/impl.py` naming exactly the behaviour that had to arrive before they unmark.
+The intake emits both warnings now, the probe resolved, and those cases ran green and
+unmarked; the journey below (TC-AUTHOR-38) stays held on its own entry, the capture pass.
 
 Every case runs headless in-process under the autouse socket guard; the refusals make zero
 provider calls (asserted with a call-counting double, `CT-AUTHOR-23`) and the normalizations
@@ -207,10 +209,10 @@ def test_tc_author_36_af17_the_guessed_outline_still_drafts(
 
     The plan's expected outcome has two limbs — the `structure_guessed` warning, and the
     draft still building. The warning limb is the fixture half's case
-    (`test_tc_author_36_af17_structure_guessed`), which currently stands *marked* under a
-    disclosed registry entry: the shipped intake emits no such warning for AF-17 (§5.1
-    declares one), and that divergence is this suite's finding, not an assertion to weaken.
-    This case is the other limb: the review walk asks the teacher to confirm the outline,
+    (`test_tc_author_36_af17_structure_guessed`), which stood *marked* under a disclosed
+    registry entry while the shipped intake emitted no such warning for AF-17 (§5.1
+    declares one); the intake emits it now and that case ran green and unmarked. This case
+    is the other limb: the review walk asks the teacher to confirm the outline,
     which presupposes the draft got written at all — the run completes over the guessed
     outline and writes exactly the two artifacts, a parseable draft among them. Disclosed:
     the prose's *questions* cannot reach the draft yet — the corpus holds no recordings for
@@ -595,12 +597,12 @@ def test_tc_author_41_intake_is_pure_and_order_independent(
 # --------------------------------------------------------------------------------------------
 
 def _truncation_fixture(generator) -> bytes:
-    """A synthetic `.docx`: two long paragraphs (>200 chars) — one beside the image, one
-    beside the equation — so a warning that quotes an anchor is quoting text long enough
-    to leak if the truncation boundary were wrong. The equation is the anchor whose
-    `equation_not_carried` warning is the shipped intake's own behaviour (the
-    `image_not_carried` limb is TC-AUTHOR-34's divergence, held marked, not re-asserted
-    here)."""
+    """A synthetic `.docx` whose warnings have long text to leak if a truncation boundary
+    were wrong: two >200-char paragraphs beside an image and an equation (a warning that
+    quotes an anchor quotes text long enough to leak), and a >60-char heading — the
+    warnings name their location by the *nearest heading* (§3.1.1), so the long heading is
+    what keeps the location clause's clip under test (and, at ~175 characters, the
+    image warning's operator detail approaches the 200-character bound)."""
     long_a = ("Describe what the ammeter reads when the switch is closed and explain why "
               "the reading changes as the variable resistor is turned, naming each "
               "component you would include in the circuit diagram you draw for the "
@@ -609,8 +611,11 @@ def _truncation_fixture(generator) -> bytes:
               "show whether the lamp obeys Ohm's law, and what would change if the cell "
               "were replaced by one with a higher electromotive force but the same "
               "internal resistance as before. ")
+    long_heading = ("SCI9-TRUNCATION-01 - YEAR 9 SCIENCE TEST: A SECTION TITLE WRITTEN OUT "
+                    "AT LENGTH SO THAT ANY WARNING QUOTING IT WITHOUT CLIPPING WOULD "
+                    "BREACH THE BOUND THIS TEST ASSERTS")
     blocks = [
-        ("heading", 1, "SCI9-TRUNCATION-01 - WARNING BOUNDARY TEST"),
+        ("heading", 1, long_heading),
         ("paragraph", long_a + long_a),
         ("image",),
         ("paragraph", long_b + long_b),
@@ -625,8 +630,9 @@ def test_tc_author_42_warnings_leak_at_most_a_sentence(tmp_path: Path) -> None:
 
     Two limbs: the corpus scan (every AF-14..21 document's warnings), and the truncation
     boundary — a synthetic document whose long paragraphs stand right beside an image and
-    an equation, so the equation warning's anchor text is long enough to leak. A warning
-    that outgrew the bound, or one that swallowed a paragraph, fails here.
+    an equation and whose heading is long, so the warnings' text — anchor, location
+    clause, and detail — is long enough to leak. A warning that outgrew the bound, or one
+    that swallowed a paragraph, fails here.
     """
     corpus_documents = [normalize_document(CORPUS / af_id / name)
                         for af_id in ("AF-14", "AF-15", "AF-16", "AF-17", "AF-21")

@@ -273,10 +273,28 @@ class DomainEffectsMixin:
 
     def _amend_effect(self, params: dict[str, Any]) -> tuple[str, bool]:
         submission_id = str(params.get("submission_id") or params.get("submission_ref") or "")
-        criterion_id = str(params.get("criterion_id") or "")
-        band = params.get("new_band", params.get("band"))
         actor = str(params.get("actor") or "operator")
-        if not submission_id or not criterion_id or not band:
+        # One call carries one criterion (the `criterion_id`/`band` pair) or several (the
+        # `changes` list): M-GRADE's `amend` takes the whole edit map and writes ONE
+        # revision holding every entry, so a multi-criterion override is a single
+        # amendment — sequential single-criterion posts would each build the next
+        # revision from only that call's edit and drop the previous one's.
+        requested: list[tuple[str, str]] = []
+        changes = params.get("changes")
+        if isinstance(changes, list):
+            for entry in changes:
+                if not isinstance(entry, dict):
+                    continue
+                entry_id = str(entry.get("criterion_id") or "")
+                entry_band = entry.get("band", entry.get("new_band"))
+                if entry_id and entry_band:
+                    requested.append((entry_id, str(entry_band)))
+        else:
+            entry_id = str(params.get("criterion_id") or "")
+            entry_band = params.get("new_band", params.get("band"))
+            if entry_id and entry_band:
+                requested = [(entry_id, str(entry_band))]
+        if not submission_id or not requested:
             return (
                 "amend a finalized grade names no submission, criterion or band; nothing "
                 "was written",
@@ -307,30 +325,49 @@ class DomainEffectsMixin:
         if row is None:
             return f"no cohort ledger holds run {run_id!r}; nothing was written", False
         grading = GradingService(self._store)
+        edits: dict[str, float] = {}
+        bands_of: dict[str, str] = {}
+        current_id, current_band = requested[0]
         try:
             catalog = self._catalog(str(row["package_id"]))
             catalog.criteria(str(row["package_version_id"]))  # pins the band cache to the run
-            points = catalog.points_for_band(criterion_id, str(band))
+            for entry_id, entry_band in requested:
+                current_id, current_band = entry_id, entry_band
+                points = catalog.points_for_band(entry_id, entry_band)
+                edits[entry_id] = float(points)
+                bands_of[entry_id] = entry_band
         except Exception as exc:  # noqa: BLE001 — a refusal is the honest outcome
             return (
-                f"M-PKG refused the band {band!r} for {criterion_id}: {exc} — nothing was "
-                "written",
+                f"M-PKG refused the band {current_band!r} for {current_id}: {exc} — "
+                "nothing was written",
                 False,
             )
-        effective = grading.effective_points(run_id, submission_id, criterion_id)
-        if effective is not None and float(effective) == float(points):
-            # The current revision already carries this exact override: a repeated post
-            # (double-click, second tab) writes nothing, not even an audit row
-            # (FR-CONSOLE-02).
+        for entry_id in list(edits):
+            effective = grading.effective_points(run_id, submission_id, entry_id)
+            if effective is not None and float(effective) == float(edits[entry_id]):
+                # The current revision already carries this exact override: it takes no
+                # place in the edit map, so a repeated post (double-click, second tab)
+                # writes nothing, not even an audit row (FR-CONSOLE-02).
+                del edits[entry_id]
+                bands_of.pop(entry_id, None)
+        if not edits:
+            # Every requested criterion already sits at its requested band.
+            if len(requested) == 1:
+                only_id, only_band = requested[0]
+                return (
+                    f"{submission_id}'s grade already carries {only_id} = {only_band}; "
+                    "nothing changed",
+                    True,
+                )
             return (
-                f"{submission_id}'s grade already carries {criterion_id} = {band}; nothing "
+                f"{submission_id}'s grade already carries the requested bands; nothing "
                 "changed",
                 True,
             )
         before = self._current_revision(submission_id, run_id)
         try:
             revision = grading.amend(
-                run_id, submission_id, {criterion_id: points}, actor,
+                run_id, submission_id, edits, actor,
                 str(params.get("reason") or "amended from the console"))
         except Exception as exc:  # noqa: BLE001 — a refusal is the honest outcome
             # CT-CONSOLE-26: dispatched means the effect row exists. M-GRADE writes the
@@ -348,9 +385,13 @@ class DomainEffectsMixin:
                 "written",
                 False,
             )
+        changed = ", ".join(
+            f"{entry_id} to {bands_of[entry_id]} ({edits[entry_id]} points)"
+            for entry_id in sorted(edits)
+        )
         return (
-            f"grade for {submission_id} amended through M-GRADE: {criterion_id} to "
-            f"{band} ({points} points), revision {getattr(revision, 'revision', '?')}",
+            f"grade for {submission_id} amended through M-GRADE: {changed}, "
+            f"revision {getattr(revision, 'revision', '?')}",
             True,
         )
 
