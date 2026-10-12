@@ -68,8 +68,9 @@ DEBUGGING_ONLY_COMMANDS: dict[str, str] = {
     # console path is not invented, and the reason says the screens have yet to be built.
     "author draft": (
         "turns teacher-authored documents into a draft package spec plus an authoring report "
-        "from the terminal; the authoring screens are future console work (FR-CONSOLE-46), so "
-        "a developer runs the command in the terminal until they are built"
+        "from the terminal, or with --from-scratch writes an empty skeleton and a "
+        "created-empty report (FR-AUTHOR-29); the authoring screens are future console work "
+        "(FR-CONSOLE-46), so a developer runs the command in the terminal until they are built"
     ),
     "author review": (
         "walks the teacher through every unresolved item of a draft before the package can be "
@@ -106,7 +107,8 @@ CLI_COMMAND_PURPOSE: dict[str, str] = {
     "package build": DEBUGGING_ONLY_COMMANDS["package build"],
     "package export": DEBUGGING_ONLY_COMMANDS["package export"],
     "author draft": (
-        "runs the authoring draft over teacher-authored documents from the terminal; the "
+        "runs the authoring draft over teacher-authored documents from the terminal, or "
+        "starts one from an empty skeleton with --from-scratch --title (FR-AUTHOR-29); the "
         "console's authoring screens are future work (FR-CONSOLE-46), and a developer uses "
         "the command to produce the draft spec and report without a browser"
     ),

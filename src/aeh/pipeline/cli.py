@@ -135,14 +135,27 @@ def _build_parser() -> Any:
             "review walk collects the answers the draft leaves open."),
         formatter_class=argparse.RawDescriptionHelpFormatter)
     draft.add_argument("--config", required=True, help="the configuration file (TOML)")
-    draft.add_argument("--docs", required=True, nargs="+", metavar="PDF",
-                       help="the teacher-authored documents to read (PDFs)")
+    draft.add_argument("--docs", required=False, default=None, nargs="+", metavar="PDF",
+                       help="the teacher-authored documents to read (PDFs) — omitted when "
+                            "--from-scratch starts from an empty skeleton instead")
     draft.add_argument("--out", required=True,
                        help="the directory the draft spec and report are written into")
     draft.add_argument(
         "--force", action="store_true",
         help="overwrite an existing draft and report for the same package id without "
              "confirming (recorded review answers still carry over)")
+    # FR-AUTHOR-29 (console redesign delta §3.1.2, #759): the from-scratch counterpart,
+    # the same library method the console's *from scratch* entry drives; it joins the
+    # parity census (FR-CONSOLE-41) as this command's other mode.
+    draft.add_argument(
+        "--from-scratch", action="store_true",
+        help="write an empty draft skeleton — zero questions, zero criteria, no "
+             "placeholders — and a report marked created empty, instead of reading "
+             "documents; fill the skeleton in the console's structured editor")
+    draft.add_argument(
+        "--title", default=None,
+        help="the package's name; with --from-scratch it is slugified into the package "
+             "id the draft and report are written under")
     review = author_sub.add_parser(
         "review", help="walk a draft's unresolved items to resolution ahead of the build")
     review.add_argument("--draft", required=True, help="the draft spec (TOML) to review")
@@ -286,6 +299,11 @@ def _author_draft_command(args: Any) -> int:
     the environment over the file), and the provider comes from `_provider_for`, the
     pipeline's resolution seam (`HARNESS_FIXTURE_DIR` -> the recorded provider, `CT-PROV-10`).
 
+    `--from-scratch` (FR-AUTHOR-29, #759) drives `AuthoringService.draft_from_scratch`
+    instead — an empty skeleton and a created-empty report, no documents read and no model
+    called; `--title` is required with it, and `--docs` is unnecessary (the skeleton reads
+    nothing).
+
     An existing draft and report for the same package id are refused before anything is
     written (FR-AUTHOR-22); `--force` is the non-interactive confirmation, and without it
     the refusal asks — `y`/`yes` re-drafts, anything else (EOF included) stops with nothing
@@ -296,19 +314,38 @@ def _author_draft_command(args: Any) -> int:
     from aeh.author.errors import OverwriteRefusedError
     from aeh.author.service import authoring_service
 
+    if args.from_scratch:
+        if not str(args.title or "").strip():
+            print("aeh author draft: --from-scratch needs --title: the title names the "
+                  "package the skeleton is written under (FR-AUTHOR-29).", file=sys.stderr)
+            return EXIT_ERROR
+    elif not args.docs:
+        print("aeh author draft: error: the following arguments are required: --docs "
+              "(or --from-scratch, which reads no documents)", file=sys.stderr)
+        return 2
+
     config = effective_config(_load_config_file(args.config))
     profile = str(config.get("HARNESS_PROFILE") or "")
     provider = _provider_for({"backend_profile": profile})
     service = authoring_service(config, profile, provider=provider)
-    documents = [Path(document) for document in args.docs]
     output_dir = Path(args.out)
     try:
-        service.draft(documents, output_dir, force=args.force)
+        if args.from_scratch:
+            service.draft_from_scratch(output_dir, str(args.title or "").strip(),
+                                       force=args.force)
+            return EXIT_OK
+        service.draft([Path(document) for document in args.docs], output_dir,
+                      force=args.force)
     except OverwriteRefusedError as error:
         print(f"aeh author draft: {type(error).__name__}: {error}", file=sys.stderr)
         if not _confirmed("Overwrite the existing draft and report for this package id?"):
             return EXIT_ERROR
-        service.draft(documents, output_dir, force=True)
+        if args.from_scratch:
+            service.draft_from_scratch(
+                output_dir, str(args.title or "").strip(), force=True)
+        else:
+            service.draft([Path(document) for document in (args.docs or [])],
+                          output_dir, force=True)
     return EXIT_OK
 
 

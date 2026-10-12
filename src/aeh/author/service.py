@@ -33,16 +33,18 @@ from .carryover import apply_carry_over, prior_artifacts
 from .errors import AuthoringInputError, OverwriteRefusedError
 from .extraction import AuthoringDocument, extract_documents
 from .grades import AUTHOR_GRADES_TEMPLATE_V, grades_payload, parse_grades
-from .intake import document_text, log_intake, normalize_document, normalized_from_authoring
+from .intake import document_text, log_intake, normalize_documents, normalized_from_authoring
 from .inventory import AUTHOR_INVENTORY_TEMPLATE_V, fallback_package_id, inventory_payload, \
-    parse_inventory
-from .report import draft_filename, render_report, report_filename, summary_paragraph
+    parse_inventory, slugify_package_id
+from .progress import check_cancel, commit_artifacts, emit, emit_completion
+from .report import FROM_SCRATCH_NEXT_STEP, draft_filename, render_report, \
+    render_report_created_empty, report_filename, summary_paragraph
 from .review import run_review
 from .rubric import AUTHOR_RUBRIC_TEMPLATE_V, parse_rubric, rubric_payload
 from .settings import AuthoringSettings
-from .spec import assemble, render_draft
-from .types import CarriedAnswer, DraftResult, DroppedAnswer, NormalizedDocument, \
-    ReviewAnswer, ReviewResult, StepOutcome
+from .spec import assemble, render_draft, render_empty_draft
+from .types import AuthoringCancel, AuthoringObserver, AuthoringProgress, CarriedAnswer, \
+    DraftResult, DroppedAnswer, NormalizedDocument, ReviewAnswer, ReviewResult, StepOutcome
 
 LOGGER = logging.getLogger("aeh.author")
 
@@ -105,7 +107,8 @@ class AuthoringService:
     # -- the workflow -------------------------------------------------------------------------
 
     def draft(self, documents: Sequence[Path], output_dir: Path,
-              force: bool = False) -> DraftResult:
+              force: bool = False, *, observer: AuthoringObserver | None = None,
+              cancel: AuthoringCancel | None = None) -> DraftResult:
         """Run the workflow over the documents and write the two artifacts into `output_dir`.
 
         Re-running is always the retry and the recreate (FR-AUTHOR-21): the draft is
@@ -119,6 +122,13 @@ class AuthoringService:
         fingerprint still matches is re-applied provisionally (the sentinel stays; the
         review walk re-asks it and the ready gate refuses until the teacher confirms),
         everything else is dropped and named in the new report (FR-AUTHOR-23).
+
+        The console drives the same method (`FR-AUTHOR-30`): `observer`, when given, is
+        called at every step boundary with an `AuthoringProgress` — between steps, never
+        mid-step — and `cancel`, when given, is checked at exactly those boundaries; a
+        `True` stops the run there with `AuthoringCancelled`, leaving the output directory
+        byte-for-byte as the last completed step left it (`CT-AUTHOR-24`). Both default to
+        `None`, so every existing call site keeps its behaviour unchanged.
         """
         settings = self._settings.effective()  # knob refusals precede everything
         paths = [Path(document) for document in documents]
@@ -127,18 +137,32 @@ class AuthoringService:
                 "no documents were given: the authoring workflow drafts from teacher "
                 "documents, and there is nothing to read (FR-AUTHOR-13). Nothing was "
                 "written and no model was called.")
+        check_cancel(cancel)
         call = self._call_with_timeout(settings.timeout_s)
         # Intake (FR-AUTHOR-24): every `.docx` and `.txt` normalizes here, before any
         # model call, so an FR-AUTHOR-28 refusal never fires after a transcription has
         # spent a call (`CT-AUTHOR-23`). PDFs keep their FR-AUTHOR-01 path — text layer,
         # then the transcriber, per-document resilience intact (CT-AUTHOR-10) — and ride
         # the same representation afterwards (`normalized_from_authoring`, FR-AUTHOR-27).
+        # The front step is the intake tier's own batch entry (`normalize_documents`,
+        # CT-AUTHOR-21): one call, input order, first refusal raising before anything
+        # downstream runs.
         pdf_paths = [path for path in paths if path.suffix.lower() == ".pdf"]
+        text_paths = [path for path in paths if path.suffix.lower() != ".pdf"]
         normalized: dict[Path, NormalizedDocument] = {}
-        for path in paths:
-            if path.suffix.lower() == ".pdf":
-                continue
-            normalized[path] = normalize_document(path, max_bytes=settings.doc_max_bytes)
+        read_done = 0
+        for path, document in zip(
+                text_paths,
+                normalize_documents(text_paths, max_bytes=settings.doc_max_bytes)):
+            normalized[path] = document
+        # The 'reading documents' stage, in stage/item terms (`FR-AUTHOR-30`): one item per
+        # document the run read. The reads themselves are one deterministic batch — the
+        # boundaries report them as they are accounted, never mid-step.
+        for document in normalized.values():
+            read_done += 1
+            emit(observer, cancel, AuthoringProgress(
+                stage="reading documents", done=read_done, total=len(paths),
+                current=document.source_name, attempt=1, attempts=1))
         extracted: tuple[AuthoringDocument, ...] = ()
         if pdf_paths:
             extracted = extract_documents(
@@ -149,6 +173,10 @@ class AuthoringService:
                 allow_no_text=bool(normalized))
             for document in extracted:
                 normalized[document.path] = normalized_from_authoring(document)
+                read_done += 1
+                emit(observer, cancel, AuthoringProgress(
+                    stage="reading documents", done=read_done, total=len(paths),
+                    current=document.path.name, attempt=1, attempts=1))
         # The draft consumes only the representation, in the input order (CT-AUTHOR-21);
         # a document extraction could not read has no place in it, as before.
         ordered = [normalized[path] for path in paths if path in normalized]
@@ -159,18 +187,39 @@ class AuthoringService:
         rows: list[dict[str, Any]] = []   # the Steps section's records, in run order
         models_used: list[str] = []
 
+        # The 'drafting' stage's boundary hook (`FR-AUTHOR-30`): one item per reasoning
+        # item, in run order. The stage's denominator is unknown until the inventory names
+        # the questions — `total` stays `None` until then, and `done` never decreases
+        # within the stage (`CT-AUTHOR-25`).
+        stage_done = 0
+        stage_total: int | None = None
+
+        def on_item(row: dict[str, Any]) -> None:
+            nonlocal stage_done
+            stage_done += 1
+            emit(observer, cancel, AuthoringProgress(
+                stage="drafting", done=stage_done, total=stage_total,
+                current=str(row["item_id"]), attempt=int(row["attempts"]),
+                attempts=settings.attempts))
+
         inventory_value, questions = self._run_inventory(
-            documents_text, settings.attempts, call, rows, models_used)
+            documents_text, settings.attempts, call, rows, models_used, on_item=on_item)
         package_id = inventory_value.get("package") or fallback_package_id(
             [(document.source_name, document_text(document)) for document in ordered])
+        # Now the questions are named, the stage's item count is known: the inventory's
+        # rows, one rubric item per question the chain will actually work on (an untyped
+        # question is skipped, its gaps standing as sentinels), and the grades table.
+        stage_total = stage_done + sum(
+            1 for question in questions
+            if question.get("type") in ("mcq", "open", "mixed")) + 1
 
         derived_keys = _derive_keys(
             "\n\n".join(document_text(document) for document in ordered), questions)
         rubric_values, rubric_unresolved = self._run_rubric(
             documents_text, questions, derived_keys, settings.attempts, call, rows,
-            models_used)
+            models_used, on_item=on_item)
         grades_value = self._run_grades(documents_text, settings.attempts, call, rows,
-                                        models_used)
+                                        models_used, on_item=on_item)
 
         # One INFO line per outcome (FR-AUTHOR-19): the run's trace names every item's
         # step, id and end state, so a fallback or a placeholder is readable from the
@@ -227,19 +276,24 @@ class AuthoringService:
                 report_documents.append(normalized[path])
         report_text = render_report(assembly, tuple(report_documents), rows, models_used,
                                     draft_path, carried=carried, dropped=dropped)
-        output.mkdir(parents=True, exist_ok=True)
-        # The write replaces the prior artifacts *by name*: when the prior pair was
-        # written under a different spelling of the same case-insensitive package id
-        # (M-PKG's collision rule — the refusal above counts AF-01's `HIST7-ROME-01`
-        # files as AF-13's), removing the old-spelling files first is what "replace"
-        # promised the teacher; otherwise a case-sensitive filesystem would hold two
-        # drafts and two reports for one package id after the overwrite was confirmed.
-        for prior, fresh in ((existing_draft, draft_path),
-                             (existing_report, report_path)):
-            if prior is not None and prior.name != fresh.name:
-                prior.unlink()
-        draft_path.write_text(draft_text, encoding="utf-8")
-        report_path.write_text(report_text, encoding="utf-8")
+        # The 'writing draft' stage (`FR-AUTHOR-30`): the boundary before the write is the
+        # last cancel checkpoint — a cancel there leaves the output directory
+        # byte-for-byte as the run found it (`CT-AUTHOR-24`, RS-12), because the commit
+        # that follows is atomic (`progress.commit_artifacts`): temporaries first, the
+        # old-spelling priors removed, then both renames. No cancel is checked inside the
+        # commit or after it — mid-step the run cannot be stopped, and after the final
+        # write there is no next step left to stop.
+        emit(observer, cancel, AuthoringProgress(
+            stage="writing draft", done=0, total=2, current=draft_path.name,
+            attempt=1, attempts=1))
+        replaced_priors = [prior for prior, fresh in ((existing_draft, draft_path),
+                                                      (existing_report, report_path))
+                           if prior is not None and prior.name != fresh.name]
+        commit_artifacts(output, [(draft_path, draft_text), (report_path, report_text)],
+                         priors=replaced_priors)
+        emit_completion(observer, AuthoringProgress(
+            stage="writing draft", done=2, total=2, current=report_path.name,
+            attempt=1, attempts=1))
         if assembly.placeholder_count:
             LOGGER.warning("%d placeholder(s) standing in %s", assembly.placeholder_count,
                            draft_path.name)
@@ -272,15 +326,84 @@ class AuthoringService:
             models_used=tuple(models_used))
 
     def review(self, draft_path: Path,
-               answers: Iterable[ReviewAnswer] | None = None) -> ReviewResult:
+               answers: Iterable[ReviewAnswer] | None = None, *,
+               observer: AuthoringObserver | None = None,
+               cancel: AuthoringCancel | None = None) -> ReviewResult:
         """The review walk and the ready gate (FR-AUTHOR-16/17, story #696): walk the teacher
         through every item the draft still carries, in report order, accept or refuse each
         plain-language answer, rewrite the draft in place, re-run the deterministic
         validation, and rewrite the report. `answers=None` walks the terminal (one answer
         line per item); `answers=[...]` is the scripted form — the same call the console
         will make, one answer at a time. The walk is local: no model call rides any seam,
-        and it writes exactly the two artifacts it was given (CT-AUTHOR-12, ADR-43)."""
-        return run_review(Path(draft_path), answers)
+        and it writes exactly the two artifacts it was given (CT-AUTHOR-12, ADR-43).
+
+        The console drives the same method (`FR-AUTHOR-30`): the observer hears the
+        'reviewing' stage per answer and the 'writing draft' stage around the rewrite;
+        the cancel is checked at those boundaries and stops the walk with
+        `AuthoringCancelled` before anything is written."""
+        return run_review(Path(draft_path), answers, observer=observer, cancel=cancel)
+
+    def draft_from_scratch(self, output_dir: Path, title: str, *,
+                           observer: AuthoringObserver | None = None,
+                           cancel: AuthoringCancel | None = None,
+                           force: bool = False) -> DraftResult:
+        """The from-scratch start (FR-AUTHOR-29): an empty draft skeleton — zero questions,
+        zero criteria, and no placeholder anywhere, because nothing is missing yet — plus
+        the same two-artifact pair's report, marked created empty, whose Next step says to
+        open it in the console and add questions and grading points. No model call rides
+        any seam: the skeleton is deterministic. The console's structured editor (FR-UI-13)
+        is the intended filling mechanism; the CLI `aeh author draft --from-scratch`
+        counterpart drives this same method (FR-CONSOLE-41).
+
+        `title` names the package: it is slugified to `plan_package`'s rule
+        (`inventory.slugify_package_id`) into the package id, the same rule the fallback
+        package id uses. Over an existing draft and report for the derived id the method
+        refuses exactly as `draft()` does (FR-AUTHOR-22) — `force` confirms — so a
+        from-scratch start never silently replaces a draft the teacher may have reviewed.
+
+        The observer and the cancel mean the same as in `draft()`: the run's one stage is
+        'writing draft', its two items are the two artifacts, and the commit is atomic —
+        a cancel at the boundary before it leaves the output directory byte-for-byte as
+        the run found it (`CT-AUTHOR-24`)."""
+        check_cancel(cancel)
+        name = (title or "").strip()
+        if not name:
+            raise AuthoringInputError(
+                "no title was given: a package started from scratch needs a name — it "
+                "becomes the package id the draft and report are written under "
+                "(FR-AUTHOR-29). Nothing was written and no model was called.")
+        package_id = slugify_package_id(name)
+        output = Path(output_dir)
+        draft_path = output / draft_filename(package_id)
+        report_path = output / report_filename(package_id)
+        existing_draft, existing_report = prior_artifacts(output, package_id)
+        if not force and existing_draft is not None and existing_report is not None:
+            raise OverwriteRefusedError(
+                f"{existing_draft.name} and {existing_report.name} already exist in "
+                f"{output} for package {package_id!r}: a from-scratch start does not "
+                "replace a draft the teacher may have reviewed (FR-AUTHOR-22). Confirm "
+                "the overwrite (force) to replace them; nothing was written.")
+        draft_text = render_empty_draft(package_id)
+        report_text = render_report_created_empty(package_id, draft_path, title=name)
+        emit(observer, cancel, AuthoringProgress(
+            stage="writing draft", done=0, total=2, current=draft_path.name,
+            attempt=1, attempts=1))
+        replaced_priors = [prior for prior, fresh in ((existing_draft, draft_path),
+                                                      (existing_report, report_path))
+                           if prior is not None and prior.name != fresh.name]
+        commit_artifacts(output, [(draft_path, draft_text), (report_path, report_text)],
+                         priors=replaced_priors)
+        emit_completion(observer, AuthoringProgress(
+            stage="writing draft", done=2, total=2, current=report_path.name,
+            attempt=1, attempts=1))
+        LOGGER.info("draft written from scratch: %s; report: %s", draft_path.name,
+                    report_path.name)
+        print(f"Drafted {package_id} from scratch: an empty skeleton — 0 question(s), "
+              "0 criterion(s), 0 placeholder(s). "
+              f"Next: {FROM_SCRATCH_NEXT_STEP}.")
+        return DraftResult(
+            draft_path=draft_path, report_path=report_path, outcomes=(),
+            placeholders=0, resolved=0, unresolved=0, models_used=())
 
     # -- the model-call seam ------------------------------------------------------------------
 
@@ -364,35 +487,44 @@ class AuthoringService:
     def _run_inventory(self, documents_text: str, attempts: int,
                        call: Callable[[PromptPayload, ModelRef], Any],
                        rows: list[dict[str, Any]], models_used: list[str],
+                       on_item: Callable[[dict[str, Any]], None] | None = None,
                        ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         """FR-AUTHOR-06: one call per document set, proposing the question inventory in paper
         order. The outcomes are one per item (CT-AUTHOR-03): the accepted proposal's
         per-question rows share the call's record; a wholly failed inventory leaves no
         questions, so the failed item is the inventory itself and the draft is still assembled
-        and written (NFR-AUTHOR-01)."""
+        and written (NFR-AUTHOR-01). `on_item`, when given, is called once per outcome row
+        the step records — the drafting stage's progress boundary (`FR-AUTHOR-30`)."""
         value, row = self._propose(
             "inventory", "inventory", attempts, call,
             lambda complaint: inventory_payload(documents_text, complaint), parse_inventory)
         questions: list[dict[str, Any]] = (value or {}).get("questions", [])
         if value is None:
             rows.append(row)  # no per-question items exist to carry the failure
+            if on_item is not None:
+                on_item(row)
             return {"package": None, "questions": []}, []
         _note_model(row, models_used)
         for question in questions:
-            rows.append({**row, "item_id": question["id"]})
+            item_row = {**row, "item_id": question["id"]}
+            rows.append(item_row)
+            if on_item is not None:
+                on_item(item_row)
         return value, questions
 
     def _run_rubric(self, documents_text: str, questions: list[dict[str, Any]],
                     derived_keys: dict[str, list[str]], attempts: int,
                     call: Callable[[PromptPayload, ModelRef], Any],
                     rows: list[dict[str, Any]], models_used: list[str],
+                    on_item: Callable[[dict[str, Any]], None] | None = None,
                     ) -> tuple[dict[str, dict[str, Any] | None],
                                dict[str, tuple[str, ...]]]:
         """FR-AUTHOR-07: per question, the grading description mapped onto one supported
         shape, validated through `validate_draft` before it enters the draft. An mcq question
         whose key the ANSWERS pre-pass derived makes no call (`derived`); the rest each ride
         the chain. A clean gap — the documents state no grading description — is accepted as
-        a placeholder, never an error."""
+        a placeholder, never an error. `on_item` is the drafting stage's progress boundary
+        (`FR-AUTHOR-30`), one call per recorded outcome row."""
         values: dict[str, dict[str, Any] | None] = {}
         unresolved: dict[str, tuple[str, ...]] = {}
         for question in questions:
@@ -400,8 +532,11 @@ class AuthoringService:
             qtype = question.get("type")
             if qtype == "mcq" and derived_keys.get(qid):
                 values[qid] = {"key": list(derived_keys[qid])}
-                rows.append({"step": "rubric", "item_id": qid, "status": "derived",
-                             "model": None, "attempts": 0, "failures": ()})
+                row = {"step": "rubric", "item_id": qid, "status": "derived",
+                       "model": None, "attempts": 0, "failures": ()}
+                rows.append(row)
+                if on_item is not None:
+                    on_item(row)
                 LOGGER.info("rubric/%s derived from the documents' stated answers", qid)
                 continue
             if qtype not in ("mcq", "open", "mixed"):
@@ -416,6 +551,8 @@ class AuthoringService:
             if value is not None and _is_gap(value):
                 row = {**row, "status": "placeholder"}  # a clean gap: a named placeholder
             rows.append(row)
+            if on_item is not None:
+                on_item(row)
             _note_model(row, models_used)
             if value is None:
                 unresolved[qid] = row["failures"]
@@ -426,16 +563,20 @@ class AuthoringService:
     def _run_grades(self, documents_text: str, attempts: int,
                     call: Callable[[PromptPayload, ModelRef], Any],
                     rows: list[dict[str, Any]], models_used: list[str],
+                    on_item: Callable[[dict[str, Any]], None] | None = None,
                     ) -> dict[str, float | None] | None:
         """FR-AUTHOR-08: the `[grades]` boundary table derived from the boundaries the
         documents state — one call per document set — or `None`, the never-invent gap that
-        becomes the whole-table placeholder."""
+        becomes the whole-table placeholder. `on_item` is the drafting stage's progress
+        boundary (`FR-AUTHOR-30`)."""
         value, row = self._propose(
             "grades", "grades", attempts, call,
             lambda complaint: grades_payload(documents_text, complaint), parse_grades)
         if value is None and row["status"] == "resolved":
             row = {**row, "status": "placeholder"}  # the clean gap: no boundaries stated
         rows.append(row)
+        if on_item is not None:
+            on_item(row)
         _note_model(row, models_used)
         return value
 

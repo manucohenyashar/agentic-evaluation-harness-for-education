@@ -32,6 +32,47 @@ def draft_filename(package_id: str) -> str:
     return f"{package_id}.package.draft.toml"
 
 
+#: The from-scratch report's Next step, verbatim from FR-AUTHOR-29: the console's
+#: structured editor is the intended filling mechanism, so the skeleton's report points
+#: there, not at the review walk.
+FROM_SCRATCH_NEXT_STEP = (
+    "open it in the console and add questions and grading points")
+
+
+def render_report_created_empty(package_id: str, draft_path: Path,
+                                title: str = "") -> str:
+    """The from-scratch report (`FR-AUTHOR-29`): the same sections in the pinned order
+    (`CT-AUTHOR-05`), marked **created empty** — no documents were read, no model was
+    called, the draft holds zero questions and zero criteria — and a Next step naming the
+    console's editor. Deterministic like every report: no timestamps, no absolute paths
+    (FR-AUTHOR-15)."""
+    named = f" ({title})" if title else ""
+    lines = [f"# Authoring report — {package_id}{named}", ""]
+    lines.extend([
+        "## Documents", "",
+        "Created empty: the package was started from scratch and is marked created empty — "
+        "no documents were read, and the draft holds zero questions and zero criteria.", "",
+    ])
+    lines.extend([
+        "## Steps", "",
+        "None: the skeleton was written without a model call.", "",
+    ])
+    lines.extend([
+        "## Items", "",
+        "No question was inventoried: the draft is an empty skeleton, and every item in it "
+        "is the teacher's to add in the console's structured editor.", "",
+    ])
+    lines.extend([
+        "## Unresolved", "",
+        "Nothing: the draft is an empty skeleton with zero placeholders.", "",
+    ])
+    lines.extend([
+        "## Next command", "",
+        f"Next step: {FROM_SCRATCH_NEXT_STEP}.", "",
+    ])
+    return "\n".join(lines)
+
+
 def render_report(assembly: Assembly,
                   documents: tuple[AuthoringDocument | NormalizedDocument, ...],
                   outcomes: list[dict[str, Any]], models_used: list[str],

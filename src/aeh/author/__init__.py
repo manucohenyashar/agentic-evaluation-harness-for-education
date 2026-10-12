@@ -23,7 +23,8 @@ from __future__ import annotations
 from aeh.conf import ConfigurationError, ModelRef  # re-exports the chain vocabulary
 from aeh.prov import InferenceProvider
 
-from .errors import AuthoringInputError, DocumentRefusedError, OverwriteRefusedError
+from .errors import AuthoringCancelled, AuthoringInputError, DocumentRefusedError, \
+    OverwriteRefusedError
 from .extraction import AUTHOR_TRANSCRIBE_TEMPLATE_V, AuthoringDocument, PageText, \
     TRANSCRIBE_MIN_TEXT_LAYER_CHARS
 from .grades import AUTHOR_GRADES_TEMPLATE_V
@@ -44,6 +45,10 @@ from .settings import (
     AuthoringSettings,
 )
 from .types import (
+    AuthoringCancel,
+    AuthoringObserver,
+    AuthoringProgress,
+    AuthoringStage,
     Block,
     BlockKind,
     DraftResult,
@@ -72,6 +77,13 @@ __all__ = [
     "StepOutcome",
     "ItemStatus",
     "AuthoringSettings",
+    # the console-drivable run surface (FR-AUTHOR-29/30): the progress record the
+    # observer receives, the observer/cancel callables, and the boundary error
+    "AuthoringProgress",
+    "AuthoringStage",
+    "AuthoringObserver",
+    "AuthoringCancel",
+    "AuthoringCancelled",
     # the §3.1 data-structure aliases
     "StepId",
     # the module's own errors
