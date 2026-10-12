@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import time
+import webbrowser
 from typing import Any, Mapping, Sequence
 
 from aeh.conf import effective_config
@@ -70,6 +71,11 @@ def _build_parser() -> Any:
     console_parser = sub.add_parser("console", help="recover, then serve the operator console")
     console_parser.add_argument("--data-dir", required=True)
     console_parser.add_argument("--config", default=None)
+    # FR-PIPE-11: the startup URL may auto-open the default browser; this flag is the first of
+    # the two ways an operator disables that (the other is HARNESS_CONSOLE_AUTO_OPEN=0).
+    console_parser.add_argument(
+        "--no-open", action="store_true",
+        help="do not open the console in the default browser")
 
     # Live-test blocker B3: the operator's way to create a cohort and load its roster.
     cohort_parser = sub.add_parser(
@@ -369,6 +375,48 @@ def _cohort_command(args: Any) -> int:
     return EXIT_OK
 
 
+#: The knob `aeh console` reads for the startup auto-open (FR-PIPE-11): the design enumerates
+#: the *disable* values only, so anything else is not a recognized value and falls back to the
+#: default with a warning naming the knob and the value.
+CONSOLE_AUTO_OPEN_ENV = "HARNESS_CONSOLE_AUTO_OPEN"
+
+_CONSOLE_AUTO_OPEN_OFF = frozenset({"0", "false", "off"})
+
+
+def _console_auto_open(no_open: bool) -> tuple[bool, str | None]:
+    """Whether `aeh console` may open the default browser after the bind succeeds (FR-PIPE-11).
+
+    `--no-open` wins first. Then `HARNESS_CONSOLE_AUTO_OPEN`: `0`, `false` or `off` (any case)
+    disables, and any other value is refused with a warning naming the knob and the value, the
+    default standing in its place. The default itself is "on for an interactive terminal, off
+    otherwise": tests, piped output and in-process drivers get no browser, which is the headless
+    rule (`CT-CONSOLE-01`) — and why `serve_console()` never opens one either. The empty string
+    reads as unset.
+    """
+    if no_open:
+        return False, None
+    default = sys.stdin.isatty() and sys.stdout.isatty()
+    raw = os.environ.get(CONSOLE_AUTO_OPEN_ENV)
+    if raw is None or raw == "":
+        return default, None
+    if raw.strip().lower() in _CONSOLE_AUTO_OPEN_OFF:
+        return False, None
+    return default, (
+        f"warning: {CONSOLE_AUTO_OPEN_ENV}={raw!r} is not a recognized value "
+        f"(use 0, false or off); using the default (auto-open {'on' if default else 'off'})."
+    )
+
+
+def _open_console_browser(url: str) -> bool:
+    """Open `url` in the default browser — the seam a test patches instead of the browser
+    itself. A browser that will not open must never take the console down, so a failure is
+    reported as `False` and nothing more."""
+    try:
+        return bool(webbrowser.open(url))
+    except Exception:  # noqa: BLE001 — the serve path must not depend on the browser opening
+        return False
+
+
 def main(argv: "Sequence[str] | None" = None) -> int:
     """The `aeh` command line (`python -m aeh` and the installed `aeh` command) (FR-PIPE-08,
     FR-PIPE-09). Returns the exit code.
@@ -440,6 +488,23 @@ def main(argv: "Sequence[str] | None" = None) -> int:
             # operator running `aeh console` expects it to do.
             print(f"console listening on port {getattr(server, 'port', '?')} "
                   f"(pid {getattr(server, 'pid', '?')}); Ctrl-C to stop")
+            # FR-PIPE-11: after the bind succeeds the operator gets the clickable full URL and
+            # the one-line next step (design delta §3.2.5), and the default browser opens
+            # unless it was disabled. The auto-open lives here, on the CLI path, and never in
+            # `serve_console()` — tests and in-process drivers are unaffected.
+            host = ("[::1]" if str(getattr(server, "bind_address", "")) == "::1"
+                    else "127.0.0.1")
+            url = f"http://{host}:{getattr(server, 'port', '?')}/"
+            print(f"  Grading console:  {url}")
+            print("  Next step:        create a class, then a test package — "
+                  "the home page walks you through it.")
+            open_browser, auto_open_warning = _console_auto_open(
+                bool(getattr(args, "no_open", False)))
+            if auto_open_warning:
+                print(auto_open_warning, file=sys.stderr)
+            if open_browser and not _open_console_browser(url):
+                print(f"warning: the default browser could not be opened; "
+                      f"the console is at {url}", file=sys.stderr)
             try:
                 while True:
                     time.sleep(0.5)
