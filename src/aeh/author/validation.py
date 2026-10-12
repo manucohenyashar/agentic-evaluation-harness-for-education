@@ -151,8 +151,10 @@ def _composite_issues(spec: Mapping[str, Any]) -> list[DraftIssue]:
     `CT-PKG-21`/`FR-JUDGE-38`): an `evidence_sum` criterion is a grouping record — it needs
     at least one aspect criterion whose `component_of` names it. `plan_package` checks the
     aspects' side (exactly two bands naming an `evidence_sum` line) but nothing demands the
-    composite be named, so the check lives here. The composite's own table is excluded from
-    the scan: a `component_of` on the composite itself never counts as an aspect."""
+    composite be named, so the check lives here. Excluded from the scan: the composite's own
+    table (a `component_of` on a composite never counts as an aspect) and every other
+    `evidence_sum` table — the build stores `component_of` only on judged lines, so a
+    composite naming another composite leaves both unnamed."""
     issues: list[DraftIssue] = []
     criteria = _tables(spec, "criterion")
     for table in criteria:
@@ -160,8 +162,8 @@ def _composite_issues(spec: Mapping[str, Any]) -> list[DraftIssue]:
             continue
         cid = table.get("id")
         where = f"criterion {cid!r}" if cid else "criterion"
-        if not any(other is not table and other.get("component_of") == cid
-                   for other in criteria):
+        if not any(other is not table and other.get("score_method") != "evidence_sum"
+                   and other.get("component_of") == cid for other in criteria):
             issues.append(DraftIssue(
                 where, f"{where} has no aspect criteria; it needs at least one 2-band "
                        "aspect whose component_of names it (FR-JUDGE-38). A composite "
@@ -257,6 +259,11 @@ def _table_placeholders(table: Mapping[str, Any], label: str) -> list[DraftIssue
 
 
 def _is_placeholder(value: Any) -> bool:
+    """Whole-value sentinel detection. Disclosed residual (#693's landing audit): the
+    build's `FR-PKG-28` refusal is a substring-level scan of the spec *file*, so a sentinel
+    embedded mid-string inside a longer legal value would be refused by the build but pass
+    this whole-value sweep — a shape the shipped proposal path never emits, since every
+    sentinel it writes is the field's whole value."""
     return isinstance(value, str) and value.startswith(PLACEHOLDER_PREFIX)
 
 

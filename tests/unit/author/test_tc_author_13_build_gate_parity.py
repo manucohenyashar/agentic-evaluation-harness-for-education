@@ -65,6 +65,25 @@ score_method = "evidence_sum"
 points = 2
 """
 
+#: Two composites naming each other: each satisfies the other's "named by an aspect" scan,
+#: but the build stores `component_of` only on judged lines — composites are dropped, so
+#: publish refuses both with the no-aspect rule. Only a judged line counts as an aspect.
+MUTUALLY_NAMING_COMPOSITES = """
+[[criterion]]
+id = "C10"
+question = "Q4"
+score_method = "evidence_sum"
+points = 2
+component_of = "C11"
+
+[[criterion]]
+id = "C11"
+question = "Q4"
+score_method = "evidence_sum"
+points = 2
+component_of = "C10"
+"""
+
 #: `(label, edits, append, the refusal phrase the real build prints)`. Every arm is a
 #: `criteria`-layer rule: `plan_package` passes, `validate_draft` refuses, the build refuses.
 MALFORMED_ARMS = (
@@ -90,6 +109,12 @@ MALFORMED_ARMS = (
         "composite without aspects",
         (),
         COMPOSITE_WITHOUT_ASPECTS,
+        "no aspect criteria",
+    ),
+    (
+        "mutually naming composites",
+        (),
+        MUTUALLY_NAMING_COMPOSITES,
         "no aspect criteria",
     ),
 )

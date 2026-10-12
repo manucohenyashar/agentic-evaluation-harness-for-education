@@ -49,7 +49,10 @@ AUTHOR_INVENTORY_TEMPLATE = (
 )
 
 #: The package id's shape, `plan_package`'s own rule — mirrored so an unusable proposal is
-#: repaired by the same words the build would refuse it with.
+#: repaired by the same words the build would refuse it with. Disclosed residual (#693's
+#: landing audit): `plan_package` additionally refuses Windows-reserved device names
+#: (`_WINDOWS_RESERVED`), which this mirror does not — such an id passes the proposal gate
+#: and surfaces when the draft's filename is written, on Windows only.
 PACKAGE_ID_RE = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z")
 
 _QUESTION_TYPES = ("mcq", "open")
