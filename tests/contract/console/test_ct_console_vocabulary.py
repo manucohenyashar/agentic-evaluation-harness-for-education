@@ -205,11 +205,19 @@ def test_the_delta_control_actions_are_the_requirements_that_add_them(repo_root)
     # action whose confirmation is the API's — `CT-CONSOLE-30` admits it only as an
     # enumerated control row through M-SETUP's `publish` (the lock flip), never a route
     # beside the enumeration.
+    # The console-redesign delta (#761, ADR-48) added the class vocabulary's three: a class
+    # is a cohort ledger in a roster-only state (one storage concept, no new table), so each
+    # writes the same Tier C rows `create cohort` writes, through M-ORCH's `create_cohort` —
+    # enumerated control rows for the same CT-CONSOLE-30 reason, never routes beside the
+    # enumeration.
     assert DELTA_CONTROL_ACTIONS == {
         "create cohort": "FR-CONSOLE-42",
         "recover runs": "FR-CONSOLE-41",
         "add students": "FR-CONSOLE-42",
         "publish package": "FR-UI-05",
+        "create class": "FR-CONSOLE-53",
+        "create cohort from class": "FR-CONSOLE-54",
+        "import roster file": "FR-CONSOLE-63",
     }, (
         "a delta control action was added or removed: that is a design decision, cite it here"
     )

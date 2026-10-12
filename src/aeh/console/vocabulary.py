@@ -44,6 +44,19 @@ CONTROL_SURFACE_ACTIONS: tuple[str, ...] = (
     # mutation only as an enumerated control row — the same rule that made cohort creation a
     # sixteenth action.
     "publish package",
+    # The console-redesign delta's class vocabulary (`FR-CONSOLE-53`, #761, ADR-48): a class
+    # is a cohort ledger in a roster-only state, created from a typed or pasted student list.
+    # A separate enumerated row beside `create cohort` rather than a widened one, because the
+    # two names are the console's vocabulary distinction (R0's map) over one storage concept,
+    # and the SPA screens each by its own flow.
+    "create class",
+    # `FR-CONSOLE-54` (#761, ADR-48): copies a class ledger's roster into a new grading
+    # cohort, consent state carried; the class stays intact and may seed many cohorts.
+    "create cohort from class",
+    # `FR-CONSOLE-63` (#761, §3.2.3): the roster file import — the one import path cohorts
+    # and classes have. Targets the class state; the preview before its commit is the
+    # `roster preview` read below, not a second write path.
+    "import roster file",
 )
 
 
@@ -108,6 +121,11 @@ PARKED_READ = "parked"
 CONFIG_READ = "config"
 AUTHORING_PREVIEW_READ = "authoring preview"
 AUTHORING_DRAFT_READ = "authoring draft"
+#: The roster file import's preview (`FR-CONSOLE-63`, #761): a POST read whose body carries
+#: the uploaded roster file's text — file content can never travel in a URL or a query
+#: string (`CT-CONSOLE-34`). It parses the rows and lists the malformed ones, and writes
+#: nothing anywhere; the commit is the enumerated `import roster file` action above.
+ROSTER_PREVIEW_READ = "roster preview"
 
 
 #: The per-action field contract (§11.8's Effect column): the store fields each action may
@@ -190,6 +208,33 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
     "publish package": (
         "package_version.locked",
         "package_version.published_by",
+    ),
+    # `FR-CONSOLE-53`/`FR-CONSOLE-54`/`FR-CONSOLE-63` (#761, ADR-48): all three write the
+    # same Tier C cohort and roster rows the roster editor's `create cohort` writes — one
+    # storage concept, two states; no field a scoring prompt reads (NFR-PROV-04).
+    "create class": (
+        "cohort.cohort_id",
+        "cohort.consent_class",
+        "cohort.created_at",
+        "roster.cohort_id",
+        "roster.student_ref",
+        "roster.full_name",
+    ),
+    "create cohort from class": (
+        "cohort.cohort_id",
+        "cohort.consent_class",
+        "cohort.created_at",
+        "roster.cohort_id",
+        "roster.student_ref",
+        "roster.full_name",
+    ),
+    "import roster file": (
+        "cohort.cohort_id",
+        "cohort.consent_class",
+        "cohort.created_at",
+        "roster.cohort_id",
+        "roster.student_ref",
+        "roster.full_name",
     ),
 }
 

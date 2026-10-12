@@ -769,7 +769,11 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # (Third re-pin, still #127's: review fixes added the correction's grain
     # pre-checks and its completed-before-refusal progress disclosure above the
     # tail sites — moving the seven tail sites down again; same statements.)
-    "aeh.console.controls:215",
+    # (Fourth re-pin, #761's: the class vocabulary's branch ahead of the generic
+    # fallthrough inserted two lines above the pause/resume site — same declared
+    # `_INSERT_RUN_CONTROL` statement, a mechanical shift. Re-read from the
+    # walker, never hand-unioned.)
+    "aeh.console.controls:217",
     "aeh.console.effects:138",
     "aeh.console.key_correction:140",
     "aeh.console.driver:120",
