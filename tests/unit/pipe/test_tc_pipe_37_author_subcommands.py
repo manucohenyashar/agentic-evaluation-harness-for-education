@@ -1,9 +1,9 @@
 """`TC-PIPE-37` (FR-PIPE-10, P0) — the `aeh author` subcommands register (#712, the
 package-authoring test plan §5.3; design delta §3.3, §3.1).
 
-Written ahead of #695: the registration does not exist yet, so the case is red until it
-lands. The file carries `writtenahead`, keyed `#695 cli registration` in
-`WRITTEN_AHEAD_BLOCKERS`; when #695 closes the marker comes off — never the test.
+Written ahead of #695, keyed `#695 cli registration` in `WRITTEN_AHEAD_BLOCKERS`. LANDED
+(#695): the `author` group is registered with both subcommands and the file re-ran green at
+the landing, so the marker came off — never the test.
 
 Rung 3 (console): the CLI texts, driven headless through `aeh.pipeline.cli.main` — the same
 in-process entry the TC-PIPE-27 package-build cases drive. `main` returns the exit code
@@ -50,8 +50,6 @@ import pytest
 
 from aeh.pipeline import cli
 from tests.support.impl import NotImplementedYet
-
-pytestmark = [pytest.mark.writtenahead]
 
 REPO = Path(__file__).resolve().parents[3]
 SAMPLE_SPEC = REPO / "docs" / "live-tests" / "config" / "ps9-forces-01.package.toml"

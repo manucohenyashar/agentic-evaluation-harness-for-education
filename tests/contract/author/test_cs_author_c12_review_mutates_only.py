@@ -32,7 +32,7 @@ from tests.support.author_vocabulary import (
 )
 from tests.support.impl import require, require_attr, require_path
 
-pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.contract]
 
 
 def test_tc_author_c12_review_writes_only_the_draft_and_its_report(

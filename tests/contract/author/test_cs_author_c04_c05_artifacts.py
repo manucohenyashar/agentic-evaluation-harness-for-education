@@ -36,7 +36,7 @@ from tests.support.author_vocabulary import (
 )
 from tests.support.impl import require, require_attr, require_path
 
-pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.contract]
 
 
 def _guards(make_fixture_provider) -> tuple:
@@ -77,8 +77,12 @@ def test_tc_author_c04_the_sentinel_shape_its_reason_and_no_collision_with_legal
 
     fields = SENTINEL_RE.findall(text)
     assert fields, "AF-11 must leave the grade boundaries as a named placeholder"
-    assert result.placeholders == len(fields), (
-        f"report counts {result.placeholders} placeholders, draft carries {len(fields)}")
+    # Disclosed reconcile (the landing): `approved_by` rides on every outcome class
+    # (TC-AUTHOR-12) and is never counted (TC-AUTHOR-01 pins AF-01 at zero), so the count
+    # oracle reads the content sentinels.
+    assert result.placeholders == len([f for f in fields if f != "approved_by"]), (
+        f"report counts {result.placeholders} placeholders, draft carries "
+        f"{len(fields) - fields.count('approved_by')} content sentinels")
 
     # Each sentinel line has its reason comment on the line above, naming what to supply.
     lines = text.splitlines()
@@ -108,7 +112,9 @@ def test_tc_author_c04_the_sentinel_shape_its_reason_and_no_collision_with_legal
     happy = service.draft(documents=sorted(af01.glob("*.pdf")), output_dir=tmp_path / "af01")
     happy_text = happy.draft_path.read_text(encoding="utf-8")
     happy_fields = placeholder_fields(happy_text)
-    assert happy.placeholders == len(happy_fields)
+    # Disclosed reconcile (the landing): the count excludes the riding approval sentinel
+    # (TC-AUTHOR-12), so a fully resolved draft counts zero.
+    assert happy.placeholders == len([f for f in happy_fields if f != "approved_by"])
     assert set(happy_fields) <= {"approved_by"}, (
         f"AF-01 is fully resolved: only approved_by may be a placeholder, got {happy_fields}")
 
@@ -159,8 +165,11 @@ def test_tc_author_c05_report_named_for_the_package_with_sections_in_order_and_p
             assert reason in steps_text, (
                 f"{outcome.item_id}: failure reason {reason!r} missing from Steps")
 
-    # The Unresolved section names every placeholder field the draft carries.
+    # The Unresolved section names every placeholder field the draft carries. Disclosed
+    # reconcile (the landing): `approved_by` is the sign-off slot, not unresolved work — the
+    # report's Next command hands it to the review walk instead — so the section oracle
+    # reads the content sentinels (TC-AUTHOR-12's riding sentinel, never counted).
     unresolved_text = report[positions["Unresolved"]:positions["Next command"]]
     draft_text = result.draft_path.read_text(encoding="utf-8")
-    for field in placeholder_fields(draft_text):
+    for field in (f for f in placeholder_fields(draft_text) if f != "approved_by"):
         assert field in unresolved_text, f"placeholder {field} not listed in Unresolved"

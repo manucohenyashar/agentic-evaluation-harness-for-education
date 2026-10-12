@@ -22,6 +22,7 @@ one-line reconciliation in `tests/support/author_vocabulary.py`.
 
 from __future__ import annotations
 
+import json
 import tomllib
 from pathlib import Path
 
@@ -43,7 +44,7 @@ from tests.support.author_vocabulary import (
 )
 from tests.support.impl import require, require_attr, require_path
 
-pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.contract]
 
 TEACHER = "Sample-materials teacher"
 
@@ -118,7 +119,12 @@ def _conforming_flow(author, recordings: Path, out: Path, make_fixture_provider)
     # (FR-AUTHOR-09) carries its reason comment on the line above, and counts agree.
     lines = raw_text.splitlines()
     fields = placeholder_fields(raw_text)
-    assert result.placeholders == len(fields), (result.placeholders, fields)
+    # Disclosed reconcile (the landing): `approved_by` rides on top of every outcome class
+    # (TC-AUTHOR-12) and is never counted — TC-AUTHOR-01 pins AF-01 at zero placeholders —
+    # so the count reads the content sentinels only, the same exclusion TC-AUTHOR-14's
+    # oracle states once for the family.
+    content_fields = [field for field in fields if field != "approved_by"]
+    assert result.placeholders == len(content_fields), (result.placeholders, fields)
     for index, line in enumerate(lines):
         if "<<PLACEHOLDER:" in line:
             assert index > 0 and PLACEHOLDER_COMMENT_RE.search(lines[index - 1]), (
@@ -164,7 +170,7 @@ def test_tc_author_c29_two_wordings_of_af01_every_promise_holds_on_both(
     variant_spec_path.write_text(_emit(spec_variant), encoding="utf-8")
     assert cli.main(["package", "build", "--data-dir", str(tmp_data_dir),
                      "--spec", str(main_spec_path)]) == 0
-    assert cli.main(["package", "build", "--data-dir", str(tmp_data_dir),
+    assert cli.main(["package", "build", "--data-dir", str(tmp_path / "variant-store"),
                      "--spec", str(variant_spec_path)]) == 0, (
         "the build depends on the unpromised wording")
 
@@ -184,7 +190,10 @@ def _emit(spec: dict) -> str:
         if isinstance(value, bool):
             return "true" if value else "false"
         if isinstance(value, str):
-            return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+            # json.dumps is the spec vocabulary's own `_toml_str` (spec_export): it escapes
+            # the control characters (newlines in a `derivation_description`) a minimal
+            # quote-and-backslash pass would emit raw into a single-line TOML string.
+            return json.dumps(value, ensure_ascii=False)
         if isinstance(value, dict):
             return "{ " + ", ".join(f"{k} = {value_of(v)}" for k, v in value.items()) + " }"
         if isinstance(value, (list, tuple)):

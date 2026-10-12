@@ -5,3 +5,6 @@ outcome = "resolved"
 placeholders = []
 build = "publishes"
 notes = "mcq lines with key in options, fully resolved"
+
+[review.answers]
+"approved_by" = "Sample-materials teacher"

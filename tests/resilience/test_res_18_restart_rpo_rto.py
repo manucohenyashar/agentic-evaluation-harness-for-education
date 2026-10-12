@@ -23,13 +23,16 @@ ledger. This case does both, with real processes:
    detectable. The span is asserted before RPO is judged. At present `complete()` commits in its own
    transaction, so zero loss is the expected result. The check exists to catch a batched commit path
    that would lose more.
-3. **The restart.** A second child opens the same store, calls `Orchestrator.resume()` with no
-   arguments (`FR-ORCH-02`), then `sweep_expired_leases()`, and leases its first unit. The sweep is
-   part of the restart, not extra help: `resume()` re-enumerates but reclaims no leases, and the
-   units the killed worker held stay leased until the sweeper runs. A fresh orchestrator's restored
-   `LeaseClock` sits past every expiry ever issued, so the sweep reclaims them all. This is the same
-   recovery sequence `TC-E2E-02`'s kill variants use. Without it, the leased units never finish.
-   The time from process start to that first lease is the **RTO**. It includes interpreter start and imports, because a restart does too.
+3. **The restart.** A fresh process runs `python -m aeh recover --data-dir D` - the
+   sanctioned entry point (`FR-PIPE-09`; the TC-PIPE-09 harness), which is also the
+   recovery journey 2's kill variants call. `FR-PIPE-07`'s order is inside it:
+   `sweep_expired_leases()` then `resume()`. The sweep is part of the restart, not extra
+   help: `resume()` re-enumerates but reclaims no leases, and the units the killed worker
+   held stay leased until the sweeper runs. A fresh orchestrator's restored `LeaseClock`
+   sits past every expiry ever issued, so the sweep reclaims them all. Without it, the
+   leased units never finish. Then a second fresh process leases the run's first unit and
+   drains. The time from the restart's start (the recover invocation) to that first lease
+   is the **RTO**. It includes two interpreter starts and their imports, because a restart does too.
 4. **RPO, from the ledger.** Read before the restart touches it: every unit the worker reported
    done more than `RPO_S` seconds before the kill must be `done`. A reported unit that is not done
    is lost work, and it is allowed only inside the last `RPO_S` seconds.
@@ -42,7 +45,9 @@ is not evidence about E4, which is why `PERF-10` confirms it there.
 
 from __future__ import annotations
 
+import json
 import os
+import sqlite3
 import subprocess
 import sys
 import textwrap
@@ -106,8 +111,6 @@ _RESTARTED = _IMPORTS + textwrap.dedent("""
     from aeh.store import open_store
     store = open_store(sys.argv[1])
     orchestrator = Orchestrator(store)
-    orchestrator.resume()
-    orchestrator.sweep_expired_leases()
     first = None
     while first is None:
         for stage in ("deterministic", "extract", "score"):
@@ -115,6 +118,7 @@ _RESTARTED = _IMPORTS + textwrap.dedent("""
             if batch:
                 first = batch
                 break
+        time.sleep(0.05)
     print(f"resumed {time.time():.6f}", flush=True)
     pending = list(first)
     while pending:
@@ -129,12 +133,19 @@ _RESTARTED = _IMPORTS + textwrap.dedent("""
 """)
 
 
+def _env(**extra: str) -> dict[str, str]:
+    """The child environment: the repo's src and tests on the path (the TC-PIPE-09
+    harness pattern, which this restart's CLI call shares)."""
+    return {**os.environ,
+            "PYTHONPATH": os.pathsep.join([str(REPO_ROOT / "src"), str(REPO_ROOT)]),
+            **extra}
+
+
 def _child(script: str, data_dir: Path, *args: str) -> subprocess.Popen:
-    env = dict(os.environ, PYTHONPATH=os.pathsep.join([str(REPO_ROOT / "src"), str(REPO_ROOT)]))
     # stderr goes to a file: a pipe nobody drains can fill and block the child.
     stderr = open(data_dir.parent / f"res18-{len(args)}-{time.time_ns()}.err", "w+")
     return subprocess.Popen([sys.executable, "-c", script, str(data_dir), *args],
-                            stdout=subprocess.PIPE, stderr=stderr, text=True, env=env)
+                            stdout=subprocess.PIPE, stderr=stderr, text=True, env=_env())
 
 
 def _stderr(proc: subprocess.Popen) -> str:
@@ -152,13 +163,29 @@ def _read_lines(proc: subprocess.Popen, sink: list[str]) -> threading.Thread:
 
 
 def _statuses(data_dir: Path, run_id: str) -> dict[str, str]:
-    store = open_store(data_dir)
-    try:
-        rows = store.cohort(ORCH_COHORT_ID).query(statement(
-            "SELECT work_id, status FROM work_unit WHERE run_id = :r", issue=ISSUE), r=run_id)
-        return {row["work_id"]: row["status"] for row in rows}
-    finally:
-        store.close()
+    # Windows releases a terminated process's file mapping asynchronously: the first read
+    # can meet "disk I/O error" for a moment after `wait()` returns. Bounded retry, and
+    # only for that message — the RES-25 protocol (test_ts134_closeout_pipe.py).
+    for _attempt in range(50):
+        try:
+            store = open_store(data_dir)
+        except sqlite3.OperationalError as error:
+            if "disk I/O" not in str(error):
+                raise
+            time.sleep(0.2)
+            continue
+        try:
+            rows = store.cohort(ORCH_COHORT_ID).query(statement(
+                "SELECT work_id, status FROM work_unit WHERE run_id = :r", issue=ISSUE), r=run_id)
+            return {row["work_id"]: row["status"] for row in rows}
+        except sqlite3.OperationalError as error:
+            if "disk I/O" not in str(error):
+                raise
+            time.sleep(0.2)
+        finally:
+            store.close()
+    pytest.fail("the killed run's store stayed unreadable for 10 s "
+                "(the kill's file mapping was never released)")
 
 
 def test_res_18_a_killed_worker_loses_under_five_seconds_of_work_and_resumes_within_a_minute(
@@ -205,6 +232,23 @@ def test_res_18_a_killed_worker_loses_under_five_seconds_of_work_and_resumes_wit
 
     restarted_lines: list[str] = []
     restart_started = time.time()
+    # The restart is the sanctioned entry point in a fresh process: `python -m aeh
+    # recover` (FR-PIPE-09; the TC-PIPE-09 harness). FR-PIPE-07's order is inside it -
+    # sweep_expired_leases() then resume() - so the killed worker's abandoned leases
+    # are reclaimed and the run is running again before anything leases.
+    recovered = subprocess.run(
+        [sys.executable, "-m", "aeh", "recover", "--data-dir", str(tmp_data_dir)],
+        capture_output=True, text=True, env=_env(), timeout=120)
+    assert recovered.returncode == 0, recovered.stderr[-1500:]
+    recovered_report = json.loads(recovered.stdout)
+    assert recovered_report["leases_reclaimed"] > 0, (
+        f"recover reclaimed no lease ({recovered_report}) - the killed worker's "
+        "abandoned batch would never finish, and its cells never reach the aggregation"
+    )
+    assert run_id in recovered_report["runs_resumed"], (
+        f"recover resumed {recovered_report['runs_resumed']} - the killed run is the "
+        "running run recovery exists for (FR-PIPE-07)"
+    )
     restarted = _child(_RESTARTED, tmp_data_dir)
     pump = _read_lines(restarted, restarted_lines)
     try:

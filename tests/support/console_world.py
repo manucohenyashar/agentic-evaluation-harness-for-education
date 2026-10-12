@@ -89,6 +89,7 @@ def seed_scored_run(
     enumerate_units: bool = False,
     finalize: bool = False,
     reuse_version: str | None = None,
+    config: Any = None,
 ) -> ScoredRun:
     """Seed and score one run end to end through the shipped modules.
 
@@ -96,7 +97,10 @@ def seed_scored_run(
     an ambiguous mark (the region the deterministic pass parks, so the grade is honestly
     incomplete). Default: every submission selects every stored key. `reuse_version` names a
     version of `package_id` an earlier call already seeded — a second administration of the
-    same package version to a new cohort.
+    same package version to a new cohort. `config` freezes the run under a configuration
+    other than `edge_cfg()` — the effective configuration dict a restart must re-resolve the
+    run under (`RES-19` restarts a console under the run's own frozen profile, so the run
+    must be seeded under it).
     """
     ids = tuple(f"sub-{cohort_id}-{index + 1:02d}" for index in range(submissions))
     if choices is None:
@@ -172,7 +176,8 @@ def seed_scored_run(
                 )
 
     resolved = resolve_run_config(
-        edge_cfg(), CohortRef(cohort_id=cohort_id, consent_class="synthetic")
+        config if config is not None else edge_cfg(),
+        CohortRef(cohort_id=cohort_id, consent_class="synthetic"),
     )
     orchestrator = Orchestrator(store, clock=_clock)
     run_id = orchestrator.create_run(cohort_id, version, resolved, run_id=run_id)
