@@ -1,0 +1,8 @@
+af = "AF-19"
+description = "one document; .txt bytes renamed .docx (magic mismatch)"
+documents = ["math6-times-tables-01.docx"]
+outcome = "refused"
+placeholders = []
+build = "refused"
+refusal = "This file isn't what its name says. Rename it to match what it actually is (.txt, .docx, or .pdf) and upload again."
+notes = "the bytes are plain text, the name says .docx: refused with the rename guidance (TC-AUTHOR-37b)"

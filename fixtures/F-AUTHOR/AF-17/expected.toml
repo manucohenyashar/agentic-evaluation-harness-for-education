@@ -1,0 +1,12 @@
+af = "AF-17"
+description = "one document; .txt with no heading structure"
+documents = ["hist6-great-fire-01-prose-test.txt"]
+outcome = "resolved"
+placeholders = []
+build = "publishes"
+warnings = ["structure_guessed"]
+format = ["txt"]
+notes = "no headings, so the outline is guessed and warned; the review asks the teacher to confirm it (TC-AUTHOR-36)"
+
+[review.answers]
+"approved_by" = "Sample-materials teacher"

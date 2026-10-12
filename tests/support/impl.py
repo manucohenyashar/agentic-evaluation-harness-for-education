@@ -33,6 +33,7 @@ from tests.support.extract_vocabulary import (
     TS26_EXTRACT_SYMBOLS,
     TS65_EXTRACT_SYMBOLS,
 )
+from tests.support.intake_vocabulary import INTAKE_MODULE as _INTAKE_MODULE_VOCAB
 
 # --- the implementation under test -------------------------------------------------------
 # The design and the test plan fix the *test* layout (`tests/unit/...`) and the tooling
@@ -2228,6 +2229,42 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # after the disclosed report-shape reconcile (the approval is named in the report's
     # Next command prose; the walkthrough reads it there and answers it first) — the
     # entry was dropped and the file unmarked, the tests kept.
+
+    # --- TC-AUTHOR-32..38's fixture halves (#753), tests/unit/author/test_tc_author_32_38_intake_fixtures.py
+    #
+    # Keyed `symbol` on `aeh.author:NormalizedDocument` — the one §3.1.1-declared TYPE the
+    # intake tier must ship, and the console-redesign design delta names it verbatim, so the
+    # key cannot fire early: #690 built `aeh.author` without an intake surface (the module
+    # exists; this type does not), so the probe stays unresolved until #754 lands the
+    # §3.1.1 representation. It cannot fire late either: that representation IS #754's
+    # deliverable, so the day the tier lands, this resolves. The case bodies are surface
+    # assertions on purpose — they normalize one corpus fixture and assert the outcome class
+    # its `expected.toml` states (the #710 outcome-test shape) — which is why a symbol key
+    # on the design-named type is the honest root rather than a `command` probe of refusal
+    # behaviour: the behaviour lives in the implementing story's own suite.
+    #
+    # Disclosed bets (tests/support/intake_vocabulary.py, one place): the entry function is
+    # assumed `normalize_document(path) -> NormalizedDocument` and the refusal exception
+    # `IntakeRefused` — §3.1.1 pins the three value types by name but NO entry point, so
+    # the tests resolve both through the vocabulary's names. Deliberately NOT a conjunction
+    # over the whole vocabulary surface (`INTAKE_SYMBOLS`): a conjunction including an
+    # invented entry-point name would never resolve if #754 spelled that name differently,
+    # leaving the cases red-but-unkeyed forever — the worse direction. The re-check rule
+    # covers the invented-name risk instead.
+    #
+    # Rename path: one line in `tests/support/intake_vocabulary.py` (`INTAKE_ENTRY`,
+    # `INTAKE_REFUSAL`, or `INTAKE_MODULE` if the intake ships as a submodule such as
+    # `aeh.author.intake`) plus the case bodies' `require()` lists, nowhere else.
+    #
+    # At resolution: re-check the file GREEN before unmarking, never on the notice alone —
+    # the corpus's `warnings` entries are presence-not-exhaustiveness, so a
+    # differently-spelled warning surface could resolve the probe and still leave cases red
+    # inside TEST_CMD.
+    "#754 intake tier — the AF-14..21 fixture halves (TC-AUTHOR-32..38, test story #753)": (
+        "symbol",
+        f"{_INTAKE_MODULE_VOCAB}:NormalizedDocument",
+        ("tests/unit/author/test_tc_author_32_38_intake_fixtures.py",),
+    ),
 
 }
 

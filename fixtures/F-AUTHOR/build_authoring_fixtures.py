@@ -1,10 +1,14 @@
-"""The F-AUTHOR authoring-fixture corpus: thirteen teacher test descriptions (TC-AUTHOR-28).
+"""The F-AUTHOR authoring-fixture corpus: twenty-one teacher test descriptions (TC-AUTHOR-28).
 
 Every authoring test replays against this corpus -- the fixture space M-AUTHOR is written
-against, spanning the happy paths and the paths that need a human (test-plan §4.2). The
-fixture set is the design delta's §5.1 matrix, one directory per fixture:
+against, spanning the happy paths and the paths that need a human (test-plan §4.2). AF-01..AF-13
+are the package-authoring delta's §5.1 matrix; AF-14..AF-21 are the console-redesign delta's
+§5.1 intake matrix, built by #753 ahead of the intake tier (#754). One directory per fixture:
 
-    fixtures/F-AUTHOR/AF-01 .. AF-13/   one or more teacher PDFs + an expected.toml
+    fixtures/F-AUTHOR/AF-01 .. AF-21/   one or more teacher documents + an expected.toml
+    fixtures/F-AUTHOR/adversarial/      the refusal-matrix files that are not fixture-shaped
+                                        (password-wrapped, .rtf, a magic-byte mismatch)
+    fixtures/F-AUTHOR/rosters/          the class/cohort roster CSVs (TC-CONSOLE-65's inputs)
     fixtures/F-AUTHOR/recordings/      the model replies a run asks for (captured, not
                                        generated -- see that directory's README.md)
 
@@ -28,8 +32,12 @@ Run it from anywhere:  python fixtures/F-AUTHOR/build_authoring_fixtures.py
 
 from __future__ import annotations
 
+import io
 import random
+import struct
 import sys
+import zipfile
+import zlib
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -509,8 +517,543 @@ A: 14-16. B: 10-13. C: 6-9. D: 0-5.
 """
 
 
+# ---------------------------------------------------------------------------
+# The console-redesign intake fixtures (AF-14..AF-21, #753)
+#
+# AF-01..AF-13 above are PDFs the package-authoring delta's §5.1 matrix needs. The
+# console-redesign delta (§3.1.1, ADR-46) adds a document-intake tier with its own fixture
+# matrix (§5.1): the tier normalizes .docx/.txt/.pdf into one representation, so this
+# section builds real .docx packages (stdlib `zipfile`), plain-text files, and the
+# refusal-matrix stand-ins -- deterministic bytes, stdlib only, no third-party docx writer.
+# ---------------------------------------------------------------------------
+
+#: FR-AUTHOR-28's refusal sentences, verbatim from the console-redesign delta's table. The
+#: corpus states them in `expected.toml` so the intake tests assert what the design pins
+#: (test plan §4.3's exact-match property), and the census re-pins them against these
+#: constants -- copy drift fails the corpus, not a test's private literal. The oversize
+#: arm has no fixture here (10 MB of bytes is not a fixture to commit); its tests generate
+#: the oversize file through the `HARNESS_AUTHOR_DOC_MAX_BYTES` knob instead.
+LEGACY_FORMAT_REFUSAL = ("This file was saved in an older Word format. Open it in Word and "
+                         "save it as .docx, then upload again.")
+MISMATCH_REFUSAL = ("This file isn't what its name says. Rename it to match what it actually "
+                    "is (.txt, .docx, or .pdf) and upload again.")
+PASSWORD_REFUSAL = ("This document is password-protected. Remove the password and upload it "
+                    "again.")
+EMPTY_REFUSAL = "We couldn't find any text in this file."
+OVERSIZE_REFUSAL = ("This file is larger than 10 MB. Split it or remove pictures to get it "
+                    "under the limit.")
+UNSUPPORTED_REFUSAL = ("We can read .docx, .txt and .pdf files. Save this as one of those and "
+                       "upload it again.")
+
+#: AF-14's content model: the blocks a .docx reader sees, as (kind, ...) tuples --
+#: ("heading", level, text), ("paragraph", text), ("table", rows). The .docx rendering and
+#: the .txt twin (AF-21's third document) both derive from this one model, which is what
+#: makes the twin content-identical to AF-14's docx text by construction rather than by
+#: hope (TC-AUTHOR-32's format-independence, TC-AUTHOR-38's cross-format carry-over).
+AF14_TABLE_ROWS: list[list[str]] = [
+    ["Band", "What an answer at this band looks like"],
+    ["4", "Accurate and complete, in the pupil's own words."],
+    ["3", "Mostly accurate; one part missing or vague."],
+    ["2", "Partly accurate; more wrong than right."],
+    ["1", "Little or no correct content."],
+]
+
+AF14_BLOCKS: list[tuple] = [
+    ("heading", 1, "HIST7-ROME-01 - YEAR 7 HISTORY TEST: THE ROMAN EMPIRE"),
+    ("paragraph", "Answer all four questions. Write full sentences."),
+    ("heading", 2, "Question 1 (4 marks)"),
+    ("paragraph", "Why did the Roman army build roads across the empire?"),
+    ("paragraph", "A correct answer mentions moving soldiers quickly, trade and supplies, "
+                  "and spreading Roman control."),
+    ("heading", 2, "Question 2 (4 marks)"),
+    ("paragraph", "What was aqueduct water used for in Roman towns?"),
+    ("paragraph", "A correct answer names drinking water, public baths and fountains."),
+    ("heading", 2, "Question 3 (4 marks)"),
+    ("paragraph", "Give two reasons the empire was split into East and West."),
+    ("paragraph", "A correct answer says the empire had grown too large to rule from one "
+                  "city, and that defence was easier with two capitals."),
+    ("heading", 2, "Question 4 (4 marks)"),
+    ("paragraph", "Name two things Roman towns built that we still use today, and say what "
+                  "each was for."),
+    ("paragraph", "A correct answer pairs a structure (roads, sewers, baths, walls) with its "
+                  "purpose."),
+    ("heading", 2, "How I grade this test (for the teacher marking after me)"),
+    ("paragraph", "Every question is marked on a 4-band scale, out of 4; band 4 is the "
+                  "highest and band 1 the lowest. No half marks."),
+    ("table", AF14_TABLE_ROWS),
+    ("heading", 2, "Grade boundaries (out of 16 points)"),
+    ("paragraph", "A: 14-16. B: 10-13. C: 6-9. D: 0-5."),
+]
+
+#: AF-15's content model: the same shapes plus an image block (carried as a real PNG part
+#: and referenced by a real `<w:drawing>`) and an equation block (a real OMML
+#: `<m:oMath>` run). The intake tier must not lose either silently -- TC-AUTHOR-34 (RS-02):
+#: each is *named*, per location, with the nearest heading, not dropped.
+AF15_BLOCKS: list[tuple] = [
+    ("heading", 1, "SCI7-FORCES-01 - YEAR 7 SCIENCE TEST: FORCES AND MOTION"),
+    ("paragraph", "Look at the circuit diagram. What happens to the bulb when the switch is "
+                  "opened, and why?"),
+    ("image",),
+    ("heading", 2, "Question 2 (3 marks)"),
+    ("paragraph", "Write the equation that links force, mass and acceleration, and say what "
+                  "each symbol stands for."),
+    ("equation", "F = m × a"),
+    ("heading", 2, "Grade boundaries (out of 6 points)"),
+    ("paragraph", "A: 5-6. B: 4. C: 3. D: 0-2."),
+]
+
+#: AF-21's pair: a .docx test and its .txt marking memo, handed in together. Both normalize
+#: through the same intake (TC-AUTHOR-32), and the fixture's third document is AF-14's
+#: content re-encoded as .txt (the cross-format twin TC-AUTHOR-38's journey carries over).
+AF21_TEST_BLOCKS: list[tuple] = [
+    ("heading", 1, "MUS8-INSTRUMENTS-01 - YEAR 8 MUSIC TEST: INSTRUMENT FAMILIES"),
+    ("paragraph", "Answer all three questions. Write full sentences."),
+    ("heading", 2, "Question 1 (3 marks)"),
+    ("paragraph", "Name the family each of these belongs to: oboe, tuba, timpani."),
+    ("paragraph", "A correct answer names woodwind, brass and percussion respectively."),
+    ("heading", 2, "Question 2 (3 marks)"),
+    ("paragraph", "Give one way a violin makes a louder sound, and say why it works."),
+    ("paragraph", "A correct answer says bowing or plucking harder makes bigger vibrations."),
+    ("heading", 2, "Question 3 (3 marks)"),
+    ("paragraph", "Why does a drum with a larger skin sound lower?"),
+    ("paragraph", "A correct answer says the larger skin vibrates more slowly."),
+    ("heading", 2, "Grade boundaries (out of 9 points)"),
+    ("paragraph", "A: 8-9. B: 6-7. C: 4-5. D: 0-3."),
+]
+
+AF21_MEMO_TEXT = """\
+MUS8-INSTRUMENTS-01 - MARKING MEMO (FOR THE TEACHER MARKING AFTER ME)
+
+Every question is marked out of 3 on a 3-band scale.
+Band 3: correct and in the pupil's own words.
+Band 2: correct in part; the idea is there but muddled.
+Band 1: something written, but not the idea asked for.
+Band 1 is the lowest mark and band 3 the highest. No half marks.
+
+GRADE BOUNDARIES (OUT OF 9 POINTS)
+A: 8-9. B: 6-7. C: 4-5. D: 0-3.
+"""
+
+#: AF-16: a .txt saved by Word as cp1252 (the Windows code page a teacher's machine still
+#: defaults to), so the accented words are single bytes the UTF-8 decoder mangles. The
+#: intake must detect the encoding, read the words intact, and say so once
+#: (encoding_fallback, TC-AUTHOR-35 / RS-01). Deliberately no blank lines: the whole file
+#: is one paragraph, so the case cannot pass by accident of block splitting.
+AF16_TEXT = """\
+LANG7-FOOD-01 - year seven languages: this week's café vocabulary test
+The class has spent the week on food words in French, and this short check asks for the
+words that carry an accent, spelled correctly: café, crêpe, déjà, élève, hôtel, très, août
+and génie. Each pupil wrote the words on cards with the meaning on the back, so the recall
+is honest. Award one point for each correctly accented word, up to eight, and one further
+point for the sentence about a favourite meal that every pupil was asked to write; a good
+example reads "Le samedi, je mange une crêpe avec ma famille." Keep the accent in "crêpe" -
+a missing accent is a spelling mistake here, not a near miss, because the accented form is
+what the week practised.
+"""
+
+#: AF-17: a .txt with no heading structure at all -- questions live inside running prose.
+#: The intake must still produce blocks, guess the outline, and warn (structure_guessed,
+#: TC-AUTHOR-36); the review walk then asks the teacher to confirm it.
+AF17_TEXT = """\
+A year six history test about the Great Fire of London, written the way it will be read
+out: there are no headings in this file, only running prose, and the questions are
+sentences inside it.
+
+The first question asks the pupils to name the year the Great Fire started and the bakery
+it began in, on Pudding Lane. The second question asks for two reasons the fire spread so
+quickly through the wooden houses. The third question asks what Samuel Pepys' diary tells
+us that a painting of the fire cannot.
+
+Marking: award two points per question where the answer names the thing asked for in the
+pupil's own words, and nothing for a guess. Out of six points, an A is five or six, a B is
+four, a C is two or three, and a D is less.
+"""
+
+#: AF-19: plain .txt bytes wearing a .docx name (the file a pupil's home setup produces
+#: when "save as" keeps the old name). The intake reads the magic bytes, not the extension,
+#: and refuses with the mismatch sentence (TC-AUTHOR-37b).
+AF19_TEXT = """\
+MATH6-TIMES-TABLES-01 - YEAR 6 MATHS: TIMES TABLES PRACTICE
+
+Answer every question. No calculator.
+
+7 x 8 =        6 x 9 =        12 x 4 =
+11 x 7 =       9 x 6 =        8 x 8 =
+
+Complete the sequence: 3, 6, 9, __, __, __.
+"""
+
+#: AF-18's single OLE stream. The intake refuses the file on its magic bytes before any of
+#: this text is read, so the filler is deliberately not the text of any real test.
+_LEGACY_DOC_STREAM = (
+    "Legacy Word document filler. The intake refuses this file on its OLE magic before any "
+    "of this text is read, so the filler is deliberately not the real text of any test. "
+    "A teacher's old departmental folder is full of files exactly like this one: saved as "
+    ".doc in 2009, still handed round, still refused at the door by a tier that reads only "
+    "what the bytes say. "
+)
+
+#: The adversarial set's password-protected .docx: a real password-protected Office file is
+#: a Compound File Binary container holding an EncryptedPackage stream, wearing the .docx
+#: extension -- OLE bytes, not a zip. The stream here is the honest shape of that: the
+#: 4-byte little-endian length prefix the real format carries, then filler.
+_ENCRYPTED_PACKAGE_STREAM = (
+    struct.pack("<I", 256)
+    + b"Encrypted-package filler: a password-protected Office file stores its payload in an "
+      b"EncryptedPackage stream inside a Compound File Binary container, so the bytes a "
+      b"teacher uploads are OLE, not a zip. The intake refuses this on the magic before "
+      b"trying to open a package it cannot decrypt. "
+)
+
+#: The adversarial .rtf: a real format a teacher does still save as, outside the three the
+#: intake reads -- the unsupported-extension arm (TC-AUTHOR-37f), not a magic mismatch.
+_RTF_TEXT = """\
+{\\rtf1\\ansi\\deff0
+{\\fonttbl{\\f0 Times New Roman;}}
+\\f0\\fs24 HIST7-ROME-01 - YEAR 7 HISTORY TEST: THE ROMAN EMPIRE\\par
+This reading list was saved as rich text. The intake reads .docx, .txt and .pdf files, so
+this one is refused with the three-formats sentence before a word of it is read.\\par
+}
+"""
+
+#: The adversarial magic-mismatch arm in the other direction: real PDF bytes under a .docx
+#: name (a file saved through a PDF printer that kept the old extension). Rendered by the
+#: same typed-PDF writer the AF-01..13 fixtures use, so the bytes are a genuine PDF.
+_PDF_MAGIC_TEXT = """\
+SCI5-GROUPING-01 - YEAR 5 SCIENCE TEST: GROUPING MATERIALS
+
+This file was written as a PDF and given a .docx name. The intake reads the magic bytes,
+not the extension, and refuses it with the rename sentence -- the same sentence AF-19's
+.txt-in-a-.docx name earns, because both are the mismatch arm of the refusal table.
+"""
+
+
+def block_text(block: tuple) -> str:
+    """One content-model block as the plain text a .txt rendering of it carries.
+
+    The model is the single source of the .docx XML and of AF-21's .txt twin, so this
+    function is also the contract TC-AUTHOR-32 checks: the docx's table block text is one
+    row per line with tab-separated cells -- the same string the twin's table chunk carries.
+    """
+    kind = block[0]
+    if kind == "heading":
+        return block[2]
+    if kind in ("paragraph", "equation"):
+        return block[1]
+    if kind == "table":
+        return "\n".join("\t".join(row) for row in block[1])
+    if kind == "image":
+        return ""
+    raise ValueError(f"unknown content-model block kind {kind!r}")
+
+
+def blocks_to_plain_text(blocks: list[tuple]) -> str:
+    """A content model as .txt: one block per line-group, a blank line between blocks.
+
+    This is the shape the AF-21 twin is committed as, and the shape a plain-text intake
+    splits on blank lines -- so the twin's block texts come out equal to the .docx's, which
+    is the format-independence property TC-AUTHOR-32 and the cross-format carry-over
+    TC-AUTHOR-38 both stand on.
+    """
+    return "\n\n".join(t for t in (block_text(b) for b in blocks) if t) + "\n"
+
+
+def _png_bytes() -> bytes:
+    """A tiny deterministic PNG: the figure AF-15's questions refer to.
+
+    IHDR + one compressed IDAT + IEND, checksums via `zlib.crc32` -- stdlib only, and a
+    two-tone image rather than a blank rectangle so a reader that decodes it sees a figure,
+    not a placeholder.
+    """
+    width, height = 24, 16
+    top, bottom = bytes((31, 73, 125)), bytes((192, 208, 224))
+    rows = b"".join(b"\x00" + (top if y < height // 2 else bottom) * width
+                    for y in range(height))
+
+    def chunk(tag: bytes, payload: bytes) -> bytes:
+        return (len(payload).to_bytes(4, "big") + tag + payload
+                + zlib.crc32(tag + payload).to_bytes(4, "big"))
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header)
+            + chunk(b"IDAT", zlib.compress(rows, 9)) + chunk(b"IEND", b""))
+
+
+#: Fixed ZipInfo timestamps: a zip stores a local timestamp per member, so the default
+#: ("now") would make the corpus unreproducible by construction. One shared epoch, ZIP_STORED
+#: (no compression: deterministic, and the bytes are small), explicit create_system so the
+#: same script produces identical bytes on any OS.
+_ZIP_EPOCH = (2026, 1, 1, 0, 0, 0)
+
+
+def _zip_parts(parts: list[tuple[str, bytes]]) -> bytes:
+    """One OOXML package: a deterministically-ordered, stored (uncompressed) zip."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_STORED) as archive:
+        for name, data in parts:
+            info = zipfile.ZipInfo(name, date_time=_ZIP_EPOCH)
+            info.compress_type = zipfile.ZIP_STORED
+            info.create_system = 0
+            info.external_attr = 0o600 << 16
+            archive.writestr(info, data)
+    return buffer.getvalue()
+
+
+def _xml_escape(text: str) -> str:
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+_W_DOCUMENT_OPEN = (
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    '<w:document'
+    ' xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+    ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
+    ' xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"'
+    ' xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"'
+    ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
+    ' xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+    '<w:body>'
+)
+_W_DOCUMENT_CLOSE = (
+    '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/></w:sectPr></w:body></w:document>'
+)
+_W_ROOT_RELS = (
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
+    'relationships/officeDocument" Target="word/document.xml"/></Relationships>'
+)
+_W_RELS_IMAGE = (
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
+    'relationships/image" Target="media/image1.png"/></Relationships>'
+)
+_W_IMAGE_PARAGRAPH = (
+    '<w:p><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">'
+    '<wp:extent cx="2286000" cy="1524000"/><wp:docPr id="1" name="Figure 1"/>'
+    '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+    '<pic:pic><pic:nvPicPr><pic:cNvPr id="1" name="Figure 1"/><pic:cNvPicPr/></pic:nvPicPr>'
+    '<pic:blipFill><a:blip r:embed="rId1"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+    '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="2286000" cy="1524000"/></a:xfrm>'
+    '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>'
+    '</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>'
+)
+_W_STYLES = (
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+    '<w:style w:type="paragraph" w:styleId="Heading1">'
+    '<w:name w:val="Heading 1"/><w:basedOn w:val="Normal"/>'
+    '<w:pPr><w:outlineLvl w:val="0"/></w:pPr>'
+    '<w:rPr><w:b/><w:sz w:val="32"/></w:rPr></w:style>'
+    '<w:style w:type="paragraph" w:styleId="Heading2">'
+    '<w:name w:val="Heading 2"/><w:basedOn w:val="Normal"/>'
+    '<w:pPr><w:outlineLvl w:val="1"/></w:pPr>'
+    '<w:rPr><w:b/><w:sz w:val="28"/></w:rPr></w:style>'
+    '</w:styles>'
+)
+
+
+def _content_types(with_png: bool) -> str:
+    png = '<Default Extension="png" ContentType="image/png"/>' if with_png else ""
+    return ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.'
+            'relationships+xml"/>'
+            '<Default Extension="xml" ContentType="application/xml"/>'
+            + png +
+            '<Override PartName="/word/document.xml" ContentType="application/vnd.'
+            'openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+            '<Override PartName="/word/styles.xml" ContentType="application/vnd.'
+            'openxmlformats-officedocument.wordprocessingml.styles+xml"/>'
+            '</Types>')
+
+
+def _w_paragraph(text: str, style: str | None = None) -> str:
+    ppr = f'<w:pPr><w:pStyle w:val="{style}"/></w:pPr>' if style else ""
+    return (f'<w:p>{ppr}<w:r><w:t xml:space="preserve">{_xml_escape(text)}</w:t></w:r></w:p>')
+
+
+def _w_table(rows: list[list[str]]) -> str:
+    trs = []
+    for row in rows:
+        tcs = "".join(
+            f'<w:tc><w:p><w:r><w:t xml:space="preserve">{_xml_escape(cell)}</w:t></w:r></w:p>'
+            '</w:tc>' for cell in row)
+        trs.append(f"<w:tr>{tcs}</w:tr>")
+    return ('<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>'
+            + "".join(trs) + "</w:tbl>")
+
+
+def _w_equation(text: str) -> str:
+    return ('<w:p><m:oMath><m:r><m:t xml:space="preserve">'
+            f'{_xml_escape(text)}</m:t></m:r></m:oMath></w:p>')
+
+
+def _docx_document(blocks: list[tuple]) -> bytes:
+    """A real .docx package over a content model: styles, a table, an image, an OMML equation.
+
+    The heading paragraphs reference the style IDs this same package's styles.xml defines
+    (`Heading1`/`Heading2` mapped to the names "Heading 1"/"Heading 2") -- a .docx reader
+    matches heading styles by *name*, so a package that named the style differently would
+    normalize every heading to a plain paragraph.
+    """
+    has_image = any(b[0] == "image" for b in blocks)
+    parts: list[str] = []
+    for block in blocks:
+        kind = block[0]
+        if kind == "heading":
+            parts.append(_w_paragraph(block[2], f"Heading{block[1]}"))
+        elif kind == "paragraph":
+            parts.append(_w_paragraph(block[1]))
+        elif kind == "table":
+            parts.append(_w_table(block[1]))
+        elif kind == "image":
+            parts.append(_W_IMAGE_PARAGRAPH)
+        elif kind == "equation":
+            parts.append(_w_equation(block[1]))
+        else:
+            raise ValueError(f"unknown content-model block kind {kind!r}")
+    document_xml = _W_DOCUMENT_OPEN + "".join(parts) + _W_DOCUMENT_CLOSE
+    zip_parts = [
+        ("[Content_Types].xml", _content_types(has_image).encode("utf-8")),
+        ("_rels/.rels", _W_ROOT_RELS.encode("utf-8")),
+        ("word/document.xml", document_xml.encode("utf-8")),
+        ("word/styles.xml", _W_STYLES.encode("utf-8")),
+    ]
+    if has_image:
+        zip_parts.append(("word/_rels/document.xml.rels", _W_RELS_IMAGE.encode("utf-8")))
+        zip_parts.append(("word/media/image1.png", _png_bytes()))
+    return _zip_parts(zip_parts)
+
+
+_CFB_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+_CFB_FREE = 0xFFFFFFFF
+_CFB_END = 0xFFFFFFFE
+_CFB_FAT_SECT = 0xFFFFFFFD
+_CFB_SECTOR = 512
+
+
+def _cfb_document(streams: list[tuple[str, bytes]]) -> bytes:
+    """A minimal Compound File Binary container holding the named streams.
+
+    This is the honest shape of the two OLE-arm fixtures: a legacy `.doc` is a CFB whose
+    payload lives in a `WordDocument` stream, and a password-protected Office file is a CFB
+    holding an `EncryptedPackage` stream -- both refused on the same `D0 CF 11 E0 A1 B1 1A E1`
+    magic, before any stream is read. The stand-in is deliberately minimal (one FAT sector,
+    one directory sector, one data sector per stream, small streams in regular sectors): a
+    structural validator would want a mini-FAT for sub-4096-byte streams, but the intake
+    refuses these files on the magic long before container details matter, and the filler
+    text inside says what the file stands in for.
+    """
+    assert 1 <= len(streams) <= 3, "the minimal directory holds a root plus at most 3 streams"
+    streams = [(name, data.encode("utf-8") if isinstance(data, str) else data)
+               for name, data in streams]
+
+    # Sector 0: the FAT. Sector 1: the directory. Sectors 2..: one data sector per stream.
+    fat = [_CFB_FAT_SECT, _CFB_END] + [_CFB_END] * len(streams)
+    fat_bytes = struct.pack("<128I", *(fat + [_CFB_FREE] * (128 - len(fat))))
+
+    def entry(name: str, kind: int, child: int, start: int, size: int) -> bytes:
+        encoded = name.encode("utf-16-le") + b"\x00\x00"
+        assert len(encoded) <= 64, f"CFB entry name too long: {name!r}"
+        return (encoded + b"\x00" * (64 - len(encoded))
+                + struct.pack("<HBBIII16sI8s8sIQ", len(encoded), kind, 1,
+                              _CFB_FREE, _CFB_FREE, child, b"\x00" * 16, 0,
+                              b"\x00" * 8, b"\x00" * 8, start, size))
+
+    root = entry("Root Entry", 5, 1 if streams else _CFB_FREE, _CFB_END, 0)
+    directory = root + b"".join(
+        entry(name, 2, _CFB_FREE, 2 + index, len(data))
+        for index, (name, data) in enumerate(streams))
+    directory += b"\x00" * (_CFB_SECTOR - len(directory))
+    assert len(directory) == _CFB_SECTOR
+
+    data_sectors = b"".join(
+        (data[:_CFB_SECTOR] + b"\x00" * _CFB_SECTOR)[:_CFB_SECTOR] for _, data in streams)
+
+    header = b"".join([
+        _CFB_MAGIC,
+        b"\x00" * 16,                                    # CLSID
+        struct.pack("<HHHH", 0x003E, 0x0003, 0xFFFE, 0x0009),  # minor, major, byte order,
+                                                         # sector shift (512-byte sectors)
+        struct.pack("<H", 0x0006),                       # mini sector shift (64 bytes)
+        b"\x00" * 6,                                     # reserved
+        struct.pack("<IIIIII", 0, 1, 1, 0, 0x00001000, _CFB_END),
+        struct.pack("<II", 0, _CFB_END),                 # mini FAT count, first DIFAT sector
+        struct.pack("<I", 0),                            # number of DIFAT sectors (none)
+        struct.pack("<109I", 0, *([_CFB_FREE] * 108)),   # DIFAT: the FAT lives at sector 0
+    ])
+    assert len(header) == _CFB_SECTOR
+    return header + fat_bytes + directory + data_sectors
+
+
+#: The adversarial intake set (test plan §3.1, TC-AUTHOR-37's matrix): the refusal arms that
+#: are not fixture-shaped enough for a numbered directory. Each entry states, in
+#: `adversarial/expected.toml`, the FR-AUTHOR-28 sentence the intake must refuse it with.
+ADVERSARIAL: dict = {
+    "documents": [
+        ("encrypted-test.docx", [("EncryptedPackage", _ENCRYPTED_PACKAGE_STREAM)], "cfb"),
+        ("reading-list.rtf", _RTF_TEXT, "txt"),
+        ("hist8-sources-01-test.docx", _PDF_MAGIC_TEXT, "pdf"),
+    ],
+}
+
+#: `adversarial/expected.toml`: one `[[file]]` table per entry, naming the file and the exact
+#: FR-AUTHOR-28 teacher sentence the intake refuses it with -- pinned in the corpus, not in a
+#: test's private literal, so copy drift fails the census. The numbered refusal arms (legacy
+#: .doc, renamed .docx, empty) live in the AF-18/19/20 directories; these are the arms whose
+#: file shape belongs to no fixture directory.
+ADVERSARIAL_EXPECTED = f"""\
+# The adversarial intake set: the refusal-matrix arms whose file shape belongs to no numbered
+# fixture (test plan §3.1, TC-AUTHOR-37). Each entry names a file in this directory and the
+# exact FR-AUTHOR-28 teacher sentence the intake refuses it with.
+
+[[file]]
+name = "encrypted-test.docx"
+looks_like = "a password-protected .docx: a Compound File Binary container holding an EncryptedPackage stream, wearing the .docx extension (that is what an encrypted docx actually is -- OLE bytes, not a zip)"
+refusal = "{PASSWORD_REFUSAL}"
+
+[[file]]
+name = "reading-list.rtf"
+looks_like = "rich text; .rtf is outside the three formats the intake reads"
+refusal = "{UNSUPPORTED_REFUSAL}"
+
+[[file]]
+name = "hist8-sources-01-test.docx"
+looks_like = "PDF magic bytes under a .docx name (saved through a PDF printer that kept the old extension)"
+refusal = "{MISMATCH_REFUSAL}"
+"""
+
+#: The roster CSVs (TC-CONSOLE-65's inputs, and the intake tests' mixed-set context). The
+#: names are the same synthetic stem style `tests/support/roster.py` generates -- never real
+#: names, so the corpus cannot leak one. The valid roster carries the `console_world` seed
+#: cohort's three students (`c-ts48`), so a case written against it needs no rewrite when the
+#: console tests land. The malformed file carries one defect per shape that makes a roster
+#: file suspect: a duplicated name (line 3 -- the roster reader accepts a shared name;
+#: deciding that two refs are one student is the cohort layer's call, `aeh.orch.cohorts`),
+#: a row with a ref but no name (line 4 -- refused by the reader, naming the line), a fully
+#: blank row (skipped), and one valid row.
+ROSTERS: list[tuple[str, str]] = [
+    ("console-world-3-students.csv",
+     "full_name,student_ref\n"
+     "Alvenn Ashcombe,ref-sub-c-ts48-01\n"
+     "Kestrile Larkspire,ref-sub-c-ts48-02\n"
+     "Torvelle Whitmarsh,ref-sub-c-ts48-03\n"),
+    ("console-world-malformed.csv",
+     "full_name,student_ref\n"
+     "Alvenn Ashcombe,ref-sub-c-ts48-01\n"
+     "Alvenn Ashcombe,ref-sub-c-ts48-02\n"
+     ",ref-sub-c-ts48-02\n"
+     "\n"
+     "Torvelle Whitmarsh,ref-sub-c-ts48-03\n"),
+]
+
+
 def _expected(af: str, description: str, documents: list[str], outcome: str,
               placeholders: list[str], build: str, notes: str,
+              refusal: str | None = None, warnings: list[str] | None = None,
+              formats: list[str] | None = None, table_rows: list[list[str]] | None = None,
               retry_of: str | None = None, carry_over: str | None = None,
               review_answers: dict | None = None) -> str:
     """One fixture's expected.toml, as text -- the outcome class the tests assert."""
@@ -527,6 +1070,24 @@ def _expected(af: str, description: str, documents: list[str], outcome: str,
         "placeholders = [" + ", ".join(f'"{q(p)}"' for p in placeholders) + "]",
         f'build = "{q(build)}"',
     ]
+    if refusal is not None:
+        # FR-AUTHOR-28's exact teacher sentence (test plan §4.3: exact-match, so copy drift
+        # fails). Present iff the outcome is `refused` -- an intake refusal, not a draft.
+        lines.append(f'refusal = "{q(refusal)}"')
+    if warnings is not None:
+        # The IntakeWarning codes the outcome class requires to be present (§3.1.1's
+        # vocabulary). Presence, not exhaustiveness: a reader may add codes the design's
+        # table does not name.
+        lines.append("warnings = [" + ", ".join(f'"{q(w)}"' for w in warnings) + "]")
+    if formats is not None:
+        # One source format per document, aligned with `documents` (§3.1.1's
+        # NormalizedDocument.source_format domain: docx | txt | pdf).
+        lines.append("format = [" + ", ".join(f'"{q(f)}"' for f in formats) + "]")
+    if table_rows is not None:
+        # AF-14 only: the rubric table's rows, carried verbatim so TC-AUTHOR-33 asserts the
+        # normalized table blocks against what the fixture declares (json.dumps is TOML's
+        # basic-string escaping, per _review_value).
+        lines.append("table_rows = [" + ", ".join(_review_value(r) for r in table_rows) + "]")
     if retry_of is not None:
         lines.append(f'retry_of = "{q(retry_of)}"')
     if carry_over is not None:
@@ -599,8 +1160,13 @@ AF12_ANSWERS = {
 }
 
 
-#: The corpus, in the design delta's §5.1 order. `documents` pairs filenames with their
-#: body text; `scan=True` renders the body as ink pixels instead of typed text.
+#: The corpus, in the design deltas' §5.1 order. Each `documents` entry pairs a filename
+#: with its body and, for the intake fixtures, the writer that renders it: "pdf" (typed
+#: pages, the default), "scan" (AF-10's ink pixels, via the fixture-level `scan` flag),
+#: "docx" (a real OOXML package over a content model), "txt" / "txt-cp1252" (plain text in
+#: the named encoding), "cfb" (an OLE container over named streams), "raw" (bytes written
+#: verbatim), "empty" (zero bytes). `scan=True` renders the body as ink pixels instead of
+#: typed text.
 FIXTURES: dict[str, dict] = {
     "AF-01": {
         "description": "single document; bands throughout; happy path",
@@ -762,22 +1328,140 @@ Q1: 436218. Q2: ABOUT 12 KM. Q3: ABOUT 045 DEGREES.
             retry_of="AF-01", carry_over="changed-item-dropped-unchanged-carried",
             review_answers=dict(REVIEW_ANSWERS)),
     },
+    # -- the console-redesign intake matrix (§3.1.1 / §5.1; #753, ahead of #754) -----------
+    "AF-14": {
+        "description": "one document; .docx with a real rubric table; happy path",
+        "documents": [("hist7-rome-01-test-and-grading.docx", AF14_BLOCKS, "docx")],
+        "expected": _expected(
+            "AF-14", "one document; .docx with a real rubric table; happy path",
+            ["hist7-rome-01-test-and-grading.docx"], "resolved", [], "publishes",
+            "the rubric table is carried as table blocks, its cells matching table_rows "
+            "(TC-AUTHOR-33); drafting resolves",
+            formats=["docx"], table_rows=AF14_TABLE_ROWS,
+            review_answers=dict(REVIEW_ANSWERS)),
+    },
+    "AF-15": {
+        "description": "one document; .docx with an image and an OMML equation",
+        "documents": [("sci7-forces-01-figure-test.docx", AF15_BLOCKS, "docx")],
+        "expected": _expected(
+            "AF-15", "one document; .docx with an image and an OMML equation",
+            ["sci7-forces-01-figure-test.docx"], "resolved", [], "publishes",
+            "the image and the equation are named per location, not lost (TC-AUTHOR-34, "
+            "RS-02); the draft still builds",
+            warnings=["image_not_carried", "equation_not_carried"], formats=["docx"],
+            review_answers=dict(REVIEW_ANSWERS)),
+    },
+    "AF-16": {
+        "description": "one document; .txt written cp1252 with accented words",
+        "documents": [("lang7-food-01-cafe-vocabulary.txt", AF16_TEXT, "txt-cp1252")],
+        "expected": _expected(
+            "AF-16", "one document; .txt written cp1252 with accented words",
+            ["lang7-food-01-cafe-vocabulary.txt"], "resolved", [], "publishes",
+            "cp1252 detected and named, the accented words intact (TC-AUTHOR-35, RS-01)",
+            warnings=["encoding_fallback"], formats=["txt"],
+            review_answers=dict(REVIEW_ANSWERS)),
+    },
+    "AF-17": {
+        "description": "one document; .txt with no heading structure",
+        "documents": [("hist6-great-fire-01-prose-test.txt", AF17_TEXT, "txt")],
+        "expected": _expected(
+            "AF-17", "one document; .txt with no heading structure",
+            ["hist6-great-fire-01-prose-test.txt"], "resolved", [], "publishes",
+            "no headings, so the outline is guessed and warned; the review asks the teacher "
+            "to confirm it (TC-AUTHOR-36)",
+            warnings=["structure_guessed"], formats=["txt"],
+            review_answers=dict(REVIEW_ANSWERS)),
+    },
+    "AF-18": {
+        "description": "one document; legacy .doc (an OLE container)",
+        "documents": [("geo6-mapwork-01-legacy.doc", [("WordDocument", _LEGACY_DOC_STREAM)],
+                       "cfb")],
+        "expected": _expected(
+            "AF-18", "one document; legacy .doc (an OLE container)",
+            ["geo6-mapwork-01-legacy.doc"], "refused", [], "refused",
+            "refused on the OLE magic before any provider call (TC-AUTHOR-37a)",
+            refusal=LEGACY_FORMAT_REFUSAL),
+    },
+    "AF-19": {
+        "description": "one document; .txt bytes renamed .docx (magic mismatch)",
+        "documents": [("math6-times-tables-01.docx", AF19_TEXT, "raw")],
+        "expected": _expected(
+            "AF-19", "one document; .txt bytes renamed .docx (magic mismatch)",
+            ["math6-times-tables-01.docx"], "refused", [], "refused",
+            "the bytes are plain text, the name says .docx: refused with the rename guidance "
+            "(TC-AUTHOR-37b)",
+            refusal=MISMATCH_REFUSAL),
+    },
+    "AF-20": {
+        "description": "one document; zero-byte .docx (empty file)",
+        "documents": [("sci5-grouping-01-empty.docx", None, "empty")],
+        "expected": _expected(
+            "AF-20", "one document; zero-byte .docx (empty file)",
+            ["sci5-grouping-01-empty.docx"], "refused", [], "refused",
+            "zero bytes; refused with the no-text sentence (TC-AUTHOR-37d)",
+            refusal=EMPTY_REFUSAL),
+    },
+    "AF-21": {
+        "description": "mixed set: .docx test + .txt memo, plus AF-14's content as .txt",
+        "documents": [("mus8-instruments-01-test.docx", AF21_TEST_BLOCKS, "docx"),
+                      ("mus8-instruments-01-marking-memo.txt", AF21_MEMO_TEXT, "txt"),
+                      ("hist7-rome-01-test-and-grading.txt",
+                       blocks_to_plain_text(AF14_BLOCKS), "txt")],
+        "expected": _expected(
+            "AF-21", "mixed set: .docx test + .txt memo, plus AF-14's content as .txt",
+            ["mus8-instruments-01-test.docx", "mus8-instruments-01-marking-memo.txt",
+             "hist7-rome-01-test-and-grading.txt"], "resolved", [], "publishes",
+            "both formats normalize together, and the third document is AF-14's content "
+            "re-encoded as .txt -- the cross-format twin TC-AUTHOR-32/TC-AUTHOR-38 assert "
+            "against (TC-E2E-11's carry-over)",
+            formats=["docx", "txt", "txt"], review_answers=dict(REVIEW_ANSWERS)),
+    },
 }
 
 
+def _document_bytes(af_id: str, spec: dict, writer: str, payload) -> bytes:
+    """One document's bytes, by writer tag (see FIXTURES' comment for the tags)."""
+    if writer == "pdf":
+        return _typed_document(payload)
+    if writer == "scan":
+        return _scan_document(af_id, spec["scan_text"])
+    if writer == "docx":
+        return _docx_document(payload)
+    if writer == "txt":
+        return payload.encode("utf-8")
+    if writer == "txt-cp1252":
+        return payload.encode("cp1252")
+    if writer == "cfb":
+        return _cfb_document(payload)
+    if writer == "raw":
+        return payload if isinstance(payload, bytes) else payload.encode("utf-8")
+    if writer == "empty":
+        return b""
+    raise ValueError(f"unknown fixture writer {writer!r}")
+
+
 def build(root: Path = CORPUS_ROOT) -> None:
-    """Write the whole corpus: fixture dirs, PDFs, expected.toml files, READMEs."""
+    """Write the whole corpus: fixture dirs, documents, expected.toml files, READMEs."""
     (root / "recordings").mkdir(parents=True, exist_ok=True)
     for af_id, spec in FIXTURES.items():
         fixture_dir = root / af_id
         fixture_dir.mkdir(exist_ok=True)
-        for filename, body in spec["documents"]:
-            if spec.get("scan"):
-                pdf_bytes = _scan_document(af_id, spec["scan_text"])
-            else:
-                pdf_bytes = _typed_document(body)
-            (fixture_dir / filename).write_bytes(pdf_bytes)
+        for entry in spec["documents"]:
+            filename, payload = entry[0], entry[1]
+            writer = entry[2] if len(entry) > 2 else ("scan" if spec.get("scan") else "pdf")
+            (fixture_dir / filename).write_bytes(
+                _document_bytes(af_id, spec, writer, payload))
         (fixture_dir / "expected.toml").write_bytes(spec["expected"].encode("utf-8"))
+    adversarial = root / "adversarial"
+    adversarial.mkdir(exist_ok=True)
+    for filename, payload, writer in ADVERSARIAL["documents"]:
+        (adversarial / filename).write_bytes(
+            _document_bytes("adversarial", {}, writer, payload))
+    (adversarial / "expected.toml").write_bytes(ADVERSARIAL_EXPECTED.encode("utf-8"))
+    rosters = root / "rosters"
+    rosters.mkdir(exist_ok=True)
+    for filename, text in ROSTERS:
+        (rosters / filename).write_bytes(text.encode("utf-8"))
     (root / "recordings" / "README.md").write_bytes(_RECORDINGS_README.encode("utf-8"))
     (root / "README.md").write_bytes(_CORPUS_README.encode("utf-8"))
 
@@ -785,11 +1469,13 @@ def build(root: Path = CORPUS_ROOT) -> None:
 _CORPUS_README = """\
 # fixtures/F-AUTHOR -- the authoring fixture corpus (TC-AUTHOR-28)
 
-Thirteen teacher test descriptions, `AF-01`..`AF-13`, one directory each: the documents a
+Twenty-one teacher test descriptions, `AF-01`..`AF-21`, one directory each: the documents a
 teacher would hand a colleague, plus an `expected.toml` stating the **outcome class** the
 tests assert -- which items resolve, which placeholder, whether the build publishes or is
-refused. The matrix is design delta §5.1; the double-honesty rule (test-plan §4.2) lives in
-`recordings/`.
+refused. AF-01..AF-13 are the package-authoring delta's §5.1 matrix; AF-14..AF-21 are the
+console-redesign delta's §5.1 intake matrix (built by #753 ahead of the intake tier, #754).
+Alongside the numbered fixtures sit the adversarial intake set (`adversarial/`) and the
+roster CSVs (`rosters/`). The double-honesty rule (test-plan §4.2) lives in `recordings/`.
 
 **Generated, not edited by hand.** Regenerate with:
 
@@ -799,7 +1485,9 @@ The generator is committed in this directory (the `build_sample_materials.py` pa
 committed generator, committed outputs, stdlib only) and is byte-for-byte reproducible: a
 changed PDF in a review means a changed script. The rendering itself is
 `harness.corpora.pdf_writer.typed_document` (typed pages) and
-`harness.corpora.scan.render_hand_page` (AF-10's scan) -- nothing here reimplements it.
+`harness.corpora.scan.render_hand_page` (AF-10's scan); the intake fixtures' .docx packages,
+OLE containers, and PNG part are built here with stdlib `zipfile`/`struct`/`zlib` over
+deterministic content models -- nothing here reimplements the repo's readers.
 
 This corpus is deliberately exempt from `python -m harness.corpora.build --check`
 (`_IN_TREE_GENERATED_TREES` in `harness/corpora/build.py`): that check regenerates the
@@ -810,20 +1498,53 @@ TC-AUTHOR-28's census instead, which re-runs this script and diffs the bytes.
 
 | key | meaning |
 |---|---|
-| `af` | the fixture id, `AF-01`..`AF-13` |
+| `af` | the fixture id, `AF-01`..`AF-21` |
 | `description` | what the fixture exercises (§5.1's wording) |
-| `documents` | the PDF filenames in this directory, in hand-in order |
-| `outcome` | `resolved` (fully drafted), `partial` (named placeholders), `unresolved` (not converging after all attempts) |
+| `documents` | the document filenames in this directory, in hand-in order |
+| `outcome` | `resolved` (fully drafted), `partial` (named placeholders), `unresolved` (not converging after all attempts), `refused` (the intake refuses the hand-in, FR-AUTHOR-28) |
 | `placeholders` | the placeholder fields the outcome class expects (empty when `resolved`) |
-| `build` | `publishes` (once any placeholders are filled at review) or `refused` (FR-PKG-28's gate) |
+| `build` | `publishes` (once any placeholders are filled at review) or `refused` (FR-PKG-28's gate, or an intake refusal) |
+| `refusal` | AF-18..AF-20 only: FR-AUTHOR-28's exact teacher sentence the intake refuses with (test plan §4.3: exact-match, so copy drift fails). Present iff `outcome = "refused"` |
+| `warnings` | the `IntakeWarning` codes the outcome class requires to be present (§3.1.1's vocabulary: `image_not_carried`, `equation_not_carried`, `structure_guessed`, `formatting_dropped`, `encoding_fallback`). Presence, not exhaustiveness |
+| `format` | one source format per document, aligned with `documents` (`docx` \\| `txt` \\| `pdf`, `NormalizedDocument.source_format`'s domain) |
+| `table_rows` | AF-14 only: the rubric table's rows, carried verbatim for TC-AUTHOR-33's cell match |
 | `retry_of` | AF-13 only: the fixture this re-drafts |
 | `carry_over` | AF-13 only: the carry-over outcome class |
 | `notes` | one line for a human |
-| `[review.answers]` | the scripted review answers the publishing fixtures' drafts complete with (TC-REQ-136); item id = value, a list answers a repeated id one value per occurrence in document order. Refused fixtures (AF-09, AF-11) carry none |
+| `[review.answers]` | the scripted review answers the publishing fixtures' drafts complete with (TC-REQ-136); item id = value, a list answers a repeated id one value per occurrence in document order. Refused fixtures (AF-09, AF-11, AF-18..AF-20) carry none |
+
+## adversarial/ -- the refusal arms with no fixture directory
+
+Three files whose shape belongs to no numbered fixture, each refused before any content is
+read (test plan §3.1, TC-AUTHOR-37's matrix): a password-protected `.docx` (a Compound File
+Binary container holding an `EncryptedPackage` stream -- what an encrypted docx actually
+is), a `.rtf` (outside the three formats), and real PDF bytes under a `.docx` name. Their
+`adversarial/expected.toml` is a different, smaller schema: one `[[file]]` table per entry
+naming `name`, `looks_like`, and the exact `refusal` sentence.
+
+## rosters/ -- class lists (TC-CONSOLE-65's inputs)
+
+`console-world-3-students.csv` carries the `console_world` seed cohort's three students
+(`c-ts48`, refs `ref-sub-c-ts48-01`..`03`), so a case written against it needs no rewrite
+when the console tests land. `console-world-malformed.csv` carries the shapes that make a
+roster file suspect: a duplicated name (legal to the reader -- deciding that two refs are
+one student is the cohort layer's call), a row with a ref but no name (refused, naming
+the line), a fully blank row (skipped), and one valid row. The names are synthetic
+(`tests/support/roster.py`'s stem style) -- the corpus never carries a real name.
+
+## What the intake fixtures do NOT carry
+
+No recordings exist for AF-14..AF-21: the intake tier's prompts do not exist until #754
+lands, and a recording captured before its prompt is a key no request will ever ask for.
+The implementing stories capture them, once, from a live run (see `recordings/README.md`).
+The oversize refusal arm (FR-AUTHOR-28's 10 MB sentence) has no committed fixture either:
+its tests generate the oversize file through the `HARNESS_AUTHOR_DOC_MAX_BYTES` knob.
 
 The recorded tier replays exact content through `RecordedFixtureProvider`; the live tier
 (`@live`, real OpenRouter) asserts these outcome classes -- **never exact wording**: two runs
-of a real model agree on structure, not prose (CT-AUTHOR-17's non-promise).
+of a real model agree on structure, not prose (CT-AUTHOR-17's non-promise). The one exact
+wording the corpus does pin is the refusal table: FR-AUTHOR-28's sentences are the
+teacher-facing copy the design table states verbatim, so a test asserts them exactly.
 """
 
 _RECORDINGS_README = """\
@@ -854,7 +1575,8 @@ census refuses a corpus whose recordings replay successes only.
 
 def main() -> int:
     build()
-    print(f"wrote {len(FIXTURES)} fixtures + READMEs under {CORPUS_ROOT}")
+    print(f"wrote {len(FIXTURES)} fixtures, the adversarial set, {len(ROSTERS)} rosters, "
+          f"and the READMEs under {CORPUS_ROOT}")
     return 0
 
 

@@ -1,0 +1,12 @@
+af = "AF-15"
+description = "one document; .docx with an image and an OMML equation"
+documents = ["sci7-forces-01-figure-test.docx"]
+outcome = "resolved"
+placeholders = []
+build = "publishes"
+warnings = ["image_not_carried", "equation_not_carried"]
+format = ["docx"]
+notes = "the image and the equation are named per location, not lost (TC-AUTHOR-34, RS-02); the draft still builds"
+
+[review.answers]
+"approved_by" = "Sample-materials teacher"
