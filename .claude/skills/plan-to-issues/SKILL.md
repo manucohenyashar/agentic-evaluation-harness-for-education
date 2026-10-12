@@ -44,15 +44,11 @@ one and not eight.
 the `TC-*` IDs covered, the dependency, and the ahead-of-implementation flag. Transcribe
 it; do not re-partition it.
 
-For every story capture:
-
-- Title — short, imperative
-- **Goal** — one clear sentence, the acceptance criterion a reviewer checks the PR against
-- **Traces to** — the `FR-*` / `NFR-*` / `TC-*` IDs it covers. This is what keeps the RTM
-  alive past the GitHub boundary; an issue with no `Traces to:` line is untraceable work.
-- Acceptance criteria, technical notes, and evaluation strategy per the templates
-- Dependencies, by story title for now — they don't have issue numbers yet
-- `type:story` or `type:test`
+For every story capture the fields the template in `references/issue-templates.md` requires —
+title, **Goal** (one checkable sentence), **Traces to** (the `FR-*`/`NFR-*`/`TC-*` IDs it
+covers; an issue with no `Traces to:` line is untraceable work), acceptance criteria and
+technical notes, dependencies (by story title for now — they don't have issue numbers yet),
+and the `type:story`/`type:test` label.
 
 Extract both tracks in one pass so cross-track dependencies are captured together. **Every
 `type:story` must have at least one `type:test` covering its requirements** — the test
