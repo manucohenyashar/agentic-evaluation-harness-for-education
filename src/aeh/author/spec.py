@@ -318,6 +318,23 @@ _DRAFT_HEADER = (
 )
 
 
+def render_empty_draft(package_id: str) -> str:
+    """The from-scratch skeleton's TOML (`FR-AUTHOR-29`): the package id, zero questions,
+    zero criteria — and no placeholder anywhere, because nothing is missing yet: the
+    console's structured editor (FR-UI-13) is how the skeleton is filled. Rendered in the
+    same house grammar `render_draft` writes (and `aeh package build` reads), as its own
+    small renderer rather than an `Assembly` through `render_draft`: `render_draft` walks
+    the spec's tables and would silently omit the empty `question`/`criterion` keys a
+    skeleton must carry for the parsed file to read as a draft at all."""
+    lines = [
+        *_DRAFT_HEADER, "",
+        f"package = {_toml_str(package_id)}", "",
+        "question = []", "",
+        "criterion = []", "",
+    ]
+    return "\n".join(lines)
+
+
 def render_draft(assembly: Assembly) -> str:
     """The draft TOML: the spec export's grammar and house style, with a
     `# PLACEHOLDER(<reason>): <supply>` comment above every sentinel line (`FR-AUTHOR-11`) —

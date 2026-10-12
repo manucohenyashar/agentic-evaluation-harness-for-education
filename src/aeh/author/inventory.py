@@ -173,7 +173,15 @@ def fallback_package_id(documents: list[tuple[str, str]]) -> str:
     document's stem, slugified to `plan_package`'s rule. Deterministic, so a re-run over the
     same documents proposes the same id (FR-AUTHOR-15) even where the model stayed silent."""
     stem = documents[0][0] if documents else "package"
-    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", stem).strip("-.") or "package"
+    return slugify_package_id(stem)
+
+
+def slugify_package_id(text: str) -> str:
+    """The package-id slug rule, shared by the fallback above and the from-scratch start
+    (`FR-AUTHOR-29`: the teacher's title names the package): slugified to `plan_package`'s
+    rule. One spelling of the rule, cited by both callers — a hand-rolled copy in the
+    from-scratch path would let the two drift apart."""
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", text).strip("-.") or "package"
     if not re.match(r"\A[A-Za-z0-9]", slug):
         slug = f"pkg-{slug}"
     return slug[:64].rstrip(".")
