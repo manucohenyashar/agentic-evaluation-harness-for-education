@@ -53,7 +53,7 @@ HARNESS_JEV_BUILD = "openrouter/typesafe/jev-1.13@2026-09-17"
 [profiles.dev-ci.transcriber]
 role = "transcriber"
 provider = "openrouter"
-build_id = "openrouter/qwen/qwen3-vl-8b-instruct@2026-06-01"
+build_id = "openrouter/openai/gpt-6-luna@2026-06-01"
 
 # The judge panel. The size must be 1, 3 or 5 (never 2 or 4: an even panel cannot break a tie).
 # One judge is the smallest working test, but with one judge the system has nobody to disagree
@@ -63,7 +63,7 @@ build_id = "openrouter/qwen/qwen3-vl-8b-instruct@2026-06-01"
 [[profiles.dev-ci.panel]]
 role = "judge"
 provider = "openrouter"
-build_id = "openrouter/qwen/qwen3-30b-a3b@2026-06-01"
+build_id = "openrouter/openai/gpt-6-luna@2026-06-01"
 
 # [[profiles.dev-ci.panel]]
 # role = "judge"
