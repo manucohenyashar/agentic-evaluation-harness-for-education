@@ -237,6 +237,10 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
     # `publish package` names; `cancel job` pauses a run through the one `run.status` row
     # the run monitor writes (an authoring job's cancellation is cooperative, no row).
     "draft package from documents": (),
+    # the from-scratch start (#764, FR-UI-13): the empty skeleton is written to the draft
+    # file synchronously — no model call, no job, no store row — the same cited exception
+    # the rest of the authoring actions carry (`ADR-45`).
+    "draft package from scratch": (),
     "answer authoring review": (),
     "edit draft package": (),
     "approve draft package": (

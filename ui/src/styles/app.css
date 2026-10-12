@@ -1424,3 +1424,239 @@ textarea:focus-visible {
 .manuals-index li {
   padding: var(--space-xs) 0;
 }
+
+/*
+ * The authoring screens (FR-UI-11..13, #764). The same rule as the rest of the sheet:
+ * every value is a token, never a literal — the dropzone, the placeholder highlight,
+ * the editor's forms and the change list are the teacher's surfaces, and they take the
+ * palette's existing tone groups.
+ */
+
+.dropzone {
+  background-color: var(--color-surface);
+  border: 2px dashed var(--color-line);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  margin: 0 0 var(--space-md);
+  max-width: 40rem;
+}
+
+.dropzone-active {
+  border-color: var(--color-accent);
+}
+
+.upload-list,
+.placeholder-list,
+.change-list,
+.editor-options ul {
+  list-style: none;
+  margin: 0 0 var(--space-md);
+  padding: 0;
+  max-width: 40rem;
+}
+
+.upload-file,
+.placeholder-row {
+  padding: var(--space-xs) 0;
+  border-bottom: 1px solid var(--color-line);
+}
+
+.upload-file:last-child {
+  border-bottom: none;
+}
+
+.upload-name {
+  font-weight: 700;
+}
+
+.upload-state-reading {
+  color: var(--color-muted);
+}
+
+.upload-state-refused {
+  color: var(--color-danger);
+}
+
+.upload-state-ok {
+  color: var(--color-success);
+}
+
+.preview-file {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  max-width: 40rem;
+  padding: var(--space-md);
+  margin: 0 0 var(--space-md);
+}
+
+.preview-file h3 {
+  font-size: var(--font-size-md);
+  margin: 0 0 var(--space-xs);
+}
+
+.preview-counts,
+.editor-card-note,
+.outline-meta,
+.answer-supply {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  margin: 0 0 var(--space-xs);
+}
+
+.preview-warning {
+  border-left: 3px solid var(--color-warning);
+  padding-left: var(--space-sm);
+  margin: 0 0 var(--space-xs);
+}
+
+.preview-blocks {
+  max-height: 16rem;
+  overflow-y: auto;
+  margin: var(--space-sm) 0 0;
+  padding-left: var(--space-md);
+}
+
+.preview-page {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+
+.drafting-progress,
+.report-view,
+.missing-section,
+.approve-section,
+.redraft-section,
+.pending-section,
+.outline-issues,
+.editor-note {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  max-width: 40rem;
+  padding: var(--space-md);
+  margin: 0 0 var(--space-md);
+}
+
+.drafting-line {
+  font-size: var(--font-size-md);
+}
+
+.report-view h3,
+.missing-section h2,
+.outline-issues h2 {
+  margin-top: 0;
+}
+
+.outline {
+  max-width: 40rem;
+  margin: 0 0 var(--space-md);
+}
+
+.outline-entry {
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+  margin: 0 0 var(--space-sm);
+}
+
+.outline-entry h3 {
+  font-size: var(--font-size-md);
+  margin: 0 0 var(--space-xs);
+}
+
+.outline-text {
+  margin: 0 0 var(--space-xs);
+}
+
+.outline-options {
+  margin: 0 0 var(--space-xs);
+  padding-left: var(--space-md);
+}
+
+.placeholder-mark {
+  background-color: var(--color-warning-bg);
+  color: var(--color-warning);
+  border-radius: var(--radius-sm);
+  padding: var(--space-xs) var(--space-sm);
+  margin: var(--space-xs) 0 0;
+}
+
+.placeholder-chip {
+  font-weight: 700;
+}
+
+.field-error {
+  border-left: 3px solid var(--color-danger);
+  padding-left: var(--space-sm);
+  margin: 0 0 var(--space-xs);
+}
+
+.editor-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  max-width: 40rem;
+  padding: var(--space-md);
+  margin: 0 0 var(--space-md);
+}
+
+.editor-card h3 {
+  font-size: var(--font-size-md);
+  margin: 0 0 var(--space-sm);
+}
+
+.editor-card label,
+.answer-form label {
+  display: inline-block;
+  margin: var(--space-xs) 0 0;
+}
+
+.editor-card textarea,
+.editor-card input[type="text"],
+.editor-card input[type="number"],
+.editor-card select,
+.answer-form textarea,
+.scratch-section input[type="text"] {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  color: var(--color-ink);
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: var(--font-size-md);
+  padding: var(--space-xs) var(--space-sm);
+  max-width: 100%;
+}
+
+.editor-card textarea,
+.answer-form textarea {
+  display: block;
+  width: 100%;
+  min-height: 4rem;
+}
+
+.editor-card-actions {
+  border-top: 1px solid var(--color-line);
+  margin: var(--space-sm) 0 0;
+  padding-top: var(--space-sm);
+}
+
+.impact-banner {
+  background-color: var(--color-warning-bg);
+  color: var(--color-ink);
+  border-radius: var(--radius-sm);
+  padding: var(--space-sm) var(--space-md);
+  margin: 0 0 var(--space-md);
+  max-width: 40rem;
+}
+
+.change-list li {
+  padding: var(--space-xs) 0;
+}
+
+.editor-footer {
+  margin: var(--space-md) 0;
+}

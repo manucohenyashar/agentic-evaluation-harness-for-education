@@ -251,6 +251,11 @@ def test_the_redesign_control_actions_are_the_requirements_that_add_them(repo_ro
     assert REDESIGN_CONTROL_ACTIONS == {
         "update configuration": "FR-CONF-34",
         "draft package from documents": "FR-CONSOLE-61",
+        # #764 (FR-UI-13): the editor's from-scratch entry — the same editor over an
+        # empty draft needs a write that creates it, so `CT-CONSOLE-30` admits it as an
+        # enumerated control row driving `FR-AUTHOR-29`'s skeleton. The delta's §3.3.7
+        # names FR-UI-13 and FR-AUTHOR-29 for that entry; the citation follows the delta.
+        "draft package from scratch": "FR-UI-13",
         "answer authoring review": "FR-CONSOLE-55",
         "edit draft package": "FR-CONSOLE-56",
         "approve draft package": "FR-CONSOLE-62",
@@ -268,6 +273,7 @@ def test_the_redesign_control_actions_are_the_requirements_that_add_them(repo_ro
         ("answer authoring review", "fr-console-55"),
         ("edit draft package", "fr-console-56"),
         ("cancel job", "fr-console-57"),
+        ("draft package from scratch", "fr-ui-13"),
     ):
         assert requirement in redesign, (
             f"the console-redesign delta no longer names {requirement.upper()}, so the "

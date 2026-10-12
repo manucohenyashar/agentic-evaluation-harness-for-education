@@ -2,6 +2,7 @@ import { fetchRead, type PackageSetup as PackageSetupDoc } from "../api";
 import { ActionOutcome, ConfirmDialog, useActionState } from "../components/Confirm";
 import { ReadScreen } from "../components/ReadScreen";
 import { useScreenRead } from "../useScreenRead";
+import { useNavigate } from "../navigate";
 
 /**
  * The package setup screen (FR-UI-03a): the M-SETUP draft's steps verbatim, with each
@@ -11,6 +12,7 @@ import { useScreenRead } from "../useScreenRead";
  * never offers a publish the gates refuse (TC-UI-03's blocked world).
  */
 export function PackageSetup() {
+  const navigate = useNavigate();
   const read = useScreenRead<PackageSetupDoc>("/api/v1/package-setup");
   const action = useActionState(read.retry);
 
@@ -83,6 +85,16 @@ export function PackageSetup() {
           {action.pending !== null && (
             <ConfirmDialog pending={action.pending} onClose={action.close} onDone={action.finish} />
           )}
+          <section className="panel" aria-label="Make a new package">
+            <h2>Make a new package</h2>
+            <p>
+              <a href="#/package/author" onClick={() => navigate("/package/author")}>
+                From your documents
+              </a>{" "}
+              — upload the test's files and the console drafts the package; or start an
+              empty one there and write every question yourself in the editor.
+            </p>
+          </section>
         </>
       )}
     </ReadScreen>

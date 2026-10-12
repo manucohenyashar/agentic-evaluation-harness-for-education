@@ -69,6 +69,12 @@ CONTROL_SURFACE_ACTIONS: tuple[str, ...] = (
     # registry holds (`ADR-47`), delegating for a run to the `pause/resume` row. They enter
     # this tuple with their effects, per `CT-CONSOLE-02`'s enumeration rule.
     "draft package from documents",  # FR-CONSOLE-61
+    # The editor's from-scratch entry (`FR-UI-13`, #764): a package started without
+    # documents opens the same editor over an empty draft, so the editor's one write
+    # surface is the one the documents flow uses. The skeleton is deterministic — no model
+    # call, no job — so this is a synchronous action beside the review and edit rows, not
+    # a second staged job.
+    "draft package from scratch",    # FR-UI-13
     "answer authoring review",       # FR-CONSOLE-55
     "edit draft package",            # FR-CONSOLE-56
     "approve draft package",         # FR-CONSOLE-62
@@ -277,6 +283,7 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
     # the one `run.status` row the run monitor writes; an authoring job's cancellation is
     # cooperative and touches no row.
     "draft package from documents": (),
+    "draft package from scratch": (),
     "answer authoring review": (),
     "edit draft package": (),
     "approve draft package": (

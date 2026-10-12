@@ -189,6 +189,11 @@ DELTA_CONTROL_ACTIONS: dict[str, str] = {
 REDESIGN_CONTROL_ACTIONS: dict[str, str] = {
     "update configuration": "FR-CONF-34",
     "draft package from documents": "FR-CONSOLE-61",
+    # #764 (FR-UI-13): the editor's from-scratch entry — the same editor over an empty
+    # draft needs a write that creates it, and `CT-CONSOLE-30` admits it only as an
+    # enumerated control row. `FR-AUTHOR-29` is the service's skeleton; the console row
+    # is what the editor screen drives.
+    "draft package from scratch": "FR-UI-13",
     "answer authoring review": "FR-CONSOLE-55",
     "edit draft package": "FR-CONSOLE-56",
     "approve draft package": "FR-CONSOLE-62",

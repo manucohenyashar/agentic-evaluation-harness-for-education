@@ -4,16 +4,19 @@ import { HelpPanel } from "./components/HelpPanel";
 import { Navigate } from "./navigate";
 import { BlindSample } from "./screens/BlindSample";
 import { ClassSetup } from "./screens/ClassSetup";
+import { DraftEditor } from "./screens/DraftEditor";
 import { Help } from "./screens/Help";
 import { Issues } from "./screens/Issues";
 import { Jobs } from "./screens/Jobs";
 import { Logs } from "./screens/Logs";
 import { Monitor } from "./screens/Monitor";
 import { PackageSetup } from "./screens/PackageSetup";
+import { PackageAuthor } from "./screens/PackageAuthor";
 import { Parked } from "./screens/Parked";
 import { Papers } from "./screens/Papers";
 import { Results } from "./screens/Results";
 import { Review } from "./screens/Review";
+import { ReviewDraft } from "./screens/ReviewDraft";
 import { RunStart } from "./screens/RunStart";
 import { Settings } from "./screens/Settings";
 import { StudentDetail } from "./screens/StudentDetail";
@@ -52,13 +55,6 @@ const ROUTES: Record<string, ComponentType> = {
   "/review": Review,
   "/results": Results,
   "/status": SystemStatus,
-};
-
-/** The routes a later story owns (#764): named, reachable, and saying so. */
-const COMING: Record<string, string> = {
-  "/package/author": "Author the package",
-  "/package/review": "Review the draft",
-  "/package/edit": "Edit the package",
 };
 
 /** A results row's student link: `#/results/students/<submission id>`. */
@@ -229,12 +225,21 @@ export function App() {
     screen = <Jobs pausedRunIds={pausedRunIds} />;
   } else if (address.path === "/settings") {
     screen = <Settings />;
+  } else if (address.path === "/package/author") {
+    screen = <PackageAuthor packageId={selection.packageId} />;
+  } else if (address.path === "/package/review") {
+    screen = <ReviewDraft packageId={selection.packageId} />;
+  } else if (address.path === "/package/edit") {
+    screen = (
+      <DraftEditor
+        packageId={selection.packageId}
+        publishedVersion={reads.publishedVersion}
+        impact={reads.impact}
+      />
+    );
   } else {
-    const coming = COMING[address.path];
     const Route = ROUTES[address.path];
-    if (coming !== undefined) {
-      screen = <ComingScreen title={coming} />;
-    } else if (Route !== undefined) {
+    if (Route !== undefined) {
       screen = <Route />;
     } else {
       screen = <NotFound />;
@@ -274,21 +279,5 @@ export function App() {
         </div>
       </ToastHost>
     </Navigate.Provider>
-  );
-}
-
-/**
- * A route a later story owns (#764): reachable now, named for what it will be, and
- * pointing back at the wizard — no fake content, no dead end.
- */
-function ComingScreen({ title }: { title: string }) {
-  return (
-    <section className="coming">
-      <h1>{title}</h1>
-      <p>This page is on its way.</p>
-      <p>
-        <a href="#/">Back to the wizard</a>
-      </p>
-    </section>
   );
 }
