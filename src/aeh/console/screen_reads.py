@@ -17,11 +17,13 @@ and the rubric's band scale is answered as a list of names, never as objects car
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 from aeh.grade import GRADE_STATEMENTS, run_grade_records
+from aeh.pkg import PKG_STATEMENTS
 from aeh.setup import setup_service_for_store
 
 
@@ -298,14 +300,177 @@ def blind_seats_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
 
 # --- the results screens ---------------------------------------------------------------------------
 
+#: The results reads' cell query: the criterion-score rows a run holds, with the routing
+#: and state the aggregation wrote beside the band. One parameterized select over the same
+#: table `GRADE_STATEMENTS["select_run_criterion_bands"]` reads — a wider column list, not a
+#: second rule about which rows exist. (`TC-STORE-15`'s banned shape is a search, never a
+#: keyed select.)
+_CELL_ROWS_SQL = (
+    "SELECT cs.criterion_id, cs.submission_id, cs.band, cs.routing, cs.state, cs.state_reason "
+    "FROM criterion_score cs "
+    "JOIN submission s ON cs.submission_id = s.submission_id "
+    "WHERE cs.run_id = :run_id AND s.cohort_id = :cohort_id "
+    "ORDER BY cs.criterion_id, cs.submission_id"
+)
+
+#: The run's escalation panels, per cell: the widenings M-ORCH wrote (`stage='score'`,
+#: `origin='escalation'`), read as (submission, criterion) pairs — the second-opinion
+#: markers the results overview flags. Keyed, not searched (`TC-STORE-15`).
+_ESCALATED_CELLS_SQL = (
+    "SELECT DISTINCT submission_id, criterion_id FROM work_unit "
+    "WHERE run_id = :run_id AND stage = 'score' AND origin = 'escalation'"
+)
+
+#: One cell's grader verdicts (FR-JUDGE-18, CT-JUDGE-20) — the same row shape and `work_id`
+#: order M-JUDGE's own statement answers. Inlined because the console's `aeh.*` import set
+#: is frozen (`CT-CONSOLE-36`): the read borrows the ledger's schema, not M-JUDGE's module.
+_CELL_VERDICTS_SQL = (
+    "SELECT v.work_id, v.judge_id, v.band, v.cited_spans FROM verdict v "
+    "JOIN work_unit w ON w.work_id = v.work_id "
+    "WHERE w.run_id = :run_id AND w.submission_id = :submission_id "
+    "AND w.criterion_id = :criterion_id ORDER BY v.work_id"
+)
+
+
+def _declared_scales(app: Any, run_row: Any) -> dict[str, list[tuple[str, Any]]]:
+    """The run's package version's declared score levels, per grading point, in the
+    package's own ordinal order — each entry `(name, points)`. This is the x-axis the
+    distribution renders and the scale the override's selection offers (FR-UI-15, FR-UI-17):
+    the declaration, never a client-side sort. An unreadable package answers `{}` and the
+    screens degrade to the rows they hold, never to an invented scale."""
+    try:
+        package = app._store.package(str(run_row["package_id"]))
+        rows = package.query(
+            PKG_STATEMENTS["select_bands"], v=str(run_row["package_version_id"]))
+    except Exception:  # noqa: BLE001 — an unreadable catalog is not the grades'
+        return {}
+    scales: dict[str, list[tuple[int, str, Any]]] = {}
+    for row in rows:
+        scales.setdefault(str(row["criterion_id"]), []).append(
+            (int(row["ordinal"]), str(row["band"]), row["points"]))
+    return {
+        criterion: [(name, points) for _ordinal, name, points in sorted(entries)]
+        for criterion, entries in scales.items()
+    }
+
+
+def _grading_point_labels(app: Any, run_row: Any) -> dict[str, str]:
+    """Each grading point's teacher label (`CT-CONSOLE-31` — an internal criterion id is
+    never the only name a screen shows): the question the grading point grades, as the
+    package's stored `question_id` spells it, falling back to the id the read carries. An
+    unreadable catalog answers empty and the screens fall back to the id alone."""
+    try:
+        package = app._store.package(str(run_row["package_id"]))
+        rows = package.query(
+            "SELECT criterion_id, question_id FROM criterion "
+            "WHERE package_version_id = :v ORDER BY criterion_id",
+            v=str(run_row["package_version_id"]),
+        )
+    except Exception:  # noqa: BLE001 — an unreadable catalog is not the grades'
+        return {}
+    return {
+        str(row["criterion_id"]): str(row["question_id"] or "") or str(row["criterion_id"])
+        for row in rows
+    }
+
+
+def _level_of(scale: list[tuple[str, Any]], points: Any) -> str | None:
+    """The declared score level whose points a recorded figure is, or `None` when no
+    declared level carries it (an amendment recorded off-scale points is shown as the
+    stored level, never as a number the scale does not name)."""
+    for name, band_points in scale:
+        try:
+            if band_points is not None and float(band_points) == float(points):
+                return name
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _amendments_of_run(cohort_handle: Any, run_id: str) -> dict[str, list[dict[str, Any]]]:
+    """Each submission's current grade revision's amendment entries (M-GRADE's own
+    `select_current_grades_for_run` rows), keyed by submission — who, when, and why, as
+    the ledger records them. An unreadable column answers empty, never an error."""
+    try:
+        rows = cohort_handle.query(
+            GRADE_STATEMENTS["select_current_grades_for_run"], run_id=run_id)
+    except Exception:  # noqa: BLE001 — a ledger without the column answers empty
+        return {}
+    history: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        raw = row["amendments"]
+        if not raw:
+            continue
+        try:
+            entries = json.loads(str(raw))
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(entries, list):
+            continue
+        history[str(row["submission_id"])] = [
+            entry for entry in entries if isinstance(entry, dict)
+        ]
+    return history
+
+
+def _grader_labels() -> dict[str, str]:
+    """The label registry a detail read hands its judges through (`CT-CONSOLE-31`): the
+    internal judge id is never rendered — its ordinal is. The ordinal is the judge's place
+    in the read's own first-seen order (criteria in criterion order, verdicts in `work_id`
+    order), never digits scraped out of the id: a build-id fragment is not a number a
+    teacher can read, and two ids can share a digit set."""
+    return {}
+
+
+def _grader_label(registry: dict[str, str], judge_id: str) -> str:
+    label = registry.get(judge_id)
+    if label is None:
+        label = f"Grader {len(registry) + 1}"
+        registry[judge_id] = label
+    return label
+
+
+def _state_reason_text(raw: str) -> str:
+    """The aggregate's stored state reason in the teacher's words (`CT-CONSOLE-31`): the
+    reasons the store carries are codes, and a snake_case code is not plain language.
+    An unknown code passes through unchanged — an unmapped code names its value rather
+    than inventing a story for it."""
+    reasons = {
+        "even_panel_after_quarantine":
+            "the graders were split on this grading point, so the panel's verdict was "
+            "held for the teacher's review",
+    }
+    return reasons.get(raw, raw)
+
+
+def _cell_flag(routing: str, state: str, escalated: bool) -> str | None:
+    """The one flag a cell raises for the overview's flagged list (FR-UI-15), strongest
+    first: a second opinion (M-ORCH widened the panel), then a low-confidence verdict (the
+    aggregation queued it for the teacher), then a not-final grade. `None` means the cell
+    raises nothing."""
+    if escalated:
+        return "second_opinion"
+    if routing == "queued":
+        return "low_confidence"
+    if state == "provisional_unreviewed":
+        return "not_final"
+    return None
+
 
 def results_screen_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
-    """The results screen's document (FR-UI-03g): every student's grade record (M-GRADE's
-    own, the ledger's) beside the run's per-criterion bands, so a band shown is the stored
-    band and the row a teacher sees is the row the ledger holds."""
+    """The results screen's document (FR-UI-03g, extended by FR-UI-15): every student's
+    grade record (M-GRADE's own, the ledger's) beside the run's per-criterion score levels,
+    each carrying its routing, its state and its flag; the package's declared score levels
+    order the distribution and name the overrides' selections.
+
+    A level shown is the effective one: a grade the teacher amended shows the amended
+    level, with the aggregation's own level beside it as `stored_band` — the ledger keeps
+    both, and the overview must not show a grade the ledger superseded. No count or share
+    is derived here: the SPA aggregates the rows this document serves (`CT-UI-08`)."""
     run_row = _run_row_of(console, app, query)
     if run_row is None:
-        return {"run_id": None, "cohort_id": None, "students": []}
+        return {"run_id": None, "cohort_id": None, "score_levels": [], "scales": [],
+                "students": []}
     run_id = str(run_row["run_id"])
     cohort_id = str(run_row["cohort_id"])
     records = run_grade_records(app._store, run_id)
@@ -318,24 +483,50 @@ def results_screen_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
             "state": str(record["state"] or ""),
             "criteria": [],
         }
+    handle = app._store.cohort(cohort_id)
+    scales = _declared_scales(app, run_row)
+    labels = _grading_point_labels(app, run_row)
+    amendments = _amendments_of_run(handle, run_id)
+    escalated: set[tuple[str, str]] = set()
     try:
-        bands = app._store.cohort(cohort_id).query(
-            GRADE_STATEMENTS["select_run_criterion_bands"],
-            run_id=run_id, cohort_id=cohort_id,
-        )
+        escalated = {
+            (str(row["submission_id"]), str(row["criterion_id"]))
+            for row in handle.query(_ESCALATED_CELLS_SQL, run_id=run_id)
+        }
+    except Exception:  # noqa: BLE001 — a ledger without the work units flags nothing
+        escalated = set()
+    try:
+        cells = handle.query(_CELL_ROWS_SQL, run_id=run_id, cohort_id=cohort_id)
     except Exception:  # noqa: BLE001 — a cohort ledger without the rows answers grades alone
-        bands = ()
-    for row in bands:
+        cells = ()
+    for row in cells:
         student = by_submission.get(str(row["submission_id"]))
-        if student is not None:
-            student["criteria"].append({
-                "criterion_id": str(row["criterion_id"]),
-                "criterion_band": str(row["band"]),
-            })
+        if student is None:
+            continue
+        criterion_id = str(row["criterion_id"])
+        scale = scales.get(criterion_id, [])
+        stored_band = str(row["band"])
+        criterion_band = stored_band
+        for points in [entry.get("points") for entry in amendments.get(
+                str(row["submission_id"]), []) if entry.get("criterion_id") == criterion_id]:
+            amended_level = _level_of(scale, points)
+            if amended_level is not None:
+                criterion_band = amended_level
+        student["criteria"].append({
+            "criterion_id": criterion_id,
+            "label": labels.get(criterion_id, criterion_id),
+            "criterion_band": criterion_band,
+            "stored_band": stored_band,
+            "routing": str(row["routing"] or ""),
+            "state": str(row["state"] or ""),
+            "state_reason": _state_reason_text(str(row["state_reason"] or "")),
+            "flag": _cell_flag(str(row["routing"] or ""), str(row["state"] or ""),
+                               (str(row["submission_id"]), criterion_id) in escalated),
+        })
     try:
         refs = {
             str(row["submission_id"]): str(row["student_ref"])
-            for row in app._store.cohort(cohort_id).query(
+            for row in handle.query(
                 "SELECT submission_id, student_ref FROM submission")
         }
     except Exception:  # noqa: BLE001 — the ref column's absence is not the grades'
@@ -343,29 +534,55 @@ def results_screen_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     for submission_id, ref in refs.items():
         if submission_id in by_submission:
             by_submission[submission_id]["student_ref"] = ref
-    return {"run_id": run_id, "cohort_id": cohort_id, "students": list(by_submission.values())}
+    # The distribution's x-axis: the declared levels in the package's own order, merged
+    # across the run's grading points (a level two criteria both declare appears once).
+    seen_levels: dict[str, tuple[int, str]] = {}
+    for criterion, entries in scales.items():
+        for position, (name, _points) in enumerate(entries):
+            rank = (position, name)
+            if name not in seen_levels or rank < seen_levels[name]:
+                seen_levels[name] = rank
+    score_levels = [name for name, _rank in sorted(seen_levels.items(), key=lambda item: item[1])]
+    return {
+        "run_id": run_id,
+        "cohort_id": cohort_id,
+        "score_levels": score_levels,
+        "scales": [
+            {"criterion_id": criterion, "label": labels.get(criterion, criterion),
+             "levels": [name for name, _points in entries]}
+            for criterion, entries in sorted(scales.items())
+        ],
+        "students": list(by_submission.values()),
+    }
 
 
 def student_detail_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
-    """One student's detail: their grade record and their narrative — the text M-SYNTH
-    wrote, which is the student's own document a teacher reads on the student screen.
-    Refuses a read that names no submission (the caller's mistake, a 400)."""
+    """One student's detail (FR-UI-03g, extended by FR-UI-16/17): their grade record, their
+    narrative — the text M-SYNTH wrote — and, per grading point, the justification the
+    engineering trail grounds: the aggregate's own state reason, and each grader's verdict
+    with the evidence spans it cited, read from the verdict ledger in M-JUDGE's `work_id`
+    order (`FR-JUDGE-18`). The teacher-facing amendment history rides the grade's own
+    ledger entries — who, when, and why, with the level each amendment moved the grade
+    from and to. Refuses a read that names no submission (the caller's mistake, a 400)."""
     submission_id = str(query.get("submission_id") or "")
     run_row = _run_row_of(console, app, query)
     if run_row is None:
         raise ValueError("student detail names no run")
     if not submission_id:
         raise ValueError("student detail names no submission")
+    run_id = str(run_row["run_id"])
     cohort_id = str(run_row["cohort_id"])
     record = next(
-        (r for r in run_grade_records(app._store, str(run_row["run_id"]))
+        (r for r in run_grade_records(app._store, run_id)
          if str(r["submission_id"]) == submission_id),
         None,
     )
     student_ref = None
     narrative: list[dict[str, Any]] = []
+    criteria: list[dict[str, Any]] = []
+    amendment_history: list[dict[str, Any]] = []
+    handle = app._store.cohort(cohort_id)
     try:
-        handle = app._store.cohort(cohort_id)
         rows = handle.query(
             "SELECT student_ref FROM submission WHERE submission_id = :s", s=submission_id)
         if rows:
@@ -376,18 +593,105 @@ def student_detail_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
             for row in handle.query(
                 "SELECT level, question_id, text FROM narrative "
                 "WHERE run_id = :r AND submission_id = :s ORDER BY narrative_id",
-                r=str(run_row["run_id"]), s=submission_id,
+                r=run_id, s=submission_id,
             )
         ]
     except Exception:  # noqa: BLE001 — a ledger without the tables answers the grade alone
         pass
+    scales = _declared_scales(app, run_row)
+    labels = _grading_point_labels(app, run_row)
+    amendment_entries = _amendments_of_run(handle, run_id).get(submission_id, [])
+    escalation_pairs: set[tuple[str, str]] = set()
+    try:
+        escalation_pairs = {
+            (str(row["submission_id"]), str(row["criterion_id"]))
+            for row in handle.query(_ESCALATED_CELLS_SQL, run_id=run_id)
+            if str(row["submission_id"]) == submission_id
+        }
+    except Exception:  # noqa: BLE001 — a ledger without the work units flags nothing
+        escalation_pairs = set()
+    try:
+        cells = handle.query(
+            "SELECT criterion_id, band, routing, state, state_reason FROM criterion_score "
+            "WHERE run_id = :run_id AND submission_id = :submission_id "
+            "ORDER BY criterion_id",
+            run_id=run_id, submission_id=submission_id,
+        )
+    except Exception:  # noqa: BLE001 — a ledger without the scores answers the grade alone
+        cells = ()
+    grader_registry = _grader_labels()
+    for row in cells:
+        criterion_id = str(row["criterion_id"])
+        scale = scales.get(criterion_id, [])
+        stored_band = str(row["band"])
+        criterion_band = stored_band
+        for entry in amendment_entries:
+            if str(entry.get("criterion_id") or "") == criterion_id:
+                amended_level = _level_of(scale, entry.get("points"))
+                if amended_level is not None:
+                    criterion_band = amended_level
+        graders: list[dict[str, Any]] = []
+        try:
+            verdict_rows = handle.query(
+                _CELL_VERDICTS_SQL, run_id=run_id,
+                submission_id=submission_id, criterion_id=criterion_id)
+        except Exception:  # noqa: BLE001 — a cell without verdicts shows the aggregate alone
+            verdict_rows = ()
+        for vrow in verdict_rows:
+            cited: list[str] = []
+            raw_spans = vrow["cited_spans"]
+            if raw_spans:
+                try:
+                    parsed = json.loads(str(raw_spans))
+                except ValueError:
+                    parsed = []
+                if isinstance(parsed, list):
+                    cited = [str(span.get("text") or "") for span in parsed
+                             if isinstance(span, dict) and span.get("text")]
+            graders.append({
+                "grader": _grader_label(grader_registry, str(vrow["judge_id"])),
+                "score_level": str(vrow["band"]),
+                "cited": cited,
+            })
+        criteria.append({
+            "criterion_id": criterion_id,
+            "label": labels.get(criterion_id, criterion_id),
+            "criterion_band": criterion_band,
+            "stored_band": stored_band,
+            "routing": str(row["routing"] or ""),
+            "state": str(row["state"] or ""),
+            "state_reason": _state_reason_text(str(row["state_reason"] or "")),
+            "flag": _cell_flag(str(row["routing"] or ""), str(row["state"] or ""),
+                               (submission_id, criterion_id) in escalation_pairs),
+            "levels": [name for name, _points in scale],
+            "graders": graders,
+        })
+    # The current revision's amendment entries, rendered with the level each moved the
+    # grade from (the aggregation's stored level — M-GRADE never writes criterion scores)
+    # and to (the declared level the amended points name). The pair is what the teacher
+    # sentence renders back ("Final grade changed from 'X' to 'Y' — reason recorded").
+    for entry in amendment_entries:
+        criterion_id = str(entry.get("criterion_id") or "")
+        scale = scales.get(criterion_id, [])
+        stored = next((c["stored_band"] for c in criteria
+                       if c["criterion_id"] == criterion_id), "")
+        amendment_history.append({
+            "criterion_id": criterion_id,
+            "from_band": stored,
+            "to_band": _level_of(scale, entry.get("points")) or "",
+            "actor": str(entry.get("actor") or ""),
+            "reason": str(entry.get("reason") or ""),
+            "at": str(entry.get("at") or ""),
+        })
     return {
-        "run_id": str(run_row["run_id"]),
+        "run_id": run_id,
         "submission_id": submission_id,
         "student_ref": student_ref,
         "total": None if record is None else record["total"],
         "state": None if record is None else str(record["state"] or ""),
         "narrative": narrative,
+        "criteria": criteria,
+        "amendments": amendment_history,
     }
 
 

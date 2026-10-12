@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 import { Screen } from "./Screen";
+import { Banner, Skeleton } from "../state/StateDisplay";
+import { classifyReadFailure } from "../state/model";
 import type { ScreenRead } from "../useScreenRead";
 
 /**
@@ -11,8 +13,10 @@ const RECOVERY_TEXT = "check that the console service is running";
 
 /**
  * One destination screen over one read: the level-1 heading, then either the named failure
- * with an explicit retry (CT-UI-04: named, recoverable — the retry re-runs the read) or the
- * screen's own content over the answered document. A read still in flight is said so.
+ * as a banner (FR-UI-14's screen tier: what failed, why, and the retry as its one click —
+ * CT-UI-04's named, recoverable shape) or the screen's own content over the answered
+ * document. A read still in flight is a skeleton placeholder, never a spinner in
+ * mid-content (§3.3.8).
  */
 export function ReadScreen<T>({
   title,
@@ -27,15 +31,19 @@ export function ReadScreen<T>({
     <Screen title={title}>
       {read.error !== null ? (
         <>
-          <p role="alert" className="screen-alert">
-            The console could not read this screen ({read.error}). {RECOVERY_TEXT}.
-          </p>
+          <Banner
+            message={{
+              ...classifyReadFailure(read.error),
+              why: `${read.error}. ${RECOVERY_TEXT}.`,
+            }}
+            onAction={read.retry}
+          />
           <button type="button" className="button" onClick={read.retry}>
             Retry
           </button>
         </>
       ) : read.data === null ? (
-        <p>Reading.</p>
+        <Skeleton />
       ) : (
         children(read.data)
       )}
