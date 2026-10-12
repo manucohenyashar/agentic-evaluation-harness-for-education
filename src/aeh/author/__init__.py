@@ -23,14 +23,19 @@ from __future__ import annotations
 from aeh.conf import ConfigurationError, ModelRef  # re-exports the chain vocabulary
 from aeh.prov import InferenceProvider
 
-from .errors import AuthoringInputError, DocumentRefusedError, OverwriteRefusedError
+from .errors import AuthoringCancelled, AuthoringInputError, DocumentRefusedError, \
+    OverwriteRefusedError
+from .edit import EDIT_OPERATIONS, EditChange, EditOutcome, apply_structured_edit, \
+    approval_of, content_digest, with_approval_marker
 from .extraction import AUTHOR_TRANSCRIBE_TEMPLATE_V, AuthoringDocument, PageText, \
     TRANSCRIBE_MIN_TEXT_LAYER_CHARS
 from .grades import AUTHOR_GRADES_TEMPLATE_V
 from .intake import check_document, document_text, log_intake, normalize_document, \
     normalize_documents, normalized_from_authoring
+from .progress import commit_artifacts
 from .inventory import AUTHOR_INVENTORY_TEMPLATE_V
 from .rubric import AUTHOR_RUBRIC_TEMPLATE_V
+from .review import run_review
 from .service import PROMPT_VERSIONS, AuthoringService, authoring_service
 from .settings import (
     ATTEMPTS_ENV,
@@ -44,6 +49,10 @@ from .settings import (
     AuthoringSettings,
 )
 from .types import (
+    AuthoringCancel,
+    AuthoringObserver,
+    AuthoringProgress,
+    AuthoringStage,
     Block,
     BlockKind,
     DraftResult,
@@ -72,6 +81,13 @@ __all__ = [
     "StepOutcome",
     "ItemStatus",
     "AuthoringSettings",
+    # the console-drivable run surface (FR-AUTHOR-29/30): the progress record the
+    # observer receives, the observer/cancel callables, and the boundary error
+    "AuthoringProgress",
+    "AuthoringStage",
+    "AuthoringObserver",
+    "AuthoringCancel",
+    "AuthoringCancelled",
     # the §3.1 data-structure aliases
     "StepId",
     # the module's own errors
@@ -109,6 +125,21 @@ __all__ = [
     "AUTHOR_TRANSCRIBE_TEMPLATE_V",
     "TRANSCRIBE_MIN_TEXT_LAYER_CHARS",
     "PROMPT_VERSIONS",
+    # the draft's structured edit path (FR-CONSOLE-56, #760): the editor's operation
+    # vocabulary, the validate-and-persist entry point, and the approval marker's read
+    # and write sides (the approve gate's idempotency record rides the draft file)
+    "EDIT_OPERATIONS",
+    "EditChange",
+    "EditOutcome",
+    "apply_structured_edit",
+    "approval_of",
+    "content_digest",
+    "with_approval_marker",
+    # the review walk and the atomic artifact committer the console's synchronous draft
+    # actions drive (`FR-CONSOLE-55/62`, #760): re-exported here so a caller drives the
+    # library through its one public surface
+    "run_review",
+    "commit_artifacts",
     # the extraction records (the report's Documents section speaks in these)
     "AuthoringDocument",
     "PageText",

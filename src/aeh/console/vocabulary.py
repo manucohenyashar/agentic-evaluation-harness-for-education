@@ -49,6 +49,30 @@ CONTROL_SURFACE_ACTIONS: tuple[str, ...] = (
     # written atomically. `CT-CONSOLE-02`'s enumeration must include it from the moment it
     # exists, so it enters this tuple with its effect, not after it.
     "update configuration",
+    # The console-redesign delta's class vocabulary (`FR-CONSOLE-53`, #761, ADR-48): a class
+    # is a cohort ledger in a roster-only state, created from a typed or pasted student list.
+    # A separate enumerated row beside `create cohort` rather than a widened one, because the
+    # two names are the console's vocabulary distinction (R0's map) over one storage concept,
+    # and the SPA screens each by its own flow.
+    "create class",
+    # `FR-CONSOLE-54` (#761, ADR-48): copies a class ledger's roster into a new grading
+    # cohort, consent state carried; the class stays intact and may seed many cohorts.
+    "create cohort from class",
+    # `FR-CONSOLE-63` (#761, §3.2.3): the roster file import — the one import path cohorts
+    # and classes have. Targets the class state; the preview before its commit is the
+    # `roster preview` read below, not a second write path.
+    "import roster file",
+    # The console-redesign delta's authoring actions (#760): §3.2.2's five rows. The four
+    # authoring verbs drive `AuthoringService` through its console seam (`FR-AUTHOR-29/30`)
+    # — a draft as a staged job, a review and an edit synchronous over the draft file, an
+    # approval through M-PKG's own build door — and `cancel job` reaches every job the
+    # registry holds (`ADR-47`), delegating for a run to the `pause/resume` row. They enter
+    # this tuple with their effects, per `CT-CONSOLE-02`'s enumeration rule.
+    "draft package from documents",  # FR-CONSOLE-61
+    "answer authoring review",       # FR-CONSOLE-55
+    "edit draft package",            # FR-CONSOLE-56
+    "approve draft package",         # FR-CONSOLE-62
+    "cancel job",                    # FR-CONSOLE-57
 )
 
 
@@ -113,6 +137,11 @@ PARKED_READ = "parked"
 CONFIG_READ = "config"
 AUTHORING_PREVIEW_READ = "authoring preview"
 AUTHORING_DRAFT_READ = "authoring draft"
+#: The roster file import's preview (`FR-CONSOLE-63`, #761): a POST read whose body carries
+#: the uploaded roster file's text — file content can never travel in a URL or a query
+#: string (`CT-CONSOLE-34`). It parses the rows and lists the malformed ones, and writes
+#: nothing anywhere; the commit is the enumerated `import roster file` action above.
+ROSTER_PREVIEW_READ = "roster preview"
 
 
 #: The export reads (FR-CONSOLE-58, FR-CONSOLE-59, #762): the run's results workbook and
@@ -213,6 +242,48 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
     # that: an action whose effect lands outside the store is still enumerated (so the census
     # and the dynamic sweep see it), it just admits no row.
     "update configuration": (),
+    # `FR-CONSOLE-53`/`FR-CONSOLE-54`/`FR-CONSOLE-63` (#761, ADR-48): all three write the
+    # same Tier C cohort and roster rows the roster editor's `create cohort` writes — one
+    # storage concept, two states; no field a scoring prompt reads (NFR-PROV-04).
+    "create class": (
+        "cohort.cohort_id",
+        "cohort.consent_class",
+        "cohort.created_at",
+        "roster.cohort_id",
+        "roster.student_ref",
+        "roster.full_name",
+    ),
+    "create cohort from class": (
+        "cohort.cohort_id",
+        "cohort.consent_class",
+        "cohort.created_at",
+        "roster.cohort_id",
+        "roster.student_ref",
+        "roster.full_name",
+    ),
+    "import roster file": (
+        "cohort.cohort_id",
+        "cohort.consent_class",
+        "cohort.created_at",
+        "roster.cohort_id",
+        "roster.student_ref",
+        "roster.full_name",
+    ),
+    # The authoring actions (#760): three write nothing the store owns — a draft's state is
+    # the draft files (`ADR-45`) and a review/edit rewrite them through `aeh.author`; the
+    # empty tuples declare that, exactly as `update configuration`'s does. `approve draft
+    # package` builds through M-PKG's own door (`build_package`), whose flip touches the
+    # same two version fields `publish package` names. `cancel job` pauses a run through
+    # the one `run.status` row the run monitor writes; an authoring job's cancellation is
+    # cooperative and touches no row.
+    "draft package from documents": (),
+    "answer authoring review": (),
+    "edit draft package": (),
+    "approve draft package": (
+        "package_version.locked",
+        "package_version.published_by",
+    ),
+    "cancel job": ("run.status",),
 }
 
 

@@ -9,12 +9,19 @@ format normalizes into, which `AuthoringService.draft` consumes.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
 #: The reasoning steps, in run order (`StepId` in the design's data-structures block).
 StepId = Literal["inventory", "rubric", "grades"]
+
+#: The progress stages the console renders (`FR-AUTHOR-30`'s `AuthoringProgress.stage`):
+#: the closed set of phases a draft, from-scratch or review run moves through. The stage
+#: names are the console's own vocabulary — never logged for it to scrape (`FR-AUTHOR-30`:
+#: the observer is the console's only progress source).
+AuthoringStage = Literal["reading documents", "drafting", "reviewing", "writing draft"]
 
 #: An item's outcome status: resolved (the proposal was accepted whole), derived (a
 #: deterministic pre-pass filled it from stated content), placeholder (a named gap stands —
@@ -63,6 +70,36 @@ class ReviewResult:
 
     ready: bool
     remaining: tuple[str, ...]  # item ids still placeholder/unresolved
+
+
+@dataclass(frozen=True)
+class AuthoringProgress:
+    """One step boundary's progress, in stage/item terms the console renders directly
+    (`FR-AUTHOR-30`). The service emits it to the observer between steps, never mid-step,
+    and checks the cancel at the same boundaries. `done` counts the stage's completed items
+    and never decreases within a stage (`CT-AUTHOR-25`); `total` is the stage's item count
+    when it is known (`None` while a stage's denominator is still being discovered — the
+    drafting stage cannot know its item count until the inventory names the questions);
+    `current` names the item just completed; `attempt` is the calls the item spent and
+    `attempts` the budget it had (`1`/`1` for the deterministic steps that make no model
+    call; a *derived* rubric row — a question whose criterion the answers line already
+    determined — reports `attempt=0`, having spent nothing)."""
+
+    stage: AuthoringStage
+    done: int
+    total: int | None
+    current: str
+    attempt: int
+    attempts: int
+
+
+#: The observer a console hands the service: one `AuthoringProgress` per step boundary,
+#: called between steps, never mid-step (`FR-AUTHOR-30`).
+AuthoringObserver = Callable[[AuthoringProgress], None]
+
+#: The cooperative cancel check: called at the same boundaries the observer is; a `True`
+#: stops the run at that boundary with `AuthoringCancelled` (`CT-AUTHOR-24`).
+AuthoringCancel = Callable[[], bool]
 
 
 @dataclass(frozen=True)

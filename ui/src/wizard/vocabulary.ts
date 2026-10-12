@@ -144,3 +144,97 @@ export function entityTone(state: string): "success" | "warning" | "danger" | "i
 export function missingPiecesLabel(count: number): string {
   return count === 1 ? "1 missing piece" : `${count} missing pieces`;
 }
+
+// --- the secondary pages' vocabulary (FR-UI-18..21) -------------------------------------------------
+//
+// The jobs table, the issues cards and the settings page render the same rule as the
+// stepper: the server's enum words are renamed here before they reach a screen, and a value
+// this build does not know falls through to the neutral wording, never an error
+// (CT-CONSOLE-38).
+
+/** A job's state, as the jobs table shows it. The server's five words (CT-CONSOLE-37) map
+ * to teacher words; anything newer reads as neutral (CT-CONSOLE-38). */
+export function jobStateLabel(state: string): string {
+  switch (state) {
+    case "queued":
+      return "Waiting";
+    case "running":
+      return "Running";
+    case "succeeded":
+      return "Done";
+    case "failed":
+      return "Failed";
+    case "cancelled":
+      return "Stopped";
+    default:
+      return "Needs attention";
+  }
+}
+
+/** A job state badge's tone — the same token groups the stage badges use (CT-UI-10). */
+export function jobTone(state: string): "success" | "warning" | "danger" | "info" | "neutral" {
+  switch (state) {
+    case "succeeded":
+      return "success";
+    case "running":
+      return "info";
+    case "failed":
+      return "danger";
+    default:
+      return "neutral";
+  }
+}
+
+/** A job's kind, as the jobs table's first column names it. A kind this build does not
+ * know renders as the server's own word, spaced — a name, not a state. */
+export function jobKindLabel(kind: string): string {
+  if (kind === "run") {
+    return "Grading run";
+  }
+  const spaced = kind.replace(/_/g, " ").trim();
+  return spaced === "" ? "Job" : spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+/** A job's cost as the table shows it: the read's own figure, dollars to the cent, and a
+ * plain dash when the job carries none yet — never an invented zero (CT-UI-08). */
+export function jobCostLabel(costUsd: number | null): string {
+  return costUsd === null ? "—" : `$${costUsd.toFixed(2)}`;
+}
+
+/** A duration in seconds as the jobs table shows it, in whole clock units. */
+export function durationLabel(seconds: number | null): string {
+  if (seconds === null) {
+    return "—";
+  }
+  const whole = Math.max(0, Math.round(seconds));
+  if (whole < 60) {
+    return `${whole}s`;
+  }
+  const minutes = Math.floor(whole / 60);
+  if (minutes < 60) {
+    return `${minutes}m ${whole % 60}s`;
+  }
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+/** An issue card's severity tone, derived from the server's own source word (FR-UI-18's
+ * icon+label+colour severity, sourced honestly): a second-opinion note informs, every
+ * other known source warns, and an unknown source stays neutral (CT-CONSOLE-38). */
+export function issueTone(source: string): "success" | "warning" | "danger" | "info" | "neutral" {
+  switch (source) {
+    case "second opinion":
+      return "info";
+    case "grading step":
+    case "parked paper":
+    case "grading point":
+      return "warning";
+    default:
+      return "neutral";
+  }
+}
+
+/** An issue card's severity label — the words beside the icon (CT-UI-10: never colour
+ * alone). An unknown source reads as neutral (CT-CONSOLE-38). */
+export function issueSeverityLabel(source: string): string {
+  return issueTone(source) === "info" ? "Information" : "Needs attention";
+}

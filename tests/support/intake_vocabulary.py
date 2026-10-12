@@ -15,7 +15,7 @@ If #754 ships a name differently, the rename is one line in this file and nowher
 | `INTAKE_MODULE` | `aeh.author` | **design-named** (§3.1 module inventory; `aeh.author` itself is shipped, #690) — disclosed risk: if #754 ships the intake as a submodule (`aeh.author.intake`), the rename is this one line |
 | `INTAKE_SURFACE` | `NormalizedDocument`, `Block`, `IntakeWarning` | **design-named** (§3.1.1 Interfaces listing, verbatim names) |
 | `INTAKE_ENTRY` | `normalize_document(path) -> NormalizedDocument` | **invented here** — one call per file, the smallest surface the §3.1.1 field list supports; the design says only that `draft` consumes the result, so the entry point's name is this suite's disclosed bet |
-| `INTAKE_REFUSAL` | `IntakeRefused` | **invented here** — the exception FR-AUTHOR-28's refusals travel as; the design pins the sentences and the "refusal, not an error" behaviour (CT-AUTHOR-23) but no exception name |
+| `INTAKE_REFUSAL` | `DocumentRefusedError` | **resolved** — the bet was `IntakeRefused`; #754 shipped `DocumentRefusedError` (in `aeh.author.errors`, re-exported from the package root), and the rename is this one line, the path this file exists for |
 | `WARNING_CODES` | the five §3.1.1 codes | **design-named** (§3.1.1's IntakeWarning listing) |
 | `SOURCE_FORMATS` | `docx` / `txt` / `pdf` | **design-named** (§3.1.1's `source_format` domain) |
 
@@ -49,8 +49,9 @@ INTAKE_SURFACE = ("NormalizedDocument", "Block", "IntakeWarning")
 #: The assumed one-file entry point (invented here — see the table above).
 INTAKE_ENTRY = "normalize_document"
 
-#: The assumed refusal exception (invented here — see the table above).
-INTAKE_REFUSAL = "IntakeRefused"
+#: The refusal exception (`DocumentRefusedError`, the name #754 shipped — see the table
+#: above; the `IntakeRefused` bet this name replaced was wrong and the rename is this line).
+INTAKE_REFUSAL = "DocumentRefusedError"
 
 #: §3.1.1's IntakeWarning code vocabulary, exactly.
 WARNING_CODES = (

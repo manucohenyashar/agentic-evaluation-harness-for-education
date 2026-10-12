@@ -1,15 +1,21 @@
 import { useEffect, useMemo, useState, type ComponentType, type ReactElement } from "react";
 import type { ContextDoc } from "./api";
+import { HelpPanel } from "./components/HelpPanel";
 import { Navigate } from "./navigate";
 import { BlindSample } from "./screens/BlindSample";
 import { ClassSetup } from "./screens/ClassSetup";
 import { Help } from "./screens/Help";
+import { Issues } from "./screens/Issues";
+import { Jobs } from "./screens/Jobs";
+import { Logs } from "./screens/Logs";
 import { Monitor } from "./screens/Monitor";
 import { PackageSetup } from "./screens/PackageSetup";
+import { Parked } from "./screens/Parked";
 import { Papers } from "./screens/Papers";
 import { Results } from "./screens/Results";
 import { Review } from "./screens/Review";
 import { RunStart } from "./screens/RunStart";
+import { Settings } from "./screens/Settings";
 import { StudentDetail } from "./screens/StudentDetail";
 import { SystemStatus } from "./screens/SystemStatus";
 import { NotFound } from "./screens/screens";
@@ -48,16 +54,11 @@ const ROUTES: Record<string, ComponentType> = {
   "/status": SystemStatus,
 };
 
-/** The routes later stories own (#764, #766): named, reachable, and saying so. */
+/** The routes a later story owns (#764): named, reachable, and saying so. */
 const COMING: Record<string, string> = {
   "/package/author": "Author the package",
   "/package/review": "Review the draft",
   "/package/edit": "Edit the package",
-  "/issues": "Issues",
-  "/logs": "Logs",
-  "/parked": "Parked",
-  "/jobs": "Jobs",
-  "/settings": "Settings",
 };
 
 /** A results row's student link: `#/results/students/<submission id>`. */
@@ -90,6 +91,7 @@ function addressOf(hash: string): Address {
 
 export function App() {
   const [address, setAddress] = useState<Address>(() => addressOf(window.location.hash));
+  const [helpOpen, setHelpOpen] = useState(false);
   const { context, failed, retry } = useContextPoll();
 
   useEffect(() => {
@@ -142,6 +144,17 @@ export function App() {
     reads.parked.error !== null ||
     reads.jobs.error !== null ||
     reads.impact.error !== null;
+  // Which runs are actually paused: the jobs read mirrors a paused run's job as
+  // `running`, so the jobs page takes the real states from here (the context read's own).
+  const pausedRunIds = useMemo(
+    () =>
+      context === null
+        ? []
+        : context.runs
+            .filter((run) => run.state === "paused")
+            .map((run) => run.run_id),
+    [context],
+  );
   const retryAll = (): void => {
     retry();
     reads.papers.retry();
@@ -206,6 +219,16 @@ export function App() {
         retry={retryAll}
       />
     );
+  } else if (address.path === "/issues") {
+    screen = <Issues runId={selection.runId} />;
+  } else if (address.path === "/logs") {
+    screen = <Logs runId={selection.runId} />;
+  } else if (address.path === "/parked") {
+    screen = <Parked />;
+  } else if (address.path === "/jobs") {
+    screen = <Jobs pausedRunIds={pausedRunIds} />;
+  } else if (address.path === "/settings") {
+    screen = <Settings />;
   } else {
     const coming = COMING[address.path];
     const Route = ROUTES[address.path];
@@ -226,6 +249,8 @@ export function App() {
             context={context}
             selection={selection}
             onSelection={(patch) => goTo(address.path, patch)}
+            onHelp={() => setHelpOpen(!helpOpen)}
+            helpOpen={helpOpen}
           />
           <div className="shell-body">
             <Sidebar
@@ -235,6 +260,17 @@ export function App() {
             />
             <main className="screen">{screen}</main>
           </div>
+          {helpOpen && (
+            <HelpPanel
+              route={address.path}
+              refs={[
+                selection.classId,
+                selection.packageId,
+                selection.runId,
+              ].filter((ref): ref is string => ref !== null)}
+              onClose={() => setHelpOpen(false)}
+            />
+          )}
         </div>
       </ToastHost>
     </Navigate.Provider>
@@ -242,7 +278,7 @@ export function App() {
 }
 
 /**
- * A route a later story owns (#764, #766): reachable now, named for what it will be, and
+ * A route a later story owns (#764): reachable now, named for what it will be, and
  * pointing back at the wizard — no fake content, no dead end.
  */
 function ComingScreen({ title }: { title: string }) {

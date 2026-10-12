@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { FileText, TriangleAlert } from "lucide-react";
-import type { LogRecord, StudentDetail as DetailDoc } from "../api";
+import type { LogsDoc, StudentDetail as DetailDoc } from "../api";
 import { ReadScreen } from "../components/ReadScreen";
 import { OverrideForm, type OverrideChange } from "../components/Override";
 import { useToast } from "../state/StateDisplay";
@@ -29,7 +29,7 @@ export function StudentDetail({ submissionId }: { submissionId: string }) {
   // The log panel rides the Details expander: it reads nothing until the teacher opens
   // the trail, and only with the run the drill-down's own read named.
   const data = read.data;
-  const logs = useScreenRead<{ run_id: string; records: LogRecord[] }>(
+  const logs = useScreenRead<LogsDoc>(
     showDetails && data !== null && data.run_id !== "" ? "/api/v1/logs" : null,
     data === null ? undefined : { run_id: data.run_id },
   );

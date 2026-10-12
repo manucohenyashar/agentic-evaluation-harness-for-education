@@ -155,17 +155,26 @@ def test_the_write_field_map_covers_every_declared_control_action():
     granularity. An action mapped to an empty tuple would silently drop out of every set operation
     built on this map.
 
-    The one deliberate empty tuple is `update configuration` (`FR-CONF-34`): the guided edit
-    writes the configuration file through M-CONF's `update_profile_edits` — no store row
-    anywhere. It is still enumerated (the census and the dynamic sweep must see it), and the
-    named exception below is what keeps a SECOND rowless action from slipping in unexamined.
+    The deliberate empty tuples, each a cited design decision rather than a gap: `update
+    configuration` (`FR-CONF-34`) writes the configuration file through M-CONF's
+    `update_profile_edits` — no store row anywhere; and the authoring review trio (`#760`)
+    whose state is the draft files themselves (`ADR-45`) — `draft package from documents`
+    stages blobs and starts a job, `answer authoring review` and `edit draft package`
+    rewrite the draft through `aeh.author`. Each is still enumerated (the census and the
+    dynamic sweep must see it), and the named exceptions below are what keep a further
+    rowless action from slipping in unexamined.
     """
     assert set(CONSOLE_WRITE_FIELDS) == set(CONTROL_SURFACE_ACTIONS), (
         f"the write-field map and the action list disagree: "
         f"{sorted(set(CONSOLE_WRITE_FIELDS) ^ set(CONTROL_SURFACE_ACTIONS))}"
     )
     empty = [action for action, fields in CONSOLE_WRITE_FIELDS.items() if not fields]
-    assert empty == ["update configuration"], (
+    assert empty == [
+        "update configuration",
+        "draft package from documents",
+        "answer authoring review",
+        "edit draft package",
+    ], (
         f"the rowless control actions changed: {empty}. An action writing no store row is a "
         "design decision to cite here, not a gap to shrug at."
     )

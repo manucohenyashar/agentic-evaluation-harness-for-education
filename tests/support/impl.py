@@ -484,6 +484,48 @@ _AUTHOR_REPAIR_PROBE = (
     "raise SystemExit(0 if pairs else 1)\""
 )
 
+# --- #768, the intake suite's two held halves -----------------------------------------------
+# Two `command` probes for the TC-AUTHOR-32..42 suite, where a name key cannot discriminate
+# (the names have already landed — #754 shipped the whole §3.1.1 surface — so only the
+# behaviour itself tells the blocker from the resolved state).
+#
+# `_INTAKE_DIVERGENCE_PROBE` guards TC-AUTHOR-34/36's fixture halves, which assert two
+# §5.1-declared warnings the shipped intake does not emit: AF-15's `image_not_carried` (the
+# picture IS carried as an `image_ref` block — silently, where §5.1 and FR-AUTHOR-25 declare
+# "a warning plus a placeholder") and AF-17's `structure_guessed` (the heading-less prose
+# `.txt` emits zero warnings, where §5.1's row declares the warning). It exits 0 exactly when
+# BOTH fire, so the gate keeps naming the remaining half the day either lands alone. The
+# module is resolved through `intake_vocabulary.INTAKE_MODULE`, so the rename path stays one
+# line even here.
+_INTAKE_DIVERGENCE_PROBE = (
+    "python -c \"import sys; sys.path.insert(0, 'src');"
+    "import pathlib\n"
+    f"from {_INTAKE_MODULE_VOCAB} import normalize_document\n"
+    "root = pathlib.Path('fixtures', 'F-AUTHOR')\n"
+    "af15 = normalize_document(sorted((root / 'AF-15').glob('*.docx'))[0])\n"
+    "ok = any(w.code == 'image_not_carried' for w in af15.warnings)\n"
+    "af17 = normalize_document(sorted((root / 'AF-17').glob('*.txt'))[0])\n"
+    "ok = ok and any(w.code == 'structure_guessed' for w in af17.warnings)\n"
+    "raise SystemExit(0 if ok else 1)\""
+)
+
+# `_INTAKE_CAPTURE_PROBE` guards TC-AUTHOR-38's cross-format carry-over journey (#768): the
+# plan's rung-2 journey replays a `.docx` draft and re-drafts from its `.txt` twin, which
+# needs recordings quoting BOTH twin names — and the corpus holds none (all 80 recordings
+# quote only the PDF fixtures AF-01..13; a capture pass never ran for the intake fixtures).
+# It exits 0 exactly when a recording carries each `BEGIN DOCUMENT:` marker, which is the
+# capture pass that makes the journey replayable.
+_INTAKE_CAPTURE_PROBE = (
+    "python -c \"import pathlib\n"
+    "needles = (b'BEGIN DOCUMENT: hist7-rome-01-test-and-grading.docx',\n"
+    "           b'BEGIN DOCUMENT: hist7-rome-01-test-and-grading.txt')\n"
+    "hits = set()\n"
+    "for p in pathlib.Path('fixtures', 'F-AUTHOR', 'recordings').glob('*.json'):\n"
+    "    data = p.read_bytes()\n"
+    "    hits.update(n for n in needles if n in data)\n"
+    "raise SystemExit(0 if len(hits) == len(needles) else 1)\""
+)
+
 
 WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # issue: (kind, target, tests to unmark)
@@ -2232,38 +2274,55 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
 
     # --- TC-AUTHOR-32..38's fixture halves (#753), tests/unit/author/test_tc_author_32_38_intake_fixtures.py
     #
-    # Keyed `symbol` on `aeh.author:NormalizedDocument` — the one §3.1.1-declared TYPE the
-    # intake tier must ship, and the console-redesign design delta names it verbatim, so the
-    # key cannot fire early: #690 built `aeh.author` without an intake surface (the module
-    # exists; this type does not), so the probe stays unresolved until #754 lands the
-    # §3.1.1 representation. It cannot fire late either: that representation IS #754's
-    # deliverable, so the day the tier lands, this resolves. The case bodies are surface
-    # assertions on purpose — they normalize one corpus fixture and assert the outcome class
-    # its `expected.toml` states (the #710 outcome-test shape) — which is why a symbol key
-    # on the design-named type is the honest root rather than a `command` probe of refusal
-    # behaviour: the behaviour lives in the implementing story's own suite.
+    # The original `symbol` entry on `aeh.author:NormalizedDocument` LANDED (#754): the
+    # intake tier shipped the §3.1.1 surface (`normalize_document`, `normalize_documents`,
+    # the three value types, and `DocumentRefusedError` — the vocabulary's `IntakeRefused`
+    # bet renamed, the one-line path this block's disclosed-bets section described), and the
+    # fixture-half file was re-checked GREEN at the unmarking per the original entry's own
+    # rule. Ten of its twelve cases pass unmarked. The two that do not are NOT test bugs —
+    # they are real implementation-vs-corpus divergences, disclosed here and held marked
+    # under the `command` entry below (a name key cannot discriminate: every §3.1.1 name has
+    # already landed, so only the divergent behaviour itself tells blocker from resolved):
     #
-    # Disclosed bets (tests/support/intake_vocabulary.py, one place): the entry function is
-    # assumed `normalize_document(path) -> NormalizedDocument` and the refusal exception
-    # `IntakeRefused` — §3.1.1 pins the three value types by name but NO entry point, so
-    # the tests resolve both through the vocabulary's names. Deliberately NOT a conjunction
-    # over the whole vocabulary surface (`INTAKE_SYMBOLS`): a conjunction including an
-    # invented entry-point name would never resolve if #754 spelled that name differently,
-    # leaving the cases red-but-unkeyed forever — the worse direction. The re-check rule
-    # covers the invented-name risk instead.
+    #   * TC-AUTHOR-34: AF-15's picture IS carried (an `image_ref` block,
+    #     `stats.image_count == 1`) but NO `image_not_carried` warning fires — where the
+    #     design delta's §5.1 AF-15 row and FR-AUTHOR-25 both declare the carried figure as
+    #     "a warning plus a placeholder". A silently carried figure is precisely the honesty
+    #     gap the code exists for.
+    #   * TC-AUTHOR-36's warning limb: AF-17 (a heading-less prose `.txt`) emits ZERO
+    #     warnings, where §5.1's AF-17 row declares `structure_guessed` ("draft builds,
+    #     review asks to confirm the outline"). FR-AUTHOR-26's candidate-rule letter is
+    #     consistent with zero candidates for AF-17 — a genuine spec tension — but the
+    #     corpus is census-pinned to §5.1, so the row's warning is the pinned half. The
+    #     draft-builds limb is NOT held: it passes unmarked in #768's suite
+    #     (`test_tc_author_36_af17_the_guessed_outline_still_drafts`).
     #
-    # Rename path: one line in `tests/support/intake_vocabulary.py` (`INTAKE_ENTRY`,
-    # `INTAKE_REFUSAL`, or `INTAKE_MODULE` if the intake ships as a submodule such as
-    # `aeh.author.intake`) plus the case bodies' `require()` lists, nowhere else.
-    #
-    # At resolution: re-check the file GREEN before unmarking, never on the notice alone —
-    # the corpus's `warnings` entries are presence-not-exhaustiveness, so a
-    # differently-spelled warning surface could resolve the probe and still leave cases red
-    # inside TEST_CMD.
-    "#754 intake tier — the AF-14..21 fixture halves (TC-AUTHOR-32..38, test story #753)": (
-        "symbol",
-        f"{_INTAKE_MODULE_VOCAB}:NormalizedDocument",
+    # The probe (`_INTAKE_DIVERGENCE_PROBE`, built above) exits 0 exactly when BOTH warnings
+    # fire, so the gate keeps naming the remaining half the day either lands alone. At
+    # resolution: re-check the fixture-half file GREEN before unmarking, never on the notice
+    # alone.
+    "#754 intake tier — the corpus-divergence halves (TC-AUTHOR-34/36, test story #753)": (
+        "command",
+        _INTAKE_DIVERGENCE_PROBE,
         ("tests/unit/author/test_tc_author_32_38_intake_fixtures.py",),
+    ),
+
+    # --- TC-AUTHOR-38's cross-format carry-over journey (#768), tests/unit/author/test_tc_author_32_42_intake_suite.py
+    #
+    # The plan's rung-2 journey replays a `.docx` draft and re-drafts from its `.txt` twin,
+    # which needs recordings quoting BOTH twin names — and the corpus holds none: all 80
+    # recordings quote only the PDF fixtures AF-01..13, because a capture pass never ran for
+    # the intake fixtures. The probe (`_INTAKE_CAPTURE_PROBE`, built above) exits 0 exactly
+    # when recordings carry each twin's `BEGIN DOCUMENT:` marker — the capture pass that
+    # makes the journey replayable — so the case stays marked, its red naming the missing
+    # capture, and the journey's two disclosed premise conflicts are documented on the test
+    # itself (the package id embeds the source extension, so a cross-format re-draft of the
+    # same stem computes a different package id and the carry-over cannot fire as written;
+    # and AF-14's corpus outcome is `resolved`, not the plan's "two placeholders" walk).
+    "#754 intake tier — TC-AUTHOR-38's cross-format carry-over capture pass": (
+        "command",
+        _INTAKE_CAPTURE_PROBE,
+        ("tests/unit/author/test_tc_author_32_42_intake_suite.py",),
     ),
 
 }

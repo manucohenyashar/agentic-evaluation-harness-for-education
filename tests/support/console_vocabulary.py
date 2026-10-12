@@ -168,14 +168,31 @@ DELTA_CONTROL_ACTIONS: dict[str, str] = {
     # confirmation is the API's — `CT-CONSOLE-30` admits it only as an enumerated control
     # row through M-SETUP's `publish` (the lock flip), never a route beside the enumeration.
     "publish package": "FR-UI-05",
+    # The console-redesign delta's class vocabulary (#761, ADR-48): a class is a cohort
+    # ledger in a roster-only state, so all three write the same Tier C rows `create cohort`
+    # writes — one storage concept, two states, no new table.
+    "create class": "FR-CONSOLE-53",
+    "create cohort from class": "FR-CONSOLE-54",
+    "import roster file": "FR-CONSOLE-63",
 }
 
 #: The control actions the console-redesign delta adds (`docs/design/
 #: console_redesign_design_delta.md` §3.4), each with the requirement that makes it one. Kept
 #: apart from `DELTA_CONTROL_ACTIONS` — that one transcribes the operator-requirements delta,
 #: and each document's actions are cited from their own.
+#:
+#: The five authoring rows come from the delta's §3.2.2 behaviour table (`#760`). Four cite
+#: the `FR-CONSOLE` id the delta names for them; `approve draft package`'s requirement,
+#: `FR-CONSOLE-62`, is defined by the test plan (`TC-CONSOLE-64` traces it) but the delta's
+#: §3.2.2 row for the action carries no id — the pin test checks the id where its defining
+#: document states it.
 REDESIGN_CONTROL_ACTIONS: dict[str, str] = {
     "update configuration": "FR-CONF-34",
+    "draft package from documents": "FR-CONSOLE-61",
+    "answer authoring review": "FR-CONSOLE-55",
+    "edit draft package": "FR-CONSOLE-56",
+    "approve draft package": "FR-CONSOLE-62",
+    "cancel job": "FR-CONSOLE-57",
 }
 
 #: The whole enumerated write surface `FR-CONSOLE-32` pins: §11.8's fifteen plus the deltas'.

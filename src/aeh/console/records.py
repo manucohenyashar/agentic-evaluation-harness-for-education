@@ -57,13 +57,22 @@ class RenderedPage:
 @dataclass(frozen=True)
 class ControlOutcome:
     """What `perform` did: the rows written (none if refused, replayed or paused), whether the
-    action was refused, and, for a stale-screen refusal, the refresh request §3.19 requires."""
+    action was refused, and, for a stale-screen refusal, the refresh request §3.19 requires.
+
+    `next_action` is the redesign delta's addition (`CT-CONSOLE-33`, #761): what a refused
+    action names as the teacher's next step, in teacher language. The actions that refuse
+    without one leave it unset; the API carries it only when it is set, so no existing
+    outcome's shape changes."""
 
     rows_written: tuple[Any, ...] = ()
     refused: bool = False
     refresh_required: bool = False
     dispatched: bool = False
     detail: str = ""
+    next_action: str | None = None
+    #: The job id a dispatched background action started (`FR-CONSOLE-61`): the draft job
+    #: the jobs page then tracks. `None` for every synchronous action.
+    job_id: str | None = None
 
 
 @dataclass(frozen=True)

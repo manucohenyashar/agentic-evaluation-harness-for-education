@@ -1014,4 +1014,413 @@ textarea:focus-visible {
     flex-wrap: wrap;
     column-gap: var(--space-xs);
   }
+
+  /* The help panel covers the screen at phone width; a full column, not a strip. */
+  .help-panel {
+    position: fixed;
+    inset: 0;
+    max-width: none;
+    border-radius: 0;
+    border-left: none;
+  }
+}
+
+/*
+ * The secondary pages (#766, FR-UI-18..21). Same rule as every rule above: every value is
+ * a token of `tokens.json`'s scales, resolved through the custom properties the sheet
+ * already applies — nothing here restates a value of its own.
+ */
+
+/* The issues page: one card per issue, severity first (FR-UI-18). */
+.issues-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-sm);
+}
+
+.issue-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-md);
+  margin: 0;
+}
+
+.issue-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-sm);
+  margin: 0 0 var(--space-xs);
+}
+
+.issue-source {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+
+.issue-what {
+  font-weight: 700;
+  margin: 0 0 var(--space-xs);
+}
+
+.issue-affects {
+  margin: 0 0 var(--space-xs);
+}
+
+.issue-next {
+  margin: 0 0 var(--space-sm);
+  font-size: var(--font-size-sm);
+}
+
+/* The logs page: the run's records, stage first, time beside it (FR-UI-18). */
+.logs-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-sm);
+  margin: 0 0 var(--space-md);
+}
+
+.logs-filter label {
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+}
+
+.logs-filter input {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  color: var(--color-ink);
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: var(--font-size-sm);
+  padding: var(--space-xs) var(--space-sm);
+}
+
+.logs-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.log-row {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-sm) var(--space-md);
+  margin: 0 0 var(--space-sm);
+}
+
+.log-problem {
+  border-left: var(--space-sm) solid var(--color-danger);
+}
+
+.log-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-sm);
+}
+
+.log-stage {
+  font-weight: 700;
+}
+
+.log-at {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+
+.log-text {
+  margin: var(--space-xs) 0 0;
+}
+
+.log-detail {
+  margin: var(--space-xs) 0 0;
+  font-size: var(--font-size-sm);
+}
+
+.log-detail summary {
+  cursor: pointer;
+}
+
+.log-detail p {
+  margin: var(--space-xs) 0 0;
+  color: var(--color-muted);
+  white-space: pre-wrap;
+}
+
+.logs-pages {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-sm);
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* The parked page: one card per parked paper, its ways out beside it (FR-UI-19). */
+.parked-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-sm);
+}
+
+.parked-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-md);
+  margin: 0;
+}
+
+.parked-reason {
+  font-weight: 700;
+  margin: 0 0 var(--space-xs);
+}
+
+.parked-match {
+  margin: 0 0 var(--space-xs);
+}
+
+.parked-resolutions {
+  margin: 0 0 var(--space-sm);
+  padding-left: 1.25rem;
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+
+.parked-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+/* The jobs page: the jobs as a table, each row's details on demand (FR-UI-19). */
+.jobs-table {
+  width: 100%;
+}
+
+.job-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+}
+
+.job-detail-row > td {
+  background-color: var(--color-bg);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.job-detail {
+  margin: 0;
+}
+
+.job-detail-line {
+  margin: 0 0 var(--space-xs);
+}
+
+/* The settings page: the guided form over the projection's editable rows, everything else
+ * read-only beneath it (FR-UI-20). */
+.settings-form fieldset {
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  margin: 0 0 var(--space-md);
+  background-color: var(--color-surface);
+}
+
+.settings-form legend {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  padding: 0 var(--space-xs);
+}
+
+.settings-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-sm);
+  row-gap: var(--space-xs);
+  padding: var(--space-xs) 0;
+}
+
+.settings-row label,
+.settings-row dt {
+  font-weight: 700;
+  min-width: 14rem;
+}
+
+.settings-row dd {
+  margin: 0;
+}
+
+.settings-row input,
+.settings-row select {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  color: var(--color-ink);
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: var(--font-size-md);
+  padding: var(--space-xs) var(--space-sm);
+  min-width: 18rem;
+  flex: 1;
+}
+
+.settings-row-error input {
+  border-color: var(--color-danger);
+}
+
+.settings-error {
+  flex-basis: 100%;
+  color: var(--color-danger);
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+
+.settings-fixed {
+  margin: 0 0 var(--space-md);
+}
+
+.settings-fixed h2 {
+  font-size: var(--font-size-lg);
+  margin: 0 0 var(--space-sm);
+}
+
+.settings-list {
+  margin: 0;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.settings-list .settings-row {
+  border-bottom: 1px solid var(--color-line);
+}
+
+.settings-list .settings-row:last-child {
+  border-bottom: none;
+}
+
+/* The help-everywhere panel (FR-UI-21): a column over the screen's right edge, closable,
+ * carrying the manuals index, the screen's own manual section and the Q&A box. */
+.help-button {
+  display: inline-flex;
+  align-items: center;
+  column-gap: var(--space-xs);
+  margin-left: auto;
+}
+
+.help-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(24rem, 100%);
+  background-color: var(--color-surface);
+  border-left: 1px solid var(--color-line);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-md);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.help-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  column-gap: var(--space-sm);
+}
+
+.help-panel-head h2 {
+  display: inline-flex;
+  align-items: center;
+  column-gap: var(--space-xs);
+  font-size: var(--font-size-lg);
+  margin: 0;
+}
+
+.help-panel-section {
+  background-color: var(--color-bg);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  padding: var(--space-xs) var(--space-sm);
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+
+.help-panel-manual-title {
+  color: var(--color-muted);
+}
+
+.help-panel-manuals h3 {
+  font-size: var(--font-size-md);
+  margin: 0 0 var(--space-xs);
+}
+
+.help-panel-manuals ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.help-panel-manuals li {
+  padding: var(--space-xs) 0;
+  border-bottom: 1px solid var(--color-line);
+}
+
+.help-panel-manuals li:last-child {
+  border-bottom: none;
+}
+
+.help-panel .qa-panel {
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  max-width: none;
+}
+
+/* The help centre's manuals index (FR-UI-21). */
+.manuals-index {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-md);
+  max-width: 40rem;
+  margin: 0 0 var(--space-md);
+}
+
+.manuals-index h2 {
+  font-size: var(--font-size-lg);
+  margin: 0 0 var(--space-sm);
+}
+
+.manuals-index ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.manuals-index li {
+  padding: var(--space-xs) 0;
 }

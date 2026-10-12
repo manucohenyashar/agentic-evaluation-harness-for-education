@@ -107,12 +107,15 @@ def test_tc_console_c30_control_the_census_reports_an_orphan_mutation_and_passes
         ("POST", "/api/v1/cohorts", "upload scans"),
         ("DELETE", "/api/v1/cohorts/{id}", "upload scans"),
     ], "the upload exception admits one POST route; a second route wearing its label is an orphan"
-    assert set(NON_CONTROL_MUTATIONS) == {"upload scans", "authoring preview"}, (
-        "the census admits exactly two named non-control rows: FR-CONSOLE-04's upload, and "
+    assert set(NON_CONTROL_MUTATIONS) == {"upload scans", "authoring preview",
+                                          "roster preview"}, (
+        "the census admits exactly three named non-control rows: FR-CONSOLE-04's upload, "
         "FR-CONSOLE-50's authoring preview (#755) — a POST read whose body must carry the "
         "uploaded documents because document content can never travel in a URL or a query "
-        "string (CT-CONSOLE-34), and which writes nothing. A third is a design decision, "
-        "not an edit to this test"
+        "string (CT-CONSOLE-34), and which writes nothing — and FR-CONSOLE-63's roster "
+        "preview (#761), the roster file import's preview read: a POST whose body carries "
+        "the uploaded roster file's text for the same CT-CONSOLE-34 reason, and which also "
+        "writes nothing anywhere; the commit is the enumerated `import roster file` control"
     )
 
 

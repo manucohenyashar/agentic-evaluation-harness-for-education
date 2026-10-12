@@ -21,8 +21,10 @@ census's `test_af21_carries_af14s_text_as_a_txt_twin`.
 
 The surface names resolve through `tests/support/intake_vocabulary.py`, one place (the
 `extract_vocabulary` precedent): the three §3.1.1-declared types are design-named; the entry
-function (`normalize_document`) and the refusal exception (`IntakeRefused`) are that file's
-disclosed bets, and the rename is one line there if #754 spells them differently.
+function (`normalize_document`) and the refusal exception (`DocumentRefusedError` — the
+file's bet was `IntakeRefused`; #754 shipped this name and the rename was the one line) are
+that file's disclosed bets, and the rename is one line there if #754 spells them
+differently.
 
 Every case runs headless in-process under the autouse socket guard — the intake refuses by
 magic bytes and parses bytes it already has, so FR-AUTHOR-28's refusals make zero provider
@@ -71,7 +73,6 @@ def _normalize(path: Path):
     return normalize_document(path)
 
 
-@pytest.mark.writtenahead
 def test_tc_author_33_af14_rubric_table_is_carried() -> None:
     """`TC-AUTHOR-33` (FR-AUTHOR-25): AF-14's .docx rubric table is carried as table blocks.
 
@@ -136,7 +137,6 @@ def test_tc_author_34_af15_image_and_equation_named_not_lost() -> None:
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_author_35_af16_cp1252_encoding_fallback() -> None:
     """`TC-AUTHOR-35` (RS-01): AF-16's cp1252 bytes are read, and the fallback is named.
 
@@ -207,7 +207,6 @@ def _refusal_arms() -> list[tuple[str, str, str]]:
 REFUSAL_ARMS = _refusal_arms()
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize(("fixture_dir", "name", "sentence"), REFUSAL_ARMS,
                          ids=[f"{directory}-{name}" for directory, name, _ in REFUSAL_ARMS])
 def test_tc_author_37_refusal_matrix_fixture_arms(fixture_dir: str, name: str,
@@ -230,7 +229,6 @@ def test_tc_author_37_refusal_matrix_fixture_arms(fixture_dir: str, name: str,
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_author_32_af21_formats_normalize_identically() -> None:
     """`TC-AUTHOR-32` (FR-AUTHOR-24 / CT-AUTHOR-21): the same content, .docx and .txt.
 
@@ -251,7 +249,6 @@ def test_tc_author_32_af21_formats_normalize_identically() -> None:
     )
 
 
-@pytest.mark.writtenahead
 def test_af21_mixed_pair_normalizes_both_documents() -> None:
     """AF-21's mixed set: every document normalizes, each reporting its own format.
 

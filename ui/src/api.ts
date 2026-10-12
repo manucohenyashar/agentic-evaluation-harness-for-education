@@ -273,9 +273,26 @@ export interface HelpAnswer {
  * citations come back inside the answer, so the panel never needs the manuals reads.
  * The manuals pages the citations point at are the console's own server-rendered pages
  * (`/manuals`), same origin, no API call.
+ *
+ * The ask may carry the asking screen's context (`FR-HELP-06`): the screen's identity and
+ * the object refs it is reading — nothing else (`CT-UI-07`), and exactly the shape
+ * `aeh/help/context.py` parses server-side. An ask without one is the plain manuals ask.
  */
-export async function askHelp(question: string, signal?: AbortSignal): Promise<HelpAnswer> {
-  const response = await fetch(`/api/v1/help/ask?q=${encodeURIComponent(question)}`, { signal });
+export interface HelpContext {
+  screen: string;
+  refs: string[];
+}
+
+export async function askHelp(
+  question: string,
+  context?: HelpContext,
+  signal?: AbortSignal,
+): Promise<HelpAnswer> {
+  const params = new URLSearchParams({ q: question });
+  if (context !== undefined) {
+    params.set("context", JSON.stringify(context));
+  }
+  const response = await fetch(`/api/v1/help/ask?${params.toString()}`, { signal });
   if (!response.ok) {
     throw new Error("the assistant could not answer just now");
   }
@@ -403,18 +420,106 @@ export async function fetchJobs(signal?: AbortSignal): Promise<JobsDoc> {
   return fetchRead<JobsDoc>("/api/v1/jobs", signal);
 }
 
-/** The log read's records (`CT-CONSOLE-09`'s grain): stage and grading point, never a
- * per-student figure — the drill-down's log panel renders these as they arrive. */
-export interface LogRecord {
-  record_id: string;
-  kind: string;
-  stage: string;
-  at: string;
-  text: string;
-  detail: string | null;
+/**
+ * The secondary pages' read payloads (FR-UI-18..21, this issue's pages). Each screen renders
+ * what its read carried; a screen never invents a count or a state (CT-UI-08), and a next
+ * step arrives already worded. `projected` is the read's own observability block (seam 4);
+ * the screens do not shape it.
+ */
+
+/** The issues read (`GET /api/v1/issues?run_id=...`): the run's issues as the server's own
+ * teacher sentences — every card's what / affects / next step arrives already worded. */
+export interface IssuesDoc {
+  run_id: string | null;
+  issues: Array<{
+    issue_id: string;
+    source: string;
+    what: string;
+    affects: string;
+    next_step: string;
+  }>;
+  projected: Record<string, unknown>;
 }
 
+/** The logs read (`GET /api/v1/logs?run_id=...&page=...`): one page of the run's records,
+ * each already typed (milestone / summary / problem) and worded. */
 export interface LogsDoc {
-  run_id: string;
-  records: LogRecord[];
+  run_id: string | null;
+  records: Array<{
+    record_id: string;
+    kind: string;
+    stage: string | null;
+    at: string | null;
+    text: string;
+    detail: string | null;
+  }>;
+  page: { size: number; shown: number; more_available: boolean };
+  projected: Record<string, unknown>;
+}
+
+/** One settings row: the projection's `SettingView`, as the read carries it. */
+export interface SettingRow {
+  field: string;
+  label: string;
+  value: string;
+  type: string;
+  editable: boolean;
+  choices: string[];
+  configured: boolean | null;
+}
+
+/** The configuration read (`GET /api/v1/config`): the settings rows in projection form —
+ * each row's `field` names the write path's own setting id (an `EDITABLE_SETTINGS` value),
+ * so the settings page posts its `update configuration` edits keyed by what it rendered. */
+export interface ConfigDoc {
+  settings: SettingRow[];
+  projected: Record<string, unknown>;
+}
+
+export async function fetchIssues(runId: string, signal?: AbortSignal): Promise<IssuesDoc> {
+  return fetchRead<IssuesDoc>("/api/v1/issues", signal, { run_id: runId });
+}
+
+export async function fetchLogs(
+  runId: string,
+  page: number,
+  signal?: AbortSignal,
+): Promise<LogsDoc> {
+  return fetchRead<LogsDoc>("/api/v1/logs", signal, { run_id: runId, page: String(page) });
+}
+
+export async function fetchConfig(signal?: AbortSignal): Promise<ConfigDoc> {
+  return fetchRead<ConfigDoc>("/api/v1/config", signal);
+}
+
+/** The one job's extended read (`GET /api/v1/jobs/{job_id}`): the record plus its measured
+ * statistics — a statistic is shown only under the read's own key (CT-UI-08). */
+export type JobDetailDoc = JobRecord & {
+  statistics: { duration_seconds: number | null; items_graded: number | null };
+};
+
+export async function fetchJob(jobId: string, signal?: AbortSignal): Promise<JobDetailDoc> {
+  return fetchRead<JobDetailDoc>(`/api/v1/jobs/${encodeURIComponent(jobId)}`, signal);
+}
+
+/** The manuals index (`GET /api/v1/manuals`) — the help panel's and help centre's list. */
+export interface ManualsIndexDoc {
+  manuals: Array<{ manual_id: string; title: string }>;
+  projected?: Record<string, unknown>;
+}
+
+/** One manual (`GET /api/v1/manuals/{manual_id}`): the table of contents the help panel
+ * matches the current screen against for its "this screen's manual section" link. */
+export interface ManualDoc {
+  manual_id: string;
+  title: string;
+  toc: Array<{ anchor: string; heading: string }>;
+}
+
+export async function fetchManuals(signal?: AbortSignal): Promise<ManualsIndexDoc> {
+  return fetchRead<ManualsIndexDoc>("/api/v1/manuals", signal);
+}
+
+export async function fetchManual(manualId: string, signal?: AbortSignal): Promise<ManualDoc> {
+  return fetchRead<ManualDoc>(`/api/v1/manuals/${encodeURIComponent(manualId)}`, signal);
 }

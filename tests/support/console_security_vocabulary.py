@@ -201,6 +201,49 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
     # its field tuple is empty. An empty tuple is still enumerated: the action exists, it just
     # admits no row for a scoring prompt to read.
     "update configuration": (),
+    # The console-redesign delta's class vocabulary (#761, FR-CONSOLE-53/54/63, ADR-48): all
+    # three write the same Tier C cohort and roster rows `create cohort` writes — a class is
+    # a cohort ledger in a roster-only state, so no field a scoring prompt reads here either
+    # (NFR-PROV-04), and no new table (`ADR-48`).
+    "create class": (
+        "cohort.cohort_id",
+        "cohort.consent_class",
+        "cohort.created_at",
+        "roster.cohort_id",
+        "roster.student_ref",
+        "roster.full_name",
+    ),
+    "create cohort from class": (
+        "cohort.cohort_id",
+        "cohort.consent_class",
+        "cohort.created_at",
+        "roster.cohort_id",
+        "roster.student_ref",
+        "roster.full_name",
+    ),
+    "import roster file": (
+        "cohort.cohort_id",
+        "cohort.consent_class",
+        "cohort.created_at",
+        "roster.cohort_id",
+        "roster.student_ref",
+        "roster.full_name",
+    ),
+    # The console-redesign delta's authoring actions (#760). Three write no store row at
+    # all — the draft's state is the draft files (`ADR-45`), and a review and an edit
+    # rewrite those files through `aeh.author` — so their field tuples are empty, the same
+    # declaration `update configuration` makes. `approve draft package` builds through
+    # M-PKG's own door (`build_package`), whose flip touches the same two version fields
+    # `publish package` names; `cancel job` pauses a run through the one `run.status` row
+    # the run monitor writes (an authoring job's cancellation is cooperative, no row).
+    "draft package from documents": (),
+    "answer authoring review": (),
+    "edit draft package": (),
+    "approve draft package": (
+        "package_version.locked",
+        "package_version.published_by",
+    ),
+    "cancel job": ("run.status",),
 }
 
 #: The three actions §11.8 places **before any scoring exists**, inside the §6.2 lock.

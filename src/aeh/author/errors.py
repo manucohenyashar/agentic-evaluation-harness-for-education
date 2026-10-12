@@ -54,3 +54,16 @@ class OverwriteRefusedError(RuntimeError):
     `carryover.apply_carry_over`). Nothing is written without confirmation: a
     half-reviewed draft holds the teacher's work.
     """
+
+
+class AuthoringCancelled(RuntimeError):
+    """The run's cooperative cancel check returned true at a step boundary (FR-AUTHOR-30,
+    `CT-AUTHOR-24`).
+
+    Raised only at a boundary — never mid-step — so the artifacts on disk are exactly what
+    the last completed step left: when the cancel fired before the write step, that is
+    byte-for-byte the state before the run started, and a prior valid draft the teacher
+    placed there stands untouched (RS-12). The console catches this to mark its authoring
+    job cancelled; the draft files remain the only durable authoring artefact (ADR-43), so
+    there is nothing else to roll back.
+    """
