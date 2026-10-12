@@ -24,11 +24,12 @@ assembled prompt, build id included). The oracles, in the plan's order (§5.1 ro
   the one escape-decoded variant a TOML/JSON string literal would force — a paraphrase
   changes letters, not escapes) with bands derived from the prose (even 2–6, worst first,
   non-decreasing points); AF-05's evidence_sum composite with binary two-band aspects
-  naming it in `component_of`; AF-12's mixed mcq and judged lines, all resolved (the
+  naming it in `component_of`; AF-12's mixed mcq and judged lines (the
   landing: AF-12's judged lines state no expected solution, so they carry the
   FR-AUTHOR-06 `model_answer` gap — a bands set does not determine a model answer — and
-  the fixture's outcome class is partial; the shape pins below are unaffected); every
-  question covered by at least one criterion; **weighted scores never proposed** (every
+  the fixture's outcome class is partial — the mapping is pinned against `expected.toml`'s
+  declared placeholder set (the plan's oracle limb), with AF-03/04/05's resolved empty
+  sets); every question covered by at least one criterion; **weighted scores never proposed** (every
   criterion is one of FR-AUTHOR-07's supported shapes — no weight field, no unsupported
   shape) and **dependency-implying prose never an edge** (no criterion carries a
   dependency field in any draft this suite drafts — design §3.1: authoring emits none);
@@ -76,6 +77,12 @@ Disclosed fixture assumptions, to reconcile at the landing — the assertions st
   no criterion carries a weight-like field and every criterion is one of FR-AUTHOR-07's
   supported shapes (an unsupported shape would be the weighted proposal in disguise). A
   fixture carrying weighted-scores wording extends this case to the variant's input half.
+
+Landed (#690): the three reasoning steps shipped inside #690's draft pipeline — the
+`TS-157` probe resolved and the file ran green at that landing, so the `writtenahead`
+marker came off and the `#692 reasoning steps` registry entry was dropped (the tests
+kept). #692's landing re-checked all four cases green for the right reasons and pinned
+the plan's `expected.toml` oracle limb on the TC-AUTHOR-10 matrix (see the bullet).
 
 Written ahead of #692 ("reasoning steps: inventory, rubric, grades, approved_by"), keyed
 `#692 reasoning steps` in `WRITTEN_AHEAD_BLOCKERS` — a `command` probe; see the registry
@@ -433,7 +440,7 @@ def test_tc_author_10_the_rubric_step_maps_onto_exactly_one_supported_shape(
             author, make_fixture_provider, af_id, tmp_path / af_id.casefold().replace("-", "")
         )
         replies[af_id] = counted.reply_texts
-        draft, _raw = _draft_toml(result)
+        draft, raw = _draft_toml(result)
         criteria = draft.get("criterion") or []
         questions = draft.get("question") or []
         assert criteria, f"TC-AUTHOR-10 ({af_id}): the draft proposes no criteria"
@@ -442,6 +449,24 @@ def test_tc_author_10_the_rubric_step_maps_onto_exactly_one_supported_shape(
             "would make the coverage and shape arms below vacuous instead of red"
         )
         _check_no_edges_or_weights(af_id, criteria)
+        # The plan's oracle limb — the mapping matches `expected.toml`: the content
+        # placeholder fields the draft carries are exactly the fixture's declared set
+        # (AF-03/04/05 are `resolved` with none; AF-12's `partial` class carries the
+        # FR-AUTHOR-06 `model_answer` gap — a bands set does not determine a model
+        # answer, and its two judged questions both carry it), with `approved_by`
+        # riding on top of every class (TC-AUTHOR-12) and never counted (TC-AUTHOR-14's
+        # disclosed set semantics: a repeated field name is one declared placeholder).
+        expected_fields = set(_expected(af_id)["placeholders"])
+        content_fields = {
+            field for field in placeholder_fields(raw) if field != "approved_by"
+        }
+        assert content_fields == expected_fields, (
+            f"TC-AUTHOR-10 ({af_id}): the draft's content placeholders "
+            f"{sorted(content_fields)} do not match `expected.toml`'s declared set "
+            f"{sorted(expected_fields)} — the mapping matches the fixture's recorded "
+            "outcome class (the plan's oracle: byte-compare vs recorded reply + "
+            "expected.toml)"
+        )
         mapped = {c.get("question") for c in criteria if c.get("question")}
         question_ids = {q["id"] for q in questions}
         assert question_ids <= mapped, (
