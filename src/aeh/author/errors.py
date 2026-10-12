@@ -18,6 +18,31 @@ class AuthoringInputError(RuntimeError):
     """
 
 
+class DocumentRefusedError(AuthoringInputError):
+    """A teacher document the intake tier refuses outright (FR-AUTHOR-28).
+
+    Raised by `intake.normalize_document` / `intake.check_document` — and by the intake
+    step inside `draft()` — **before any model call and without writing any artifact**
+    (`CT-AUTHOR-23`): every row of the refusal matrix is decided by magic bytes and cheap
+    local checks, so no reasoning can recover the file and no provider is ever involved.
+
+    `sentence` is the teacher-facing refusal, verbatim from FR-AUTHOR-28's matrix (the
+    console renders it as-is); `next_step`, when the sentence does not already carry one,
+    says what to do instead; `detail` is the operator-facing reason (which check fired and
+    why) — never shown in a toast, always in the report and the log. The error's text is
+    the sentence plus the file's name, so a multi-document refusal says which file it was.
+    """
+
+    def __init__(self, sentence: str, name: str, *, detail: str = "",
+                 next_step: str = "") -> None:
+        self.sentence = sentence
+        self.name = name
+        self.detail = detail
+        self.next_step = next_step
+        tail = f" {next_step}" if next_step else ""
+        super().__init__(f"{sentence}{tail} ({name})")
+
+
 class OverwriteRefusedError(RuntimeError):
     """The output directory already holds a draft and report for the same package id, and the
     caller has not confirmed the overwrite (FR-AUTHOR-22, the library mirror of the CLI's

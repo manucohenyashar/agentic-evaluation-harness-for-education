@@ -29,6 +29,8 @@ dependencies = [
     "pypdfium2>=4.0",       # M-INGEST, #226 (F10): the live PdfiumRasterizer (FR-INGEST-13)
     "Pillow>=10.0",         # M-INGEST/M-STORE, #226: PdfBitmap.to_pil() decodes page pictures
     "typesafe-sdk==0.7.2",  # M-PROV, TS-124 (#500): JevOpenRouterProvider's SDK (FR-PROV-42, NFR-PROV-10)
+    "mammoth>=1.6,<2",      # M-AUTHOR, #754 (ADR-49): .docx -> semantic HTML for intake (FR-AUTHOR-25)
+    "charset-normalizer>=3.0,<4",  # M-AUTHOR, #754 (ADR-49): .txt encoding detection (FR-AUTHOR-26)
 ]
 
 # The installed command. `aeh.pipeline:main` lands with the M-PIPE composition story; the
