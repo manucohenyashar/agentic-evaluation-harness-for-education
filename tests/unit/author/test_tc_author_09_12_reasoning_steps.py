@@ -57,14 +57,13 @@ Disclosed fixture assumptions, to reconcile at the landing — the assertions st
   assembled request, document order included; if #690's capture pass sorts the paths
   instead, the reconciliation is `_documents` here and nowhere else.
 - **TC-AUTHOR-11's partial-table arm (Q-O8's adopted default — stated rows derived,
-  sentinel per missing row)**: no corpus fixture states *some but not all* boundaries, and
-  no recording can replay a request the capture pass never made, so the middle arm is
-  written ahead of a corpus input that can drive it. Both poles of the never-invent rule
-  are pinned here on real fixtures — AF-01 (all stated → all derived, nothing sentineled)
-  and AF-11 (nothing stated → whole-table placeholder, no numbers) — and a
-  partial-boundaries fixture (or an AF-01-variant recording set, the
-  `recordings-af01-variant` slot) extends this case to the middle arm without rewriting
-  it. Reported as a deviation in the PR.
+  sentinel per missing row)**: written ahead of its corpus input, and the reconciliation
+  found it — **AF-10** is the middle arm's fixture: its scan states grade D's boundary in
+  words ("BELOW 3 POINTS"), never as a number, so the replayed draft derives the stated
+  A/B/C boundaries and sentinels D per grade (`expected.toml` declares
+  `placeholders = ["grades D"]`). Both poles of the never-invent rule stay pinned too —
+  AF-01 (all stated → all derived, nothing sentineled) and AF-11 (nothing stated →
+  whole-table placeholder, no numbers).
 - **TC-AUTHOR-10's dependency-prose variant**: no corpus fixture carries prose implying a
   criterion dependency, so the arm is pinned mechanically — no criterion in any draft this
   suite drafts carries a dependency field (the never-an-edge half) — and the
@@ -81,8 +80,11 @@ Disclosed fixture assumptions, to reconcile at the landing — the assertions st
 Landed (#690): the three reasoning steps shipped inside #690's draft pipeline — the
 `TS-157` probe resolved and the file ran green at that landing, so the `writtenahead`
 marker came off and the `#692 reasoning steps` registry entry was dropped (the tests
-kept). #692's landing re-checked all four cases green for the right reasons and pinned
-the plan's `expected.toml` oracle limb on the TC-AUTHOR-10 matrix (see the bullet).
+kept). #692's landing re-checked all four cases green for the right reasons, pinned the
+plan's `expected.toml` oracle limb on the TC-AUTHOR-10 matrix (see the bullet), found
+the TC-AUTHOR-11 partial arm's corpus input in AF-10 and pinned it, and tightened
+AF-09's oracle to the plan's equality on both the draft's placeholders and the report's
+Unresolved notes.
 
 Written ahead of #692 ("reasoning steps: inventory, rubric, grades, approved_by"), keyed
 `#692 reasoning steps` in `WRITTEN_AHEAD_BLOCKERS` — a `command` probe; see the registry
@@ -590,19 +592,23 @@ def test_tc_author_10_the_rubric_step_maps_onto_exactly_one_supported_shape(
             )
 
     # AF-09 — the contradictory description resolves to unresolved notes, never an edge.
+    # The oracle is the plan's own equality ("mapping matches expected.toml"): the draft's
+    # content placeholders and the report's Unresolved notes are exactly the declared
+    # set — a subset would let a spurious placeholder through unflagged.
     result, _counted = _draft(author, make_fixture_provider, "AF-09", tmp_path / "af09")
     draft, raw = _draft_toml(result)
     _check_no_edges_or_weights("AF-09", draft.get("criterion") or [])
     declared = set(_expected("AF-09")["placeholders"])
-    assert declared <= set(placeholder_fields(raw)), (
-        f"TC-AUTHOR-10 (AF-09): the draft carries {sorted(set(placeholder_fields(raw)))} "
+    assert set(placeholder_fields(raw)) - {"approved_by"} == declared, (
+        f"TC-AUTHOR-10 (AF-09): the draft carries "
+        f"{sorted(set(placeholder_fields(raw)) - {'approved_by'})} "
         f"but expected.toml declares {sorted(declared)} — the description the reasoning "
         "cannot map becomes placeholders, never a guessed mapping"
     )
     report = result.report_path.read_text(encoding="utf-8")
-    assert declared <= set(_unresolved_fields(report)), (
+    assert set(_unresolved_fields(report)) == declared, (
         f"TC-AUTHOR-10 (AF-09): the report's Unresolved section names "
-        f"{sorted(set(unresolved_fields(report)))} but expected.toml declares "
+        f"{sorted(set(_unresolved_fields(report)))} but expected.toml declares "
         f"{sorted(declared)} — the unmapped items are recorded as unresolved notes for "
         "the review walk (FR-AUTHOR-05), not dropped silently and not turned into edges"
     )
@@ -614,14 +620,15 @@ def test_tc_author_10_the_rubric_step_maps_onto_exactly_one_supported_shape(
 def test_tc_author_11_grades_derive_only_what_is_stated_and_placeholder_the_rest(
         tmp_path, make_fixture_provider):
     """AF-01's stated ranges derive exactly; AF-11's unstated boundaries are the whole-table
-    placeholder with no number invented anywhere.
+    placeholder with no number invented anywhere; AF-10 — the corpus's own partial-table
+    input — derives its stated rows and sentinels the missing one.
 
-    Disclosure (Q-O8's middle arm): no corpus fixture states *some but not all* boundaries,
-    so the partial arm — stated rows derived plus a sentinel per missing row — is written
-    ahead of a corpus input that can drive it; both poles of the never-invent rule are
-    pinned here on real fixtures (see the module docstring).
+    Q-O8's middle arm (stated rows derived plus a sentinel per missing row) is AF-10: its
+    scan states grade D's boundary in words, never as a number, so the replayed draft
+    derives A/B/C and sentinels D. Both poles of the never-invent rule are pinned on real
+    fixtures too (see the module docstring).
     """
-    author = _guards(("AF-01", "AF-11"))
+    author = _guards(("AF-01", "AF-10", "AF-11"))
 
     # AF-01 — every boundary stated: derived exactly, nothing sentineled.
     result, _counted = _draft(author, make_fixture_provider, "AF-01", tmp_path / "af01")
@@ -645,6 +652,47 @@ def test_tc_author_11_grades_derive_only_what_is_stated_and_placeholder_the_rest
         "TC-AUTHOR-11 (AF-01): the grades step's outcomes are placeholder/unresolved "
         "although the paper states every boundary — the stated table is derived "
         "(FR-AUTHOR-08)"
+    )
+
+    # AF-10 — the partial table (Q-O8's middle arm): stated rows derived exactly, the
+    # unstated row a per-grade sentinel. The scan states grade D's boundary in words
+    # ("BELOW 3 POINTS"), never as a number — the boundary is not invented.
+    result, _counted = _draft(author, make_fixture_provider, "AF-10", tmp_path / "af10")
+    draft, raw = _draft_toml(result)
+    grades = draft.get("grades")
+    assert grades == {"A": 5, "B": 4, "C": 3, "D": "<<PLACEHOLDER: grades D>>"}, (
+        f"TC-AUTHOR-11 (AF-10): the draft's [grades] table is {grades!r} — the scan "
+        "states A/B/C's boundaries as numbers (derived exactly) and grade D's only in "
+        "words ('BELOW 3 POINTS'), so D is the per-grade sentinel: stated boundaries "
+        "derived, the missing one named for the teacher (FR-AUTHOR-08, Q-O8's middle arm)"
+    )
+    lines = raw.splitlines()
+    sentinel_lines = [
+        (index, line)
+        for index, line in enumerate(lines)
+        if "<<PLACEHOLDER: grades D>>" in line
+    ]
+    for index, _line in sentinel_lines:
+        above = lines[index - 1] if index else ""
+        match = PLACEHOLDER_COMMENT_RE.search(above)
+        assert match and match.group(2).strip(), (
+            "TC-AUTHOR-11 (AF-10): grade D's sentinel line carries no "
+            "'# PLACEHOLDER(<reason>): <what the teacher must supply>' comment with a "
+            "reason on the line above (FR-AUTHOR-11, CT-AUTHOR-04)"
+        )
+    assert set(placeholder_fields(raw)) - {"approved_by"} == {"grades D"}, (
+        f"TC-AUTHOR-11 (AF-10): the draft's content placeholders are "
+        f"{sorted(set(placeholder_fields(raw)) - {'approved_by'})} — exactly the "
+        "fixture's declared `placeholders` (['grades D']), the missing row and nothing "
+        "else"
+    )
+    grades_outcomes = [o for o in result.outcomes if o.step == "grades"]
+    assert grades_outcomes and all(
+        o.status in ("resolved", "derived") for o in grades_outcomes
+    ), (
+        "TC-AUTHOR-11 (AF-10): the grades step's outcomes are placeholder/unresolved "
+        "although the scan states three of the four boundaries — the stated table is "
+        "derived, the missing row the per-grade sentinel (FR-AUTHOR-08)"
     )
 
     # AF-11 — nothing stated: the whole [grades] table is one placeholder.
