@@ -341,14 +341,18 @@ def _spa_lockfile_roots() -> dict[str, Any]:
 
 
 def _is_upper_bounded(specifier: str) -> bool:
-    """True when the specifier names a bounded install: an exact pin (`1.2.3`), an explicit
-    upper bound (`<2`), or a caret/tilde range — `^0.577.0` means `>=0.577.0 <0.578.0`, which
-    is an upper bound even though no `<` appears in the string (npm's semver semantics, and
-    the reason the check parses intent rather than grepping for a character)."""
+    """True when the specifier names a bounded install: an exact pin (`1.2.3`, bare or
+    `v`-prefixed, or written `==1.2.3`), an explicit upper bound (`<2`), or a caret/tilde
+    range — `^0.577.0` means `>=0.577.0 <0.578.0`, which is an upper bound even though no
+    `<` appears in the string (npm's semver semantics, and the reason the check parses
+    intent rather than grepping for a character). A leading digit covers the bare exact
+    pin and a major-pinned range (`1.x`); `>=3.1` with no `<` still reads as unbounded."""
     text = specifier.strip()
     if not text:
         return False
-    if text.startswith(("^", "~")) or "==" in text:
+    if text.startswith(("^", "~", "v")) or "==" in text:
+        return True
+    if text[0].isdigit():
         return True
     return "<" in text
 
@@ -422,6 +426,9 @@ def test_sec_14_control_the_spa_bound_check_rejects_an_unbounded_pin():
     assert _is_upper_bounded("~5.9.0")
     assert _is_upper_bounded(">=3.1,<4")
     assert _is_upper_bounded("==0.7.2")
+    assert _is_upper_bounded("1.2.3")
+    assert _is_upper_bounded("v1.2.3")
     assert not _is_upper_bounded("lucide-react")
     assert not _is_upper_bounded("")
+    assert not _is_upper_bounded(">=3.1")
 
