@@ -31,8 +31,8 @@ produces two test suites for one requirement.
 - Write a short plan: which files change, what the change is, what could break, and how
   you'll verify it — which existing tests cover it, or (per the boundary below) which
   regression test you'll add.
-- If the issue is ambiguous, or the change touches more than a couple of files, consult the
-  advisor before committing to the plan (`/advisor opus` if one isn't already configured).
+- If the issue is ambiguous, or the change touches more than a couple of files, consult an
+  advisor agent before committing to the plan.
 
 ## 2. Implement
 
