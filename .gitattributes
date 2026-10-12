@@ -25,3 +25,21 @@ docs/live-tests/sample-materials/pdf/** binary
 # so these need the explicit binary mark. (Same reason as the sample-PDF rule above.)
 fixtures/F-AUTHOR/**/*.docx binary
 fixtures/F-AUTHOR/**/*.doc binary
+
+# The SPA rebuild (TC-UI-01 (c), `tests/browser/spa/test_spa_rebuild.py`) diffs a fresh
+# `vite build` against the committed bundle **byte for byte**, and the build output inherits
+# the line endings of the `ui/` sources it reads. With `core.autocrlf=true` a Windows checkout
+# turned the sources (and the committed `.js`/`.css`/`.svg` assets) into CRLF, so the gate read
+# a "stale bundle" whose only difference was the checkout's own conversion — and the bundle's
+# `index.html` was committed from that CRLF working tree, so its stored bytes were
+# platform-tainted and the gate failed on POSIX too. Both sides are pinned to LF here: the
+# sources so every platform builds the same bytes, the committed bundle so a checkout cannot
+# rewrite them under the gate. The `.woff2` fonts are binary data whose byte stream may carry
+# `\r\n` sequences — they keep git's binary detection (`text eol=lf` on them would corrupt
+# the font).
+ui/** text eol=lf
+ui/src/fonts/*.woff2 binary
+src/aeh/console_assets/spa/index.html text eol=lf
+src/aeh/console_assets/spa/assets/*.js text eol=lf
+src/aeh/console_assets/spa/assets/*.css text eol=lf
+src/aeh/console_assets/spa/assets/*.svg text eol=lf
