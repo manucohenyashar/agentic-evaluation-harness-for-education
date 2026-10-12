@@ -113,22 +113,9 @@ _AUTHOR_RUNG1_PROBE = (
     f"ok = ok and all((root / d).is_dir() for d in {_AUTHOR_CORPUS_LIMBS!r});"
     "raise SystemExit(0 if ok else 1)\""
 )
-_AUTHOR_CLI_PROBE = (
-    "python -c \"import argparse, importlib, pathlib;"
-    "from aeh.pipeline import cli;"
-    f"m = importlib.import_module('{_AUTHOR_MODULE}');"
-    f"ok = all(hasattr(m, n) for n in {_AUTHOR_CLAUSE_NAMES!r});"
-    "import aeh.conf; ok = ok and hasattr(aeh.conf, 'panel_for_profile');"
-    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
-    "ok = ok and all((root / d).is_dir() for d in ('AF-01', 'AF-07', 'recordings'));"
-    "sub = next(a for a in cli._build_parser()._actions"
-    " if isinstance(a, argparse._SubParsersAction));"
-    "ok = ok and 'author' in sub.choices;"
-    "asub = next((a for a in sub.choices['author']._actions"
-    " if isinstance(a, argparse._SubParsersAction)), None);"
-    "ok = ok and asub is not None and {'draft', 'review'} <= set(asub.choices);"
-    "raise SystemExit(0 if ok else 1)\""
-)
+# `_AUTHOR_CLI_PROBE` — the #689 rung-3 command probe (clause file + registration) — was
+# removed with its entry at the #695 landing; the registry's `command` probes are dropped
+# once the behaviour they probe is the shipped state.
 
 # --- TS-155 (#707), the draft front door: TC-AUTHOR-01/02/03/16/19/30 — the probe limbs ------
 # Built from the same `author_vocabulary` constants as the #689/#713 probes above (the TS26
@@ -170,18 +157,10 @@ _AUTHOR_DRAFT_SCRIPTED_PROBE = (
     + f"ok = ok and all((root / d).is_dir() for d in {_AUTHOR_DRAFT_SCRIPTED_LIMBS!r});"
     "raise SystemExit(0 if ok else 1)\""
 )
-_AUTHOR_DRAFT_CLI_PROBE = (
-    _AUTHOR_DRAFT_HEAD
-    + f"ok = ok and all((root / d).is_dir() for d in {_AUTHOR_DRAFT_SCRIPTED_LIMBS!r});"
-    "import argparse; from aeh.pipeline import cli;"
-    "sub = next(a for a in cli._build_parser()._actions"
-    " if isinstance(a, argparse._SubParsersAction));"
-    "ok = ok and 'author' in sub.choices;"
-    "asub = next((a for a in sub.choices['author']._actions"
-    " if isinstance(a, argparse._SubParsersAction)), None);"
-    "ok = ok and asub is not None and 'draft' in asub.choices;"
-    "raise SystemExit(0 if ok else 1)\""
-)
+# `_AUTHOR_DRAFT_CLI_PROBE` — the #707 fail-fast matrix's registration limb — was removed
+# with its entry at the #695 landing (`_AUTHOR_DRAFT_HEAD` and the limb tuples above stay:
+# the front-door probes' definitions are kept as landed documentation, like the rung-1
+# probes the #690 landing left in place).
 
 # --- TS-159 (#711), TC-AUTHOR-15/20/21/22: the report, summary, logger and prompt pins --------
 # #694's four deliverables share no design-mandated Python name that separates them from
@@ -313,58 +292,10 @@ _AUTHOR_TS157_PROBE = (
 
 
 # --- TS-163 (#697), TC-AUTHOR-25/26/27: retry, recreate, overwrite protection, carry-over ----
-# The static limbs the three files construct through, then the #697-only behavioural limb:
-# the overwrite refusal (FR-AUTHOR-22) — draft into a fresh scratch directory exits 0 with
-# exactly the two artifacts, and the same draft again (no `--force`, EOF on stdin) exits
-# nonzero naming both artifact filenames. See the registry entry's comment block for why the
-# discriminator is behaviour and not the `--force` flag (whose registration is #695's).
-_AUTHOR_RETRY_CORPUS_LIMBS = ("AF-01", "AF-02", "AF-07", "AF-13", "recordings")
-_AUTHOR_RETRY_PROBE = (
-    "python -c \"import argparse, importlib, os, pathlib, subprocess, sys, tempfile;"
-    f"m = importlib.import_module('{_AUTHOR_MODULE}');\n"
-    f"ok = all(hasattr(m, n) for n in {_AUTHOR_SURFACE!r});"
-    "ok = ok and hasattr(m.AuthoringService, 'draft')"
-    " and hasattr(m.AuthoringService, 'review');"
-    "import aeh.conf; ok = ok and hasattr(aeh.conf, 'panel_for_profile');"
-    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
-    f"ok = ok and all((root / d).is_dir() for d in {_AUTHOR_RETRY_CORPUS_LIMBS!r});"
-    "ok = ok and (root / 'recordings' / 'coverage.json').is_file();"
-    "from aeh.pipeline import cli;"
-    "sub = next((a for a in cli._build_parser()._actions"
-    " if isinstance(a, argparse._SubParsersAction) and a.dest == 'command'), None);"
-    "ok = ok and sub is not None and 'author' in sub.choices;"
-    "asub = next((a for a in sub.choices['author']._actions"
-    " if isinstance(a, argparse._SubParsersAction)), None) if ok else None;"
-    "ok = ok and asub is not None and {'draft', 'review'} <= set(asub.choices);\n"
-    "def _refusal_lives() -> bool:\n"
-    "    env = dict(os.environ)\n"
-    "    env['HARNESS_FIXTURE_DIR'] = str((root / 'recordings').resolve())\n"
-    "    env.pop('OPENROUTER_API_KEY', None)\n"
-    "    cfg = pathlib.Path('docs') / 'live-tests' / 'config' / 'live-test.dev-ci.toml'\n"
-    "    docs = sorted((root / 'AF-01').glob('*.pdf'))\n"
-    "    timeout = float(os.environ.get('HARNESS_TEST_AUTHOR_CHILD_TIMEOUT_S', '300'))\n"
-    "    with tempfile.TemporaryDirectory() as td:\n"
-    "        out = pathlib.Path(td) / 'out'\n"
-    "        args = [sys.executable, '-m', 'aeh', 'author', 'draft', '--config', str(cfg),"
-    " '--docs', *[str(p) for p in docs], '--out', str(out)]\n"
-    "        try:\n"
-    "            first = subprocess.run(args, capture_output=True, text=True, env=env,"
-    " timeout=timeout)\n"
-    "        except Exception:\n"
-    "            return False\n"
-    "        made = sorted(p.name for p in out.iterdir()) if out.is_dir() else []\n"
-    "        if first.returncode != 0 or len(made) != 2:\n"
-    "            return False\n"
-    "        try:\n"
-    "            second = subprocess.run(args, capture_output=True, text=True, env=env,"
-    " timeout=timeout, stdin=subprocess.DEVNULL)\n"
-    "        except Exception:\n"
-    "            return False\n"
-    "        said = second.stdout + second.stderr\n"
-    "        return second.returncode != 0 and all(n in said for n in made)\n"
-    "ok = ok and _refusal_lives()\n"
-    "raise SystemExit(0 if ok else 1)\""
-)
+# `_AUTHOR_RETRY_PROBE` — the retry/recreate entry's behavioural limb (the overwrite
+# refusal driven as a fresh subprocess) — was removed with its entry at the #695 landing,
+# the last limb it waited on. The static limbs the integration files construct through
+# stay in `tests/support/author_vocabulary.py`.
 
 # --- TS-162 (#713), TC-AUTHOR-23/24: the review walk and the ready gate — the probe limbs ----
 # Built from the same `author_vocabulary` constants as the #689 probes above (the TS26
@@ -385,24 +316,9 @@ _AUTHOR_23_PROBE = (
     "ok = ok and (root / 'recordings' / 'coverage.json').is_file();"
     "raise SystemExit(0 if ok else 1)\""
 )
-_AUTHOR_24_PROBE = (
-    "python -c \"import argparse, importlib, pathlib;"
-    "from aeh.pipeline import cli;"
-    f"m = importlib.import_module('{_AUTHOR_MODULE}');"
-    f"ok = all(hasattr(m, n) for n in {_AUTHOR_SURFACE!r});"
-    + _AUTHOR_REVIEW_METHOD_LIMB +
-    "import aeh.conf; ok = ok and hasattr(aeh.conf, 'panel_for_profile');"
-    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
-    "ok = ok and all((root / d).is_dir() for d in ('AF-07', 'recordings'));"
-    "ok = ok and (root / 'recordings' / 'coverage.json').is_file();"
-    "sub = next(a for a in cli._build_parser()._actions"
-    " if isinstance(a, argparse._SubParsersAction));"
-    "ok = ok and 'author' in sub.choices;"
-    "asub = next((a for a in sub.choices['author']._actions"
-    " if isinstance(a, argparse._SubParsersAction)), None);"
-    "ok = ok and asub is not None and {'draft', 'review'} <= set(asub.choices);"
-    "raise SystemExit(0 if ok else 1)\""
-)
+# `_AUTHOR_24_PROBE` — the ready gate's exit-code-matrix probe — was removed with its
+# entry at the #695 landing (`_AUTHOR_23_PROBE` above stays as landed documentation,
+# like the rung-1 probes the #690 landing left in place).
 
 
 # --- TS-156 (#708), TC-AUTHOR-04..08: the fallback/repair probe limbs -------------------------
@@ -469,72 +385,14 @@ _AUTHOR_REPAIR_PROBE = (
     "raise SystemExit(0 if pairs and marked else 1)\""
 )
 # --- TS-170 (#703), TC-E2E-07 + UAT-14: the three journeys and the teacher walkthrough -------
-# The limbs the two rung-4 files drive, in the family shape the #689/#697/#701 probes set:
+# The limbs the two rung-4 files drove, in the family shape the #689/#697/#701 probes set:
 # the §3.1 surface with `AuthoringInputError`, `draft` and `review` on the service,
-# `panel_for_profile` (#687, landed), the build-gate sentinel the journeys' refusals read
-# (#688, landed — probed BY NAME for self-documentation, not because it blocks: a probe limb
-# that names the refusal the gate walks into states the dependency the issue DoD asks for),
-# the corpus limbs (#686), and #695's CLI registration. The E2E probe adds the one
-# BEHAVIOURAL limb, keyed to #697 per the issue's DoD ("the retry/recreate story the journeys
-# traverse"): it re-drafts AF-01 twice into a scratch directory and exits 0 only when the
-# first draft lands and the second, `--force`-less and with stdin at EOF, is refused —
-# FR-AUTHOR-22's overwrite protection, which no symbol names. The limb is short-circuited
-# behind the static ones so it runs (two offline recorded drafts, seconds) only when
-# everything else already holds. The UAT probe carries no #697 limb — the walkthrough drafts
-# once and never re-drafts — and no build-gate limb — it ends at the ready review, which is
-# the walkthrough's own end state.
-_AUTHOR_E2E_CORPUS_LIMBS = ("AF-02", "AF-09", "AF-11", "recordings")
-_AUTHOR_E2E_PROBE = (
-    "python -c \"import argparse, importlib, os, pathlib, subprocess, sys, tempfile;"
-    f"m = importlib.import_module('{_AUTHOR_MODULE}');"
-    f"ok = all(hasattr(m, n) for n in {_AUTHOR_CLAUSE_NAMES!r});"
-    "ok = ok and hasattr(m.AuthoringService, 'draft')"
-    " and hasattr(m.AuthoringService, 'review');"
-    "import aeh.conf; ok = ok and hasattr(aeh.conf, 'panel_for_profile');"
-    "pkgs = importlib.import_module('aeh.pipeline.packages');"
-    "ok = ok and hasattr(pkgs, 'PLACEHOLDER_SENTINEL');"
-    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
-    f"ok = ok and all((root / d).is_dir() for d in {_AUTHOR_E2E_CORPUS_LIMBS!r});"
-    "ok = ok and (root / 'recordings' / 'coverage.json').is_file();"
-    "from aeh.pipeline import cli;"
-    "sub = next(a for a in cli._build_parser()._actions"
-    " if isinstance(a, argparse._SubParsersAction));"
-    "ok = ok and 'author' in sub.choices;"
-    "asub = next((a for a in sub.choices['author']._actions"
-    " if isinstance(a, argparse._SubParsersAction)), None);"
-    "ok = ok and asub is not None and {'draft', 'review'} <= set(asub.choices);"
-    "ok = ok and ((scratch := pathlib.Path(tempfile.mkdtemp()))"
-    " and (env := {**os.environ, 'HARNESS_FIXTURE_DIR': str(root / 'recordings')})"
-    " and (argv := ['author', 'draft', '--config',"
-    " 'docs/live-tests/config/live-test.dev-ci.toml', '--docs',"
-    " *sorted(str(p) for p in (root / 'AF-01').glob('*.pdf')),"
-    " '--out', str(scratch / 'out')])"
-    " and (first := subprocess.run([sys.executable, '-m', 'aeh', *argv], env=env,"
-    " stdin=subprocess.DEVNULL, capture_output=True)).returncode == 0"
-    " and (second := subprocess.run([sys.executable, '-m', 'aeh', *argv], env=env,"
-    " stdin=subprocess.DEVNULL, capture_output=True)).returncode != 0);"
-    "raise SystemExit(0 if ok else 1)\""
-)
-_AUTHOR_UAT_PROBE = (
-    "python -c \"import argparse, importlib, pathlib;"
-    f"m = importlib.import_module('{_AUTHOR_MODULE}');"
-    f"ok = all(hasattr(m, n) for n in {_AUTHOR_CLAUSE_NAMES!r});"
-    "ok = ok and hasattr(m.AuthoringService, 'draft')"
-    " and hasattr(m.AuthoringService, 'review');"
-    "import aeh.conf; ok = ok and hasattr(aeh.conf, 'panel_for_profile');"
-    "root = pathlib.Path('fixtures') / 'F-AUTHOR';"
-    "ok = ok and all((root / d).is_dir() for d in ('AF-07', 'recordings'));"
-    "ok = ok and (root / 'recordings' / 'coverage.json').is_file();"
-    "ok = ok and (root / 'AF-07' / 'expected.toml').is_file();"
-    "from aeh.pipeline import cli;"
-    "sub = next(a for a in cli._build_parser()._actions"
-    " if isinstance(a, argparse._SubParsersAction));"
-    "ok = ok and 'author' in sub.choices;"
-    "asub = next((a for a in sub.choices['author']._actions"
-    " if isinstance(a, argparse._SubParsersAction)), None);"
-    "ok = ok and asub is not None and {'draft', 'review'} <= set(asub.choices);"
-    "raise SystemExit(0 if ok else 1)\""
-)
+# `panel_for_profile` (#687), the build-gate sentinel the journeys' refusals read (#688),
+# the corpus limbs (#686), and #695's CLI registration — the E2E probe adding the one
+# BEHAVIOURAL limb keyed to #697 (the overwrite refusal re-drafted in a scratch directory)
+# and the UAT probe carrying none (the walkthrough drafts once and never re-drafts).
+# Both probes — `_AUTHOR_E2E_PROBE`, `_AUTHOR_UAT_PROBE` — were removed with their
+# entries at the #695 landing, the last limb each waited on.
 
 # --- TS-157 (#709), TC-AUTHOR-09..12: the three reasoning steps and approved_by ---------------
 # The limbs the four cases construct through: the §3.1 surface (`AUTHOR_SURFACE`), the three
@@ -2087,13 +1945,10 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `#368`/`#10` precedent) onto a `symbols` conjunction whose last limb was the review
     # walk; the conjunction resolved and all four re-ran green at the #696 landing, so
     # they were unmarked then and this entry dropped with them — the tests kept.
-    "#689 TS-165 the CS-AUTHOR clause suite, rung 3 (the aeh author CLI): #695's registration, #687's chain resolution, #686's corpus, #689's surface": (
-        "command",
-        _AUTHOR_CLI_PROBE,
-        (
-            "tests/contract/author/test_cs_author_c02_c18_cli.py",
-        ),
-    ),
+    # Rung 3 LANDED (#695): the `author` group carries both `draft` and `review`, and the
+    # clause file (C02's CLI surface and C18's no-silent-overwrite gate) ran green at the
+    # landing — the entry was dropped and the file unmarked (the `contract` marker stays),
+    # the tests kept.
     # --- TS-158 (#693), the validation gate and the placeholder emission ---------------------
     #
     # #710's prescribed key, as its (whitespace-mangled) technical note decodes it: kind
@@ -2149,24 +2004,12 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # — the thing #695 is the first to ship; no other open story touches the `aeh`
     # subcommand table. At resolution, re-check the case green before unmarking — never on
     # the notice alone.
-    "#695 cli registration": (
-        "command",
-        "python -c \"import argparse; import sys; sys.path.insert(0, 'src');"
-        " import aeh.pipeline.cli as cli;"
-        " top = [a for a in cli._build_parser()._actions"
-        " if isinstance(a, argparse._SubParsersAction) and a.dest == 'command'][0].choices;"
-        " author = top.get('author');"
-        " inner = [a for a in author._actions"
-        " if isinstance(a, argparse._SubParsersAction)] if author else [];"
-        " ok = bool(inner) and {'draft', 'review'} <= set(inner[0].choices);"
-        " raise SystemExit(0 if ok else 1)\"",
-        ("tests/unit/pipe/test_tc_pipe_37_author_subcommands.py",
-         "tests/unit/console/test_tc_console_54_parity_census.py"),
-        # The TC-CONSOLE-54 census joins this blocker from #700: the parity inventory now
-        # lists `aeh author draft`/`aeh author review` (debugging-only), which the parser
-        # does not have until this issue registers the `author` group — the same landing
-        # this entry already waits on. Unmark both files when it lands.
-        ),
+    #
+    # LANDED (#695): the `author` group is registered with both subcommands, and both files
+    # re-ran green at the landing — TC-PIPE-37 (the help texts and the exit-code matrix) and
+    # the TC-CONSOLE-54 census (which joined this blocker from #700: the inventory's author
+    # rows are exact once the parser has the group). Both files were unmarked and this
+    # entry dropped — the tests kept.
 
     # --- TS-164 (#698), the determinism and write-ownership snapshot diffs -------------------
     #
@@ -2275,13 +2118,11 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # LANDED (#690): the two front-door entries above resolved (every limb shipped — the
     # surface, #686's captured recordings, the committed AF-01/AF-10 fixtures) and their
     # files ran green at the landing, so both were dropped and their files unmarked, the
-    # tests kept. The fail-fast matrix entry below stays: TC-AUTHOR-16's CLI arm still
-    # drives `aeh author draft`'s registration limb (#695).
-    "#707 TS-155 the draft front door's fail-fast matrix (TC-AUTHOR-16: #690's surface + #695's author draft registration)": (
-        "command",
-        _AUTHOR_DRAFT_CLI_PROBE,
-        ("tests/unit/author/test_tc_author_16_fail_fast_matrix.py",),
-    ),
+    # tests kept. The fail-fast matrix entry stayed until #695: TC-AUTHOR-16's CLI arm
+    # drives `aeh author draft`'s registration limb.
+    # LANDED (#695): the registration limb resolved and TC-AUTHOR-16 re-ran green at the
+    # landing (the fail-fast matrix, CLI arm included) — the entry was dropped and the file
+    # unmarked, the tests kept.
 
 
     # --- TS-159 (#711), TC-AUTHOR-15/20/21/22 — the report, summary, logger and prompt pins ----
@@ -2363,39 +2204,30 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # fingerprint seed and the case-insensitive prior-artifact lookup — LANDED, and
     # `tests/unit/author/test_tc_author_27_carry_over_variants.py` ran green for the right
     # reason at the landing, so it was dropped from this entry and unmarked, the test kept.
-    # The two integration files stay here and stay marked: their probes resolve only the
-    # library surface, and the cases themselves still red inside `TEST_CMD` naming #695 —
-    # `aeh author draft`'s registration is the limb they own that has not landed. When #695
-    # lands, re-run both green from fresh processes and unmark them; the entry (and its
-    # probe) drops then.
-    "#697 retry recreate": (
-        "command",
-        _AUTHOR_RETRY_PROBE,
-        (
-            "tests/integration/author/test_tc_author_25_fresh_redraft.py",
-            "tests/integration/author/test_tc_author_26_overwrite_matrix.py",
-        ),
-    ),
+    # The two integration files stayed here and stayed marked: their probes resolved only
+    # the library surface, and the cases themselves still red inside `TEST_CMD` naming
+    # #695 — `aeh author draft`'s registration was the limb they own that had not landed.
+    # LANDED (#695): both integration files re-ran green from fresh processes at the
+    # #695 landing (the fresh re-draft and the overwrite matrix, `--force` included) —
+    # both were unmarked and this entry dropped with them, the tests kept.
 
-    "#713 ready gate, rung 3 (the exit-code matrix through the CLI: #696's review surface, #695's registration, #687's chain, #686's corpus and recordings)": (
-        "command",
-        _AUTHOR_24_PROBE,
-        (
-            "tests/unit/author/test_tc_author_24_ready_gate_exit_codes.py",
-        ),
-    ),
+    # TS-159's ready gate, rung 3 (#713's exit-code matrix through the CLI: #696's review
+    # surface, #695's registration, #687's chain, #686's corpus and recordings) — LANDED
+    # (#695): the matrix re-ran green at the landing (all four arms, the three exit-1
+    # reasons pairwise distinguishable) — the entry was dropped and the file unmarked,
+    # the tests kept.
 
-    "#703 TS-170 TC-E2E-07 the three authoring journeys (the surface, #695's CLI, #697's overwrite refusal, #686's corpus and recordings)": (
-        "command",
-        _AUTHOR_E2E_PROBE,
-        ("tests/e2e/test_tc_e2e_07_authoring_journeys.py",),
-    ),
+    # TS-170 (#703), TC-E2E-07's three authoring journeys (the surface, #695's CLI, #697's
+    # overwrite refusal, #686's corpus and recordings) — LANDED (#695): the journeys ran
+    # green at the landing after the disclosed answer-grammar reconcile (the walk's
+    # re-validation teaches its grammar; the answer key now states it) — the entry was
+    # dropped and the file unmarked (the `e2e`/`slow` markers stay), the tests kept.
 
-    "#703 TS-170 UAT-14 the teacher walkthrough (the surface, #695's CLI, #686's AF-07 corpus and recordings)": (
-        "command",
-        _AUTHOR_UAT_PROBE,
-        ("tests/uat/acceptance/test_uat_14_walkthrough.py",),
-    ),
+    # TS-170 (#703), UAT-14's teacher walkthrough (the surface, #695's CLI, #686's AF-07
+    # corpus and recordings) — LANDED (#695): the walkthrough ran green at the landing
+    # after the disclosed report-shape reconcile (the approval is named in the report's
+    # Next command prose; the walkthrough reads it there and answers it first) — the
+    # entry was dropped and the file unmarked, the tests kept.
 
 }
 

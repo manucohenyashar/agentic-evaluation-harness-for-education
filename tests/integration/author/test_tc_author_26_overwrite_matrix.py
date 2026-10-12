@@ -7,8 +7,9 @@ process (the package-authoring test plan §5.2; design delta §3.1 v1.12-delta).
     carry over; `--force` and `y` proceed; a different package id never collides.
     Oracle: file hashes + exit codes.
 
-Story #697 (TS-163); written ahead of it, keyed `#697 retry recreate`. Marker off — never
-test off — when #697 closes.
+Story #697 (TS-163); written ahead of it, keyed `#697 retry recreate`. LANDED (#695): the
+matrix re-ran green from fresh processes at the landing, so the marker came off — never the
+test.
 
 **Rung 3, and the limbs this case owns.** `TC-AUTHOR-C18`'s clause file drives the same
 matrix in ONE process through `cli.main` with the provider seam monkeypatched; the plan's
@@ -71,7 +72,7 @@ from tests.support.author_vocabulary import (
 )
 from tests.support.impl import NotImplementedYet, require, require_path
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 

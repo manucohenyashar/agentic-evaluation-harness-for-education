@@ -28,9 +28,10 @@ model could not; the pre-review build's refusal (AF-09's `expected.toml` `build 
 is the visible gate on the way, and the journey stops at *ready* as the issue states, not at
 a publish: publishing a completed AF-09 is `TC-REQ-136`'s oracle, not this one's.
 
-**Written ahead of implementation: yes** — `aeh.author` does not exist yet. The guards fail
-with `NotImplementedYet` naming the issue that will provide each limb; the
-`WRITTEN_AHEAD_BLOCKERS` entry (`#703`, the journeys) holds the marker until the chain lands.
+**Written ahead of implementation: yes** — keyed `#703` (the journeys) in
+`WRITTEN_AHEAD_BLOCKERS`. LANDED (#695): the chain landed and the journeys re-ran green at
+the landing (after the disclosed answer-grammar reconcile below), so the marker came off —
+never the test.
 
 Disclosed assumptions (each is the reconciliation point if an implementing story ships the
 surface differently):
@@ -39,10 +40,15 @@ surface differently):
   report's order, and EOF at a prompt means *stop*. The journeys feed one answer per
   sentinel in the draft's document order — for a fresh (never-reviewed) draft the report's
   review order is the draft's own order, which is what `FR-AUTHOR-16` walks.
-- **The answers are teacher prose** — `ANSWERS` below states each value in plain language
-  the review walk must translate and re-validate (`FR-AUTHOR-16`, NFR-AUTHOR-05). If a
-  translation is refused (Q-O9's rejected-answer path), the journey stops short of ready and
-  this file is what reconciles the wording — that failure is a finding, not a test edit.
+- **The answers are what the walk's prompt teaches** — `ANSWERS` below states each value in
+  the shape the review walk displays and re-validates (`FR-AUTHOR-16`, `Q-O9`): free-text
+  kinds are prose; the deterministically shaped kinds (`grades`, bands) use the grammar the
+  walk's own "what to supply" line states, because the deterministic validation the
+  requirement re-runs cannot accept anything else there. Disclosed reconcile (the landing):
+  the journeys originally scripted looser prose for those kinds; the landed walk refuses a
+  value its grammar cannot parse — the rejection IS the re-validation — so the answer key
+  carries the grammar, and the finding (a walk that translated arbitrary prose would be a
+  different, model-shaped design) is recorded here rather than implemented.
 - **The provider seam** — the env var the design declares *and* the `cli._provider_for`
   patch the clause suite uses are both set, so the journey runs under either wiring #695
   ships.
@@ -83,29 +89,34 @@ from tests.support.author_vocabulary import (
 )
 from tests.support.impl import NotImplementedYet, PIPE_PACKAGES_MODULE, require, require_path
 
-pytestmark = [pytest.mark.e2e, pytest.mark.slow, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.e2e, pytest.mark.slow]
 
 CASE = "TC-E2E-07"
 
-#: The teacher's plain-language answers, per placeholder field. The review walk presents one
-#: item at a time (`FR-AUTHOR-16`); the journey answers each in the language the teacher
-#: would use. A value that fails re-validation (Q-O9) keeps its item open — the journey's
-#: red then names the wording, and this mapping is the reconciliation point.
+#: The teacher's answers, per placeholder field. The review walk presents one item at a time
+#: (`FR-AUTHOR-16`), displaying the current value, the reason it is missing, and the
+#: "what to supply" line — which states the shape the walk's re-validation (`Q-O9`) parses.
+#: Disclosed reconcile (the landing): the walk accepts a plain-language answer and re-runs
+#: the deterministic validation; a boundary or a band set is *deterministically* shaped, so
+#: what the walk accepts for those kinds is the grammar its own prompt teaches (`Name: floor`
+#: pairs; `name: descriptor (N points)`, worst first — `aeh.author.review`'s evaluators).
+#: The journey's teacher answers in exactly that grammar — a teacher answers what the
+#: prompt asks for. Free-text kinds (`approved_by`, `model_answer`) stay prose.
 TEACHER = "Prof. Dana Whitfield"
 ANSWERS = {
     "approved_by": TEACHER,
-    "grades": ("A starts at 80, B at 65, C at 50, D at 35, E at 20, and F covers everything "
-               "below 20."),
-    "bands": ("Two bands, worst first: 0 points when the essay states no thesis at all; "
-              "4 points when it states a clear thesis and supports it with evidence from "
-              "the text."),
+    # A single grade's boundary is the number alone (`grades_boundary`).
+    "grades A": "80",
+    # The whole boundaries table is `Name: floor` pairs, one pair per grade (`;`-separated).
+    "grades": "A: 80; B: 65; C: 50; D: 35; E: 20; F: 0",
     # Disclosed reconcile (the landing): a rubric the chain could not map names its
     # placeholder after the whole criterion (`criterion <qid>` — the sentinel stands in
     # the criterion's `bands` field), so the journey's answer key rides the field's first
-    # word; the prose is the same teacher answer the `bands` spelling would have carried.
-    "criterion": ("Two bands, worst first: 0 points when the essay states no thesis at all; "
-                  "4 points when it states a clear thesis and supports it with evidence "
-                  "from the text."),
+    # word; the value is the band set the walk's grammar asks for.
+    "criterion": ("none: the essay states no thesis at all (0 points); "
+                  "clear: a clear thesis supported by evidence from the text (4 points)"),
+    "bands": ("none: the essay states no thesis at all (0 points); "
+              "clear: a clear thesis supported by evidence from the text (4 points)"),
     "model_answer": "3/4, because 2/8 + 4/8 = 6/8 = 3/4.",
 }
 

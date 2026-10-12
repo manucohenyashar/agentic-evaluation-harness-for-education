@@ -20,8 +20,8 @@ Written ahead of #690 ("the draft front door"), keyed in `WRITTEN_AHEAD_BLOCKERS
 `command` probe on the §3.1 surface **plus #695's `author draft` registration** — limb 4
 drives the CLI, whose registration is #695's deliverable, so a key on the surface alone would
 fire at #690 and leave the case red inside `TEST_CMD` on #695 (the early-fire direction the
-registry exists to prevent). See the registry entry's comment block. Re-check the case green
-before unmarking — never on the notice alone.
+registry exists to prevent). See the registry entry's comment block. LANDED (#695): the
+registration resolved and the matrix re-ran green at the landing, so the marker came off.
 
 Rung 1, guards first (#689's module surface, the committed corpus limbs, #695's registration).
 
@@ -52,8 +52,6 @@ from tests.support.author_vocabulary import (
 )
 from tests.support.impl import NotImplementedYet, require, require_path
 from tests.support.taxonomy import PerJudgeScript
-
-pytestmark = [pytest.mark.writtenahead]
 
 CASE = "TC-AUTHOR-16"
 

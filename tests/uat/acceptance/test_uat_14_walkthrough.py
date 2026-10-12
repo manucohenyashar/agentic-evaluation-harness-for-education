@@ -30,16 +30,20 @@ The second case is the control: the same walkthrough with a teacher who stops (E
 first prompt) must exit 1 *naming what remains* — the no-silent-path half of NFR-AUTHOR-05.
 
 **Written ahead of implementation: yes** — same disposition as the journeys
-(`test_tc_e2e_07_authoring_journeys.py`): the guards fail with `NotImplementedYet` naming
-the providing issue, and the `WRITTEN_AHEAD_BLOCKERS` entry holds the marker. Unlike UAT-13
-(a written procedure, unmarked), this walkthrough *executes*, so it is gated; it runs in the
-fast tier once its blocker resolves — the recorded provider makes it no heavier than the
-clause suite.
+(`test_tc_e2e_07_authoring_journeys.py`), keyed `#703` in `WRITTEN_AHEAD_BLOCKERS`. LANDED
+(#695): the walkthrough re-ran green at the landing (after the disclosed report-shape
+reconcile below), so the marker came off — never the test. Unlike UAT-13 (a written
+procedure, unmarked), this walkthrough *executes*, so it was gated; it now runs in the fast
+tier — the recorded provider makes it no heavier than the clause suite.
 
 Disclosed assumptions: the stdin walk protocol is the clause suite's (one plain-language
 answer line per remaining item, in the report's order, EOF = stop); `unresolved_fields`'s
 own assumption — the report's Unresolved entries carry the sentinel literal — is the
-one-line reconciliation if #696 renders the section differently.
+one-line reconciliation if #696 renders the section differently. Disclosed reconcile (the
+landing, #695's suite): the landed report names the mandatory approval in its Next command
+prose, not in the Unresolved list (`aeh.author.report`'s `_next_command`), so the
+walkthrough reads the approval there and answers it first — the walk's own order, the
+draft's first placeholder; the report alone still names the work (NFR-AUTHOR-05).
 """
 
 from __future__ import annotations
@@ -48,8 +52,6 @@ import io
 import sys
 import tomllib
 from pathlib import Path
-
-import pytest
 
 from aeh.pipeline import cli
 from tests.support.author_vocabulary import (
@@ -63,8 +65,6 @@ from tests.support.author_vocabulary import (
     unresolved_fields,
 )
 from tests.support.impl import NotImplementedYet, require, require_path
-
-pytestmark = [pytest.mark.writtenahead]
 
 UAT = "UAT-14"
 
@@ -172,13 +172,25 @@ def test_uat_14_the_teacher_completes_af_07_from_the_report_alone(
     items = unresolved_fields(report)
     assert items, f"{UAT}: the report leaves the teacher nothing to answer — empty Unresolved"
     missing = _expected_fields(af07) - set(items)
-    assert not missing, (
+    # Disclosed reconcile (the landing): the landed report names the mandatory approval not
+    # in the Unresolved list but in its Next command prose — "and for the approval
+    # (`approved_by`)" (`aeh.author.report`'s `_next_command`, the #690/#697 shape). The
+    # report alone still names the work (NFR-AUTHOR-05): the Unresolved list carries every
+    # content gap in review order, and the Next command tells the teacher the walk also asks
+    # for the approval. The walkthrough reads it there and answers it first — the walk's own
+    # order, the draft's first placeholder (the clause suite's disclosed order).
+    reconciled = {field for field in missing
+                  if field == "approved_by" and "approved_by" in report}
+    assert reconciled == missing, (
         f"{UAT}: the report does not name {sorted(missing)} — the report alone cannot "
         f"complete the task")
 
     # 3. The teacher answers in plain language, one line per item, without touching the TOML.
+    #    The approval first (the walk's order), then the Unresolved items in review order.
+    answers = ([_answer_for("approved_by")] if "approved_by" in reconciled else []) \
+        + [_answer_for(field) for field in items]
     code, ready_out, ready_err = _review(
-        capsys, monkeypatch, provider, draft_file, [_answer_for(field) for field in items])
+        capsys, monkeypatch, provider, draft_file, answers)
     assert code == 0, f"{UAT}: the walkthrough did not complete the task: {ready_err}"
     assert "package build" in ready_out + ready_err, (
         f"{UAT}: a completed walkthrough must end with the build command (FR-AUTHOR-17)")

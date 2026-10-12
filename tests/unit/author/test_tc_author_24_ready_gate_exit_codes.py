@@ -5,9 +5,9 @@ with the reason — the same code as items-remaining, the output distinguishing 
 exit code anywhere (#713, the package-authoring test plan §5.2; design delta §3.1's exit
 convention).
 
-Written ahead of #696: `aeh.author` does not exist yet, so the case is red until the review
-walk lands. The file carries `writtenahead`, keyed `#713 ready gate, rung 3` in
-`WRITTEN_AHEAD_BLOCKERS`; when #696 closes the marker comes off — never the test.
+Written ahead of #696, keyed `#713 ready gate, rung 3` in `WRITTEN_AHEAD_BLOCKERS`. LANDED
+(#695): the review walk landed with #696 and the registration with #695 — the matrix re-ran
+green at the landing, so the marker came off — never the test.
 
 Rung 3 (console) over rung-1 setup: the drafts are CLI-drafted AF-07 (the plan's review
 fixture) through `aeh.pipeline.cli.main` — the same in-process entry TC-PIPE-27 and the
@@ -36,8 +36,6 @@ import argparse
 import io
 import sys
 
-import pytest
-
 from aeh.pipeline import cli
 from tests.support.author_vocabulary import (
     AUTHOR_ISSUE,
@@ -51,8 +49,6 @@ from tests.support.author_vocabulary import (
     placeholder_fields,
 )
 from tests.support.impl import NotImplementedYet, require, require_attr, require_path
-
-pytestmark = [pytest.mark.writtenahead]
 
 TEACHER = "Sample-materials teacher"
 MODEL_ANSWER = "By equivalent fractions with a common denominator."

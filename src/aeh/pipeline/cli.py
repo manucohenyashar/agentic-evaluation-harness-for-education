@@ -113,6 +113,34 @@ def _build_parser() -> Any:
                         help="the package version id, as build and the console print it")
     export.add_argument("--spec", required=True, help="the file the spec is written to")
 
+    # FR-PIPE-10 (#695): the authoring draft and review as CLI subcommands — the library's
+    # `AuthoringService` surface (CT-AUTHOR-01) driven from the terminal. The console's
+    # authoring screens are future console work (FR-CONSOLE-46), so the terminal is the
+    # surface this delta builds; the exit codes are §3.1's convention: 0 when the draft is
+    # written or the review is ready, 1 on every error, 2 left to argparse alone.
+    author_parser = sub.add_parser(
+        "author", help="draft a package spec from teacher documents, then review it")
+    author_sub = author_parser.add_subparsers(dest="author_command", required=True)
+    draft = author_sub.add_parser(
+        "draft",
+        description=(
+            "Turn teacher-authored documents into a draft package spec and an authoring\n"
+            "report. A draft publishes only through `aeh package build` after review; the\n"
+            "review walk collects the answers the draft leaves open."),
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    draft.add_argument("--config", required=True, help="the configuration file (TOML)")
+    draft.add_argument("--docs", required=True, nargs="+", metavar="PDF",
+                       help="the teacher-authored documents to read (PDFs)")
+    draft.add_argument("--out", required=True,
+                       help="the directory the draft spec and report are written into")
+    draft.add_argument(
+        "--force", action="store_true",
+        help="overwrite an existing draft and report for the same package id without "
+             "confirming (recorded review answers still carry over)")
+    review = author_sub.add_parser(
+        "review", help="walk a draft's unresolved items to resolution ahead of the build")
+    review.add_argument("--draft", required=True, help="the draft spec (TOML) to review")
+
     # Live-test blocker B4: read scanned papers through the intake checks.
     ingest_parser = sub.add_parser(
         "ingest", help="read the test paper and answer sheets (PDFs) through the intake checks")
@@ -245,6 +273,65 @@ def _package_export_command(args: Any) -> int:
     return EXIT_OK
 
 
+def _author_draft_command(args: Any) -> int:
+    """`aeh author draft` (#695, FR-PIPE-10). The library's `AuthoringService.draft` driven
+    from the terminal — the CLI is a thin frontend (CT-AUTHOR-01), so no workflow logic
+    lives here: the config resolves the profile the way `aeh run` does (`HARNESS_PROFILE`,
+    the environment over the file), and the provider comes from `_provider_for`, the
+    pipeline's resolution seam (`HARNESS_FIXTURE_DIR` -> the recorded provider, `CT-PROV-10`).
+
+    An existing draft and report for the same package id are refused before anything is
+    written (FR-AUTHOR-22); `--force` is the non-interactive confirmation, and without it
+    the refusal asks — `y`/`yes` re-drafts, anything else (EOF included) stops with nothing
+    written. Errors surface through `main`'s wrapper: exit 1, nothing written.
+    """
+    from pathlib import Path
+
+    from aeh.author.errors import OverwriteRefusedError
+    from aeh.author.service import authoring_service
+
+    config = effective_config(_load_config_file(args.config))
+    profile = str(config.get("HARNESS_PROFILE") or "")
+    provider = _provider_for({"backend_profile": profile})
+    service = authoring_service(config, profile, provider=provider)
+    documents = [Path(document) for document in args.docs]
+    output_dir = Path(args.out)
+    try:
+        service.draft(documents, output_dir, force=args.force)
+    except OverwriteRefusedError as error:
+        print(f"aeh author draft: {type(error).__name__}: {error}", file=sys.stderr)
+        if not _confirmed("Overwrite the existing draft and report for this package id?"):
+            return EXIT_ERROR
+        service.draft(documents, output_dir, force=True)
+    return EXIT_OK
+
+
+def _author_review_command(args: Any) -> int:
+    """`aeh author review` (#695, FR-PIPE-10). The review walk over a draft, which makes no
+    model call: it reads the draft, asks the teacher one answer per unresolved item on
+    stdin (EOF stops, keeping what it applied — FR-AUTHOR-17), and prints the build command
+    only when the draft is ready. Exit 0 when ready, 1 when items remain — and the same 1
+    for a missing or non-authoring draft, whose reason the walk raises
+    (`AuthoringInputError`) for `main`'s wrapper to print; the outputs distinguish them.
+    """
+    from pathlib import Path
+
+    from aeh.author.review import run_review
+
+    result = run_review(Path(args.draft), None)
+    return EXIT_OK if result.ready else EXIT_ERROR
+
+
+def _confirmed(prompt: str) -> bool:
+    """The interactive confirmation for an otherwise-refused overwrite. EOF — a scripted or
+    closed stdin — is a no: a prompt nobody could answer must not proceed."""
+    try:
+        answer = input(f"{prompt} [y/N]: ")
+    except EOFError:
+        return False
+    return answer.strip().lower() in ("y", "yes")
+
+
 def _consent_classes() -> tuple[str, ...]:
     from aeh.orch.cohorts import CONSENT_CLASSES
 
@@ -299,6 +386,10 @@ def main(argv: "Sequence[str] | None" = None) -> int:
     try:
         if args.command == "cohort":
             return _cohort_command(args)
+        if args.command == "author":
+            if args.author_command == "draft":
+                return _author_draft_command(args)
+            return _author_review_command(args)
         if args.command == "package":
             if args.package_command == "export":
                 return _package_export_command(args)

@@ -6,9 +6,10 @@ the recreate (the package-authoring test plan §5.2; design delta §3.1 v1.12-de
     Expected: always produces a fresh draft; nothing blocks or skews the second run.
     Oracle: file set + success.
 
-Story #697 (TS-163), which depends on #696; written ahead of both, so the case is red until
-the service lands. Keyed `#697 retry recreate` in `WRITTEN_AHEAD_BLOCKERS`; when #697 closes
-the marker comes off — never the test.
+Story #697 (TS-163), which depends on #696; written ahead of both, keyed `#697 retry
+recreate` in `WRITTEN_AHEAD_BLOCKERS`. LANDED (#695): the service landed with #696/#697 and
+both integration files re-ran green from fresh processes at the landing, so the marker came
+off — never the test.
 
 **Rung 3, and the limb this case owns.** `TC-AUTHOR-C18`'s clause file drives the overwrite
 matrix in ONE process through `cli.main` with the provider seam monkeypatched; the plan's
@@ -67,7 +68,7 @@ from tests.support.author_vocabulary import (
 )
 from tests.support.impl import NotImplementedYet, require, require_path
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 

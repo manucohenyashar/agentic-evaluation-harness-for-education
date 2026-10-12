@@ -39,8 +39,6 @@ from __future__ import annotations
 import argparse
 import re
 
-import pytest
-
 from tests.support.console_api_vocabulary import (
     DEBUGGING_ONLY,
     PARITY_ISSUE,
@@ -58,10 +56,9 @@ def _parser():
     return _build_parser()
 
 
-# Waits on #695 with the `"#695 cli registration"` blocker: the parity inventory lists
-# `aeh author draft`/`aeh author review` (added by #700) while the parser does not have
-# the `author` group yet, so the exact-census assertion is red until it lands.
-@pytest.mark.writtenahead
+# LANDED (#695): the parser has the `author` group, so the exact census passes over the
+# live registration — the marker came off (the `"#695 cli registration"` entry was dropped),
+# the test kept.
 def test_tc_console_54_every_aeh_subcommand_has_a_console_path_or_a_debugging_only_reason():
     routes, console_paths, debugging_only = require(
         CONSOLE_MODULE, ROUTE_TABLE, PARITY_PATHS, DEBUGGING_ONLY, issue=PARITY_ISSUE)

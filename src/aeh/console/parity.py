@@ -10,12 +10,10 @@ rendering: `GET /api/v1/cli-help` answers `parity_inventory()`, generated from t
 `aeh` parser at request time, so a stale entry cannot hide. The design fixes none of the names;
 they are declared here once, and `tests/support/console_api_vocabulary.py` reads the same two.
 
-The authoring commands are listed **present-and-unavailable** (`FR-CONSOLE-46`, design delta
-§3.5): `aeh author draft` / `aeh author review` are CLI first (FR-PIPE-10), the authoring
-screens are future console work, and the listing says so instead of inventing a console path
-this delta does not build. While the `author` group is unregistered (#695), the inventory
-serves the declared rows and the census keeps naming the gap — a declared command the parser
-will never have cannot hide behind its row.
+The authoring commands are listed as debugging-only rows with the reason (`FR-CONSOLE-46`,
+design delta §3.5): `aeh author draft` / `aeh author review` are CLI first (FR-PIPE-10,
+#695 registered them), and the authoring screens are future console work, so the listing
+says so instead of inventing a console path this delta does not build.
 """
 
 from __future__ import annotations
@@ -64,22 +62,19 @@ DEBUGGING_ONLY_COMMANDS: dict[str, str] = {
         "published package; the console's export gate delivers the school-facing package "
         "file instead"
     ),
-    # `aeh author draft` / `aeh author review` are CLI first (FR-PIPE-10); the authoring
-    # screens — upload the documents, render the report, collect the review answers — are
-    # future console work (FR-CONSOLE-46, design delta §3.5). This is the present-and-
-    # unavailable pattern (FR-CONSOLE-34): the command is listed, the console path is not
-    # invented, and the reason says why. Until the `author` group is registered in the
-    # parser (#695), `parity_inventory` serves these rows as declared-but-unregistered —
-    # the census keeps naming the gap until then.
+    # `aeh author draft` / `aeh author review` are CLI first (FR-PIPE-10) and registered
+    # (#695); the authoring screens — upload the documents, render the report, collect the
+    # review answers — are future console work (FR-CONSOLE-46, design delta §3.5). The
+    # console path is not invented, and the reason says the screens have yet to be built.
     "author draft": (
         "turns teacher-authored documents into a draft package spec plus an authoring report "
         "from the terminal; the authoring screens are future console work (FR-CONSOLE-46), so "
-        "the command is listed present-and-unavailable until they are built"
+        "a developer runs the command in the terminal until they are built"
     ),
     "author review": (
         "walks the teacher through every unresolved item of a draft before the package can be "
-        "built; the authoring screens are future console work (FR-CONSOLE-46), so the command "
-        "is listed present-and-unavailable until they are built"
+        "built; the authoring screens are future console work (FR-CONSOLE-46), so the walk "
+        "runs in the terminal until they are built"
     ),
 }
 
@@ -167,12 +162,12 @@ def parity_inventory() -> dict[str, Any]:
     (`TC-CONSOLE-54`) fails on the same list, and a reader of the help sees the gap, not
     silence.
 
-    A debugging-only command the parser does not have *yet* is still served as a row
-    (FR-CONSOLE-46's present-and-unavailable listing): the listing — the reason and the
-    what-it-is-for line — is the console's decision, made when #700 amended the tables, and
-    the help section must show it even before the command is registered (#695). The census
-    gap for the unregistered name stays in `gaps` until the parser catches up, so a declared
-    command the parser will never have cannot hide behind its row.
+    A debugging-only command the parser does not have *yet* is still served as a row:
+    the listing — the reason and the what-it-is-for line — is the console's decision, made
+    when the tables were amended, and the help section must show it even before the command
+    is registered. The census gap for the unregistered name stays in `gaps` until the
+    parser catches up, so a declared command the parser will never have cannot hide behind
+    its row.
     """
     from aeh.pipeline.cli import _build_parser
 

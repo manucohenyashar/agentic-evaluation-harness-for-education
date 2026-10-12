@@ -48,7 +48,7 @@ from tests.support.author_vocabulary import (
 )
 from tests.support.impl import NotImplementedYet, require, require_attr, require_path
 
-pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.contract]
 
 TEACHER = "Sample-materials teacher"
 
