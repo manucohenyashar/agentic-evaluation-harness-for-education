@@ -24,7 +24,10 @@ assembled prompt, build id included). The oracles, in the plan's order (§5.1 ro
   the one escape-decoded variant a TOML/JSON string literal would force — a paraphrase
   changes letters, not escapes) with bands derived from the prose (even 2–6, worst first,
   non-decreasing points); AF-05's evidence_sum composite with binary two-band aspects
-  naming it in `component_of`; AF-12's mixed mcq and judged lines, all resolved; every
+  naming it in `component_of`; AF-12's mixed mcq and judged lines, all resolved (the
+  landing: AF-12's judged lines state no expected solution, so they carry the
+  FR-AUTHOR-06 `model_answer` gap — a bands set does not determine a model answer — and
+  the fixture's outcome class is partial; the shape pins below are unaffected); every
   question covered by at least one criterion; **weighted scores never proposed** (every
   criterion is one of FR-AUTHOR-07's supported shapes — no weight field, no unsupported
   shape) and **dependency-implying prose never an edge** (no criterion carries a
@@ -105,7 +108,6 @@ from tests.support.author_vocabulary import (
 )
 from tests.support.impl import require, require_path
 
-pytestmark = [pytest.mark.writtenahead]
 
 #: The registry key this file is blocked on (the issue's own note, kept as the key).
 STEPS_ISSUE = "#692 reasoning steps"
@@ -134,8 +136,14 @@ _DEPENDENCY_FIELDS = frozenset({"depends_on", "dependencies", "requires"})
 
 
 def _guards(af_ids):
-    """The §3.1 surface plus the step pins (#692's), then the corpus and its capture index."""
-    author = require(AUTHOR_MODULE, *AUTHOR_SURFACE, issue=STEPS_ISSUE)
+    """The §3.1 surface plus the step pins (#692's), then the corpus and its capture index.
+
+    Disclosed reconcile (the landing): the module fetch and the surface assertion are two
+    calls, the pattern every sibling file uses — `require` with names returns the symbols
+    (a tuple), not the module, so the module the tests drive comes from the zero-names
+    call and the names call only asserts the surface exists."""
+    author = require(AUTHOR_MODULE, issue=STEPS_ISSUE)  # the module itself
+    require(AUTHOR_MODULE, *AUTHOR_SURFACE, issue=STEPS_ISSUE)  # the §3.1 names
     require(AUTHOR_MODULE, *STEP_PROMPT_PINS, issue=STEPS_ISSUE)
     for af_id in af_ids:
         require_path(af(af_id), f"the {af_id} authored fixture", issue=CORPUS_ISSUE)
@@ -152,9 +160,11 @@ def _expected(af_id):
 
 
 def _documents(af_id):
-    """The fixture's documents in `expected.toml`'s declared order — the corpus README's
-    hand-in order (see the module docstring's disclosed assumption)."""
-    return [af(af_id) / name for name in _expected(af_id)["documents"]]
+    """The fixture's documents, sorted — the capture pass's call order, which the
+    recorded request key covers (the module docstring's disclosed assumption, AF-02's
+    two-document set being the case where it differs from `expected.toml`'s hand-in
+    order; the reconciliation the docstring names is this one function)."""
+    return sorted((af(af_id) / name for name in _expected(af_id)["documents"]))
 
 
 def _draft(author, make_fixture_provider, af_id, output_dir):

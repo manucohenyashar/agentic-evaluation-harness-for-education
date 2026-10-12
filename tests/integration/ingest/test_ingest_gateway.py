@@ -154,9 +154,15 @@ def test_tc_ingest_01_only_m_ingest_touches_pdfs_and_no_entry_point_takes_a_path
     `M-INGEST`."""
     root = pathlib.Path("src", "aeh")
     pdf_importers = []
+    # Disclosed reconcile (the landing): ADR-44 (package_authoring_design_delta.md §4.4)
+    # carves M-AUTHOR out of the gateway monopoly — teacher documents are authoring-time
+    # inputs, not student submissions, and M-AUTHOR extracts the text layer with `pypdf`
+    # and rasterizes with `pypdfium2` itself (a library dependency, not an `M-INGEST`
+    # module dependency). `author.py` joins `ingest.py` in the exclusion; the submission
+    # path's rule is unchanged.
     for name, text in aeh_module_sources(root):
         for marker in PDF_LIBRARY_MARKERS:
-            if marker in text and name != "ingest.py":
+            if marker in text and name not in ("ingest.py", "author.py"):
                 pdf_importers.append(f"{name}: {marker}")
     assert not pdf_importers, (
         f"TC-INGEST-01: PDF/image decoding exists outside M-INGEST: {pdf_importers}. "

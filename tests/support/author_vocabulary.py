@@ -217,7 +217,10 @@ class CountingProvider:
 #: The sentinel value, verbatim (FR-AUTHOR-11). The draft text must contain it exactly this
 #: often: once per placeholder item, each with its reason comment on the line above.
 SENTINEL_RE = re.compile(r"<<PLACEHOLDER: ([^<>\n]+?)>>")
-PLACEHOLDER_COMMENT_RE = re.compile(r"#\s*PLACEHOLDER\(([^)\n]+)\):\s*(.+?)\s*$")
+#: The reason group is nested-paren-tolerant (greedy up to the last `):`): a reason may
+#: itself carry a parenthesised citation — the grades gap's `... never invented
+#: (FR-AUTHOR-08)` was the first to prove it. Disclosed reconcile (the landing).
+PLACEHOLDER_COMMENT_RE = re.compile(r"#\s*PLACEHOLDER\((.+)\):\s*(.+?)\s*$")
 #: A content fingerprint as the report renders it — a hex run of 12–64 characters (see the
 FINGERPRINT_RE = re.compile(r"\b[0-9a-f]{12,64}\b", re.IGNORECASE)
 

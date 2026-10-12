@@ -173,11 +173,17 @@ def test_the_corpus_rebuilds_byte_identical() -> None:
         # `coverage.json` files are *captured* (#690's pass), not emitted — exempting them
         # here is what lets the landing PR that captures them keep this unmarked census
         # green, with the honesty file beside this one pinning the captured half.
+        #
+        # Disclosed reconcile (the landing): `recordings-af01-variant/` is the same story's
+        # second captured set (TC-AUTHOR-29's AF-01 variant replies, landed by the same
+        # #690 pass into the path `tests/support/author_vocabulary.py` declares) — captured,
+        # not emitted, so the whole directory is exempt like `recordings/`'s captured half.
         committed.pop(GENERATOR.name, None)
         committed = {
             p: b for p, b in committed.items()
             if "__pycache__" not in p
             and not (p.startswith("recordings/") and p != "recordings/README.md")
+            and not p.startswith("recordings-af01-variant/")
         }
         stale = sorted(
             path for path in committed.keys() | fresh.keys()

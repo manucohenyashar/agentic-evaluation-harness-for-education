@@ -39,7 +39,6 @@ from tests.support.author_vocabulary import (
 )
 from tests.support.impl import require, require_path
 
-pytestmark = [pytest.mark.writtenahead]
 
 
 def _guards() -> tuple:

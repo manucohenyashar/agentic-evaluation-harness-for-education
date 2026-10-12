@@ -46,10 +46,10 @@ design's fail-safe one (`Q-O11`): *the sentinel must not be forgeable by documen
 a draft whose graded field carries a literal the document quoted cannot build, whatever
 wrote it there.
 
-**Written ahead of the implementation.** `aeh.author` does not exist yet: #690 builds the
-module and the service this file drives, #693 lands `validate_draft`, the pure second layer.
-Every body opens with `require()` guards naming its issue, and the file carries
-`pytest.mark.writtenahead` under the #701 registry probe until both have landed.
+**Landed.** `aeh.author` exists: #690 built the module and the service this file drives,
+#693's `validate_draft`, the pure second layer, shipped with it. The `writtenahead` marker
+came off — the #701 registry probe resolved and the file ran green after its disclosed
+reconciles — and the `require()` guards stay, naming their issue should a limb vanish.
 """
 
 from __future__ import annotations
@@ -69,7 +69,7 @@ from tests.support.author_vocabulary import (
 )
 from tests.support.impl import require
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 
 def chain():
@@ -242,14 +242,21 @@ def test_adv_18_an_injected_directive_rides_as_data_and_never_reaches_the_prompt
             f"payload field"
         )
         for (name_b, value_b), (name_i, value_i) in zip(prompt_b.fields, prompt_i.fields):
+            # Disclosed reconcile (the landing): the twins are rendered through the corpus
+            # generator's own 85-column wrap (this file's `_write_pdf`), so the directive
+            # rides the payload broken across lines — the needle matches on
+            # whitespace-normalized text, which the wrap preserves word-for-word. The
+            # differential's semantics are unchanged: the framing fields stay byte-identical
+            # (raw), and a directive field still must differ from its benign counterpart.
+            directive_i = DIRECTIVE in " ".join(value_i.split())
             if value_b == value_i:
                 framing_fields += 1
-                assert DIRECTIVE not in value_i, (
+                assert not directive_i, (
                     f"the injected directive reached the prompt framing: field {name_i!r} "
                     f"is byte-identical between the twins, so it carries no document text, "
                     f"yet it contains the injected instruction"
                 )
-            if DIRECTIVE in value_i:
+            if directive_i:
                 directive_fields += 1
                 assert value_b != value_i, (
                     f"the injected directive sits in field {name_i!r} whose benign "
@@ -406,6 +413,9 @@ def test_adv_18_the_validator_rejects_the_proposals_an_obeying_reply_would_make(
             ']\n\n[[criterion]]\nid = "C4x"\nquestion = "Q4"\nbands = [',
         )),
         # "full marks": points that do not increase worst-first — the monotone-points rule.
+        # Disclosed reconcile (the landing): `_mutated_spec` takes one `(old, new)` pair per
+        # edit — the two band edits below were flattened into a single 4-tuple, which the
+        # pair unpacking cannot read. Two pairs, same anchors.
         "non-monotone full-marks points": _mutated_spec((
             'name = "full", points = 3, descriptor = "States that the net force is zero '
             'AND links this to the steady (constant) speed, for example by Newton\'s first '
@@ -413,6 +423,7 @@ def test_adv_18_the_validator_rejects_the_proposals_an_obeying_reply_would_make(
             'name = "full", points = 1, descriptor = "States that the net force is zero '
             'AND links this to the steady (constant) speed, for example by Newton\'s first '
             'law."',
+        ), (
             'name = "adequate", points = 2, descriptor = "Says the forces balance or '
             'cancel, but does not link this to steady speed."',
             'name = "adequate", points = 3, descriptor = "Says the forces balance or '
