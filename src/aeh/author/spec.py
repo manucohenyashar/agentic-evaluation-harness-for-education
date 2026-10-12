@@ -14,6 +14,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+# The spec-export rendering helpers, imported for their behaviour, not their ownership:
+# the draft renders in the same house grammar `aeh package build` reads (`FR-PKG-27`), so
+# duplicating the three private helpers would let the two renderers drift. This does load
+# `M-PIPE` with `M-AUTHOR` at import time — the design's downstream-only note describes the
+# call direction, not an import-free boundary (disclosed at the #690 review; the one line
+# that would change is the comment in `validation._plan_issues`).
 from aeh.pipeline.spec_export import _assign, _toml_key, _toml_str
 
 from .rubric import aspect_present_points

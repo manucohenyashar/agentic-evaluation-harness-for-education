@@ -65,9 +65,13 @@ def validate_draft(spec: Mapping[str, Any]) -> list[DraftIssue]:
 
 
 def _plan_issues(spec: Mapping[str, Any]) -> list[DraftIssue]:
-    """`plan_package`'s refusals, converted. The lazy import keeps `M-AUTHOR` importable
-    without `M-PIPE` on the console path (`TC-REQ-89`'s discipline, mirrored from
-    `aeh.calib`: a module the system may run without cannot be a mandatory import)."""
+    """`plan_package`'s refusals, converted. The import is lazy as a guard, not as
+    isolation — `spec.py` already pulls `aeh.pipeline.spec_export`'s rendering helpers at
+    module import, so `M-PIPE` loads with `M-AUTHOR` (the design's downstream-only note
+    describes the call direction — M-PIPE registers and calls this module — not an
+    import-free boundary: the draft renders in the spec-export grammar the build reads).
+    The lazy `plan_package` keeps the heavier build-path import off module load until a
+    draft is actually validated."""
     from aeh.pipeline.packages import PackageSpecError, plan_package
     try:
         plan_package(spec, _NO_SUCH_PACKAGES_DIR)

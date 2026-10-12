@@ -428,6 +428,13 @@ def _transcriber_of(section: Mapping[str, Any]) -> ModelRef | None:
     if isinstance(raw, ModelRef):
         return raw
     if isinstance(raw, Mapping):
+        missing = [key for key in ("role", "provider", "build_id") if key not in raw]
+        if missing:
+            # `ModelRef`'s own validation would name the *value*; a missing key is the
+            # profile's shape being wrong, so name the keys (fail-fast inputs, FR-AUTHOR-13).
+            raise ConfigurationError(
+                "the profile's transcriber table is missing "
+                f"{', '.join(repr(key) for key in missing)}.")
         return ModelRef(role=raw["role"], provider=raw["provider"],
                         build_id=raw["build_id"], quantization=raw.get("quantization"))
     raise ConfigurationError(
