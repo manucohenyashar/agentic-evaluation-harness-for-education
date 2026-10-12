@@ -4,18 +4,6 @@
  * POST route. The paths mirror `src/aeh/console/api.py` — one table of routes, both sides.
  */
 
-export interface HubState {
-  run_id: string | null;
-  package_version_id: string | null;
-  run_status: string | null;
-  engine: string;
-  poll_interval_ms: number;
-}
-
-export async function fetchHubState(signal?: AbortSignal): Promise<HubState> {
-  return fetchRead<HubState>("/api/v1/hub", signal);
-}
-
 // --- the lifecycle screens' documents (FR-UI-03, #635) -------------------------------------------
 
 export interface SetupStep {
@@ -174,7 +162,7 @@ export async function fetchRead<T>(
     } catch {
       detail = "";
     }
-    throw new Error(detail || `the read failed with status ${response.status}`);
+    throw new Error(detail || "the console could not read that");
   }
   return (await response.json()) as T;
 }
@@ -200,10 +188,10 @@ export async function performAction(
   try {
     payload = (await response.json()) as ActionResult;
   } catch {
-    payload = { action, error: `the action answered status ${response.status}` };
+    payload = { action, error: "the action did not go through" };
   }
   if (!response.ok && payload.error === undefined) {
-    payload.error = payload.detail ?? `the action answered status ${response.status}`;
+    payload.error = payload.detail ?? "the action did not go through";
   }
   return payload;
 }
@@ -227,7 +215,128 @@ export interface HelpAnswer {
 export async function askHelp(question: string, signal?: AbortSignal): Promise<HelpAnswer> {
   const response = await fetch(`/api/v1/help/ask?q=${encodeURIComponent(question)}`, { signal });
   if (!response.ok) {
-    throw new Error(`the assistant could not answer (status ${response.status})`);
+    throw new Error("the assistant could not answer just now");
   }
   return (await response.json()) as HelpAnswer;
+}
+
+// --- the wizard shell's reads (the redesign surface, FR-CONSOLE-47..52) ---------------------------
+//
+// Every state value below travels exactly as a server read spells it (`CT-CONSOLE-38`: the
+// enums are additive; a value the SPA does not know renders as a neutral state, never an
+// error), so the types keep an open string arm beside the declared values.
+
+/** The stepper's state-badge values (`§3.3.4`'s legend, as the context read declares them). */
+export type StageState =
+  | "done"
+  | "in_progress"
+  | "not_started"
+  | "needs_attention"
+  | "failed"
+  | "queued"
+  | (string & {});
+
+/** One class ledger (`ADR-48`): a class and a grading cohort are one ledger in two states,
+ * so the switcher and the wizard treat them as one list. */
+export interface ClassEntry {
+  cohort_id: string;
+  label: string;
+  students: number;
+  state: string;
+  runs: number;
+}
+
+/** One wizard row the server derives for a package's stages — the shell renders the
+ * server's state and detail, never a client-side copy of the rule. */
+export interface PackageWizardRow {
+  stage: string;
+  state: StageState;
+  detail: string;
+}
+
+export interface PackageEntry {
+  package_id: string;
+  state: string;
+  published_version: string | null;
+  version_count: number;
+  draft_missing_pieces: number | null;
+  wizard: PackageWizardRow[];
+}
+
+export interface RunEntry {
+  run_id: string;
+  cohort_id: string;
+  package_id: string;
+  package_version_id: string;
+  state: string;
+  stage: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+/** The context header's feed (FR-CONSOLE-48): empty collections when nothing is stored. */
+export interface ContextDoc {
+  classes: ClassEntry[];
+  cohorts: ClassEntry[];
+  packages: PackageEntry[];
+  runs: RunEntry[];
+}
+
+export async function fetchContext(signal?: AbortSignal): Promise<ContextDoc> {
+  return fetchRead<ContextDoc>("/api/v1/context", signal);
+}
+
+/** What editing a package version would touch (FR-CONSOLE-49) — the wizard's IMPACT line. */
+export interface ImpactDoc {
+  package_version: string;
+  runs: number;
+  students: number;
+  regrading: { triggered: boolean; detail: string };
+}
+
+export async function fetchImpact(
+  packageVersion: string,
+  signal?: AbortSignal,
+): Promise<ImpactDoc> {
+  return fetchRead<ImpactDoc>("/api/v1/impact", signal, { package_version: packageVersion });
+}
+
+/** The park, under its teacher name (FR-CONSOLE-47) — the parked count the stepper names. */
+export interface ParkedDoc {
+  parked: {
+    submission_id: string;
+    cohort_id: string;
+    reason: string;
+    reason_label: string;
+    matched_student: string | null;
+    match_note: string;
+    resolutions: string[];
+    resolvable: boolean;
+  }[];
+  counts: { total: number; by_reason: Record<string, number> };
+}
+
+export async function fetchParked(signal?: AbortSignal): Promise<ParkedDoc> {
+  return fetchRead<ParkedDoc>("/api/v1/parked", signal);
+}
+
+/** The jobs read's records (`CT-CONSOLE-37`'s field set) — the grading-point progress the
+ * stepper's grading row renders. */
+export interface JobRecord {
+  job_id: string;
+  kind: string;
+  state: string;
+  progress: { done: number | null; total: number | null; current: string | null };
+  started_at: string | null;
+  finished_at: string | null;
+  cost_usd: number | null;
+  error: { detail: string | null; next_action: string | null };
+}
+
+export interface JobsDoc {
+  jobs: JobRecord[];
+}
+
+export async function fetchJobs(signal?: AbortSignal): Promise<JobsDoc> {
+  return fetchRead<JobsDoc>("/api/v1/jobs", signal);
 }
