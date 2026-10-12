@@ -149,10 +149,16 @@ def test_tc_help_06_b_the_context_ask_prompt_carries_no_student_text(tmp_path, t
             problems.append("the swept prompt carries no screen-context block: the sweep ran "
                             "over an ask that did not exercise the context channel")
         problems += [f"context ask: {hit}" for hit in hv.sweep(text, rig.world.forbidden)]
-        # Neither student's name, anywhere in the prompt: the context question names no one,
-        # so unlike CT-HELP-03's sweep there is no `allow_in` refuge here at all.
-        problems += [f"context ask: {hit}"
-                     for hit in hv.sweep(text, {"Zelda's name": rig.world.zelda_name})]
+        # Neither student's name, anywhere in the prompt — full name AND each token of it:
+        # the shape rule refuses whitespace-carrying refs, and a single-token surname slips
+        # that rule by design (`aeh.help.context`'s docstring), so the prompt sweep is the
+        # backstop and must look for the surname on its own. The context question names no
+        # one, so unlike CT-HELP-03's sweep there is no `allow_in` refuge here at all.
+        problems += [f"context ask: {hit}" for hit in hv.sweep(text, {
+            "Zelda's name": rig.world.zelda_name,
+            "Zelda's given name": "Zelda",
+            "Zelda's surname": "Quartermaine",
+        })]
     rig.store.close()
     assert not problems, "\n".join(problems)
 
@@ -253,6 +259,17 @@ def test_tc_help_06_edge_a_malformed_context_answers_400_before_any_model_call(
             f"expected exactly one model call (the well-formed ask), saw {len(double.calls)}: "
             "a malformed context reached the model before the edge refused it"
         )
+    if double.calls:
+        # The 200 alone does not pin the forwarding: the double picks its reply by the
+        # question text, so a request the edge answered with context=None would carry the
+        # same scripted reply. The assembled prompt must show the context went through.
+        prompt = double.calls[0].prompt
+        text = hv.payload_text(prompt)
+        if "screen_context" not in [name for name, _ in prompt.fields]:
+            problems.append("the edge's ask reached the model without a screen_context field: "
+                            "the well-formed context was not forwarded")
+        elif not (f"screen: {hv.WIZARD_STAGE_3}" in text and hv.CONTEXT_DRAFT_REF in text):
+            problems.append(f"the forwarded context lost the ids: {text!r}")
     assert not problems, "\n".join(problems)
 
 
