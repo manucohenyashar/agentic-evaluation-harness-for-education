@@ -2,29 +2,73 @@
 
 `TC-SMOKE-09` (`FR-ORCH-01`) — the three-unit run enumerates, executes and completes
 against the fixture provider; fails if any unit is missing, duplicated, or left open.
+**Re-based onto the composed pipeline** (TS-98, issue #392; §5.0's re-base column):
+"enumerates, executes and completes" means `aeh.pipeline.run_to_completion` returns
+`complete`, and every `done` unit has its payload row (`CT-PIPE-02`'s invariant, queried
+here per stage) — not merely that a hand-driven set of legs all closed their units.
+
 `TC-SMOKE-10` (`FR-GRADE-01`) — that run produces a `submission_grade` for every
-submission; fails if the grade is absent or empty.
+submission; fails if the grade is absent or empty. **Re-based**: the grades come from the
+same composed run — `run_to_completion`'s own grade stage (`FR-PIPE-06`), not a caller's
+`compute_all` — and the judged criterion's score row is the one the composed aggregation
+hook wrote, through the real `write_score` in its own transaction.
 
 The world is the legal minimal three-unit shape: panel sizes 2/4/0 are refused by
 `resolve_run_config`, so "exactly three" is one submission, one package carrying an mcq
 criterion and an open atomic one, and a one-judge edge panel — one `deterministic` unit
 (null judge, `kind='mcq'`'s discriminator), one `extract` unit (null judge), one `score`
 unit (the panel's judge at `atomic`'s base depth 1). Everything that runs is real — the
-orchestrator's ledger (enumerate → start → lease → complete, with the run-row completion
-probe), `M-DET`'s evaluator, `M-EXTRACT`'s worker, `M-JUDGE`'s worker, `M-AGG`'s
-aggregator, `M-GRADE`'s service — with the shipped `RecordedFixtureProvider` as the only
-egress, every reply recorded under the exact request key the real workers assemble (the
-`judge_world` drive pattern, issue #79's TS-31 precedent).
+composed pipeline's own driver over the orchestrator's ledger, `M-DET`'s evaluator,
+`M-EXTRACT`'s worker, `M-JUDGE`'s worker, `M-AGG`'s hook, `M-GRADE`'s service — with the
+shipped `RecordedFixtureProvider` as the only egress, every reply recorded under the exact
+request key the real workers assemble (the `judge_world` drive pattern, issue #79's TS-31
+precedent).
 
-Disclosed stand-ins (the suite's two, both the shared vocabulary's):
-- the judged criterion's `criterion_score` row is written through
-  `grade_vocabulary.write_criterion_scores` — `aggregate()` is pure (`CT-AGG-01`) and no
-  shipped module persists judged scores; the stand-in writes exactly the row M-AGG's
-  writer will, from the aggregate's own return values. The mcq row needs no stand-in:
-  it is written by the real `M-DET` evaluator in this very run.
-- the six integrity signals arrive favourable via `agg_vocabulary.signals()` — the
-  citation gate already ran inside the scoring worker's dispatch; `M-INTEG`'s
-  second-extraction comparison is not this case's leg.
+**The former stand-ins are gone, replaced by the composition's own paths** (the re-base's
+honest substitution — §5.0 no longer admits them):
+- the judged criterion's `criterion_score` row used to be written through
+  `grade_vocabulary.write_criterion_scores` because no shipped module persisted judged
+  scores and `aggregate()` is pure (`CT-AGG-01`). The composed hook IS that module: it
+  aggregates the cell in-transaction and persists through the real `write_score`, so this
+  suite reads the row the pipeline itself wrote.
+- the six integrity signals used to arrive favourable via `agg_vocabulary.signals()`.
+  The composed hook reads them from `M-INTEG`'s gate over the run's real ledger rows —
+  the citation gate already ran inside the scoring worker's dispatch, and the hook's
+  signal read is that gate's output, not a caller's.
+
+Disclosed shape (the deltas the composition forces, stated here once):
+- the drive is given `extractor=extractor_ref()` — the design's own exact-identity seam
+  (pipeline.md gap 2): a replay against a recorded corpus supplies the identity the
+  recording carries, here the HLD §9.9 worked example's model the suite has always
+  recorded under, rather than the run config's transcriber the default derivation would
+  name.
+- the corpus declares a second extractor family (`SECOND_FAMILY_REF`, the same
+  declaration `pipe_world.corpus_refs` makes for F-DEV-PIPE). The shipped policy is
+  fail-closed on an unmeasured extractor disagreement (`integ/signals.py`: the verdict
+  is None only when no second family was configured), and an unmeasured signal is an
+  adverse one — it escalates the cell and caps its confidence. The minimal corpus
+  cannot carry a widened panel, so the second family is declared and its reply is
+  composed on first sight under the same rule as the judge reply: the same span set the
+  first family read, which is the corpus's own declaration — one document, one true
+  span set.
+- the extract reply is pre-recorded under the exact request key the real worker
+  assembles; the judge reply CANNOT be pre-recorded — its key embeds the extracted
+  evidence, which does not exist until the composed drive's own extract leg runs — so it
+  is composed on first sight and recorded through the shipped `record()` machinery
+  (`_CaptureOnMiss`, `F-DEV-PIPE`'s capture precedent): the reply is the corpus's
+  control reply, byte-for-byte what the hand drive used to record. The composed drive
+  also runs `M-INTEG`'s second-extraction unit (the integrity pre-hook enqueues it), a
+  leg the hand drive never drove — its request replays the extract recordings, and its
+  evidence row is one more payload the `CT-PIPE-02` invariant counts.
+- the composed drive runs the synthesis leg after completion (`FR-PIPE-06`); over this
+  corpus it narrates nothing and calls nothing (the trace reads "0 narratives, 0
+  failures") — narratives are F-SYNTH's leg, not the smoke suite's.
+- no validation baseline is recorded on the smoke package: the escalation hook reads its
+  baseline from the package (`FR-PIPE-15`), finds none, and the no-data concern (weighted
+  0.5, `CT-STATS-09`) plus the control reply's self-confidence (weighted 0.25 × 0.38)
+  stays under the escalation threshold — no cell escalates, and the one-judge cell
+  awaits its panel, which is this suite's oracle, reached through the shipped policy
+  rather than a caller's argument.
 
 The document is a disclosed direct write in `seed_head_document`'s column shape (real
 blob bytes, real fences) — `M-INGEST` is TC-SMOKE-08's leg, not this one's; the answer
@@ -41,11 +85,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from aeh.agg import aggregate
-from aeh.conf import CohortRef, resolve_run_config
-from aeh.det import BAND_CORRECT, ROUTING_AUTO, STATE_FINAL, DeterministicEvaluator
+from aeh.det import BAND_CORRECT, ROUTING_AUTO, STATE_FINAL
 from aeh.extract import EXTRACT_STATEMENTS
-from aeh.grade import open_grade
 from aeh.orch import (
     EXTRACTOR_VERSION,
     STAGE_DETERMINISTIC,
@@ -54,9 +95,12 @@ from aeh.orch import (
     Orchestrator,
     compute_work_id,
 )
+from aeh.orch.work_units import WorkUnit
 from aeh.pkg import PackageCatalog
+from aeh.pipeline import run_to_completion
+from aeh.prov import FixtureMissingError
 from aeh.store import open_store
-from tests.support.agg_vocabulary import criterion as agg_criterion, signals
+from aeh.conf import CohortRef, resolve_run_config
 from tests.support.conf_builders import EDGE_JUDGE, edge_cfg, edge_panel
 from tests.support.det_vocabulary import seed_answer_region
 from tests.support.extract_vocabulary import (
@@ -65,7 +109,7 @@ from tests.support.extract_vocabulary import (
     span_completion,
     verdict_completion,
 )
-from tests.support.grade_vocabulary import grade_rows, write_criterion_scores
+from tests.support.grade_vocabulary import grade_rows
 from tests.support.judge_run import (
     CONTROL_BAND,
     CONTROL_CONFIDENCE,
@@ -86,6 +130,13 @@ MCQ_CRITERION = "M1"
 JUDGED_CRITERION = "C1"
 DOCUMENT_ID = "doc-s-smoke"
 _STAMP = "2026-01-01T00:00:00+00:00"
+
+#: The corpus's second extractor family — the same declaration `pipe_world.corpus_refs`
+#: makes for F-DEV-PIPE, under this corpus's own build id. The shipped policy is
+#: fail-closed on an unmeasured extractor disagreement, so the second family is part of
+#: the replayed corpus's shape, not an option.
+SECOND_FAMILY_REF = extractor_ref(
+    build_id="vlm@sha256:smoke-extract-b", provider="local")
 
 
 def _build_world(store, provider):
@@ -193,62 +244,108 @@ def _one_unit(world, stage):
     return rows[0]
 
 
-def _drive_run(world):
-    """Start the run and execute all three legs through the real modules.
-
-    The deterministic leg is `M-DET`'s cohort pass (its row is real); the extract and
-    score legs lease through the orchestrator and drive the owning workers against the
-    fixture provider, recording each reply under the exact request key first. Every
-    unit ends `done` on the ledger. The caller has started the run; start() from
-    anything but `pending` is refused."""
-    det_unit = _one_unit(world, STAGE_DETERMINISTIC)
-    DeterministicEvaluator(world.store).evaluate_cohort(world.run_id)
-    world.orchestrator.complete(det_unit["work_id"])
-
-    extract_units = list(world.orchestrator.lease("w-extract-smoke", STAGE_EXTRACT, 8))
-    assert len(extract_units) == 1, (
-        "precondition: the extract stage leased a different unit count than the "
-        "enumeration wrote"
+def _ledger_unit(world, stage, judge_id):
+    """The unit as the ledger names it, assembled into the `WorkUnit` the workers
+    read — WITHOUT leasing it. Recording needs the request key only, and the composed
+    drive leases every unit itself; a unit held 'leased' here would be one the drive can
+    never claim."""
+    row = _one_unit(world, stage)
+    return WorkUnit(
+        work_id=row["work_id"],
+        run_id=world.run_id,
+        stage=stage,
+        student_ref=f"ref-{SUBMISSION_ID}",
+        student_name=None,
+        submission_id=SUBMISSION_ID,
+        criterion_id=row["criterion_id"],
+        submission_text=None,
+        judge=judge_id,
     )
-    request = world.warm["extract"][0](extract_units[0], store=world.store)
+
+
+def _record_replies(world):
+    """Record the extract reply under the exact request key the real worker assembles —
+    the `judge_world` pattern. The extract request is assembled from the ledger unit's
+    identity (`submission_text` stays None: assembly resolves the head document from the
+    store, exactly as the composed worker's own claim does). The judge reply is NOT
+    pre-recordable: its request key embeds the extracted evidence (`M-JUDGE` assembles
+    the evidence block from the store's evidence rows), which does not exist until the
+    composed drive's own extract leg runs — so the judge reply is composed on first
+    sight instead (`_CaptureOnMiss`)."""
+    extract_unit = _ledger_unit(world, STAGE_EXTRACT, None)
+    request = world.warm["extract"][0](extract_unit, store=world.store)
     world.provider.record(
         world.warm["extract_prompt_fields"](request),
         extractor_ref(),
         sampling_params(),
         span_completion(world.spans, build_id=extractor_ref().build_id),
     )
-    world.warm["extract"][1](world.store, world.provider, extractor_ref()).process(
-        extract_units[0]
-    )
 
-    score_units = list(world.orchestrator.lease("w-judge-smoke", STAGE_SCORE, 8))
-    assert len(score_units) == 1, (
-        "precondition: the score stage leased a unit count other than one — "
-        "the one-judge panel at atomic depth must enumerate exactly one arm"
-    )
-    ref = EDGE_JUDGE
-    worker = world.warm["judge"](world.store, world.provider, ref)
-    request = worker.assemble(score_units[0])
-    world.provider.record(
-        world.warm["judge_prompt_fields"](request),
-        ref,
-        sampling_params(),
-        verdict_completion(
-            CONTROL_BAND,
-            CONTROL_CONFIDENCE,
-            build_id=ref.build_id,
-            cited_spans=world.spans,
-        ),
-    )
-    result = worker.dispatch(request, ref)
-    worker.persist(score_units[0], result)
 
-    # The workers close their own units inside their payload transactions (`persist`'s
-    # guarded done-marking), which bypasses the lifecycle probe by design — the probe
-    # fires on the orchestrator's lifecycle writes. The sanctioned closer for a run
-    # whose last unit closed underneath a worker is the resume pass: "a resume that
-    # opens a finished run completes it" (`resume`'s own docstring, `FR-ORCH-25`).
-    world.orchestrator.resume(world.run_id)
+class _CaptureOnMiss:
+    """The model boundary's capture shape (`F-DEV-PIPE`'s precedent, the same one
+    `tests.support.composed_synth` discloses): the boundary answers a first sight of a
+    request by composing the reply from the corpus's own declarations and records it
+    through the shipped `record()` machinery, so every later identical request replays
+    from the recording. The composition is the disclosure, not a second oracle: the
+    judge reply is the corpus's control reply, byte-for-byte what the hand drive
+    recorded; the second family's extract reply is the same span set the first family
+    read — one document, one true span set."""
+
+    def __init__(self, inner, world):
+        self._inner = inner
+        self._world = world
+
+    def complete(self, payload, model_ref=None, params=None):
+        role = getattr(model_ref, "role", None)
+        if role in ("judge", "extractor"):
+            try:
+                return self._inner.complete(payload, model_ref, params)
+            except FixtureMissingError:
+                if role == "extractor":
+                    reply = span_completion(
+                        self._world.spans, build_id=model_ref.build_id)
+                else:
+                    reply = verdict_completion(
+                        CONTROL_BAND,
+                        CONTROL_CONFIDENCE,
+                        build_id=model_ref.build_id,
+                        cited_spans=self._world.spans,
+                    )
+                self._world.provider.record(payload, model_ref, params, reply)
+                return self._inner.complete(payload, model_ref, params)
+        return self._inner.complete(payload, model_ref, params)
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+
+def _drive_composed(world):
+    """The composed drive: `run_to_completion` over the started run — the deterministic
+    evaluation first, then the dispatch passes with the integrity gate and the
+    aggregation hook firing in-transaction, then synthesis and grading on completion.
+
+    `extractor=` is the exact-identity seam (pipeline.md gap 2): this suite replays a
+    recorded corpus, and the recording carries the identity it was captured under.
+    `second_family=` is the corpus's second extractor reading, declared against the
+    judged criterion in `high_risk_criteria` — the flag is what registers the
+    second-family pass (`extract/worker.py`: a flagged criterion's SAME prompt runs a
+    second time on the different family) — because the shipped policy is fail-closed on
+    an unmeasured extractor disagreement."""
+    inner = world.provider
+    world.provider = _CaptureOnMiss(inner, world)
+    try:
+        return run_to_completion(
+            world.store,
+            world.run_id,
+            provider=world.provider,
+            run_config=world.resolved,
+            extractor=extractor_ref(),
+            second_family=SECOND_FAMILY_REF,
+            high_risk_criteria=(JUDGED_CRITERION,),
+        )
+    finally:
+        world.provider = inner
 
 
 def test_tc_smoke_09_three_unit_run_enumerates_executes_completes(
@@ -263,11 +360,11 @@ def test_tc_smoke_09_three_unit_run_enumerates_executes_completes(
     `compute_work_id` over the nine `WORK_ID_INPUTS` recomputed here from the run row
     and the module constant (the content address is the requirement, not an
     implementation detail); a second enumeration is a byte-identical `no-op` (`NFR-ORCH-05`,
-    `FR-ORCH-03`). After the drive, every unit is `done` and the run row is `complete`
-    (`FR-ORCH-25`'s last-unit probe), `progress` reports `complete`, and each leg
-    produced its artifact: a `criterion_score` row from the real evaluator, an
-    `evidence` row naming the build that answered, and a `verdict` row in the declared
-    band.
+    `FR-ORCH-03`). The composed drive returns `complete`, every unit is `done` and the
+    run row is `complete`, `progress` reports `complete` — and every `done` unit has its
+    payload row (`CT-PIPE-02`'s invariant, queried per stage): the extract leg's
+    `evidence` row naming the build that answered, the score leg's `verdict` row in the
+    declared band, the deterministic leg's `criterion_score` row from the real evaluator.
     """
     store = open_store(tmp_data_dir)
     world = _build_world(store, make_fixture_provider())
@@ -336,7 +433,14 @@ def test_tc_smoke_09_three_unit_run_enumerates_executes_completes(
     )
 
     assert world.orchestrator.start(world.run_id) == "running"
-    _drive_run(world)
+    _record_replies(world)
+    result = _drive_composed(world)
+    assert result.status == "complete", (
+        f"TC-SMOKE-09: the composed drive read {result.status!r} "
+        f"({result.pause_reason!r}). The re-based oracle: run_to_completion returns "
+        "complete — a smoke run that cannot close through the shipped driver is a "
+        "composition defect, whatever a hand-driven leg set could force."
+    )
 
     statuses = {row["work_id"]: row["status"] for row in _units_of(world)}
     assert set(statuses.values()) == {"done"}, (
@@ -346,15 +450,41 @@ def test_tc_smoke_09_three_unit_run_enumerates_executes_completes(
     run_after = world.handle.query(
         statement("SELECT status FROM run WHERE run_id = :r"), r=world.run_id
     )[0]
-    assert run_after["status"] == "complete", (
-        "TC-SMOKE-09: the run row did not reach 'complete' when its last unit closed. "
-        "FR-ORCH-25's probe is the lifecycle's closure — a pipeline that finishes its "
-        "work but never settles the run leaves the operator reading a run that is "
-        "neither running nor done."
-    )
+    assert run_after["status"] == "complete"
     assert world.orchestrator.progress(world.run_id).complete is True
 
-    # The execution artifacts, one per leg — the payloads the stages own (#68 onward).
+    # CT-PIPE-02's invariant, over this run's whole ledger: every done unit has its
+    # payload row, per stage. Evidence and verdict are addressed by work_id;
+    # criterion_score is addressed by its cell (run, submission, criterion) — the
+    # deterministic leg's done unit and its row share the cell, not a work_id.
+    for stage, payload, match in (
+        (STAGE_EXTRACT, "evidence", "p.work_id = work_unit.work_id"),
+        (STAGE_SCORE, "verdict", "p.work_id = work_unit.work_id"),
+        (
+            STAGE_DETERMINISTIC,
+            "criterion_score",
+            "p.run_id = work_unit.run_id AND p.submission_id = work_unit.submission_id "
+            "AND p.criterion_id = work_unit.criterion_id",
+        ),
+    ):
+        orphans = world.handle.query(
+            statement(
+                f"SELECT work_id FROM work_unit WHERE run_id = :r AND stage = :st "
+                f"AND status = 'done' AND NOT EXISTS (SELECT 1 FROM {payload} p WHERE "
+                f"{match})"
+            ),
+            r=world.run_id,
+            st=stage,
+        )
+        assert not orphans, (
+            f"TC-SMOKE-09: stage {stage!r} left done unit(s) {orphans} with no "
+            f"{payload} row. CT-PIPE-02: a done unit's payload is the stage's own "
+            "output — a ledger that says done over nothing is the silent-failure "
+            "shape the invariant exists to refuse."
+        )
+
+    # The execution artifacts, one per leg — the payloads the stages own (#68 onward),
+    # read directly.
     evidence = world.store.cohort(world.cohort_id).query(
         EXTRACT_STATEMENTS["select_evidence"], work_id=extract_unit["work_id"]
     )
@@ -399,76 +529,65 @@ def test_tc_smoke_10_run_produces_submission_grade_for_every_submission(
 ):
     """`TC-SMOKE-10` — that run produces a `submission_grade` for every submission.
 
-    Oracle: **the row, whole**. The panel's verdict aggregates through the real
-    `aggregate()` into the declared band at the declared points, routed provisional —
-    one judge's word awaits its panel (`FR-ORCH-13`), never auto-accepted — and
-    `compute_all` over the run's two criterion scores writes the submission's grade
-    row: total equal to the sum of its criterion rows under the default policy
-    (unweighted sum, raw points), coverage counting what each row is, `criteria_missing`
-    zero, and — the run being complete with a null review window — state `final`
-    (`FR-GRADE-10`), with no operator row queued behind a fully-scored cohort
-    (`TC-GRADE-01`).
+    Oracle: **the row, whole, from the same composed run**. The judged cell aggregates
+    through the composed hook — the real `aggregate()` over the real gate signals,
+    persisted by the real `write_score` in the hook's own transaction — into the declared
+    band at the declared points, routed provisional — one judge's word awaits its panel
+    (`FR-ORCH-13`), never auto-accepted — and `run_to_completion`'s own grade stage
+    (`FR-PIPE-06`, not a caller's `compute_all`) writes the submission's grade row: total
+    equal to the sum of its criterion rows under the default policy (unweighted sum, raw
+    points), coverage counting what each row is, `criteria_missing` zero, and — the run
+    being complete with a null review window — state `final` (`FR-GRADE-10`), with no
+    operator row queued behind a fully-scored cohort (`TC-GRADE-01`).
     """
     store = open_store(tmp_data_dir)
     world = _build_world(store, make_fixture_provider())
     world.orchestrator.start(world.run_id)
-    _drive_run(world)
+    _record_replies(world)
+    result = _drive_composed(world)
+    assert result.status == "complete" and result.grades_computed == 1, (
+        f"TC-SMOKE-10: the composed drive read {result.status!r} with "
+        f"{result.grades_computed} grade(s) computed. The re-based oracle: the grades "
+        "come from the same composed run — the driver's own grade stage — so a smoke "
+        "run that needs a caller's compute_all is not the pipeline the design shipped."
+    )
 
-    score_unit = _one_unit(world, STAGE_SCORE)
-    verdicts = world.handle.query(
+    # The judged criterion's score row, as the composed aggregation hook wrote it: the
+    # one judge's verdict aggregated through the real `aggregate()` over the real gate
+    # signals and persisted in-transaction — no `write_criterion_scores` stand-in, no
+    # caller-assembled `signals()`.
+    judged_row = world.handle.query(
         statement(
-            "SELECT band_ordinal, self_confidence, uncited FROM verdict "
-            "WHERE work_id = :w"
+            "SELECT band, points, judge_count, routing, state FROM criterion_score "
+            "WHERE submission_id = :s AND criterion_id = :c"
         ),
-        w=score_unit["work_id"],
+        s=SUBMISSION_ID,
+        c=JUDGED_CRITERION,
+    )[0]
+    assert judged_row["band"] == CONTROL_BAND and float(judged_row["points"]) == 10.0, (
+        "TC-SMOKE-10: the composed hook did not aggregate the verdict to the declared "
+        "band at the declared points. FR-AGG-02: the median ordinal maps through "
+        "M-PKG's canonical band table, exactly once."
     )
-    assert verdicts, "precondition: the score leg persisted no verdict"
-    panel_verdicts = [
-        SimpleNamespace(
-            ordinal=int(row["band_ordinal"]),
-            cited=not bool(row["uncited"]),
-            self_confidence=float(row["self_confidence"]),
-        )
-        for row in verdicts
-    ]
-    catalog = PackageCatalog(store.package(PACKAGE_ID), package_id=PACKAGE_ID)
-    crit = agg_criterion(
-        [
-            SimpleNamespace(
-                band=row["band"], ordinal=row["ordinal"], points=row["points"]
-            )
-            for row in catalog.bands(JUDGED_CRITERION)
-        ],
-        scoring_model="atomic",
-        criterion_id=JUDGED_CRITERION,
+    assert judged_row["judge_count"] == 1, (
+        "TC-SMOKE-10: the judged row does not carry the panel's own figure — the "
+        "one-judge panel's count is what the row must say."
     )
-    score = aggregate(panel_verdicts, crit, signals())
-    assert score.band == CONTROL_BAND and float(score.points) == 10.0, (
-        "TC-SMOKE-10: the panel's verdict did not aggregate to the declared band at "
-        "the declared points. FR-AGG-02: the median ordinal maps through M-PKG's "
-        "canonical band table, exactly once."
-    )
-    assert score.routing == "provisional" and score.state == "provisional_unreviewed", (
+    assert judged_row["routing"] == "provisional" and judged_row["state"] == (
+        "provisional_unreviewed"
+    ), (
         "TC-SMOKE-10: a single-judge score routed as settled. FR-ORCH-13: one judge's "
         "word awaits its panel — a routing that auto-accepts a one-judge panel makes "
         "the review queue decorative."
     )
 
-    # The disclosed M-AGG stand-in: exactly the row the aggregation's own values name.
-    write_criterion_scores(
-        world.handle,
-        [(SUBMISSION_ID, JUDGED_CRITERION, score.band, score.points, score.routing)],
+    grade_rows_ = grade_rows(world.handle)
+    assert len(grade_rows_) == 1, (
+        f"TC-SMOKE-10: {len(grade_rows_)} submission_grade row(s) for a one-submission "
+        "run. FR-GRADE-01: every submission of the run is graded — the batch pass with "
+        "no teacher action anywhere in the path."
     )
-
-    grade_report = open_grade(store).compute_all(world.run_id)
-    assert grade_report.submitted == 1 and grade_report.computed == 1
-    rows = grade_rows(world.handle)
-    assert len(rows) == 1, (
-        f"TC-SMOKE-10: {len(rows)} submission_grade row(s) for a one-submission run. "
-        "FR-GRADE-01: every submission of the run is graded — the batch pass with no "
-        "teacher action anywhere in the path."
-    )
-    row = rows[0]
+    row = grade_rows_[0]
     assert row["submission_id"] == SUBMISSION_ID
     scores = world.handle.query(
         statement(

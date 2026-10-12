@@ -3,27 +3,39 @@ teacher action at any point.
 
 The second of the three end-to-end journeys (TS-51, issue #144; design §4.2.2, test plan
 §6.2). Rung 4 — the ASSEMBLED system, on the shared world module
-(`tests.support.e2e_world`, whose disclosures are this journey's disclosures): real
-store across the full migration chain, real gateway ingesting 350 four-page PDFs
-through the real sanitizer and rasterizer, real M-PKG catalog and publication, real
-orchestrator, real deterministic evaluator, real extraction workers (second family
-included), real integrity gate over real ledger rows, real aggregation walk, real
-scoring workers, real synthesis worker, real grade pass. No doubles at any module
-boundary; the only double anywhere is the model boundary — the shipped
-`RecordedFixtureProvider` in its regeneration-then-replay shape (journey-1 precedent):
-a first sight of a request is answered by the journey's own computation and recorded
-through the shipped `record()`/request-key machinery, and every later identical request
-replays from the recording — `CT-PROV-10`'s only egress, exercised as `F-RECORDED`'s
-own lifecycle.
+(`tests.support.e2e_world`, whose disclosures are this journey's disclosures), driven
+through the composed pipeline (`tests.support.composed_synth`, whose disclosures are the
+re-base's): real store across the full migration chain, real gateway ingesting 350
+four-page PDFs through the real sanitizer and rasterizer, real M-PKG catalog and
+publication, real orchestrator, real deterministic evaluator, real extraction workers
+(second family included), real integrity gate over real ledger rows, real aggregation
+and escalation through the composed hook, real scoring workers, real synthesis worker,
+real grade pass. No doubles at any module boundary; the only double anywhere is the model
+boundary — the shipped `RecordedFixtureProvider` in its capture shape (`CaptureProvider`,
+the F-DEV-PIPE precedent): the boundary answers a first sight of a request by composing it
+from the corpus's own declarations and records it through the shipped
+`record()`/request-key machinery, and every later identical request replays from the
+recording — `CT-PROV-10`'s only egress.
 
-**Happy path** (§4.2.2, in order): 350 submissions ingest (9 quarantine); the run
-starts with the backend fixed; units enumerate and a cost estimate is shown before any
-dispatch; Sweep 1 runs in topological order; the integrity gate runs; deterministic
-criteria are scored by lookup; Sweep 2 runs judge-first; verdicts aggregate to median
-bands with points mapped once; escalations enqueue in-transaction; synthesis runs L1
-then L2; the run completes and every grade finalizes with no teacher action at any
-point. **Oracle**: 341 grades exist, coverage is recorded per grade, provisional grades
-are labelled, and the whole journey is compared against a committed baseline result set.
+**The drive is `run_to_completion`** (TS-98's re-base, issue #392; §5.0's reconciliation
+row): the overnight run is the composed drive over F-SYNTH, and `recover` is its restart.
+The hand-written aggregation walk is gone from this journey — not kept as a fallback —
+and with it the stand-in escalation inputs: the composed hook reads its baseline from the
+run's package (`FR-PIPE-15`), so the world records the design's Assumption distribution
+onto the published version through the shipped `record_validation_baseline` route
+(`composed_synth`'s disclosure), and reads no aggregation configuration at all
+(`CT-AGG-01`: the policy takes its configuration from its caller, and the composed hook
+passes none — the journey's figures are stated against the shipped policy).
+
+**Happy path** (§4.2.2, in order): 350 submissions ingest (9 quarantine); the run starts
+with the backend fixed; units enumerate and a cost estimate is shown before any dispatch;
+the composed drive runs the deterministic evaluation first, then dispatch passes with the
+integrity gate and the aggregation/escalation hook firing in-transaction, escalations
+widening panels through the real ladder; synthesis runs L1 then L2; the run completes and
+every grade finalizes with no teacher action at any point. **Oracle**: 341 grades exist,
+coverage is recorded per grade, provisional grades are labelled, CT-PIPE-02's invariant
+holds (no `done` unit without its payload row), and the whole journey is compared against
+a committed baseline result set.
 
 **The baseline** (fixtures/baselines/TC-E2E-02/result-set.json) freezes the full
 350-submission result set the assembled system produced — per submission: the ingest
@@ -31,47 +43,57 @@ status with its per-gate record, the grade with its five coverage counters, ever
 criterion score row, and the narrative set. §6.9's discipline applies even though the
 six-entry registry does not name a `TC-E2E-*` row (the registry's table is §6.9's own
 and pinned by its drift test): the producing tier is the journey's own
-`RecordedFixtureProvider` — request-keyed, regeneration-then-replay — so no live
-backend's wording can move it, and the governance is inline here. Reviewer: the
-overnight run's owner. Grounds for accepting a diff: a package-corpus bump or a
-declared world-shape change — **never** "the model changed its mind"; a diff in a
-band, a points figure, a routing or a coverage counter is a defect, not a baseline
-update. There is deliberately no regenerate helper here: the first capture was run,
-inspected and committed in the PR that carried it. Nondeterministic identifiers are
-normalized out on purpose (submission and version ids are minted per build), so the
-baseline freezes what the system PRODUCED, and the identifier shapes are asserted
-separately; timestamps are excluded and narrative prose carries digests, because the
-baseline's business is what was produced, not the scripted wording.
+`RecordedFixtureProvider` — request-keyed, compose-then-record — so no live backend's
+wording can move it, and the governance is inline here. Reviewer: the overnight run's
+owner. Grounds for accepting a diff: a package-corpus bump or a declared world-shape
+change — **never** "the model changed its mind"; a diff in a band, a points figure, a
+routing or a coverage counter is a defect, not a baseline update. There is deliberately
+no regenerate helper here: the first capture was run, inspected and committed in the PR
+that carried it. Nondeterministic identifiers are normalized out on purpose (submission
+and version ids are minted per build), so the baseline freezes what the system PRODUCED,
+and the identifier shapes are asserted separately; timestamps are excluded and narrative
+prose carries digests, because the baseline's business is what was produced, not the
+scripted wording.
 
 **Variants** (each a separate execution at reduced scale, compared against an in-test
-control run at the same scale):
+control run at the same scale — the control is the composed drive, and `recover` is the
+restart in both):
 
-(a) **SIGKILL at a seeded random point + `resume()`** (RES-04..07): the drive is cut
-    mid-leg with units still LEASED — the exact injury a SIGKILLed worker leaves — the
-    world reattaches on the same directories (a fresh store, a fresh provider over the
-    same fixture store, a fresh orchestrator), the lease sweeper requeues the abandoned
-    leases, and the drive continues to the sanctioned closer. The resumed result set
-    equals the uninterrupted control's: a restart replays, it never recomputes.
+(a) **The kill at a seeded random point + `recover`** (RES-04..07): the composed drive
+    is cut after one dispatch pass (the run mid-ledger), and then — the exact injury a
+    SIGKILLed worker leaves — `cut` units on the drawn leg are LEASED by a worker that
+    dies before completing them (the hand drive's cut used to leave the same state as the
+    side effect of its batch window; the composed drive has no leg to stop mid-flight, so
+    the injury is made directly through the real lease API). The world reattaches on the
+    same directories, `recover` reclaims the abandoned leases and resumes the run
+    (`FR-PIPE-07`), and the composed drive continues to the sanctioned closer. The
+    resumed result set equals the uninterrupted control's: a restart replays, it never
+    recomputes.
 (b) **Provider unavailable mid-run → pause on the same backend → resume**
-    (`FR-ORCH-16`, `CT-ORCH-12`): the driver surfaces `ProviderUnavailableError`
-    before any unit is struck, the operator pauses with the sensed cause, the run row
-    reads paused with its reason and with `provider_config`/`panel_config` untouched,
-    the backend recovers, `resume()` un-pauses, the sweeper requeues the batch the
-    window caught, and the result set equals the control's.
+    (`FR-ORCH-16`, `CT-ORCH-12`): the boundary raises `ProviderUnavailableError` from its
+    first call, the composed pipeline absorbs it and pauses the run with the sensed cause
+    (`FR-ORCH-30` — the structured `RunResult`, `FR-PIPE-01`), the run row reads paused
+    with its reason and with `provider_config`/`panel_config` untouched, the backend
+    recovers, the explicit `resume()` un-pauses, `recover` reclaims anything the window
+    caught, and the result set equals the control's. (The hand drive surfaced the error
+    by raising out of its own leg; the composed drive surfaces it as the stored status —
+    the same sensed cause, the sanctioned route.)
 (c) **A criterion trips the escalation breaker** (`FR-ORCH-13`, `CT-ORCH-16`): the
-    walk hands the breaker its knobs at call time; a criterion escalating for more
-    than the rate's share of its first window trips it, escalation halts for that
-    criterion (`halted_by_breaker`, zero units), the refused cells are re-aggregated
-    with `breaker_tripped=True` in the caller's transaction — routed provisional,
-    state `ungradeable_by_panel`, the panel's own figure standing — the mark surfaces
-    in the rollup findings with the affected-student count, and the run still
-    completes with every admitted grade finalized.
+    breaker's knobs ride the world's env seam (`composed_synth`'s disclosure — the
+    composed hook reads the knob at call time), at journey-2's variant values; a
+    criterion escalating for more than the rate's share of its first window trips it,
+    escalation halts for that criterion (`halted_by_breaker`), the refused cells are
+    re-aggregated with `breaker_tripped=True` inside the hook's own transaction — routed
+    provisional, state `ungradeable_by_panel`, the panel's own figure standing (three
+    judges where the halt refused the widening, five where a widening had already landed)
+    — the mark surfaces in the rollup findings with the affected-student count, and the
+    run still completes with every admitted grade finalized.
 
-Disclosed shape: the world's base panel is three judges, so a breaker-marked cell
-keeps a three-judge figure standing — the design's "remainder single-judge provisional"
-phrasing is that mark on a one-judge base panel; here the halt refuses the widening,
-not the judgement already made, and the precedence (breaker over panel size) is what
-the variant pins.
+Disclosed shape: the world's base panel is three judges, so a breaker-marked cell keeps
+a three-judge figure standing where the halt refused its first widening — the design's
+"remainder single-judge provisional" phrasing is that mark on a one-judge base panel;
+here the halt refuses the widening, not the judgement already made, and the precedence
+(breaker over panel size) is what the variant pins.
 """
 
 from __future__ import annotations
@@ -79,17 +101,19 @@ from __future__ import annotations
 import json
 import os
 import random
+import time
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from aeh.grade import rollup_findings
+from aeh.orch import LEASE_SECONDS_ENV
+from aeh.pipeline import recover
 from aeh.prov import ProviderUnavailableError
-from tests.support.e2e_world import (
-    GRADE_BOUNDARIES,
-    SynthWorld,
-)
+from tests.support.composed_synth import ComposedSynthWorld
+from tests.support.e2e_world import SynthWorld
 
 pytestmark = [pytest.mark.e2e, pytest.mark.slow]
 
@@ -100,8 +124,11 @@ ISSUE = "#144"
 #: small enough that a variant plus its control is minutes.
 VARIANT_SCALE = 24
 
-#: The SIGKILL variant's seeded draw range: (leg, units struck before the kill). The
-#: seed makes the random point reproducible; both judged legs are in the draw.
+#: The kill variant's seeded draw range: (leg, units the dead worker holds). The seed
+#: makes the random point reproducible; the draw is over the legs the cut's ledger can
+#: actually claim on (`_draw_kill_point` — a drained leg claims nothing, a score leg
+#: whose pairs' extractions are still not done is gated out of the claim, and a kill
+#: where nothing can be leased would be no injury); both judged legs are in the pool.
 KILL_POINTS = (
     ("extract", 9),
     ("extract", 40),
@@ -109,11 +136,57 @@ KILL_POINTS = (
     ("score", 121),
 )
 
-#: The variant-(c) breaker knobs, handed to the walk at call time. Rate 0.50 is the
-#: shipped production value; the window minimum is pinned below the shipped 20 so the
-#: reduced scale's own first four completions are the window.
+#: The variant-(c) breaker knobs, riding the world's env seam (the composed hook reads
+#: them at call time). Rate 0.50 is the shipped production value; the window minimum is
+#: pinned below the shipped 20 so the reduced scale's own first four completions are the
+#: window.
 BREAKER_RATE = "0.50"
 BREAKER_MIN_N = "4"
+
+
+class _BreakerWorld(ComposedSynthWorld):
+    """Variant (c)'s world: the breaker's knobs through the env seam."""
+
+    breaker_rate = BREAKER_RATE
+    breaker_min_n = BREAKER_MIN_N
+
+
+class _OutageBoundary:
+    """The variant-(b) boundary: `complete` raises while the outage window is open;
+    everything else forwards to the world's real boundary."""
+
+    def __init__(self, inner: Any, world: "_OutageWorld") -> None:
+        self._inner = inner
+        self._world = world
+
+    def complete(self, prompt: Any, model_ref: Any, params: Any) -> Any:
+        if self._world._outage_open:
+            raise ProviderUnavailableError(
+                "the journey's provider is unavailable (injected)")
+        return self._inner.complete(prompt, model_ref, params)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+
+class _OutageWorld(ComposedSynthWorld):
+    """Variant (b)'s world: an injected unavailability window on the model boundary."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._outage_open = False
+
+    def set_unavailable(self, flag: bool = True) -> None:
+        """Open or close the injected unavailability window."""
+        self._outage_open = bool(flag)
+
+    def drive(self, **overrides: Any) -> Any:
+        inner = self.provider
+        self.provider = _OutageBoundary(inner, self)
+        try:
+            return super().drive(**overrides)
+        finally:
+            self.provider = inner
 
 
 # --- the drive ------------------------------------------------------------------------------
@@ -134,25 +207,60 @@ def _count(world: SynthWorld, sql: str, **params) -> int:
 
 
 def _leased(world: SynthWorld) -> int:
-    """Units the drive currently holds leases on - the SIGKILL variant's injury."""
+    """Units the drive currently holds leases on - the kill variant's injury."""
     return _count(world, "SELECT work_id FROM work_unit WHERE run_id = :r "
                          "AND status = 'leased'", r=world.run_id)
 
 
-def _drive_overnight(world: SynthWorld, monkeypatch) -> None:
-    """The uninterrupted overnight drive in §4.2.2's order — the variants' control."""
-    world.build_run()
-    world.start_run()
-    world.drive_deterministic()
-    world.integrity_pass()
-    world.drive_extract()
-    world.drive_score()
-    world.integrity_pass(capture=True)
-    world.aggregate_walk(monkeypatch=monkeypatch)
-    world.drive_score(include_escalations=True)
-    world.aggregate_walk(monkeypatch=monkeypatch)
-    world.drive_synthesis()
-    world.finalize()
+def _draw_kill_point(world: SynthWorld, rng: random.Random) -> tuple[str, int]:
+    """The kill variant's seeded draw: one of the seeded points whose leg can actually
+    claim at the cut. Two ways a leg with pending rows can still claim nothing:
+    a leg the first pass has already drained has nothing left to lease, and a score
+    unit whose pair's extraction is not done is gated out of the claim even though
+    its row reads pending (`select_not_done_extracts` — the Sweep 2 gate,
+    `src/aeh/orch/statements.py`: a score unit is claimable only when neither its own
+    criterion's extraction nor a dependency's is pending, leased or quarantined).
+    An empty claim against a run with rows is a true empty (`leasing.py`), so the
+    draw runs over the points that can leave the dead worker's batch behind at all —
+    the guard on `_leased` after the injury stays the arbiter."""
+    gated = {(row["submission_id"], row["criterion_id"]) for row in world.handle.query(
+        "SELECT submission_id, criterion_id FROM work_unit WHERE run_id = :r "
+        "AND stage = 'extract' AND status != 'done'", r=world.run_id)}
+    claimable = {row["stage"]: int(row["n"]) for row in world.handle.query(
+        "SELECT stage, COUNT(*) AS n FROM work_unit w WHERE run_id = :r "
+        "AND status = 'pending' AND (stage != 'score' OR NOT EXISTS "
+        "(SELECT 1 FROM work_unit e WHERE e.run_id = w.run_id AND e.stage = 'extract' "
+        "AND e.status != 'done' AND e.submission_id = w.submission_id "
+        "AND e.criterion_id = w.criterion_id)) GROUP BY stage", r=world.run_id)}
+    pending = {row["stage"]: int(row["n"]) for row in world.handle.query(
+        "SELECT stage, COUNT(*) AS n FROM work_unit WHERE run_id = :r "
+        "AND status = 'pending' GROUP BY stage", r=world.run_id)}
+    candidates = [(leg, cut) for leg, cut in KILL_POINTS if claimable.get(leg, 0) > 0]
+    assert candidates, (
+        f"TC-E2E-02 (a): no seeded kill leg can claim at the cut (claimable by stage: "
+        f"{claimable}; pending by stage: {pending}; gated pairs: {len(gated)}) - the "
+        f"one-pass cut left no leaseable work to injure"
+    )
+    return rng.choice(candidates)
+
+
+def _orphan_counts(world: SynthWorld) -> dict[str, int]:
+    """`CT-PIPE-02`'s three invariant queries: done units with no payload row, per
+    stage (the composition tests' own queries, read over this journey's run)."""
+    queries = {
+        "extract": ("SELECT work_id FROM work_unit WHERE run_id = :r AND stage = 'extract' "
+                    "AND status = 'done' AND NOT EXISTS (SELECT 1 FROM evidence e WHERE "
+                    "e.work_id = work_unit.work_id)"),
+        "score": ("SELECT work_id FROM work_unit WHERE run_id = :r AND stage = 'score' "
+                  "AND status = 'done' AND NOT EXISTS (SELECT 1 FROM verdict v WHERE "
+                  "v.work_id = work_unit.work_id)"),
+        "deterministic": ("SELECT work_id FROM work_unit WHERE run_id = :r AND stage = "
+                          "'deterministic' AND status = 'done' AND NOT EXISTS (SELECT 1 "
+                          "FROM criterion_score s WHERE s.run_id = work_unit.run_id AND "
+                          "s.submission_id = work_unit.submission_id AND "
+                          "s.criterion_id = work_unit.criterion_id)"),
+    }
+    return {stage: _count(world, sql, r=world.run_id) for stage, sql in queries.items()}
 
 
 def _assert_matches_baseline(repo_root: Path, result_set: dict) -> None:
@@ -196,10 +304,10 @@ def test_tc_e2e_02_overnight_run_full_cohort_finalizes_without_teacher_action(
     tmp_data_dir, tmp_path, monkeypatch, repo_root,
 ):
     """`TC-E2E-02` happy path at the full scale: the whole §4.2.2 block in order, the
-    341-final / 9-quarantine oracle, coverage per grade, provisional labels, and the
-    whole journey against the committed baseline."""
-    world = SynthWorld(tmp_data_dir, tmp_path / "fixtures", n_submissions=350,
-                       monkeypatch=monkeypatch)
+    341-final / 9-quarantine oracle, coverage per grade, provisional labels, CT-PIPE-02's
+    invariant, and the whole journey against the committed baseline."""
+    world = ComposedSynthWorld(tmp_data_dir, tmp_path / "fixtures", n_submissions=350,
+                               monkeypatch=monkeypatch)
     assert len(world.cohort) == 350
     assert len(world.quarantined_ids()) == 9, (
         "TC-E2E-02: the quarantine population is not the oracle's nine identity-gate "
@@ -225,39 +333,40 @@ def test_tc_e2e_02_overnight_run_full_cohort_finalizes_without_teacher_action(
         "over the enumerated units"
     )
 
-    # Sweep 1 in topological order (FR-ORCH-08): the deterministic leg completes its
-    # whole stage before the judged legs strike a unit.
-    world.drive_deterministic()
+    # The composed drive: the deterministic evaluation first (Sweep 1's topological
+    # order is the driver's own structure - its trace is the run's first), then the
+    # dispatch passes with the integrity gate and the aggregation hook firing
+    # in-transaction, escalations widening panels, synthesis, grading.
+    result = world.drive()
+    traces = [trace.stage for trace in result.stages]
+    assert traces and traces[0] == "deterministic", (
+        f"TC-E2E-02: the drive's stage traces run {traces[:4]} - Sweep 1's order is "
+        "topological, the deterministic leg first (FR-ORCH-08)"
+    )
     assert _count(world, "SELECT work_id FROM work_unit WHERE run_id = :r AND "
                          "stage = 'deterministic' AND status != 'done'",
                   r=world.run_id) == 0, (
-        "TC-E2E-02: the deterministic leg left units un-done - Sweep 1's order is "
-        "topological, det first"
+        "TC-E2E-02: the deterministic leg left units un-done - the composed driver "
+        "evaluates the cohort before a single judged unit is struck"
     )
-    assert _count(world, "SELECT work_id FROM work_unit WHERE run_id = :r AND "
-                         "stage IN ('extract', 'score') AND status = 'done'",
-                  r=world.run_id) == 0, (
-        "TC-E2E-02: judged units completed while the deterministic stage ran - Sweep "
-        "1's stages are topological (FR-ORCH-08), not concurrent"
+    # The escalation ladder widened panels: the composed hook's escalations are the
+    # durable judge_count on the widened cells (the walk's enqueue count was its own
+    # bookkeeping; the composition's is the ledger's).
+    widened = _count(world, "SELECT submission_id FROM criterion_score WHERE "
+                            "run_id = :r AND judge_count > 3", r=world.run_id)
+    assert widened > 0, (
+        "TC-E2E-02: no cell's panel was widened - the interior-band limb is this "
+        "cohort's honest escalation share, and the composed hook enqueues the widening "
+        "in-transaction"
     )
-    world.integrity_pass()
-    world.drive_extract()
-    world.drive_score()
-    world.integrity_pass(capture=True)
-    # The walk: median bands, points mapped once, escalations in the caller's tx.
-    enqueued = world.aggregate_walk(monkeypatch=monkeypatch)
-    assert enqueued > 0, (
-        "TC-E2E-02: the first walk enqueued no widening - the interior-band limb is "
-        "this cohort's honest escalation share"
-    )
-    world.drive_score(include_escalations=True)
-    world.aggregate_walk(monkeypatch=monkeypatch)
-    world.drive_synthesis()
-    world.finalize()
 
     assert _run_row(world)["status"] == "complete", (
         "TC-E2E-02: the run did not complete - the sanctioned closer fires only with "
         "zero open units underneath it"
+    )
+    assert _orphan_counts(world) == {"extract": 0, "score": 0, "deterministic": 0}, (
+        f"TC-E2E-02: a done unit lost its payload row ({_orphan_counts(world)}) - "
+        "CT-PIPE-02's invariant holds over the whole run, fault or no fault"
     )
 
     # Oracle: 341 grades exist, every one final, with coverage recorded and the
@@ -316,57 +425,65 @@ def labelled_provisional_count(submissions: list[dict]) -> int:
                if s["grade"] and s["grade"]["criteria_provisional"] > 0)
 
 
-# --- TC-E2E-02 variant (a): SIGKILL at a seeded random point, then resume -------------------
+# --- TC-E2E-02 variant (a): the kill at a seeded random point, then recover -----------------
 
-def test_tc_e2e_02_sigkill_and_resume_reproduces_the_control(
+def test_tc_e2e_02_sigkill_and_recover_reproduces_the_control(
     tmp_data_dir, tmp_path, monkeypatch, repo_root,
 ):
-    """`TC-E2E-02` variant (a) (RES-04..07): a seeded random-point kill mid-leg, the
-    world reattached on the same directories, the sweeper requeueing the abandoned
-    leases, `resume()` closing - and the resumed result set equals the uninterrupted
-    control's at the same scale."""
-    control = SynthWorld(tmp_data_dir / "control", tmp_path / "fixtures",
-                         n_submissions=VARIANT_SCALE, monkeypatch=monkeypatch)
-    _drive_overnight(control, monkeypatch=monkeypatch)
+    """`TC-E2E-02` variant (a) (RES-04..07): a seeded random-point kill mid-run, the
+    world reattached on the same directories, `recover` reclaiming the abandoned leases
+    and resuming the run, the composed drive closing - and the resumed result set equals
+    the uninterrupted control's at the same scale."""
+    control = ComposedSynthWorld(tmp_data_dir / "control", tmp_path / "fixtures",
+                                 n_submissions=VARIANT_SCALE, monkeypatch=monkeypatch)
+    control.build_run()
+    control.start_run()
+    assert control.drive().status == "complete"
     expected = control.result_set()
     assert any(s["quarantined"] for s in expected["submissions"]), (
         "precondition: the variant's scale holds a quarantine, as the overnight does"
     )
 
-    world = SynthWorld(tmp_data_dir, tmp_path / "fixtures" / "kill",
-                       n_submissions=VARIANT_SCALE, monkeypatch=monkeypatch)
+    world = ComposedSynthWorld(tmp_data_dir, tmp_path / "fixtures" / "kill",
+                               n_submissions=VARIANT_SCALE, monkeypatch=monkeypatch)
     world.build_run()
     world.start_run()
-    world.drive_deterministic()
-    world.integrity_pass()
-    leg, cut = random.Random(14402).choice(KILL_POINTS)
-    if leg == "extract":
-        struck = world.drive_extract(limit=cut)
-        assert struck == cut
-        assert _leased(world) > 0, (
-            "TC-E2E-02 (a): the cut drive left no leased unit - the kill exercised no "
-            "injury to recover from"
-        )
-        world.reattach()
-        world.sweep()
-        world.drive_extract()
-        world.drive_score()
-    else:
-        world.drive_extract()
-        struck = world.drive_score(limit=cut)
-        assert struck == cut
-        assert _leased(world) > 0
-        world.reattach()
-        world.sweep()
-        world.drive_score()
-    world.integrity_pass(capture=True)
-    world.aggregate_walk(monkeypatch=monkeypatch)
-    world.drive_score(include_escalations=True)
-    world.aggregate_walk(monkeypatch=monkeypatch)
-    world.drive_synthesis()
-    world.finalize()
+    # One dispatch pass, so the run is mid-ledger at the kill - the drive is cut
+    # running, not before it started.
+    assert world.drive(max_passes=1).status == "running"
+    leg, cut = _draw_kill_point(world, random.Random(14402))
+    # The injury: units leased by a worker that dies before completing them - the
+    # exact ledger state a SIGKILLed worker leaves (the hand drive's cut left the same
+    # state as the side effect of its batch window; the composed drive has no leg to
+    # stop mid-flight, so the injury is made through the real lease API). The lease
+    # expiry lives on the store's monotonic lease clock (`FR-STORE-11`), so the knob
+    # shortens the TTL to a second and the dead worker's batch is already expired when
+    # recover's sweep arrives - TC-PIPE-11's pattern. The knob rides only the injury:
+    # the composed drive's own leases keep the production TTL on both sides of it.
+    monkeypatch.setenv(LEASE_SECONDS_ENV, "1")
+    world.orchestrator.lease("w-overnight-kill", leg, cut)
+    time.sleep(1.2)
+    assert _leased(world) > 0, (
+        "TC-E2E-02 (a): the kill left no leased unit - the kill exercised no injury "
+        "to recover from"
+    )
+    world.reattach()
+    report = recover(world.store)
+    assert report.leases_reclaimed > 0, (
+        "TC-E2E-02 (a): recover reclaimed no lease - the sweep did not see the dead "
+        "worker's abandoned batch"
+    )
+    assert report.runs_resumed == (world.run_id,), (
+        f"TC-E2E-02 (a): recover resumed {report.runs_resumed} - the killed run is the "
+        "running run recovery exists for (FR-PIPE-07)"
+    )
+    assert _leased(world) == 0, (
+        "TC-E2E-02 (a): the sweep left the dead worker's leases held - the abandoned "
+        "batch would never finish, and its cells never reach the aggregation hook"
+    )
+    assert world.drive().status == "complete"
     assert world.result_set() == expected, (
-        "TC-E2E-02 (a): the resumed run's result set differs from the uninterrupted "
+        "TC-E2E-02 (a): the recovered run's result set differs from the uninterrupted "
         "control's - a restart must replay the recordings, never recompute a "
         "judgement (RES-04..07)"
     )
@@ -377,30 +494,31 @@ def test_tc_e2e_02_sigkill_and_resume_reproduces_the_control(
 def test_tc_e2e_02_provider_unavailable_pauses_on_the_same_backend_then_resumes(
     tmp_data_dir, tmp_path, monkeypatch, repo_root,
 ):
-    """`TC-E2E-02` variant (b): the provider drops mid-run, the operator pauses with
-    the sensed cause, the frozen backend never moves, and the resume re-drives to a
-    result set identical to the control's."""
-    control = SynthWorld(tmp_data_dir / "control", tmp_path / "fixtures",
-                         n_submissions=VARIANT_SCALE, monkeypatch=monkeypatch)
-    _drive_overnight(control, monkeypatch=monkeypatch)
+    """`TC-E2E-02` variant (b): the boundary drops mid-run, the composed pipeline
+    pauses the run with the sensed cause, the frozen backend never moves, and the
+    resume re-drives to a result set identical to the control's."""
+    control = ComposedSynthWorld(tmp_data_dir / "control", tmp_path / "fixtures",
+                                 n_submissions=VARIANT_SCALE, monkeypatch=monkeypatch)
+    control.build_run()
+    control.start_run()
+    assert control.drive().status == "complete"
     expected = control.result_set()
 
-    world = SynthWorld(tmp_data_dir, tmp_path / "fixtures" / "unavailable",
-                       n_submissions=VARIANT_SCALE, monkeypatch=monkeypatch)
+    world = _OutageWorld(tmp_data_dir, tmp_path / "fixtures" / "unavailable",
+                         n_submissions=VARIANT_SCALE, monkeypatch=monkeypatch)
     world.build_run()
     world.start_run()
-    world.drive_deterministic()
-    world.integrity_pass()
     backend_before = _run_row(world)
-    world.provider.set_unavailable(True)
-    with pytest.raises(ProviderUnavailableError):
-        world.drive_extract()
-    assert _leased(world) > 0, (
-        "TC-E2E-02 (b): the aborted drive left no leased unit - the window must catch "
-        "the driver holding the batch it was striking"
+    world.set_unavailable(True)
+    result = world.drive()
+    assert result.status == "paused", (
+        f"TC-E2E-02 (b): the drive read {result.status!r} - the unavailable boundary "
+        "pauses the run (FR-ORCH-30 absorbs the error per future), it does not fail it"
     )
-    cause = ProviderUnavailableError("the journey's provider is unavailable (injected)")
-    assert world.orchestrator.pause(world.run_id, cause=cause) == "paused"
+    assert result.pause_reason and "ProviderUnavailableError" in str(result.pause_reason), (
+        f"TC-E2E-02 (b): the pause reason is {result.pause_reason!r} - the sensed "
+        "cause, not a bare status (CT-ORCH-12)"
+    )
     paused = _run_row(world)
     assert paused["status"] == "paused" and paused["pause_reason"], (
         "TC-E2E-02 (b): the run row does not read paused with a rendered reason - the "
@@ -412,27 +530,19 @@ def test_tc_e2e_02_provider_unavailable_pauses_on_the_same_backend_then_resumes(
         "a pause could substitute a backend"
     )
     assert paused["panel_config"] == backend_before["panel_config"]
-    world.provider.set_unavailable(False)
+    world.set_unavailable(False)
     world.orchestrator.resume(world.run_id)
     assert _run_row(world)["status"] == "running", (
         "TC-E2E-02 (b): the resume did not effect the paused -> running edge"
     )
-    # The operator restarts the worker process after the outage: a fresh
-    # orchestrator (fresh LeaseClock) reads every lease ever issued as expired, so
-    # the sweep reclaims the units the aborted drive held mid-batch. On the SAME
-    # orchestrator the clock is mid-life - the in-flight leases are not yet expired,
-    # the sweep reclaims nothing, and the units the outage stranded are invisible to
-    # every later drive (leased != pending) - their cells never reach the walk.
+    # The operator restarts the worker process after the outage: a fresh orchestrator
+    # (fresh LeaseClock) reads every lease ever issued as expired, so `recover`'s sweep
+    # reclaims whatever the window caught. On the SAME orchestrator the clock is
+    # mid-life - the in-flight leases are not yet expired, the sweep reclaims nothing,
+    # and units stranded mid-batch stay invisible to every later drive.
     world.reattach()
-    world.sweep()
-    world.drive_extract()
-    world.drive_score()
-    world.integrity_pass(capture=True)
-    world.aggregate_walk(monkeypatch=monkeypatch)
-    world.drive_score(include_escalations=True)
-    world.aggregate_walk(monkeypatch=monkeypatch)
-    world.drive_synthesis()
-    world.finalize()
+    recover(world.store)
+    assert world.drive().status == "complete"
     assert world.result_set() == expected, (
         "TC-E2E-02 (b): the resumed run's result set differs from the control's - the "
         "pause is a stop, never a rewrite of what the run produced"
@@ -446,23 +556,14 @@ def test_tc_e2e_02_criterion_breaker_halts_escalation_and_the_run_still_complete
 ):
     """`TC-E2E-02` variant (c): a criterion trips the escalation breaker - escalation
     halts for it, the refused cells are re-aggregated `ungradeable_by_panel` in the
-    caller's transaction, the mark surfaces in the rollup findings with the affected
+    hook's own transaction, the mark surfaces in the rollup findings with the affected
     student count, and the run still completes with every admitted grade finalized."""
-    world = SynthWorld(tmp_data_dir, tmp_path / "fixtures", n_submissions=VARIANT_SCALE,
-                       monkeypatch=monkeypatch)
-    breaker = {"breaker_rate": BREAKER_RATE, "breaker_min_n": BREAKER_MIN_N}
+    world = _BreakerWorld(tmp_data_dir, tmp_path / "fixtures",
+                          n_submissions=VARIANT_SCALE, monkeypatch=monkeypatch)
     world.build_run()
     world.start_run()
-    world.drive_deterministic()
-    world.integrity_pass()
-    world.drive_extract()
-    world.drive_score()
-    world.integrity_pass(capture=True)
-    world.aggregate_walk(monkeypatch=monkeypatch, **breaker)
-    world.drive_score(include_escalations=True)
-    world.aggregate_walk(monkeypatch=monkeypatch, **breaker)
-    world.drive_synthesis()
-    world.finalize()
+    result = world.drive()
+    assert result.status == "complete", result.pause_reason
 
     latched = world.handle.query(
         "SELECT criterion_id, detail FROM circuit_breaker WHERE run_id = :r",
@@ -475,33 +576,42 @@ def test_tc_e2e_02_criterion_breaker_halts_escalation_and_the_run_still_complete
         "TC-E2E-02 (c): the latched breaker row's detail does not carry the design's "
         "mark - the operator surface names the degradation (FR-ORCH-13)"
     )
-    marked = world.breaker_marked
+    # The mark on the RESULT is M-AGG's artifact, written in the hook's transaction
+    # (FR-ORCH-13): the cells whose widening the halt refused read routed provisional,
+    # state ungradeable_by_panel, with the panel's own figure standing - three judges
+    # where the halt refused the first widening, five where a widening had already
+    # landed (FR-AGG-11's precedence; the halt refuses the widening, never the
+    # judgement already made).
+    marked = world.handle.query(
+        "SELECT submission_id, criterion_id, judge_count, routing, state "
+        "FROM criterion_score WHERE run_id = :r AND state = 'ungradeable_by_panel'",
+        r=world.run_id)
     assert marked, (
         "TC-E2E-02 (c): the trip left no re-aggregated cell - the mark on the result "
-        "is M-AGG's artifact, written in the caller's transaction (FR-ORCH-13)"
+        "is the aggregation's artifact (FR-ORCH-13)"
     )
-    for sid, cid in marked:
-        row = world.handle.query(
-            "SELECT judge_count, routing, state FROM criterion_score "
-            "WHERE submission_id = :s AND criterion_id = :c", s=sid, c=cid)[0]
+    for row in marked:
         assert row["state"] == "ungradeable_by_panel" and row["routing"] == "provisional", (
-            f"TC-E2E-02 (c): the breaker-marked cell ({sid[:12]}, {cid}) reads "
-            f"{row['state']!r}/{row['routing']!r} - the breaker's precedence routes "
-            "the refused widening provisional and ungradeable_by_panel (FR-AGG-11)"
+            f"TC-E2E-02 (c): the breaker-marked cell ({row['submission_id'][:12]}, "
+            f"{row['criterion_id']}) reads {row['state']!r}/{row['routing']!r} - the "
+            "breaker's precedence routes the refused widening provisional and "
+            "ungradeable_by_panel (FR-AGG-11)"
         )
-        assert row["judge_count"] == 3, (
-            "TC-E2E-02 (c): a breaker-marked cell must keep the panel's own figure - "
-            "the halt refuses the widening, not the judgement already made"
+        assert row["judge_count"] in (3, 5), (
+            f"TC-E2E-02 (c): a breaker-marked cell reads judge_count "
+            f"{row['judge_count']} - the mark keeps the panel's own figure standing "
+            "(the halt refuses the widening, not the judgement already made)"
         )
     findings = {finding.criterion_id: finding
                 for finding in rollup_findings(world.run_id, world.store)}
-    marked_cids = {cid for _, cid in marked}
+    marked_cids = {row["criterion_id"] for row in marked}
     assert marked_cids <= set(findings), (
         "TC-E2E-02 (c): the breaker mark does not surface in the rollup findings - "
         "CT-ORCH-16's degradation must be visible to the operator"
     )
     for criterion_id in marked_cids:
-        touched = {sid for sid, cid in marked if cid == criterion_id}
+        touched = {row["submission_id"] for row in marked
+                   if row["criterion_id"] == criterion_id}
         assert findings[criterion_id].student_count >= len(touched), (
             f"TC-E2E-02 (c): the finding for {criterion_id} undercounts its affected "
             "students"
