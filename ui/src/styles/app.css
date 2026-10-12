@@ -629,6 +629,348 @@ textarea:focus-visible {
   color: var(--color-muted);
 }
 
+/*
+ * The three state tiers (FR-UI-14). The toast stacks top-right and auto-dismisses; the
+ * banner sits at the top of the content area and persists; the inline note stays next to
+ * the thing it is about. Icon and text carry every state together with the token colour
+ * (CT-UI-10) — no tier is colour alone.
+ */
+.toast-host {
+  position: fixed;
+  top: var(--space-md);
+  right: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  row-gap: var(--space-xs);
+  z-index: 20;
+  max-width: 20rem;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  column-gap: var(--space-xs);
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-card);
+  color: var(--color-ink);
+  font-size: var(--font-size-sm);
+  padding: var(--space-xs) var(--space-sm);
+}
+
+.toast-success svg {
+  color: var(--color-success);
+}
+
+.toast-failure svg {
+  color: var(--color-danger);
+}
+
+.banner {
+  display: flex;
+  align-items: baseline;
+  column-gap: var(--space-sm);
+  background-color: var(--color-danger-bg);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  color: var(--color-danger);
+  margin: 0 0 var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.banner svg {
+  flex-shrink: 0;
+}
+
+.banner-body {
+  color: var(--color-ink);
+  flex: 1;
+}
+
+.banner-body strong {
+  color: var(--color-danger);
+}
+
+.inline-note {
+  align-items: center;
+  column-gap: var(--space-xs);
+  display: flex;
+  font-size: var(--font-size-sm);
+  margin: var(--space-xs) 0;
+}
+
+.inline-failure {
+  color: var(--color-danger);
+}
+
+.inline-success {
+  color: var(--color-success);
+}
+
+/*
+ * The busy placeholders (FR-UI-14): skeleton lines in content areas, a progress bar on a
+ * job — never a spinner in mid-content, never a figure the server did not supply.
+ */
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  row-gap: var(--space-sm);
+  margin: 0 0 var(--space-md);
+}
+
+.skeleton-line {
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+  background-color: var(--color-neutral-bg);
+  border-radius: var(--radius-sm);
+  height: 1rem;
+  width: 100%;
+}
+
+@keyframes skeleton-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.progress {
+  align-items: center;
+  column-gap: var(--space-sm);
+  display: flex;
+}
+
+.progress progress {
+  accent-color: var(--color-accent);
+  width: 12rem;
+}
+
+/*
+ * The results overview (FR-UI-15). The distribution is a hand-rolled SVG chart — bars with
+ * their counts labelled, the declared levels under the axis — and its numbers restated as
+ * text beside it, so the figure is never the only carrier.
+ */
+.results-overview {
+  margin: 0 0 var(--space-md);
+}
+
+.results-overview h2 {
+  font-size: var(--font-size-md);
+  margin: var(--space-md) 0 var(--space-xs);
+}
+
+.distribution {
+  margin: 0;
+}
+
+.distribution .bar-rect {
+  fill: var(--color-accent);
+}
+
+.distribution .bar-count,
+.distribution .bar-label {
+  fill: var(--color-ink);
+  font-size: var(--font-size-sm);
+}
+
+.distribution figcaption {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+
+.point-stats,
+.point-stats-missed,
+.flagged-list,
+.result-list,
+.grader-list,
+.log-list,
+.criterion-cards {
+  list-style: none;
+  margin: 0 0 var(--space-md);
+  padding: 0;
+}
+
+.flagged-list a {
+  font-weight: 700;
+}
+
+.results-filters {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--space-md);
+  row-gap: var(--space-xs);
+  margin: 0 0 var(--space-md);
+}
+
+/* The filters' own controls carry the tokens explicitly: an unstyled input or select
+ * answers the browser's default font and colours, and CT-UI-04 admits no value that is
+ * not a token. */
+.results-filters input,
+.results-filters select {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  color: var(--color-ink);
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: var(--font-size-sm);
+  padding: var(--space-xs) var(--space-sm);
+}
+
+.result-row {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-card);
+  margin: 0 0 var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.result-head {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--space-md);
+}
+
+.result-head a {
+  font-weight: 700;
+}
+
+.band-value {
+  font-weight: 700;
+}
+
+.band-note {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+
+/*
+ * The override (FR-UI-17): the collapsed disclosure keeps an editable band control beside
+ * every band display; opening it shows the band selections and the required reason field.
+ */
+.override {
+  margin: var(--space-xs) 0;
+}
+
+.override summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+/* The body's styles live under `[open]`, and the closed state gets an explicit author-level
+ * `display: none`: Chromium's own closed-details hiding keeps the content laid out (a computed
+ * `display: block` and a nonzero box) while Tab still skips it, which leaves visible controls
+ * a keyboard can never reach — exactly what TC-UI-04's walk counts as unreachable. Author
+ * `display` wins over that mechanism on both ends of the toggle. */
+.override:not([open]) .override-body {
+  display: none;
+}
+
+.override[open] .override-body {
+  border-top: 1px solid var(--color-line);
+  display: flex;
+  flex-direction: column;
+  row-gap: var(--space-xs);
+  margin-top: var(--space-xs);
+  padding-top: var(--space-xs);
+}
+
+.override-field {
+  display: flex;
+  flex-direction: column;
+}
+
+.override-field select,
+.override-field textarea {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  color: var(--color-ink);
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: var(--font-size-sm);
+  padding: var(--space-xs) var(--space-sm);
+}
+
+.override[open] .override-body .button {
+  align-self: flex-start;
+}
+
+/*
+ * The student drill-down (FR-UI-16/17): one card per grading point — its justification,
+ * the "what the paper shows" quotes, and the expandable engineering trail beside it.
+ */
+.criterion-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-card);
+  margin: 0 0 var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.criterion-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-sm);
+}
+
+.criterion-state {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  margin: var(--space-xs) 0 0;
+}
+
+.criterion-why {
+  margin: var(--space-xs) 0 0;
+}
+
+.evidence {
+  margin: var(--space-xs) 0;
+}
+
+.evidence h4 {
+  font-size: var(--font-size-sm);
+  margin: 0 0 var(--space-xs);
+}
+
+.evidence blockquote {
+  border-left: 3px solid var(--color-line);
+  font-style: italic;
+  margin: var(--space-xs) 0;
+  padding-left: var(--space-sm);
+}
+
+.detail-expander summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.detail-body {
+  border-top: 1px solid var(--color-line);
+  margin-top: var(--space-xs);
+  padding-top: var(--space-xs);
+}
+
+.detail-body h3 {
+  font-size: var(--font-size-sm);
+  margin: var(--space-sm) 0 var(--space-xs);
+}
+
+.log-note {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+
+.log-detail {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  margin: 0 0 var(--space-xs) var(--space-lg);
+}
+
+.amendment-history li {
+  margin: 0 0 var(--space-xs);
+}
+
 .coming {
   max-width: 60rem;
   margin: 0 auto;

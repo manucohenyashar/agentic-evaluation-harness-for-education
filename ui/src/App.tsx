@@ -31,6 +31,7 @@ import {
 import { Sidebar } from "./wizard/Sidebar";
 import { WizardHome } from "./wizard/WizardHome";
 import { useWizardReads } from "./wizard/useWizardReads";
+import { ToastHost } from "./state/StateDisplay";
 
 /**
  * The console's shell (FR-CONSOLE-47). Hash-based routing: the server answers only `/` and
@@ -242,34 +243,36 @@ export function App() {
 
   return (
     <Navigate.Provider value={goTo}>
-      <div className="shell">
-        <ContextHeader
-          context={context}
-          selection={selection}
-          onSelection={(patch) => goTo(address.path, patch)}
-          onHelp={() => setHelpOpen(!helpOpen)}
-          helpOpen={helpOpen}
-        />
-        <div className="shell-body">
-          <Sidebar
-            rows={context === null ? null : rows}
-            route={address.path}
-            stageHref={stageHref}
+      <ToastHost>
+        <div className="shell">
+          <ContextHeader
+            context={context}
+            selection={selection}
+            onSelection={(patch) => goTo(address.path, patch)}
+            onHelp={() => setHelpOpen(!helpOpen)}
+            helpOpen={helpOpen}
           />
-          <main className="screen">{screen}</main>
+          <div className="shell-body">
+            <Sidebar
+              rows={context === null ? null : rows}
+              route={address.path}
+              stageHref={stageHref}
+            />
+            <main className="screen">{screen}</main>
+          </div>
+          {helpOpen && (
+            <HelpPanel
+              route={address.path}
+              refs={[
+                selection.classId,
+                selection.packageId,
+                selection.runId,
+              ].filter((ref): ref is string => ref !== null)}
+              onClose={() => setHelpOpen(false)}
+            />
+          )}
         </div>
-        {helpOpen && (
-          <HelpPanel
-            route={address.path}
-            refs={[
-              selection.classId,
-              selection.packageId,
-              selection.runId,
-            ].filter((ref): ref is string => ref !== null)}
-            onClose={() => setHelpOpen(false)}
-          />
-        )}
-      </div>
+      </ToastHost>
     </Navigate.Provider>
   );
 }

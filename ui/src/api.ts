@@ -92,17 +92,43 @@ export interface CriterionBand {
   criterion_band: string;
 }
 
+/** Why a cell is flagged (FR-UI-15), as the read spells it; unknown values render neutral. */
+export type FlagKind = "second_opinion" | "low_confidence" | "not_final" | (string & {});
+
+/** One grading point's row in a student's results line — its effective score level (an
+ * amended grade shows the amended level), the aggregation's own level beside it, and the
+ * routing, state and flag the aggregation wrote. */
+export interface ResultCriterion {
+  criterion_id: string;
+  label: string;
+  criterion_band: string;
+  stored_band: string;
+  routing: string;
+  state: string;
+  state_reason: string;
+  flag: FlagKind | null;
+}
+
 export interface ResultStudent {
   submission_id: string;
   student_ref: string | null;
   total: number | null;
   state: string;
-  criteria: CriterionBand[];
+  criteria: ResultCriterion[];
+}
+
+/** One grading point's declared score levels, in the package's own order (FR-UI-15/17). */
+export interface CriterionScale {
+  criterion_id: string;
+  label: string;
+  levels: string[];
 }
 
 export interface ResultsScreen {
   run_id: string | null;
   cohort_id: string | null;
+  score_levels: string[];
+  scales: CriterionScale[];
   students: ResultStudent[];
 }
 
@@ -112,6 +138,40 @@ export interface NarrativeRow {
   text: string;
 }
 
+/** One grader's verdict for a cell: its teacher label, the score level it chose, and the
+ * evidence it cited (`FR-UI-16`'s per-judge outputs and "what the paper shows" quotes). */
+export interface GraderVerdict {
+  grader: string;
+  score_level: string;
+  cited: string[];
+}
+
+/** One grading point of a student's drill-down: the effective level, the aggregate's own
+ * reason text, the declared scale the override offers, and the grader trail behind it. */
+export interface CriterionDetail {
+  criterion_id: string;
+  label: string;
+  criterion_band: string;
+  stored_band: string;
+  routing: string;
+  state: string;
+  state_reason: string;
+  flag: FlagKind | null;
+  levels: string[];
+  graders: GraderVerdict[];
+}
+
+/** One amendment the current grade revision records — who, when, why, and the level the
+ * grade moved from and to (FR-UI-17's render-back, RS-09). */
+export interface AmendmentEntry {
+  criterion_id: string;
+  from_band: string;
+  to_band: string;
+  actor: string;
+  reason: string;
+  at: string;
+}
+
 export interface StudentDetail {
   run_id: string;
   submission_id: string;
@@ -119,6 +179,8 @@ export interface StudentDetail {
   total: number | null;
   state: string | null;
   narrative: NarrativeRow[];
+  criteria: CriterionDetail[];
+  amendments: AmendmentEntry[];
 }
 
 export interface SystemStatus {
