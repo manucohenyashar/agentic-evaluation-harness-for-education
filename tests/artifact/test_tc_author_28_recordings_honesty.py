@@ -1,8 +1,8 @@
 """`TC-AUTHOR-28` — the recordings half: the double-honesty census over the captured tree.
 
 Case: test plan §5.6, `FR-PROV-10`, `§4.2`'s double-honesty rule, `TS-153` (#686). The
-corpus half beside this file is green; **this half is writtenahead-red on purpose**, and
-that is the honest state:
+corpus half beside this file is green; **this half was writtenahead-red on purpose** until
+#690's capture pass recorded the tree (the honest state at the time):
 
 A recording is keyed on the sha256 of the assembled request *including M-AUTHOR's prompt
 templates* (`RecordedFixtureProvider.record`, design delta §4). The keys do not exist until
@@ -52,7 +52,6 @@ COVERAGE = RECORDINGS / "coverage.json"
 CASE = "TC-AUTHOR-28"
 FIXTURE_SCHEMA = "aeh.prov/fixture/1"
 
-pytestmark = [pytest.mark.writtenahead]
 
 
 def _recording_path(key: str) -> Path:

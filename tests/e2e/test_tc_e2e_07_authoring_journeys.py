@@ -99,6 +99,13 @@ ANSWERS = {
     "bands": ("Two bands, worst first: 0 points when the essay states no thesis at all; "
               "4 points when it states a clear thesis and supports it with evidence from "
               "the text."),
+    # Disclosed reconcile (the landing): a rubric the chain could not map names its
+    # placeholder after the whole criterion (`criterion <qid>` — the sentinel stands in
+    # the criterion's `bands` field), so the journey's answer key rides the field's first
+    # word; the prose is the same teacher answer the `bands` spelling would have carried.
+    "criterion": ("Two bands, worst first: 0 points when the essay states no thesis at all; "
+                  "4 points when it states a clear thesis and supports it with evidence "
+                  "from the text."),
     "model_answer": "3/4, because 2/8 + 4/8 = 6/8 = 3/4.",
 }
 
@@ -341,7 +348,11 @@ def test_tc_e2e_07_journey_c_af09_total_failure_still_ends_ready(
     report = next(out.glob("*.authoring-report.md")).read_text(encoding="utf-8")
     assert unresolved_fields(report), (
         f"{CASE}: AF-09's report leaves the failure unstated — an empty Unresolved section")
-    for expected in ("bands", "grades"):
+    # Disclosed reconcile (the landing): the unmappable rubric's placeholder is named for
+    # the whole criterion (`criterion Q1`), not the `bands` field the draft's sentinel
+    # stands in; the contested grade boundary is a per-grade gap (`grades A`), so the
+    # substring pins are the criterion and the grades family.
+    for expected in ("criterion", "grades"):
         assert any(expected in field for field in fields), (
             f"{CASE}: AF-09's draft carries no {expected!r} placeholder: {fields}")
 

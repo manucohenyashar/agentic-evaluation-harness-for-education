@@ -26,7 +26,7 @@ from .extraction import AUTHOR_TRANSCRIBE_TEMPLATE_V, AuthoringDocument, PageTex
 from .grades import AUTHOR_GRADES_TEMPLATE_V
 from .inventory import AUTHOR_INVENTORY_TEMPLATE_V
 from .rubric import AUTHOR_RUBRIC_TEMPLATE_V
-from .service import PROMPT_VERSIONS, AuthoringService
+from .service import PROMPT_VERSIONS, AuthoringService, authoring_service
 from .settings import (
     ATTEMPTS_ENV,
     DEFAULT_ATTEMPTS,
@@ -49,6 +49,7 @@ from .validation import DraftIssue, validate_draft
 __all__ = [
     # the §3.1 surface (the names the tests construct through)
     "AuthoringService",
+    "authoring_service",
     "validate_draft",
     "DraftResult",
     "ReviewResult",

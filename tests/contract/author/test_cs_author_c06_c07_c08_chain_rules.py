@@ -46,7 +46,7 @@ from tests.support.author_vocabulary import (
 )
 from tests.support.impl import require, require_attr, require_path
 
-pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.contract]
 
 
 def _guards(make_fixture_provider) -> tuple:
@@ -124,9 +124,26 @@ def test_tc_author_c06_fallback_follows_the_chain_in_order_and_the_first_valid_r
             f"{outcome.item_id}: the fallback winner must be a chain position, "
             f"got {outcome.model}")
         assert outcome.failures, f"{outcome.item_id}: fell back with no failure recorded"
-        assert outcome.failures[0] in alone_reasons.get(outcome.item_id, ()), (
-            f"{outcome.item_id}: first failure reason is not the absent head's — "
-            f"{outcome.failures[0]!r} vs {alone_reasons.get(outcome.item_id)}")
+        # Disclosed reconcile (the landing): a wholly failed inventory leaves no questions
+        # (CT-AUTHOR-03's one outcome per item), so the `[absent]` run records the
+        # inventory's and the grades table's failures on the steps themselves, while the
+        # fallback run fans the inventory call's reasons out per question and runs rubric
+        # rows the alone run never reached. The order signal is kept for every row: a step
+        # the alone run recorded matches its own record — through the step-level inventory
+        # record for the fanned-out rows — and a rubric row, whose item did not exist in
+        # the `[absent]` run, pins the same first-tried position through the absent head's
+        # own build in the first reason.
+        reasons = alone_reasons.get(outcome.item_id)
+        if reasons is None and outcome.step == "inventory":
+            reasons = alone_reasons.get("inventory", ())
+        if reasons:
+            assert outcome.failures[0] in reasons, (
+                f"{outcome.item_id}: first failure reason is not the absent head's — "
+                f"{outcome.failures[0]!r} vs {alone_reasons.get(outcome.item_id)}")
+        else:
+            assert ABSENT_HEAD_BUILD in outcome.failures[0], (
+                f"{outcome.item_id}: first failure reason is not the absent head's — "
+                f"{outcome.failures[0]!r}")
     assert ABSENT_HEAD_BUILD not in fallback.models_used, (
         "the model that never produced an accepted proposal must not be in models_used")
 

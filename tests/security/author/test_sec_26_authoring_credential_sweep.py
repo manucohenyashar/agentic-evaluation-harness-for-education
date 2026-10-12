@@ -56,12 +56,11 @@ whose extraction comes back effectively empty (a textless page inside a mixed fi
 should the corpus ever carry one) skips that document's probes by the same guard rather
 than sweeping whitespace.
 
-**Written ahead of the implementation it sweeps.** `aeh.author` does not exist yet (#690
-builds the module, #691/#692 the reasoning steps, #693 the validation gate, #686's capture
-pass the recordings), so every body opens with `require()`/`require_path()` guards and the
-file carries `pytest.mark.writtenahead`. The sweep needs the whole draft workflow, the
-recordings behind it and nothing less, which is what the registry probe for #701 holds
-until all of that has landed.
+**Written ahead of the implementation it sweeps — and landed.** #690 shipped the module,
+the reasoning steps, the validation gate and #686's captured recordings, so every body's
+`require()`/`require_path()` guards resolve and the `writtenahead` marker came off (the
+#701 registry entry dropped, the sweep kept). The guards stay: the sweep needs the whole
+draft workflow and the recordings behind it, and a missing limb must name itself.
 """
 
 from __future__ import annotations
@@ -85,7 +84,7 @@ from tests.support.author_vocabulary import (
 )
 from tests.support.impl import require, require_path
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 #: The corpus the sweep covers, in id order (the §5.5 precondition: "all 13 fixtures").
 EXPECTED_AF_IDS = [f"AF-{i:02d}" for i in range(1, 14)]
@@ -200,10 +199,22 @@ def _redact(text: str, *secrets: str) -> str:
 
 
 def _payload_text(provider: SweepProvider) -> str:
-    """The payload channel, whole: every assembled request and every reply."""
+    """The payload channel, whole: every assembled request and every reply.
+
+    Disclosed reconcile (the landing): the request renders its field values RAW — the
+    `repr()`-of-the-call form escaped every newline of the quoted document text as a
+    literal backslash-n, so no probe-phrase window drawn from the squeezed document text
+    (the `TC-AUTHOR-C16` selection rule below: "a phrase repr cannot mangle") could ever
+    match a payload that carried the text, and the egress half failed on documents the
+    module had in fact sent. Field values raw render the channel the sweep sweeps; the
+    model ref and params keep their `repr` (no document text rides there), and the reply
+    half stays raw as it already was.
+    """
     return (
-        "\n".join(repr((prompt, model_ref, params))
-                  for prompt, model_ref, params in provider.calls)
+        "\n".join(
+            " | ".join([f"{name}: {value}" for name, value in prompt.fields]
+                       + [repr(model_ref), repr(params)])
+            for prompt, model_ref, params in provider.calls)
         + "\n"
         + "\n".join(provider.replies)
     )

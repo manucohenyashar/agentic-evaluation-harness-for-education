@@ -46,7 +46,6 @@ from tests.support.author_vocabulary import (
 )
 from tests.support.impl import require, require_path
 
-pytestmark = [pytest.mark.writtenahead]
 
 PINS = ("AUTHOR_INVENTORY_TEMPLATE_V", "AUTHOR_RUBRIC_TEMPLATE_V",
         "AUTHOR_GRADES_TEMPLATE_V")

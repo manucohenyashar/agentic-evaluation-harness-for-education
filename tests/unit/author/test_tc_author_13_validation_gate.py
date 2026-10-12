@@ -2,13 +2,12 @@
 corpus, the 50-seed valid-proposal property, and the differential against the real build
 gate (#710, the package-authoring test plan §5.1; design delta §3.1, FR-AUTHOR-10).
 
-Written ahead of #693: `aeh.author` does not exist yet, so the validator cases are red until
-the validation gate lands. The two red tests carry `writtenahead` per test (the calibration
-test below is unmarked and runs in `TEST_CMD` today — the
+#693 landed: `validate_draft` ships with `aeh.author` (the #690 module), so the validator
+cases run in `TEST_CMD` — the per-test markers came off, the tests kept. The calibration
+test below is unmarked and was green first, per the
 `tests/property/test_extract_span_bounds.py` doctrine: the corpus and the generator are
-calibrated green now, so the red can never be vacuous because the mutations quietly stopped
-saying what they claim). The file is keyed `#693 validation gate` in
-`WRITTEN_AHEAD_BLOCKERS`; when #693 closes the markers come off — never the tests.
+calibrated green ahead of the red they justify, so the red can never be vacuous because
+the mutations quietly stopped saying what they claim.
 
 **The blocker's target, as issue #710 prescribes it.** Kind `symbol`,
 `aeh.author:validate_draft` — the design names the exact signature (design delta §3.1's
@@ -259,7 +258,7 @@ def _gate():
 def test_tc_author_13_the_corpus_mutations_and_the_generator_are_calibrated():
     """The sample spec is what the anchors assume; every malformed entry carries exactly the
     defect its label names; every valid variant parses and holds the rules by construction.
-    Green today, so the writtenahead red below can only be the missing validator."""
+    Green first, so the validator cases' red could only ever be the missing validator."""
     text = SAMPLE_SPEC.read_text(encoding="utf-8")
     for anchor in (Q1_KEY_ANCHOR, C4_NONE_LINE, C4_ADEQUATE_LINE, C4_FULL_LINE, C1_BLOCK,
                    C4_BANDS_START, C4_BANDS_END):
@@ -305,7 +304,6 @@ def test_tc_author_13_the_corpus_mutations_and_the_generator_are_calibrated():
 # --- the adversarial corpus: rejected by the validator, refused by the real gate -----------------
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize(
     "label,edits,append,layer,phrase", MALFORMED_CORPUS, ids=[m[0] for m in MALFORMED_CORPUS])
 def test_tc_author_13_the_malformed_proposal_is_rejected_and_the_real_gate_agrees(
@@ -344,7 +342,6 @@ def test_tc_author_13_the_malformed_proposal_is_rejected_and_the_real_gate_agree
 # --- the differential's valid side: the validator passes, the real build builds ------------------
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("label,bands,key", VALID_VARIANTS, ids=[v[0] for v in VALID_VARIANTS])
 def test_tc_author_13_the_valid_proposal_passes_and_the_real_gate_builds_it(
         label, bands, key, tmp_path, tmp_data_dir, capsys):
@@ -370,7 +367,6 @@ def test_tc_author_13_the_valid_proposal_passes_and_the_real_gate_builds_it(
 
 if given is not None:
     @pytest.mark.property
-    @pytest.mark.writtenahead
     @settings(deadline=None)
     @given(st.data())
     def test_tc_author_13_the_property_seeded_valid_proposals_all_pass(data):

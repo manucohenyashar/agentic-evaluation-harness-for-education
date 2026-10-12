@@ -40,7 +40,7 @@ def render_report(assembly: Assembly, documents: tuple[AuthoringDocument, ...],
     lines.extend(_documents(documents))
     lines.extend(_steps(outcomes))
     lines.extend(_items(assembly))
-    lines.extend(_unresolved(assembly))
+    lines.extend(_unresolved(assembly, outcomes))
     lines.extend(_next_command(assembly, draft_path))
     return "\n".join(lines)
 
@@ -96,11 +96,20 @@ def _items(assembly: Assembly) -> list[str]:
     return lines
 
 
-def _unresolved(assembly: Assembly) -> list[str]:
+def _unresolved(assembly: Assembly, outcomes: list[dict[str, Any]]) -> list[str]:
     """The review walk's order: the items whose reasoning did not converge first (flagged
     first, `AF-09`'s oracle), then the named placeholders — each question's in-draft
-    sentinels before its report-only omissions. Each entry carries the sentinel it must
-    fill — the same `<<PLACEHOLDER: <field>>>` string the review answers name."""
+    sentinels before its report-only omissions. The non-converged items are the run's
+    unresolved outcome rows (CT-AUTHOR-03): a step-level record (the inventory, the grades
+    table) whose reasoning never converged is listed beside the per-question rubric
+    failures, whether or not a sentinel gap stands for it. Each entry carries what it is
+    that did not converge — the sentinel string the review answers name, when a gap stands
+    for it."""
+    lines = ["## Unresolved", ""]
+    unresolved_rows = [row for row in outcomes if row["status"] == "unresolved"]
+    for row in unresolved_rows:
+        failures = "; ".join(row["failures"]) or "every model in the chain was exhausted"
+        lines.append(f"- {row['item_id']} — the reasoning did not converge: {failures}.")
     def priority(gap: Gap) -> tuple[int, int]:
         qid = gap.item_id.rsplit(" ", 1)[1] if " " in gap.item_id else None
         unresolved = qid is not None and assembly.statuses.get(qid) == "unresolved"
@@ -108,8 +117,7 @@ def _unresolved(assembly: Assembly) -> list[str]:
 
     ordered = sorted((gap for gap in assembly.gaps if gap.item_id != "approved_by"),
                      key=priority)  # stable: the assembly's order decides ties
-    lines = ["## Unresolved", ""]
-    if not ordered:
+    if not unresolved_rows and not ordered:
         lines.append("Nothing: every item resolved. The draft is ready for review.")
     for gap in ordered:
         lines.append(f"- {sentinel(gap.item_id)} — {gap.reason}. What to supply: "
@@ -130,15 +138,17 @@ def _next_command(assembly: Assembly, draft_path: Path) -> list[str]:
     return lines
 
 
-def summary_paragraph(assembly: Assembly, models_used: list[str]) -> str:
+def summary_paragraph(assembly: Assembly, models_used: list[str], draft_path: Path,
+                      outcomes: list[dict[str, Any]]) -> str:
     """FR-AUTHOR-18's one-paragraph summary: how many items resolved, how many are
-    placeholders, which models were used, and the exact next commands."""
-    resolved = sum(1 for status in assembly.statuses.values()
-                   if status in ("resolved", "derived"))
+    placeholders, which models were used, and the exact next commands — naming the actual
+    draft file the review command will open. The counts are over the steps' own items
+    (the outcome rows), the same denominator `DraftResult` reports."""
+    resolved = sum(1 for row in outcomes if row["status"] in ("resolved", "derived"))
     placeholders = assembly.placeholder_count
-    unresolved = sum(1 for status in assembly.statuses.values() if status == "unresolved")
+    unresolved = sum(1 for row in outcomes if row["status"] == "unresolved")
     models = ", ".join(models_used) if models_used else "none (every call failed)"
     return (f"Drafted {assembly.package_id}: {resolved} item(s) resolved, "
             f"{placeholders} placeholder(s) to fill, {unresolved} unresolved. "
-            f"Models used: {models}. Next: `aeh author review --draft <draft>`, then "
-            "`aeh package build --spec <draft>`.")
+            f"Models used: {models}. Next: `aeh author review --draft {draft_path.name}`, "
+            f"then `aeh package build --spec {draft_path.name}`.")

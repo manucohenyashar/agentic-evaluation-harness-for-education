@@ -27,7 +27,7 @@ from .validation import validate_draft
 #: The versioned rubric prompt (FR-AUTHOR-20). A bump invalidates the affected recordings
 #: on purpose: the request key covers the payload, so a changed prompt misses loudly instead
 #: of replaying.
-AUTHOR_RUBRIC_TEMPLATE_V = "aeh-author/rubric/2"
+AUTHOR_RUBRIC_TEMPLATE_V = "aeh-author/rubric/6"
 
 AUTHOR_RUBRIC_TEMPLATE = (
     "You are mapping one question's grading description onto a rubric line, from a teacher's "
@@ -44,19 +44,44 @@ AUTHOR_RUBRIC_TEMPLATE = (
     "Rules:\n"
     "- \"key\": ONLY when the documents state this question's answer key. The letters must be "
     "among the question's option letters given below. Multiple correct letters become a list. "
-    "Never guess a key: null when the documents do not state it.\n"
+    "Never guess a key: null when the documents do not state it. Never reply \"key\" for a "
+    "question whose block below shows no \"options\": an optionless question takes bands or "
+    "an evidence checklist, and a stated model answer is not a key.\n"
     "- \"bands\": the graded levels the teacher's grading description states, as an EVEN number "
     "of bands (2, 4 or 6), WORST FIRST: the lowest-points band listed first, points never "
     "decreasing down the list. Each band names what earns it in \"descriptor\". Omit "
     "\"descriptor\" when the teacher gives none.\n"
+    "- The engine accepts an even count only. When the documents settle an ODD number of "
+    "graded levels for this question (a definite instruction like \"a 3-band scale\", or "
+    "three band lines), convert them — do not quote them as they stand: combine the two "
+    "LOWEST levels into ONE band that keeps the HIGHER of their two points, name it after "
+    "both levels (for example \"Band 1-2\"), and write its \"descriptor\" as what either "
+    "level earned, joined with \"or\". Keep every higher level exactly as the teacher wrote "
+    "it. Every level the teacher wrote must still be earnable by some band in the reply: "
+    "never reply with an odd count, and never drop a level to make the count even.\n"
     "- \"aspects\": ONLY when the grading description is an evidence checklist (\"award ... "
     "point if ...\"): one aspect per evidence condition the description states, each carrying "
     "the condition's text and the points it awards, and the aspects' points summing to the "
     "question's points.\n"
     "- Give at most one of \"bands\" or \"aspects\": a bands set, or an evidence checklist — "
     "never both.\n"
-    "- \"derivation_description\": the teacher's own grading words for this question, quoted "
-    "verbatim, when the documents state a grading description; null otherwise.\n"
+    "- \"derivation_description\": the teacher's grading words for this question that are NOT "
+    "themselves band lines, quoted verbatim — a preamble or note in the teacher's own voice "
+    "about how to grade (for example, \"Be generous: I care about the reasoning, not just "
+    "the final answer.\"). When such prose stands alongside the bands, give BOTH. When the "
+    "grading description is only band lines (\"Band 2: ...\", \"2 marks if ...\"), give "
+    "\"bands\" and set \"derivation_description\" to null: the bands already carry the "
+    "description. Null when the documents state no grading description at all.\n"
+    "- The documents must settle ONE scheme for this question. When they contradict "
+    "themselves and the teacher has not settled between the versions — two different marks "
+    "totals, two different band counts, a correction the teacher then reopens or undercuts, "
+    "or the teacher leaving the choice to the marker — do NOT pick a scheme for the teacher: "
+    "reply \"bands\": null and quote the teacher's own contradictory grading words verbatim "
+    "in \"derivation_description\". This outranks the even-count conversion above: a "
+    "contradictory description is not converted — it is quoted for the teacher, with "
+    "\"bands\" null. Never claim the documents state no description when they "
+    "state a contradictory one, and never reply all-null to satisfy a repair request: "
+    "choosing a side would invent the rubric.\n"
     "- When the documents state no grading description for this question at all, reply with "
     "all four fields null. Never invent a rubric."
 )
@@ -81,6 +106,28 @@ def rubric_payload(question: dict[str, Any], documents_text: str,
     if complaint:
         fields.append(("repair_complaint", f"Your previous reply was rejected: {complaint} "
                                            "Reply again, with ONLY the JSON object."))
+        if "outside 2..6 or odd" in complaint:
+            # The odd-band conversion is the one rule the model reliably repeats verbatim
+            # instead of applying (temp-0 reruns its own reply), so a rejected odd set is
+            # re-asked with the recipe spelled out again, mechanically (FR-AUTHOR-05b).
+            fields.append(("repair_reminder",
+                           "If the documents settle an odd number of graded levels, convert "
+                           "them in this reply: combine the two LOWEST levels into ONE band "
+                           "keeping the HIGHER of their two points, named after both (e.g. "
+                           '"Band 1-2"), its descriptor = what either level earned, joined '
+                           'with "or". Keep every higher level exactly as the teacher wrote '
+                           "it. Reply with an EVEN number of bands — never an odd count, "
+                           "never a dropped level."))
+        if "not non-decreasing" in complaint:
+            # The other temp-0 repeat: a best-first list re-sent as-is. The reminder makes
+            # the ordering mechanical — reverse the list, each name staying with its own
+            # points and descriptor (FR-AUTHOR-05b).
+            fields.append(("repair_reminder",
+                           "Order the bands WORST FIRST: the first band listed carries the "
+                           "LOWEST points, and points never decrease as the list goes on. "
+                           "If your previous list ran highest-points first, reverse the "
+                           "list order — keep every band's own name, points and descriptor "
+                           "attached to each other."))
     return PromptPayload(fields=tuple(fields))
 
 
@@ -128,8 +175,9 @@ def parse_rubric(question: dict[str, Any], reply: str) -> tuple[dict[str, Any], 
     if bands is None and aspects is None:
         if derivation is not None:
             return {}, ["\"derivation_description\" without \"bands\": quote the bands the "
-                        "teacher's grading description states, or reply with all fields "
-                        "null."]
+                        "teacher's grading description states — or reply with all fields "
+                        "null ONLY when the documents state no grading description for this "
+                        "question at all."]
         return {}, []  # the clean gap: no grading description stated (and no stated key)
 
     mini_spec = _mini_spec(question, key=key, bands=bands, aspects=aspects,
@@ -150,6 +198,15 @@ def _check_key(question: dict[str, Any], data: dict[str, Any],
         return None
     options = question.get("options") or {}
     option_ids = [str(o) for o in options]
+    if not option_ids:
+        # A key criterion only ever marks printed option letters (`plan_package` refuses a key
+        # on an optionless question), so reject here with the repair-shaped words instead of
+        # deferring to the validator's plan-level message (FR-AUTHOR-05b): the repair budget
+        # then re-asks with a complaint the model can act on (drop the key, give bands).
+        complaints.append(f'question {question.get("id")!r} has no printed options: a key '
+                          "marks option letters, and a stated model answer is not a key. "
+                          'Reply "key": null.')
+        return None
     if not isinstance(key, list) or not key or not all(
             isinstance(k, str) and k.strip() for k in key):
         complaints.append('"key" is a list of the question\'s option letters, or null when '

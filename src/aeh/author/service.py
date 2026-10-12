@@ -21,11 +21,11 @@ from __future__ import annotations
 import logging
 import re
 import threading
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from aeh.conf import ConfigurationError, ModelRef
+from aeh.conf import ConfigurationError, ModelRef, panel_for_profile, select_profile_config
 from aeh.prov import InferenceProvider, PromptPayload, SamplingParams
 
 from .errors import AuthoringInputError, OverwriteRefusedError
@@ -131,6 +131,14 @@ class AuthoringService:
         grades_value = self._run_grades(documents_text, settings.attempts, call, rows,
                                         models_used)
 
+        # One INFO line per outcome (FR-AUTHOR-19): the run's trace names every item's
+        # step, id and end state, so a fallback or a placeholder is readable from the
+        # log alone — the per-question inventory rows carry their step and id here, not
+        # only the call-level record the chain loop logged.
+        for row in rows:
+            LOGGER.info("%s/%s: %s%s", row["step"], row["item_id"], row["status"],
+                        f" via {row['model']}" if row["model"] else "")
+
         assembly = assemble(package_id, questions, rubric_values, rubric_unresolved,
                             derived_keys, grades_value)
 
@@ -152,9 +160,14 @@ class AuthoringService:
         if assembly.placeholder_count:
             LOGGER.warning("%d placeholder(s) standing in %s", assembly.placeholder_count,
                            draft_path.name)
+            # Per placeholder, its field: the report names the item, and the log names it
+            # too (FR-AUTHOR-19) — `approved_by` is the sign-off slot, never counted.
+            for gap in assembly.gaps:
+                if gap.in_draft and gap.item_id != "approved_by":
+                    LOGGER.warning("placeholder: %s — %s", gap.item_id, gap.reason)
         LOGGER.info("draft written: %s; report: %s", draft_path.name, report_path.name)
 
-        print(summary_paragraph(assembly, models_used))
+        print(summary_paragraph(assembly, models_used, draft_path, rows))
         return DraftResult(
             draft_path=draft_path, report_path=report_path,
             outcomes=tuple(StepOutcome(step=row["step"], item_id=row["item_id"],
@@ -163,10 +176,13 @@ class AuthoringService:
                                        failures=tuple(row["failures"]))
                            for row in rows),
             placeholders=assembly.placeholder_count,
-            resolved=sum(1 for status in assembly.statuses.values()
-                         if status in ("resolved", "derived")),
-            unresolved=sum(1 for status in assembly.statuses.values()
-                           if status == "unresolved"),
+            # The counts are over the steps' own items (the outcome rows, CT-AUTHOR-03's
+            # one-outcome-per-item): a per-question rubric AND the step-level records
+            # (the inventory, the grades table) are each an item that converged or did
+            # not — a bumped prompt pin or an exhausted chain shows up in the counts, not
+            # only in the trace (TC-AUTHOR-20, TC-AUTHOR-30, NFR-AUTHOR-01).
+            resolved=sum(1 for row in rows if row["status"] in ("resolved", "derived")),
+            unresolved=sum(1 for row in rows if row["status"] == "unresolved"),
             models_used=tuple(models_used))
 
     # -- the model-call seam ------------------------------------------------------------------
@@ -253,14 +269,16 @@ class AuthoringService:
                        rows: list[dict[str, Any]], models_used: list[str],
                        ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         """FR-AUTHOR-06: one call per document set, proposing the question inventory in paper
-        order. The accepted proposal's per-question rows share the call's outcome; a wholly
-        failed inventory leaves no questions, and the draft is still assembled and written."""
+        order. The outcomes are one per item (CT-AUTHOR-03): the accepted proposal's
+        per-question rows share the call's record; a wholly failed inventory leaves no
+        questions, so the failed item is the inventory itself and the draft is still assembled
+        and written (NFR-AUTHOR-01)."""
         value, row = self._propose(
             "inventory", "inventory", attempts, call,
             lambda complaint: inventory_payload(documents_text, complaint), parse_inventory)
-        rows.append(row)  # the step's own record: one call per document set (CT-AUTHOR-05)
         questions: list[dict[str, Any]] = (value or {}).get("questions", [])
         if value is None:
+            rows.append(row)  # no per-question items exist to carry the failure
             return {"package": None, "questions": []}, []
         _note_model(row, models_used)
         for question in questions:
@@ -287,6 +305,7 @@ class AuthoringService:
                 values[qid] = {"key": list(derived_keys[qid])}
                 rows.append({"step": "rubric", "item_id": qid, "status": "derived",
                              "model": None, "attempts": 0, "failures": ()})
+                LOGGER.info("rubric/%s derived from the documents' stated answers", qid)
                 continue
             if qtype not in ("mcq", "open", "mixed"):
                 continue  # a question the inventory could not type: its gaps stand as sentinels
@@ -371,3 +390,46 @@ def _derive_keys(text: str, questions: list[dict[str, Any]]) -> dict[str, list[s
             if letter in options and letter not in keys.setdefault(question["id"], []):
                 keys[question["id"]].append(letter)
     return keys
+
+def authoring_service(
+    cfg: Mapping[str, Any], backend_profile: str, *, provider: InferenceProvider,
+    settings: AuthoringSettings | None = None,
+) -> AuthoringService:
+    """The config-facing constructor (FR-AUTHOR-04, ADR-42): the reasoning chain is M-CONF's
+    `panel_for_profile` — the profile's own `[[panel]]` judge refs in declared order, then the
+    `[[escalation_judge]]` refs, de-duplicated by build identity, an empty panel raising
+    M-CONF's `ConfigurationError` before any model call — and the transcriber is the profile's
+    own `transcriber` build when the section names one. The chain is cited here, never
+    re-implemented: a hand-rolled copy would re-derive the profile's own section order and
+    de-dup rule (TC-REQ-134's AST sweep is the check on exactly that).
+
+    `cfg` is the configuration as the caller loaded it — `effective_config`'s output, the
+    same form `resolve_run_config` reads, where a model ref is a `ModelRef`; a raw model
+    table is accepted and converted, so either side of `effective_config` works. `provider`
+    is the caller's resolved `M-PROV` provider: provider resolution rides the pipeline's
+    profile mapping (`HARNESS_FIXTURE_DIR` set → `RecordedFixtureProvider`, else the live
+    provider), which stays M-PIPE's — this module imports no provider machinery of its own
+    (`CT-PROV-15`).
+    """
+    chain = panel_for_profile(cfg, backend_profile)
+    return AuthoringService(
+        chain=chain, provider=provider, transcriber=_transcriber_of(
+            select_profile_config(cfg, backend_profile)),
+        settings=settings if settings is not None else AuthoringSettings())
+
+
+def _transcriber_of(section: Mapping[str, Any]) -> ModelRef | None:
+    """The profile section's `transcriber` build, or `None` when it names none — a text-only
+    profile drafts from the text layer alone and its textless pages stand missing and
+    recorded (`FR-AUTHOR-02`)."""
+    raw = section.get("transcriber")
+    if raw is None:
+        return None
+    if isinstance(raw, ModelRef):
+        return raw
+    if isinstance(raw, Mapping):
+        return ModelRef(role=raw["role"], provider=raw["provider"],
+                        build_id=raw["build_id"], quantization=raw.get("quantization"))
+    raise ConfigurationError(
+        "the profile's transcriber must be a model table or a ModelRef, got "
+        f"{type(raw).__name__}.")

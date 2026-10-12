@@ -613,8 +613,11 @@ FIXTURES: dict[str, dict] = {
         "expected": _expected(
             "AF-09", "one document; contradictory grading description",
             ["eng8-essay-01-test-and-grading.pdf"], "unresolved",
-            ["bands", "grades"], "refused",
-            "the reasoning does not converge; flagged first in the report"),
+            ["criterion Q1", "model_answer", "grades A"], "refused",
+            "the memo's contradiction is quoted verbatim with bands null, so the "
+            "derivation-without-bands rejection exhausts the budget (the capture's "
+            "honest class); the contested grade-A boundary and the unstated model "
+            "answer stand as their own placeholders"),
     },
     "AF-10": {
         "description": "one document; scan-style, no text layer",
@@ -647,8 +650,10 @@ Q1: 436218. Q2: ABOUT 12 KM. Q3: ABOUT 045 DEGREES.
 """,
         "expected": _expected(
             "AF-10", "one document; scan-style, no text layer",
-            ["geo7-mapwork-01-scanned-test.pdf"], "resolved", [], "publishes",
-            "resolved via the transcriber path (FR-AUTHOR-02)"),
+            ["geo7-mapwork-01-scanned-test.pdf"], "partial", ["grades D"], "publishes",
+            "resolved via the transcriber path (FR-AUTHOR-02); the scan states grade D's "
+            "boundary in words (BELOW 3 POINTS), not as a number, so FR-AUTHOR-08's "
+            "never-invent rule leaves a per-grade placeholder (the capture's honest class)"),
     },
     "AF-11": {
         "description": "one document; no grade boundaries stated",
@@ -663,8 +668,10 @@ Q1: 436218. Q2: ABOUT 12 KM. Q3: ABOUT 045 DEGREES.
         "documents": [("lang7-vocab-01-test.pdf", AF12_TEST)],
         "expected": _expected(
             "AF-12", 'one document; "circle the answer and explain"',
-            ["lang7-vocab-01-test.pdf"], "resolved", [], "publishes",
-            "mixed mcq and judged lines, both resolved"),
+            ["lang7-vocab-01-test.pdf"], "partial", ["model_answer"], "publishes",
+            "mixed mcq and judged lines; the judged lines state no expected solution, "
+            "so they carry the FR-AUTHOR-06 model_answer gap (a bands set does not "
+            "determine a model answer)"),
     },
     "AF-13": {
         "description": "AF-01's test reworded plus an edited grading memo; the re-draft flow",

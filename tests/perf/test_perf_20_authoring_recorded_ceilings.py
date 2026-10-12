@@ -57,7 +57,7 @@ from tests.support.author_vocabulary import (
 )
 from tests.support.impl import require, require_path
 
-pytestmark = [pytest.mark.integration, pytest.mark.slow, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration, pytest.mark.slow]
 
 CASE = "PERF-20"
 #: The stated load: the whole corpus (design delta §5.1: AF-01..AF-13).

@@ -60,7 +60,6 @@ from tests.support.author_vocabulary import (
 from tests.support.impl import require, require_path
 from tests.support.taxonomy import completion, PerJudgeScript
 
-pytestmark = [pytest.mark.writtenahead]
 
 CASE = "TC-AUTHOR-19"
 

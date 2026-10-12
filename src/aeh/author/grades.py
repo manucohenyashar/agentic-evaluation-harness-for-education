@@ -21,7 +21,7 @@ from aeh.prov import PromptPayload, json_from_reply
 #: The versioned grades prompt (FR-AUTHOR-20). A bump invalidates the affected recordings
 #: on purpose: the request key covers the payload, so a changed prompt misses loudly instead
 #: of replaying.
-AUTHOR_GRADES_TEMPLATE_V = "aeh-author/grades/1"
+AUTHOR_GRADES_TEMPLATE_V = "aeh-author/grades/4"
 
 AUTHOR_GRADES_TEMPLATE = (
     "You are extracting the grade boundary table of a school test from a teacher's "
@@ -32,8 +32,18 @@ AUTHOR_GRADES_TEMPLATE = (
     "Rules:\n"
     "- \"grades\" lists ONLY the grade boundaries the documents state, exactly as stated "
     "(the grade name as printed, its boundary as the number the document gives).\n"
+    "- A boundary stated as a range (\"A: 10-12\", \"D: 0-2\") names its floor and its "
+    "ceiling: the minimum is the FLOOR — quote the smaller number (\"10-12\" is 10, "
+    "\"0-2\" is 0). Never quote the range text itself.\n"
+    "- A boundary stated only in words, with no number (\"BELOW 3 POINTS\", \"at least a "
+    "pass\"): you cannot read a minimum from it — use null for that grade. Never convert "
+    "words into a number the document does not print.\n"
     "- When the documents name a grade but state no boundary for it, use null for that "
     "grade's boundary.\n"
+    "- When the documents give two different values for the same grade's boundary and the "
+    "teacher has not settled between them, do not choose for the teacher: use null for that "
+    "grade's boundary, and keep the boundaries the documents state exactly once. This "
+    "outranks the range rule above: two stated values are a contradiction, not a range.\n"
     "- When the documents state no grade boundaries at all, reply "
     '{"grades": null}. NEVER invent a boundary, never estimate one: a boundary the '
     "documents do not state must stay for the teacher to fill."

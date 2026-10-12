@@ -1,7 +1,7 @@
 af = "AF-10"
 description = "one document; scan-style, no text layer"
 documents = ["geo7-mapwork-01-scanned-test.pdf"]
-outcome = "resolved"
-placeholders = []
+outcome = "partial"
+placeholders = ["grades D"]
 build = "publishes"
-notes = "resolved via the transcriber path (FR-AUTHOR-02)"
+notes = "resolved via the transcriber path (FR-AUTHOR-02); the scan states grade D's boundary in words (BELOW 3 POINTS), not as a number, so FR-AUTHOR-08's never-invent rule leaves a per-grade placeholder (the capture's honest class)"

@@ -128,8 +128,11 @@ def test_tc_author_c03_declared_field_sets_and_the_empty_vs_absent_distinctions(
         assert outcome.status in ("resolved", "derived", "placeholder", "unresolved")
         if outcome.status in ("resolved", "derived"):
             assert outcome.model, f"{outcome.item_id}: resolved with no model recorded"
-    assert happy.placeholders == len(placeholder_fields(happy.draft_path.read_text(
-        encoding="utf-8")))
+    # Disclosed reconcile (the landing): `approved_by` rides on every outcome class
+    # (TC-AUTHOR-12) and is never counted (TC-AUTHOR-01 pins AF-01 at zero), so the count
+    # oracle reads the content sentinels — the sign-off slot is excluded here, once.
+    assert happy.placeholders == len([field for field in placeholder_fields(
+        happy.draft_path.read_text(encoding="utf-8")) if field != "approved_by"])
     # Fully resolved means nothing the reasoning proposed stayed unresolved (AF-01's outcome
     # class). The one placeholder FR-AUTHOR-09 mandates — approved_by, never model-generated —
     # may or may not be counted here depending on #686's expected class; the suite accepts

@@ -118,7 +118,12 @@ def _conforming_flow(author, recordings: Path, out: Path, make_fixture_provider)
     # (FR-AUTHOR-09) carries its reason comment on the line above, and counts agree.
     lines = raw_text.splitlines()
     fields = placeholder_fields(raw_text)
-    assert result.placeholders == len(fields), (result.placeholders, fields)
+    # Disclosed reconcile (the landing): `approved_by` rides on top of every outcome class
+    # (TC-AUTHOR-12) and is never counted — TC-AUTHOR-01 pins AF-01 at zero placeholders —
+    # so the count reads the content sentinels only, the same exclusion TC-AUTHOR-14's
+    # oracle states once for the family.
+    content_fields = [field for field in fields if field != "approved_by"]
+    assert result.placeholders == len(content_fields), (result.placeholders, fields)
     for index, line in enumerate(lines):
         if "<<PLACEHOLDER:" in line:
             assert index > 0 and PLACEHOLDER_COMMENT_RE.search(lines[index - 1]), (

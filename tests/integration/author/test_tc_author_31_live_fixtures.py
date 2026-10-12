@@ -67,7 +67,6 @@ pytestmark = [
     pytest.mark.integration,
     pytest.mark.live,
     pytest.mark.slow,
-    pytest.mark.writtenahead,
 ]
 
 CASE = "TC-AUTHOR-31"

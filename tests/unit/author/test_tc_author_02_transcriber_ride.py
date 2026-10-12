@@ -58,7 +58,6 @@ from tests.support.author_vocabulary import (
 )
 from tests.support.impl import require, require_path
 
-pytestmark = [pytest.mark.writtenahead]
 
 CASE = "TC-AUTHOR-02"
 
@@ -148,7 +147,15 @@ def test_tc_author_02_each_textless_page_rides_the_transcriber_once(
 def test_tc_author_02_a_text_layer_page_never_transcribes(
         tmp_path, monkeypatch, make_fixture_provider, network_guard):
     """AF-12 (typed, no scan page), transcribe=auto: zero transcriber calls, the document
-    named in the Documents section, and its text resolves end to end."""
+    named in the Documents section, and its text layer resolves everything but the
+    `model_answer` gap.
+
+    Disclosed reconcile (the landing): AF-12's judged lines state no expected solution, so
+    the honest draft carries the FR-AUTHOR-06 `model_answer` gap on them (a bands set does
+    not determine a model answer — the landing disclosure the merged TC-AUTHOR-09/12 file
+    records). This case's own claim is the transcriber gating: the text layer resolves the
+    document end to end *except for that gap* — zero unresolved, and the only standing
+    placeholders are `model_answer`."""
     author, recordings = _guards()
     monkeypatch.setenv("HARNESS_AUTHOR_TRANSCRIBE", "auto")
 
@@ -162,9 +169,12 @@ def test_tc_author_02_a_text_layer_page_never_transcribes(
     assert transcriber_build not in counting.models_called, (
         f"{CASE}: AF-12's text comes from its text layer — the transcriber must not be "
         f"called (FR-AUTHOR-02's gating), got calls for it")
-    assert result.resolved >= 1 and not result.placeholders and not result.unresolved, (
-        f"{CASE}: AF-12 resolves via its text layer (expected.toml) — the gating must not "
-        "have cost the document its text")
+    assert result.resolved >= 3 and not result.unresolved, (
+        f"{CASE}: AF-12's text layer resolves the document (expected.toml) — the gating "
+        "must not have cost the document its text")
+    assert result.placeholders == 2, (
+        f"{CASE}: AF-12's only standing placeholders are the judged lines' two "
+        f"`model_answer` gaps (the landing disclosure) — got {result.placeholders}")
 
     report = result.report_path.read_text(encoding="utf-8")
     documents_section = _report_section(report, "Documents")

@@ -2040,35 +2040,15 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # in the test's docstring and fail legibly (naming the corpus clause) rather than crashing:
     # the per-fixture `[build] outcome` key and the scripted `[review] answers` table of each
     # fixture's `expected.toml`.
-    "#699 TS-166 TC-REQ-134 the authoring chain is M-CONF's panel_for_profile": (
-        "command",
-        "python -c \"import sys, pathlib; sys.path.insert(0, 'src');"
-        "import importlib.util as u;"
-        "import aeh.conf as c;"
-        "ok = hasattr(c, 'panel_for_profile');"
-        "m = __import__('aeh.author', fromlist=['AuthoringService'])"
-        " if u.find_spec('aeh.author') else None;"
-        "f = pathlib.Path(m.__file__) if m is not None else None;"
-        "files = [f] + (sorted(p for p in f.parent.rglob('*.py')"
-        " if '__pycache__' not in p.parts) if m is not None"
-        " and hasattr(m, '__path__') else []);"
-        "ok = ok and m is not None and hasattr(m, 'AuthoringService') and any("
-        "'panel_for_profile(' in p.read_text(encoding='utf-8')"
-        " for p in files);"
-        "raise SystemExit(0 if ok else 1)\"",
-        (
-            "tests/contract/requires/test_req_author.py::"
-            "test_tc_req_134_the_authoring_chain_is_panel_for_profile",
-        ),
-    ),
-    "#699 TS-166 TC-REQ-135 the authoring module rides M-PROV for every call": (
-        "symbols",
-        "aeh.author:AuthoringService,aeh.author:DraftResult,aeh.author:AuthoringSettings",
-        (
-            "tests/contract/requires/test_req_author.py::"
-            "test_tc_req_135_every_authoring_call_rides_m_prov",
-        ),
-    ),
+    # TC-REQ-134 LANDED (#690): `aeh.author.service.authoring_service` calls
+    # `panel_for_profile` — the chain cited, never re-implemented — so the probe resolved
+    # and the case ran green at the landing; the entry was dropped and the test unmarked.
+    #
+    # TC-REQ-135 LANDED (#690) too: the three §3.1 symbols resolved and the case ran green at
+    # the landing — after its own written-ahead fixture bugs were fixed there (the document
+    # page's non-ascii dash vs `typed_document`'s ascii streams, and the source sweep's
+    # comprehension ordering), both disclosed reconciles; the entry was dropped and the
+    # test unmarked.
     "#699 TS-166 TC-REQ-136 the fixture drafts face the real build gate": (
         "command",
         "python -c \"import sys, pathlib; sys.path.insert(0, 'src');"
@@ -2109,17 +2089,24 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # Corpus coupling (the vocabulary docstring's disclosure): the rung-1 cases inject the
     # dev-ci profile's reasoning chain via `chain_from_config()`, so #686 must record the
     # F-AUTHOR corpus through that chain — or reconcile that one helper.
-    "#689 TS-165 the CS-AUTHOR clause suite, rung 1 (aeh.author's surface + the F-AUTHOR corpus)": (
-        "command",
-        _AUTHOR_RUNG1_PROBE,
+    # The probe above resolved at the #690 landing (every limb exists), and the rung-1
+    # files whose oracles need no review walk ran green — c04/c05, c06..c08, c09..c11,
+    # c13/c14, c15/c16 — so those five were unmarked and dropped from this entry, the
+    # tests kept. Four files stay red until #696's review walk lands — their oracles drive
+    # `review()` (C01's headless pair, C12's mutates-only, C17/C19/C20's carry-over, C29's
+    # conformance flow) — so the entry is re-keyed, the `#368`/`#10` precedent, from the
+    # resolved `command` probe to a `symbols` conjunction whose last limb is the review
+    # walk itself; the landed limbs stay in the target as the honest record of what the
+    # files guard. Do NOT unmark the red cases before the conjunction resolves and the
+    # four files re-run green.
+    "#689 TS-165 the CS-AUTHOR clause suite, rung 1, the review-dependent cases (blocked on #696's review walk)": (
+        "symbols",
+        f"{_AUTHOR_MODULE}:AuthoringService,{_AUTHOR_MODULE}:DraftResult,"
+        f"{_AUTHOR_MODULE}:ReviewAnswer,{_AUTHOR_MODULE}:AuthoringSettings,"
+        f"{_AUTHOR_MODULE}:AuthoringService.review",
         (
             "tests/contract/author/test_cs_author_c01_c03_headless_surface.py",
-            "tests/contract/author/test_cs_author_c04_c05_artifacts.py",
-            "tests/contract/author/test_cs_author_c06_c07_c08_chain_rules.py",
-            "tests/contract/author/test_cs_author_c09_c10_c11_errors_and_state.py",
             "tests/contract/author/test_cs_author_c12_review_mutates_only.py",
-            "tests/contract/author/test_cs_author_c13_c14_budget_and_knobs.py",
-            "tests/contract/author/test_cs_author_c15_c16_observability.py",
             "tests/contract/author/test_cs_author_c17_c19_c20_carry_over.py",
             "tests/contract/author/test_cs_author_c29_non_promise_conformance.py",
         ),
@@ -2148,14 +2135,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # Rename path: if #693 spells the name differently, one line here (the target, built
     # from `author_vocabulary`'s AUTHOR_MODULE — the TS26 construction) plus the `require`
     # calls in the two files.
-    "#693 validation gate": (
-        "symbol",
-        f"{_AUTHOR_MODULE}:validate_draft",
-        (
-            "tests/unit/author/test_tc_author_13_validation_gate.py",
-            "tests/unit/author/test_tc_author_14_placeholder_emission.py",
-        ),
-    ),
+    #
+    # LANDED (#690): `validate_draft` shipped with the module, and both files' cases ran
+    # green at the landing — the entry was dropped and the files unmarked, the tests kept.
 # --- TS-153 (#686), the authoring corpus's recordings half ------------------------------
     #
     # The corpus's documents and `expected.toml` files are committed and pinned green by the
@@ -2168,13 +2150,10 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # tree must not satisfy it. #686's own landing PR ships the corpus with this marker red;
     # the PR that captures the recordings (#690's) closes #686, and this entry is dropped —
     # never the test — then.
-    "#686 authoring corpus recordings": (
-        "path",
-        "fixtures/F-AUTHOR/recordings/coverage.json",
-        (
-            "tests/artifact/test_tc_author_28_recordings_honesty.py",
-        ),
-    ),
+    #
+    # LANDED (#690's capture pass): the double-honesty census runs green over the captured
+    # tree, so the entry was dropped and the honesty file unmarked, and #686 closes with
+    # this PR.
     # --- TC-PIPE-37 (#712), the `aeh author` subcommand registration --------------------------
     #
     # #695 registers `aeh author draft` / `aeh author review` (FR-PIPE-10, design delta §3.3).
@@ -2247,9 +2226,17 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # One-line rename path: if the service ships under a different name (the design would
     # have to change with it), the rename is this target string plus `AUTHOR_SURFACE` in
     # `tests/support/author_vocabulary.py` — nowhere else.
+    #
+    # Re-keyed at the #690 landing, exactly as this note's disclosure instructs: the class
+    # symbol resolved while the cases were still red on the two disclosed limbs — and one
+    # of those limbs resolved with the same landing, because `draft()` ships its own
+    # `force` keyword (TC-AUTHOR-18's byte-identical re-run ran green at the capture
+    # landing). The remaining limb is #696's review walk (TC-AUTHOR-17's scripted answers),
+    # so the conjunction below adds `AuthoringService.review` — the last-landing limb.
+    # Re-run both files green before unmarking, never on the notice alone.
     "#698 determinism snapshots": (
-        "symbol",
-        "aeh.author:AuthoringService",
+        "symbols",
+        "aeh.author:AuthoringService,aeh.author:AuthoringService.review",
         (
             "tests/integration/author/test_tc_author_17_write_ownership_snapshot_diffs.py",
             "tests/integration/author/test_tc_author_18_byte_identical_rerun.py",
@@ -2311,16 +2298,11 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `AUTHOR_MODULE`/`AUTHOR_SURFACE` in `tests/support/author_vocabulary.py`); if #690
     # ships the draft path without the full §3.1 dataclass surface, the reconciliation is a
     # narrower tuple there plus this probe — nowhere else.
-    "#707 TS-155 the draft front door, recorded corpus (TC-AUTHOR-01/02: #690's surface, #686's recordings)": (
-        "command",
-        _AUTHOR_DRAFT_RECORDED_PROBE,
-        _AUTHOR_DRAFT_RECORDED_FILES,
-    ),
-    "#707 TS-155 the draft front door, scripted boundary (TC-AUTHOR-03/19/30: #690's surface)": (
-        "command",
-        _AUTHOR_DRAFT_SCRIPTED_PROBE,
-        _AUTHOR_DRAFT_SCRIPTED_FILES,
-    ),
+    # LANDED (#690): the two front-door entries above resolved (every limb shipped — the
+    # surface, #686's captured recordings, the committed AF-01/AF-10 fixtures) and their
+    # files ran green at the landing, so both were dropped and their files unmarked, the
+    # tests kept. The fail-fast matrix entry below stays: TC-AUTHOR-16's CLI arm still
+    # drives `aeh author draft`'s registration limb (#695).
     "#707 TS-155 the draft front door's fail-fast matrix (TC-AUTHOR-16: #690's surface + #695's author draft registration)": (
         "command",
         _AUTHOR_DRAFT_CLI_PROBE,
@@ -2355,16 +2337,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `tests/support/author_vocabulary.py` (`AUTHOR_MODULE` or the pin names) plus this
     # probe — nowhere else. At resolution, re-check the four cases green before unmarking —
     # never on the notice alone.
-    "#694 report logging": (
-        "command",
-        _AUTHOR_REPORT_PROBE,
-        (
-            "tests/unit/author/test_tc_author_15_authoring_report.py",
-            "tests/unit/author/test_tc_author_20_prompt_pins.py",
-            "tests/unit/author/test_tc_author_21_completion_summary.py",
-            "tests/unit/author/test_tc_author_22_author_logging.py",
-        ),
-    ),
+    #
+    # LANDED (#690): the probe resolved and all four cases ran green at the landing — the
+    # entry was dropped and the four files unmarked, the tests kept.
 
     # --- TC-AUTHOR-04..08 (#708), TS-156 (#691): chain resolution, fallback, the repair ------
     # --- budget --------------------------------------------------------------------------------
@@ -2394,44 +2369,21 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # together, at the landing), and the probe bets `AuthoringSettings()` is zero-argument
     # and `transcriber=None` is legal — both the vocabulary's disclosed bets, so a
     # differently-spelled surface is the same one-line reconciliation here.
-    "#691 chain fallback": (
-        "command",
-        _AUTHOR_REPAIR_PROBE,
-        ("tests/unit/author/test_tc_author_04_08_chain_fallback_and_repair.py",),
-    ),
+    #
+    # LANDED (#690): the probe resolved and the file ran green at the landing — the entry
+    # was dropped and the file unmarked, the test kept.
 
-    "#702 TS-169 TC-AUTHOR-31 the live fixture tier (aeh.author's draft surface, the F-AUTHOR corpus, #687's chain resolution)": (
-        "command",
-        _AUTHOR_TS169_LIVE_PROBE,
-        (
-            "tests/integration/author/test_tc_author_31_live_fixtures.py",
-        ),
-    ),
+    # LANDED (#690): the two TS-169 probes below resolved — the live tier's cases SKIP by
+    # design (the live gate stays closed outside a live run) and PERF-20's recorded
+    # ceilings ran green — so both entries were dropped and the files unmarked
+    # (`writtenahead` only; the live marker stays on TC-AUTHOR-31).
 
-    "#702 TS-169 PERF-20 the recorded ceilings (aeh.author's draft surface, the corpus, #686's captured recordings)": (
-        "command",
-        _AUTHOR_TS169_PERF_PROBE,
-        (
-            "tests/perf/test_perf_20_authoring_recorded_ceilings.py",
-        ),
-    ),
+    # LANDED (#690): the TS-168 probe resolved (the module, the validation gate, #686's
+    # captured corpus and recordings) and both files ran green at the landing after their
+    # disclosed reconciles — the entry was dropped and the files unmarked, the tests kept.
 
-    "#701 TS-168 the SEC-26 credential sweep and the ADV-18 injection fail-safe (#690's module, #693's validation gate, #686's corpus and recordings)": (
-        "command",
-        _AUTHOR_TS168_PROBE,
-        (
-            "tests/security/author/test_sec_26_authoring_credential_sweep.py",
-            "tests/security/author/test_adv_18_authoring_prompt_injection.py",
-        ),
-    ),
-
-    "#692 reasoning steps": (
-        "command",
-        _AUTHOR_TS157_PROBE,
-        (
-            "tests/unit/author/test_tc_author_09_12_reasoning_steps.py",
-        ),
-    ),
+    # LANDED (#690): the TS-157 probe resolved and the reasoning-steps file ran green at
+    # the landing — the entry was dropped and the file unmarked, the test kept.
 
     "#697 retry recreate": (
         "command",

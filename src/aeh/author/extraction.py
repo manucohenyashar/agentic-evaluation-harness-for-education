@@ -113,9 +113,14 @@ def extract_documents(
     and rides `RecordedFixtureProvider` identically (FR-AUTHOR-03: every model call through
     `M-PROV`, and no HTTP client of this module's own).
 
-    Raises `AuthoringInputError` only when **no** document yielded any text (FR-AUTHOR-13);
-    a corrupt file beside readable ones is recorded as that document's failure and the run
-    continues, because a partial draft the teacher can complete beats no draft at all.
+    Raises `AuthoringInputError` only under FR-AUTHOR-13's own conditions — no document
+    readable at all, or no text extractable from any document **while the transcription
+    knob is off** — and before any reasoning call. A corrupt file beside readable ones is
+    recorded as that document's failure and the run continues, because a partial draft the
+    teacher can complete beats no draft at all. With the knob on, a zero-text extraction
+    means the transcription itself failed mid-run: the pages stand missing and recorded
+    (FR-AUTHOR-02), and the run continues over the quoted empty text — the reasoning items
+    land unresolved, both artifacts are still written (CT-AUTHOR-10, the resilience sweep).
     """
     extracted: list[AuthoringDocument] = []
     failures: list[str] = []
@@ -127,7 +132,8 @@ def extract_documents(
         extracted.append(document)
         if not document.has_text:
             failures.append(document.name)
-    if not extracted or all(not document.has_text for document in extracted):
+    if not extracted or (all(not document.has_text for document in extracted)
+                         and not transcribe_enabled):
         raise AuthoringInputError(_no_text_message(documents, extracted, failures,
                                                    transcribe_enabled))
     return tuple(extracted)
@@ -204,10 +210,13 @@ def _transcribe_page(reader, name: str, page_no: int, transcriber: ModelRef,
     try:
         completion = call(payload, transcriber)
     except Exception as error:  # noqa: BLE001 - any model-channel failure is this page's strike
-        LOGGER.warning("transcription failed for %s page %d: %s: %s",
-                       name, page_no, type(error).__name__, error)
+        # The message rides the recorded failure (truncated, like the step loop's
+        # fallback reasons): the Documents section states *why* the page went missing,
+        # which is what tells a transcription outage from a blank scan (FR-AUTHOR-12).
+        reason = f"{type(error).__name__}: {str(error)[:200]}"
+        LOGGER.warning("transcription failed for %s page %d: %s", name, page_no, reason)
         return PageText(page_no=page_no, text="", source="missing",
-                        failure=f"transcription failed: {type(error).__name__}")
+                        failure=f"transcription failed: {reason}")
     text = completion.text.strip()
     if not text:
         LOGGER.warning("transcription returned no text for %s page %d", name, page_no)

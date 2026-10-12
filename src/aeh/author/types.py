@@ -41,8 +41,8 @@ class DraftResult:
     report_path: Path
     outcomes: tuple[StepOutcome, ...]
     placeholders: int      # the named gaps standing (the sign-off slot is never counted)
-    resolved: int          # items resolved or derived
-    unresolved: int        # items whose reasoning did not converge
+    resolved: int          # outcome rows resolved or derived — the steps' own items
+    unresolved: int        # outcome rows whose reasoning did not converge
     models_used: tuple[str, ...]  # in first-use order — a subset of the chain
 
 

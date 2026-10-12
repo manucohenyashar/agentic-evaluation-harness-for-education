@@ -55,10 +55,11 @@ from tests.support.impl import AUTHOR_MODULE, CONF_MODULE, require, require_attr
 from tests.support.prov_contract import CountingClock, flat_ok
 from tests.support.source_tree import package_source
 
-#: All three cases are red by design (test plan §8.2): each waits on its implementing story —
-#: #687 for TC-REQ-134, #690 for TC-REQ-135, #686+#690+#696 for TC-REQ-136 — so the whole
-#: module carries `writtenahead` until the last blocker closes.
-pytestmark = [pytest.mark.contract, pytest.mark.integration, pytest.mark.writtenahead]
+#: Red by design (test plan §8.2): TC-REQ-134 and TC-REQ-135 landed with #690 — after
+#: their own written-ahead fixture bugs were fixed at the landing — and run unmarked;
+#: TC-REQ-136 stays `writtenahead` per test on the whole build-gate chain (#696's review
+#: walk among it), per its registry entry.
+pytestmark = [pytest.mark.contract, pytest.mark.integration]
 
 #: The repo root, three levels up from `tests/contract/requires/`.
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -246,7 +247,10 @@ def test_tc_req_134_the_authoring_chain_is_panel_for_profile(tmp_data_dir, monke
             f"fall through to: {refusal.value!r}. [When written: an empty [[panel]] raises "
             f"ConfigurationError naming the profile — it never returns the escalations alone "
             f"(CT-CONF-23, test-plan Q-O7).]")
-    author_module = require(AUTHOR_MODULE, "AuthoringService", issue="#690")
+    # Disclosed reconcile (the landing): `require` with a symbol name returns the SYMBOL,
+    # and `package_source` needs the MODULE (`module.__file__`/`__path__`) — the sweep's
+    # own plumbing, not its oracle. The service exists (#690); the module carries it.
+    author_module = require(AUTHOR_MODULE, issue="#690")
     consumer_calls = [
         ast.unparse(node.func) for node in ast.walk(ast.parse(package_source(author_module)))
         if isinstance(node, ast.Call)
@@ -276,8 +280,11 @@ _SCRIPTED_REPLY = (
 #: carries the extracted document text (FR-AUTHOR-03) — reads for this string on the wire.
 DOCUMENT_TEXT_TOKEN = "KEPLER-ORBIT-CONSTANT-7F3"
 
+# Disclosed reconcile (the landing): `typed_document`'s content streams encode ascii
+# (`harness/corpora/pdf_writer.py`), so the page text is ascii too — a plain hyphen where a
+# print dash would go; the token, not the dash, is what the payload assertion reads for.
 _DOCUMENT_PAGE = (
-    "Physics Test 1 — Forces and Orbits\n"
+    "Physics Test 1 - Forces and Orbits\n"
     "\n"
     f"Reference marker {DOCUMENT_TEXT_TOKEN}.\n"
     "\n"
@@ -385,8 +392,22 @@ def test_tc_req_135_every_authoring_call_rides_m_prov(tmp_path, network_guard, m
     replay = AuthoringService(chain=chain, provider=fixture, transcriber=EDGE_TRANSCRIBER,
                               settings=AuthoringSettings())
     replay_result = replay.draft([doc_a], tmp_path / "out-2")
-    with pytest.raises(FixtureMissingError):
-        replay.draft([doc_b], tmp_path / "out-3")
+    # Disclosed reconcile (the landing): a fixture miss is a ProviderError — FR-AUTHOR-05a's
+    # fallback trigger — so it does not surface as an exception out of `draft()`; the run
+    # falls back through the chain, exhausts every position (no recording exists for the
+    # changed request under any of them) and resolves nothing. The miss stays loud where the
+    # module records it: every outcome unresolved, no model credited, the FixtureMissingError
+    # named in each outcome's own reasons — and not one of doc_a's recorded answers reused.
+    changed = replay.draft([doc_b], tmp_path / "out-3")
+    assert changed.outcomes, "the changed run produced no outcomes at all"
+    assert all(o.model is None for o in changed.outcomes), (
+        f"the changed run credited a model: {[o.model for o in changed.outcomes]}")
+    assert all(
+        o.status == "unresolved"
+        and any("FixtureMissingError" in reason for reason in o.failures)
+        for o in changed.outcomes), (
+        f"the changed run did not miss loudly on every item: "
+        f"{[(o.item_id, o.status, o.failures) for o in changed.outcomes]}")
     network_guard.assert_no_network()
 
     serialized = [json.dumps(body) for body in transport.bodies]
@@ -434,10 +455,13 @@ def test_tc_req_135_every_authoring_call_rides_m_prov(tmp_path, network_guard, m
     http_imports = sorted({
         alias.name.split(".")[0] if isinstance(node, ast.Import) else (
             (node.module or "").split(".")[0] if node.module else alias.name)
+        # Disclosed reconcile (the landing): the filter precedes the alias loop — the
+        # written-ahead order iterated `node.names` on every walked node, and plain
+        # statements have no `names`.
         for node in ast.walk(tree)
-        for alias in node.names
         if isinstance(node, (ast.Import, ast.ImportFrom))
-        and ((node.module or "") if isinstance(node, ast.ImportFrom) else alias.name).split(".")[0]
+        for alias in node.names
+        if ((node.module or "") if isinstance(node, ast.ImportFrom) else alias.name).split(".")[0]
         in ("requests", "httpx", "urllib", "urllib3", "http", "socket", "aiohttp", "ssl", "ftplib")
     } & {"requests", "httpx", "urllib", "urllib3", "http", "socket", "aiohttp", "ssl", "ftplib"})
     if http_imports:
@@ -499,6 +523,7 @@ def _scripted_answers(expected: dict, af: Path) -> dict:
     return dict(review.get("answers", {}))
 
 
+@pytest.mark.writtenahead
 def test_tc_req_136_the_fixture_drafts_face_the_real_build_gate(tmp_path, capsys):
     """`TC-REQ-136` (`M-AUTHOR` → `M-PKG`, FR-PKG-28, CT-PKG-23): every fixture draft in the
     authoring corpus, driven end to end at rung 2 — drafted against the corpus's own recordings,
