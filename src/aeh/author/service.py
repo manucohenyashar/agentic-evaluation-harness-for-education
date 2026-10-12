@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 import re
 import threading
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -35,10 +35,11 @@ from .grades import AUTHOR_GRADES_TEMPLATE_V, grades_payload, parse_grades
 from .inventory import AUTHOR_INVENTORY_TEMPLATE_V, fallback_package_id, inventory_payload, \
     parse_inventory
 from .report import draft_filename, render_report, report_filename, summary_paragraph
+from .review import run_review
 from .rubric import AUTHOR_RUBRIC_TEMPLATE_V, parse_rubric, rubric_payload
 from .settings import AuthoringSettings
 from .spec import assemble, render_draft
-from .types import DraftResult, StepOutcome
+from .types import DraftResult, ReviewAnswer, ReviewResult, StepOutcome
 
 LOGGER = logging.getLogger("aeh.author")
 
@@ -194,6 +195,17 @@ class AuthoringService:
             resolved=sum(1 for row in rows if row["status"] in ("resolved", "derived")),
             unresolved=sum(1 for row in rows if row["status"] == "unresolved"),
             models_used=tuple(models_used))
+
+    def review(self, draft_path: Path,
+               answers: Iterable[ReviewAnswer] | None = None) -> ReviewResult:
+        """The review walk and the ready gate (FR-AUTHOR-16/17, story #696): walk the teacher
+        through every item the draft still carries, in report order, accept or refuse each
+        plain-language answer, rewrite the draft in place, re-run the deterministic
+        validation, and rewrite the report. `answers=None` walks the terminal (one answer
+        line per item); `answers=[...]` is the scripted form — the same call the console
+        will make, one answer at a time. The walk is local: no model call rides any seam,
+        and it writes exactly the two artifacts it was given (CT-AUTHOR-12, ADR-43)."""
+        return run_review(Path(draft_path), answers)
 
     # -- the model-call seam ------------------------------------------------------------------
 

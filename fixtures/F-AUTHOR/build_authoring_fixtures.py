@@ -511,7 +511,8 @@ A: 14-16. B: 10-13. C: 6-9. D: 0-5.
 
 def _expected(af: str, description: str, documents: list[str], outcome: str,
               placeholders: list[str], build: str, notes: str,
-              retry_of: str | None = None, carry_over: str | None = None) -> str:
+              retry_of: str | None = None, carry_over: str | None = None,
+              review_answers: dict | None = None) -> str:
     """One fixture's expected.toml, as text -- the outcome class the tests assert."""
     def q(value: str) -> str:
         # TOML basic strings: backslash and quote must be escaped or the line breaks the
@@ -531,7 +532,71 @@ def _expected(af: str, description: str, documents: list[str], outcome: str,
     if carry_over is not None:
         lines.append(f'carry_over = "{q(carry_over)}"')
     lines.append(f'notes = "{q(notes)}"')
+    if review_answers:
+        # The scripted review answers TC-REQ-136 drives every fixture's draft with (the
+        # corpus contract the case bets on). A list value answers a repeated item id one
+        # value per occurrence, in document order (AF-08's two unkeyed `key` items).
+        lines.append("")
+        lines.append("[review.answers]")
+        for item, value in review_answers.items():
+            if isinstance(value, list):
+                rendered = "[" + ", ".join(_review_value(v) for v in value) + "]"
+            else:
+                rendered = _review_value(value)
+            lines.append(f'{_review_value(item)} = {rendered}')
     return "\n".join(lines) + "\n"
+
+
+def _review_value(value) -> str:
+    """One [review.answers] value as TOML: json.dumps is `_toml_str`'s escaping, so a
+    multi-line band set (AF-06's) stays a single valid basic string."""
+    import json
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
+
+
+#: The approving teacher every fixture's `approved_by` placeholder is scripted with -- the
+#: same plain-language value the review-walk cases use.
+REVIEW_TEACHER = "Sample-materials teacher"
+
+#: The scripted review answers each publishing fixture's draft is completed with
+#: (TC-REQ-136 drives every fixture's draft with these). Grounded in each document, not
+#: invented: AF-06's band set answers the question its memo misses in the paper's own
+#: framing; AF-07's model answer is the paper's worked division; AF-08's keys come from the
+#: paper's ANSWERS line (items 3 and 5); AF-10's grade-D boundary is the scan's "BELOW 3
+#: POINTS" -- below 3 means 0; AF-12's two judged sentences answer its two writing prompts.
+#: The refused fixtures AF-09/AF-11 carry none -- their drafts never complete.
+REVIEW_ANSWERS = {
+    "approved_by": REVIEW_TEACHER,
+}
+
+AF06_ANSWERS = {
+    "approved_by": REVIEW_TEACHER,
+    "criterion Q4": "Band 1: little or no correct content (1 points);\n"
+                    "Band 2: the ground is saturated and cannot soak up more (3 points)",
+}
+
+AF07_ANSWERS = {
+    "approved_by": REVIEW_TEACHER,
+    "model_answer": "2/3, by dividing the top and the bottom by 6.",
+}
+
+AF08_ANSWERS = {
+    "approved_by": REVIEW_TEACHER,
+    "key": ["C", "B"],
+}
+
+AF10_ANSWERS = {
+    "approved_by": REVIEW_TEACHER,
+    "grades D": 0,
+}
+
+AF12_ANSWERS = {
+    "approved_by": REVIEW_TEACHER,
+    "model_answer": ["Yesterday I ate bread and cheese.",
+                     "This weekend I am going to the swimming pool."],
+}
 
 
 #: The corpus, in the design delta's §5.1 order. `documents` pairs filenames with their
@@ -543,7 +608,8 @@ FIXTURES: dict[str, dict] = {
         "expected": _expected(
             "AF-01", "single document; bands throughout; happy path",
             ["hist7-rome-01-test-and-grading.pdf"], "resolved", [], "publishes",
-            "every criterion resolves to bands; zero placeholders"),
+            "every criterion resolves to bands; zero placeholders",
+            review_answers=dict(REVIEW_ANSWERS)),
     },
     "AF-02": {
         "description": "two documents: test paper + rubric memo; happy path",
@@ -553,7 +619,8 @@ FIXTURES: dict[str, dict] = {
             "AF-02", "two documents: test paper + rubric memo; happy path",
             ["geo8-climate-01-test-paper.pdf", "geo8-climate-01-marking-memo.pdf"],
             "resolved", [], "publishes",
-            "the rubric memo carries every question's grading"),
+            "the rubric memo carries every question's grading",
+            review_answers=dict(REVIEW_ANSWERS)),
     },
     "AF-03": {
         "description": "one document; MCQ section with the key stated",
@@ -561,7 +628,8 @@ FIXTURES: dict[str, dict] = {
         "expected": _expected(
             "AF-03", "one document; MCQ section with the key stated",
             ["sci7-cells-01-mcq-test.pdf"], "resolved", [], "publishes",
-            "mcq lines with key in options, fully resolved"),
+            "mcq lines with key in options, fully resolved",
+            review_answers=dict(REVIEW_ANSWERS)),
     },
     "AF-04": {
         "description": "one document; grading in the teacher's own words",
@@ -569,7 +637,8 @@ FIXTURES: dict[str, dict] = {
         "expected": _expected(
             "AF-04", "one document; grading in the teacher's own words",
             ["eng7-poetry-01-test.pdf"], "resolved", [], "publishes",
-            "general criterion: derivation_description verbatim, derived bands"),
+            "general criterion: derivation_description verbatim, derived bands",
+            review_answers=dict(REVIEW_ANSWERS)),
     },
     "AF-05": {
         "description": "one document; evidence-checklist wording",
@@ -577,7 +646,8 @@ FIXTURES: dict[str, dict] = {
         "expected": _expected(
             "AF-05", "one document; evidence-checklist wording",
             ["hist8-sources-01-test.pdf"], "resolved", [], "publishes",
-            "evidence_sum composite of binary aspect criteria"),
+            "evidence_sum composite of binary aspect criteria",
+            review_answers=dict(REVIEW_ANSWERS)),
     },
     "AF-06": {
         "description": "two documents; the rubric memo misses one question",
@@ -587,7 +657,8 @@ FIXTURES: dict[str, dict] = {
             "AF-06", "two documents; the rubric memo misses one question",
             ["geo8-rivers-01-test-paper.pdf", "geo8-rivers-01-marking-memo.pdf"],
             "partial", ["criterion Q4"], "publishes",
-            "Q4's criterion placeholders; Q1-Q3 resolve from the memo"),
+            "Q4's criterion placeholders; Q1-Q3 resolve from the memo",
+            review_answers=dict(AF06_ANSWERS)),
     },
     "AF-07": {
         "description": "one document; no model answers given",
@@ -596,7 +667,8 @@ FIXTURES: dict[str, dict] = {
             "AF-07", "one document; no model answers given",
             ["math7-fractions-01-test.pdf"], "partial", ["model_answer"],
             "publishes",
-            "model_answer placeholders; the review walk completes to ready"),
+            "model_answer placeholders; the review walk completes to ready",
+            review_answers=dict(AF07_ANSWERS)),
     },
     "AF-08": {
         "description": "one document; the MCQ key is only partly stated",
@@ -605,7 +677,8 @@ FIXTURES: dict[str, dict] = {
             "AF-08", "one document; the MCQ key is only partly stated",
             ["sci6-circuits-01-mcq-test.pdf"], "partial", ["key"],
             "publishes",
-            "key placeholders for the unkeyed items (3 and 5)"),
+            "key placeholders for the unkeyed items (3 and 5)",
+            review_answers=dict(AF08_ANSWERS)),
     },
     "AF-09": {
         "description": "one document; contradictory grading description",
@@ -653,7 +726,8 @@ Q1: 436218. Q2: ABOUT 12 KM. Q3: ABOUT 045 DEGREES.
             ["geo7-mapwork-01-scanned-test.pdf"], "partial", ["grades D"], "publishes",
             "resolved via the transcriber path (FR-AUTHOR-02); the scan states grade D's "
             "boundary in words (BELOW 3 POINTS), not as a number, so FR-AUTHOR-08's "
-            "never-invent rule leaves a per-grade placeholder (the capture's honest class)"),
+            "never-invent rule leaves a per-grade placeholder (the capture's honest class)",
+            review_answers=dict(AF10_ANSWERS)),
     },
     "AF-11": {
         "description": "one document; no grade boundaries stated",
@@ -671,7 +745,8 @@ Q1: 436218. Q2: ABOUT 12 KM. Q3: ABOUT 045 DEGREES.
             ["lang7-vocab-01-test.pdf"], "partial", ["model_answer"], "publishes",
             "mixed mcq and judged lines; the judged lines state no expected solution, "
             "so they carry the FR-AUTHOR-06 model_answer gap (a bands set does not "
-            "determine a model answer)"),
+            "determine a model answer)",
+            review_answers=dict(AF12_ANSWERS)),
     },
     "AF-13": {
         "description": "AF-01's test reworded plus an edited grading memo; the re-draft flow",
@@ -684,7 +759,8 @@ Q1: 436218. Q2: ABOUT 12 KM. Q3: ABOUT 045 DEGREES.
             "partial", [], "publishes",
             "the changed item's carried answers drop with a named reason; "
             "the unchanged items carry over, provisional until review confirms",
-            retry_of="AF-01", carry_over="changed-item-dropped-unchanged-carried"),
+            retry_of="AF-01", carry_over="changed-item-dropped-unchanged-carried",
+            review_answers=dict(REVIEW_ANSWERS)),
     },
 }
 
@@ -743,6 +819,7 @@ TC-AUTHOR-28's census instead, which re-runs this script and diffs the bytes.
 | `retry_of` | AF-13 only: the fixture this re-drafts |
 | `carry_over` | AF-13 only: the carry-over outcome class |
 | `notes` | one line for a human |
+| `[review.answers]` | the scripted review answers the publishing fixtures' drafts complete with (TC-REQ-136); item id = value, a list answers a repeated id one value per occurrence in document order. Refused fixtures (AF-09, AF-11) carry none |
 
 The recorded tier replays exact content through `RecordedFixtureProvider`; the live tier
 (`@live`, real OpenRouter) asserts these outcome classes -- **never exact wording**: two runs

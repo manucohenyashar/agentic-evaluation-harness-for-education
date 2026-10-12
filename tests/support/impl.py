@@ -2049,26 +2049,16 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # page's non-ascii dash vs `typed_document`'s ascii streams, and the source sweep's
     # comprehension ordering), both disclosed reconciles; the entry was dropped and the
     # test unmarked.
-    "#699 TS-166 TC-REQ-136 the fixture drafts face the real build gate": (
-        "command",
-        "python -c \"import sys, pathlib; sys.path.insert(0, 'src');"
-        "root = pathlib.Path('fixtures/F-AUTHOR');"
-        "ok = all((root / ('AF-%02d' % i)).is_dir()"
-        " and (root / ('AF-%02d' % i) / 'expected.toml').is_file() for i in range(1, 14))"
-        " and (root / 'recordings').is_dir();"
-        "import importlib.util as u;"
-        "m = __import__('aeh.author', fromlist=['AuthoringService'])"
-        " if u.find_spec('aeh.author') else None;"
-        "ok = ok and m is not None"
-        " and all(hasattr(m, n) for n in"
-        " ('AuthoringService', 'DraftResult', 'ReviewAnswer', 'AuthoringSettings'))"
-        " and hasattr(m.AuthoringService, 'review');"
-        "raise SystemExit(0 if ok else 1)\"",
-        (
-            "tests/contract/requires/test_req_author.py::"
-            "test_tc_req_136_the_fixture_drafts_face_the_real_build_gate",
-        ),
-    ),
+    #
+    # TC-REQ-136 LANDED (#696): its probe resolved the moment `AuthoringService.review`
+    # existed, and the case ran green at that landing — after the landing reconciled its two
+    # disclosed corpus-shape bets, never silently: the corpus's declared build outcome is the
+    # scalar `build = "publishes" | "refused"` (the case had bet on a `[build] outcome`
+    # table), and `[review] answers` tables were added to the publishing fixtures in the same
+    # change (the case's expansion reads one value per placeholder occurrence, in document
+    # order — AF-08's two `key` items take their letters in that order; the refused fixtures
+    # AF-09/AF-11 carry no answers, their sentinels surviving to the build on purpose). The
+    # entry was dropped and the test unmarked.
 # --- TS-165 (#689), the CS-AUTHOR clause suite and TC-AUTHOR-29's conformance case -----
     #
     # Keyed to the M-AUTHOR implementation stories as the DoD says — but as conjunctions,
@@ -2092,25 +2082,11 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # The probe above resolved at the #690 landing (every limb exists), and the rung-1
     # files whose oracles need no review walk ran green — c04/c05, c06..c08, c09..c11,
     # c13/c14, c15/c16 — so those five were unmarked and dropped from this entry, the
-    # tests kept. Four files stay red until #696's review walk lands — their oracles drive
-    # `review()` (C01's headless pair, C12's mutates-only, C17/C19/C20's carry-over, C29's
-    # conformance flow) — so the entry is re-keyed, the `#368`/`#10` precedent, from the
-    # resolved `command` probe to a `symbols` conjunction whose last limb is the review
-    # walk itself; the landed limbs stay in the target as the honest record of what the
-    # files guard. Do NOT unmark the red cases before the conjunction resolves and the
-    # four files re-run green.
-    "#689 TS-165 the CS-AUTHOR clause suite, rung 1, the review-dependent cases (blocked on #696's review walk)": (
-        "symbols",
-        f"{_AUTHOR_MODULE}:AuthoringService,{_AUTHOR_MODULE}:DraftResult,"
-        f"{_AUTHOR_MODULE}:ReviewAnswer,{_AUTHOR_MODULE}:AuthoringSettings,"
-        f"{_AUTHOR_MODULE}:AuthoringService.review",
-        (
-            "tests/contract/author/test_cs_author_c01_c03_headless_surface.py",
-            "tests/contract/author/test_cs_author_c12_review_mutates_only.py",
-            "tests/contract/author/test_cs_author_c17_c19_c20_carry_over.py",
-            "tests/contract/author/test_cs_author_c29_non_promise_conformance.py",
-        ),
-    ),
+    # tests kept. The four review-dependent files — C01's headless pair, C12's
+    # mutates-only, C17/C19/C20's carry-over, C29's conformance flow — were re-keyed (the
+    # `#368`/`#10` precedent) onto a `symbols` conjunction whose last limb was the review
+    # walk; the conjunction resolved and all four re-ran green at the #696 landing, so
+    # they were unmarked then and this entry dropped with them — the tests kept.
     "#689 TS-165 the CS-AUTHOR clause suite, rung 3 (the aeh author CLI): #695's registration, #687's chain resolution, #686's corpus, #689's surface": (
         "command",
         _AUTHOR_CLI_PROBE,
@@ -2231,26 +2207,15 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # symbol resolved while the cases were still red on the two disclosed limbs — and one
     # of those limbs resolved with the same landing, because `draft()` ships its own
     # `force` keyword (TC-AUTHOR-18's byte-identical re-run ran green at the capture
-    # landing). The remaining limb is #696's review walk (TC-AUTHOR-17's scripted answers),
-    # so the conjunction below adds `AuthoringService.review` — the last-landing limb.
-    # Re-run both files green before unmarking, never on the notice alone.
-    #
-    # #698's own landing (the audit PR): the determinism/write-ownership machinery the
-    # story's Goal names shipped with the #690-#694 series — the audit found no delta on
-    # the draft surface, so the entry is kept untouched. At that landing TC-AUTHOR-18 ran
-    # green (both fixtures, in-process and cross-interpreter under differing
-    # PYTHONHASHSEED) and TC-AUTHOR-17's failure-path arm ran green; the review arm is the
-    # one red, on #696's `AuthoringService.review`. The markers stay on BOTH files until
-    # the conjunction resolves: the unmark and the entry drop are one step, taken by
-    # whoever lands #696, after both files re-run green.
-    "#698 determinism snapshots": (
-        "symbols",
-        "aeh.author:AuthoringService,aeh.author:AuthoringService.review",
-        (
-            "tests/integration/author/test_tc_author_17_write_ownership_snapshot_diffs.py",
-            "tests/integration/author/test_tc_author_18_byte_identical_rerun.py",
-        ),
-    ),
+# landing). The remaining limb was #696's review walk (TC-AUTHOR-17's scripted
+    # answers), so the conjunction added `AuthoringService.review` — the last-landing
+    # limb. #698's own landing (the audit PR) found the determinism/write-ownership
+    # machinery the story's Goal names already shipped with the #690-#694 series — no
+    # delta on the draft surface — and held the markers on BOTH files until the
+    # conjunction resolved, the unmark and the entry drop one step. That step was taken
+    # at the #696 landing: both files re-ran green (the review arm included, TC-AUTHOR-18
+    # across fresh interpreters under differing PYTHONHASHSEED), were unmarked then, and
+    # the entry dropped with them — the tests kept.
     # --- Package-authoring delta, TS-167 (#716), TC-CONSOLE-58 -------------------------------
     #
     # FR-CONSOLE-46 lists `aeh author draft` / `aeh author review` present-and-unavailable —
@@ -2401,14 +2366,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/integration/author/test_tc_author_25_fresh_redraft.py",
             "tests/integration/author/test_tc_author_26_overwrite_matrix.py",
             "tests/unit/author/test_tc_author_27_carry_over_variants.py",
-        ),
-    ),
-
-    "#713 review walk, rung 1 (the scripted review: #696's review surface, #686's AF-07/AF-08 corpus and recordings)": (
-        "command",
-        _AUTHOR_23_PROBE,
-        (
-            "tests/unit/author/test_tc_author_23_scripted_review_walk.py",
         ),
     ),
 

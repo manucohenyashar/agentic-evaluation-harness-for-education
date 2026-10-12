@@ -33,6 +33,7 @@ The library form of the CLI's `--force` is `FORCE_KWARG` (the vocabulary's discl
 from __future__ import annotations
 
 import copy
+import json
 import re
 import tomllib
 from pathlib import Path
@@ -56,7 +57,7 @@ from tests.support.author_vocabulary import (
 )
 from tests.support.impl import require, require_attr, require_path
 
-pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.contract]
 
 TEACHER = "Sample-materials teacher"
 HEX_RE = re.compile(r"\b[0-9a-fA-F]{8,64}\b")
@@ -106,7 +107,10 @@ def _emit_value(value: Any) -> str:
     if isinstance(value, (int, float)):
         return str(value)
     if isinstance(value, str):
-        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+        # json.dumps is the spec vocabulary's own `_toml_str` (spec_export): it escapes the
+        # control characters (newlines in a `derivation_description`) a minimal quote-and-
+        # backslash pass would emit raw into a single-line TOML string.
+        return json.dumps(value, ensure_ascii=False)
     if isinstance(value, dict):
         return "{ " + ", ".join(f"{k} = {_emit_value(v)}" for k, v in value.items()) + " }"
     if isinstance(value, (list, tuple)):
@@ -151,11 +155,15 @@ def _vary_wording(spec: dict[str, Any]) -> tuple[dict[str, Any], bool]:
                 band["name"] = f"z-{band['name']}"
             if len(criterion["bands"]) <= 4:  # +2 must stay under the six-band ceiling
                 first = criterion["bands"][0]
+                # Split into three (the two shifts plus the original), so the band count
+                # moves by 2 and stays even (FR-PKG-06); equal points keep the set
+                # non-decreasing.
                 criterion["bands"][0:1] = [
                     {"name": f"{first['name']}-a", "points": first["points"],
                      "descriptor": first["descriptor"]},
                     {"name": f"{first['name']}-b", "points": first["points"],
                      "descriptor": first["descriptor"]},
+                    first,
                 ]
                 split_any = True
     return varied, split_any
@@ -180,7 +188,9 @@ def test_tc_author_c17_varying_the_unpromised_wording_keeps_every_consumer_worki
     assert cli.main(["package", "build", "--data-dir", str(tmp_data_dir),
                      "--spec", str(result.draft_path)]) == 0
 
-    original = tomllib.loads(text)
+    # The variation is applied to the READY draft (post-review): a draft that still carries the
+    # `approved_by` sentinel does not build, and CT-AUTHOR-17 varies a consumer-ready spec.
+    original = tomllib.loads(result.draft_path.read_text(encoding="utf-8"))
     varied, split_any = _vary_wording(original)
     # The variation is real: band names and the question ids all moved — and wherever the
     # split fired, a band count moved too.
@@ -196,7 +206,7 @@ def test_tc_author_c17_varying_the_unpromised_wording_keeps_every_consumer_worki
     varied_path.write_text(_emit_toml(varied), encoding="utf-8")
     assert author.validate_draft(varied) == [], (
         "the varied spec must still pass the deterministic rules")
-    assert cli.main(["package", "build", "--data-dir", str(tmp_data_dir),
+    assert cli.main(["package", "build", "--data-dir", str(tmp_path / "varied-store"),
                      "--spec", str(varied_path)]) == 0, (
         "the build must not depend on the unpromised wording")
 

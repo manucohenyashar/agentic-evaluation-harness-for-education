@@ -1,6 +1,6 @@
 {
   "schema": "aeh.prov/fixture/1",
-  "key": "sha256:f7fde0d8b055f62b68cdbee09e4d22f1f11455a21119492c4eadc3d1568dbc80",
+  "key": "sha256:dd5d821100064b280f4d53bc305af8bebea4679d8bea657c1a72fdc2808d2892",
   "request": {
     "fields": [
       [
@@ -17,7 +17,7 @@
       ],
       [
         "question",
-        "{\"id\": \"Q3\", \"model_answer\": \"the empire had grown too large to rule from one city, and that defence was easier with two capitals.\", \"options\": null, \"points\": 4, \"text\": \"Give two reasons the empire was split into East and West.\", \"type\": \"open\"}"
+        "{\"id\": \"R1\", \"model_answer\": \"moving soldiers quickly, trade and supplies, and spreading Roman control.\", \"options\": null, \"points\": 4, \"text\": \"Why did the Roman army build roads across the empire?\", \"type\": \"open\"}"
       ]
     ],
     "model_ref": {
@@ -35,10 +35,10 @@
     }
   },
   "completion": {
-    "text": "{\"key\": null, \"bands\": [{\"name\": \"Band 1\", \"points\": 1, \"descriptor\": \"little or no correct content\"}, {\"name\": \"Band 2\", \"points\": 2, \"descriptor\": \"partly accurate; more wrong than right\"}, {\"name\": \"Band 3\", \"points\": 3, \"descriptor\": \"mostly accurate; one part missing or vague\"}, {\"name\": \"Band 4\", \"points\": 4, \"descriptor\": \"accurate and complete, in the pupil’s own words\"}], \"aspects\": null, \"derivation_description\": null}",
-    "tokens_in": 1322,
-    "tokens_out": 1882,
-    "latency_ms": 15508,
+    "text": "{\"key\": null, \"bands\": [{\"name\": \"None\", \"points\": 1, \"descriptor\": \"little or no correct content.\"}, {\"name\": \"Slight\", \"points\": 1, \"descriptor\": \"one fragment of the answer, mostly wrong.\"}, {\"name\": \"Partial\", \"points\": 2, \"descriptor\": \"about half of the answer, with gaps.\"}, {\"name\": \"Good\", \"points\": 2, \"descriptor\": \"most of the answer; one part missing.\"}, {\"name\": \"Strong\", \"points\": 3, \"descriptor\": \"the full answer with one vague part.\"}, {\"name\": \"Full\", \"points\": 4, \"descriptor\": \"the complete, accurate answer.\"}]}",
+    "tokens_in": 1313,
+    "tokens_out": 2949,
+    "latency_ms": 16611,
     "resolved_build": "qwen/qwen3-30b-a3b",
     "cached_prefix_tokens": 0,
     "cost": null

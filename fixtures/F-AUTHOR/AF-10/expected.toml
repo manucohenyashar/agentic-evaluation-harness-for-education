@@ -5,3 +5,7 @@ outcome = "partial"
 placeholders = ["grades D"]
 build = "publishes"
 notes = "resolved via the transcriber path (FR-AUTHOR-02); the scan states grade D's boundary in words (BELOW 3 POINTS), not as a number, so FR-AUTHOR-08's never-invent rule leaves a per-grade placeholder (the capture's honest class)"
+
+[review.answers]
+"approved_by" = "Sample-materials teacher"
+"grades D" = 0

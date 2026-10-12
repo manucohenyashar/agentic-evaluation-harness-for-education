@@ -1,6 +1,6 @@
 {
   "schema": "aeh.prov/fixture/1",
-  "key": "sha256:4babf037fcab028fd2b202d8f94cb88057046b5b4504c5a92dfecf2dccca244e",
+  "key": "sha256:ccd447ff7f04350dba02302bee8172198ab7caf774993c9a00b37a53e8975ba4",
   "request": {
     "fields": [
       [
@@ -17,7 +17,7 @@
       ],
       [
         "question",
-        "{\"id\": \"Q1\", \"model_answer\": \"moving soldiers quickly, trade and supplies, and spreading Roman control.\", \"options\": null, \"points\": 4, \"text\": \"Why did the Roman army build roads across the empire?\", \"type\": \"open\"}"
+        "{\"id\": \"R4\", \"model_answer\": \"roads (for transportation), sewers (for waste management), baths (for public hygiene), walls (for defense).\", \"options\": null, \"points\": 4, \"text\": \"Name two things Roman towns built that we still use today, and say what each was for.\", \"type\": \"open\"}"
       ]
     ],
     "model_ref": {
@@ -35,7 +35,7 @@
     }
   },
   "completion": {
-    "text": "{\"key\": null, \"bands\": [{\"name\": \"Band 1\", \"points\": 1, \"descriptor\": \"little or no correct content.\"}, {\"name\": \"Band 2\", \"points\": 2, \"descriptor\": \"partly accurate; more wrong than right.\"}, {\"name\": \"Band 3\", \"points\": 3, \"descriptor\": \"mostly accurate; one part missing or vague.\"}, {\"name\": \"Band 4\", \"points\": 4, \"descriptor\": \"accurate and complete, in the pupil’s own words.\"}], \"aspects\": null, \"derivation_description\": \"Every question is marked on a 4-band scale, out of 4. Band 1 is the lowest mark and band 4 the highest. No half marks. GRADE BOUNDARIES (OUT OF 16 POINTS) A: 14-16. B: 10-13. C: 6-9. D: 0-5.\"}",
+    "text": "{\"key\": null, \"bands\": [{\"name\": \"Misses\", \"points\": 1, \"descriptor\": \"little or no correct content.\"}, {\"name\": \"Hits\", \"points\": 4, \"descriptor\": \"the complete, accurate answer.\"}]}",
     "tokens_in": 1313,
     "tokens_out": 2949,
     "latency_ms": 16611,

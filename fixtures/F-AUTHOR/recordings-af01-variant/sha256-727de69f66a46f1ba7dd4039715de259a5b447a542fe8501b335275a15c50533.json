@@ -1,6 +1,6 @@
 {
   "schema": "aeh.prov/fixture/1",
-  "key": "sha256:32590db69c25b533706920ac48e8393087002bbaa6db75232825e840fae875ce",
+  "key": "sha256:727de69f66a46f1ba7dd4039715de259a5b447a542fe8501b335275a15c50533",
   "request": {
     "fields": [
       [
@@ -17,7 +17,7 @@
       ],
       [
         "question",
-        "{\"id\": \"Q2\", \"model_answer\": \"drinking water, public baths and fountains.\", \"options\": null, \"points\": 4, \"text\": \"What was aqueduct water used for in Roman towns?\", \"type\": \"open\"}"
+        "{\"id\": \"R3\", \"model_answer\": \"the empire had grown too large to rule from one city, and that defence was easier with two capitals.\", \"options\": null, \"points\": 4, \"text\": \"Give two reasons the empire was split into East and West.\", \"type\": \"open\"}"
       ]
     ],
     "model_ref": {
@@ -35,10 +35,10 @@
     }
   },
   "completion": {
-    "text": "{\"key\": null, \"bands\": [{\"name\": \"Band 1\", \"points\": 1, \"descriptor\": \"little or no correct content.\"}, {\"name\": \"Band 2\", \"points\": 2, \"descriptor\": \"partly accurate; more wrong than right.\"}, {\"name\": \"Band 3\", \"points\": 3, \"descriptor\": \"mostly accurate; one part missing or vague.\"}, {\"name\": \"Band 4\", \"points\": 4, \"descriptor\": \"accurate and complete, in the pupil’s own words.\"}], \"aspects\": null, \"derivation_description\": \"No half marks. GRADE BOUNDARIES (OUT OF 16 POINTS) A: 14-16. B: 10-13. C: 6-9. D: 0-5.\"}",
-    "tokens_in": 1310,
-    "tokens_out": 3475,
-    "latency_ms": 22799,
+    "text": "{\"key\": null, \"bands\": [{\"name\": \"None\", \"points\": 1, \"descriptor\": \"little or no correct content.\"}, {\"name\": \"Slight\", \"points\": 1, \"descriptor\": \"one fragment of the answer, mostly wrong.\"}, {\"name\": \"Partial\", \"points\": 2, \"descriptor\": \"about half of the answer, with gaps.\"}, {\"name\": \"Good\", \"points\": 2, \"descriptor\": \"most of the answer; one part missing.\"}, {\"name\": \"Strong\", \"points\": 3, \"descriptor\": \"the full answer with one vague part.\"}, {\"name\": \"Full\", \"points\": 4, \"descriptor\": \"the complete, accurate answer.\"}]}",
+    "tokens_in": 1313,
+    "tokens_out": 2949,
+    "latency_ms": 16611,
     "resolved_build": "qwen/qwen3-30b-a3b",
     "cached_prefix_tokens": 0,
     "cost": null

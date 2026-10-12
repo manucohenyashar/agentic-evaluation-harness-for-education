@@ -34,6 +34,7 @@ TC-AUTHOR-28's census instead, which re-runs this script and diffs the bytes.
 | `retry_of` | AF-13 only: the fixture this re-drafts |
 | `carry_over` | AF-13 only: the carry-over outcome class |
 | `notes` | one line for a human |
+| `[review.answers]` | the scripted review answers the publishing fixtures' drafts complete with (TC-REQ-136); item id = value, a list answers a repeated id one value per occurrence in document order. Refused fixtures (AF-09, AF-11) carry none |
 
 The recorded tier replays exact content through `RecordedFixtureProvider`; the live tier
 (`@live`, real OpenRouter) asserts these outcome classes -- **never exact wording**: two runs

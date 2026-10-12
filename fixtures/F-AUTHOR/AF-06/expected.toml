@@ -5,3 +5,7 @@ outcome = "partial"
 placeholders = ["criterion Q4"]
 build = "publishes"
 notes = "Q4's criterion placeholders; Q1-Q3 resolve from the memo"
+
+[review.answers]
+"approved_by" = "Sample-materials teacher"
+"criterion Q4" = "Band 1: little or no correct content (1 points);\nBand 2: the ground is saturated and cannot soak up more (3 points)"

@@ -3,9 +3,9 @@ re-validates it, and records every answer with its fingerprint; an answer that f
 re-validation is rejected, the item stays open, and nothing invalid lands (#713, the
 package-authoring test plan §5.2; design delta §3.1, Q-O9).
 
-Written ahead of #696: `aeh.author` does not exist yet, so both cases are red until the
-review walk lands. The file carries `writtenahead`, keyed `#713 review walk, rung 1` in
-`WRITTEN_AHEAD_BLOCKERS`; when #696 closes the marker comes off — never the test.
+Written ahead of #696: the file carried `writtenahead`, keyed `#713 review walk, rung 1` in
+`WRITTEN_AHEAD_BLOCKERS`, and ran red until the review walk landed; the marker came off at
+the #696 landing — the test itself was never touched.
 
 Rung 1 (headless in-process), the plan's isolation per case: the recorded provider over the
 F-AUTHOR recordings (`CT-PROV-10`) and the autouse socket guard, asserted zero-egress at the
@@ -40,8 +40,6 @@ from __future__ import annotations
 
 import tomllib
 
-import pytest
-
 from tests.support.author_vocabulary import (
     AUTHOR_ISSUE,
     AUTHOR_MODULE,
@@ -58,8 +56,6 @@ from tests.support.author_vocabulary import (
     sha256_of,
 )
 from tests.support.impl import require, require_attr, require_path
-
-pytestmark = [pytest.mark.writtenahead]
 
 TEACHER = "Sample-materials teacher"
 MODEL_ANSWER = "By equivalent fractions with a common denominator."

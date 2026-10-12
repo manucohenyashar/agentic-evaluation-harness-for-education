@@ -5,3 +5,7 @@ outcome = "partial"
 placeholders = ["model_answer"]
 build = "publishes"
 notes = "mixed mcq and judged lines; the judged lines state no expected solution, so they carry the FR-AUTHOR-06 model_answer gap (a bands set does not determine a model answer)"
+
+[review.answers]
+"approved_by" = "Sample-materials teacher"
+"model_answer" = ["Yesterday I ate bread and cheese.", "This weekend I am going to the swimming pool."]

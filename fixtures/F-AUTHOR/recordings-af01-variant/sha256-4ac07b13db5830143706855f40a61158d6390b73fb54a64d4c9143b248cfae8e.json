@@ -1,6 +1,6 @@
 {
   "schema": "aeh.prov/fixture/1",
-  "key": "sha256:759e3b70d1df7a0e5f566b295472e76ce9b8f0f961135add0588a03ed5ff66fc",
+  "key": "sha256:4ac07b13db5830143706855f40a61158d6390b73fb54a64d4c9143b248cfae8e",
   "request": {
     "fields": [
       [
@@ -17,7 +17,7 @@
       ],
       [
         "question",
-        "{\"id\": \"Q4\", \"model_answer\": \"roads (for transportation), sewers (for waste management), baths (for public hygiene), walls (for defense).\", \"options\": null, \"points\": 4, \"text\": \"Name two things Roman towns built that we still use today, and say what each was for.\", \"type\": \"open\"}"
+        "{\"id\": \"R2\", \"model_answer\": \"drinking water, public baths and fountains.\", \"options\": null, \"points\": 4, \"text\": \"What was aqueduct water used for in Roman towns?\", \"type\": \"open\"}"
       ]
     ],
     "model_ref": {
@@ -35,10 +35,10 @@
     }
   },
   "completion": {
-    "text": "{\"key\": null, \"bands\": [{\"name\": \"Band 1\", \"points\": 1, \"descriptor\": \"little or no correct content.\"}, {\"name\": \"Band 2\", \"points\": 2, \"descriptor\": \"partly accurate; more wrong than right.\"}, {\"name\": \"Band 3\", \"points\": 3, \"descriptor\": \"mostly accurate; one part missing or vague.\"}, {\"name\": \"Band 4\", \"points\": 4, \"descriptor\": \"accurate and complete, in the pupil’s own words.\"}], \"aspects\": null, \"derivation_description\": \"GRADE BOUNDARIES (OUT OF 16 POINTS)\\nA: 14-16. B: 10-13. C: 6-9. D: 0-5.\"}",
-    "tokens_in": 1332,
-    "tokens_out": 2674,
-    "latency_ms": 16945,
+    "text": "{\"key\": null, \"bands\": [{\"name\": \"Misses\", \"points\": 1, \"descriptor\": \"little or no correct content.\"}, {\"name\": \"Hits\", \"points\": 4, \"descriptor\": \"the complete, accurate answer.\"}]}",
+    "tokens_in": 1313,
+    "tokens_out": 2949,
+    "latency_ms": 16611,
     "resolved_build": "qwen/qwen3-30b-a3b",
     "cached_prefix_tokens": 0,
     "cost": null

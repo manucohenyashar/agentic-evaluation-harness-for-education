@@ -5,3 +5,7 @@ outcome = "partial"
 placeholders = ["model_answer"]
 build = "publishes"
 notes = "model_answer placeholders; the review walk completes to ready"
+
+[review.answers]
+"approved_by" = "Sample-materials teacher"
+"model_answer" = "2/3, by dividing the top and the bottom by 6."

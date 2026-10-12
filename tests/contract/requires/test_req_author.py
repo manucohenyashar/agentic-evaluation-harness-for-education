@@ -26,12 +26,17 @@ Disclosed shape bets (the landing reconciles them, never silently):
   reconciliation point. `AuthoringSettings()` is constructed bare — the knobs carry production
   defaults per seam 3.
 - TC-REQ-136 reads two corpus shapes that #686 owns: each fixture's `expected.toml` must
-  declare the per-fixture build outcome (read as `[build] outcome = "builds" | "refused"`) and
-  the scripted review answers (read as `[review] answers`, item id → value). A fixture whose
-  declared shape is missing fails legibly naming the corpus clause — the case must not derive
-  the fixture's expected outcome from itself, which would make the dichotomy vacuous in the
-  weak direction (an incompletely-completed review silently turning a "builds" fixture into a
-  "refused" one).
+  declare the per-fixture build outcome (read as `build = "publishes" | "refused"`) and the
+  scripted review answers (read as `[review] answers`, item id → value, or → a **list** of
+  values when the same item id occurs more than once in the draft — one value per occurrence,
+  in document order). A fixture whose declared shape is missing fails legibly naming the
+  corpus clause — the case must not derive the fixture's expected outcome from itself, which
+  would make the publishes/refused dichotomy vacuous in the weak direction (an
+  incompletely-completed review silently turning a "publishes" fixture into a "refused" one).
+  Both bets were reconciled at the #696 landing, never silently: the corpus's declared
+  vocabulary is the scalar `build`, and `[review] answers` tables were added to the
+  publishing fixtures in the same change (the refused fixtures deliberately carry none —
+  their sentinels must survive the review to give the gate something to refuse).
 
 Markers: `contract` and `integration` (§4.7).
 """
@@ -51,14 +56,15 @@ import pytest
 
 from aeh.prov import HttpResponse, LocalServerProvider, RecordedFixtureProvider
 from aeh.prov.live import _fields_from_wire
+from tests.support.author_vocabulary import placeholder_fields
 from tests.support.impl import AUTHOR_MODULE, CONF_MODULE, require, require_attr, require_path
 from tests.support.prov_contract import CountingClock, flat_ok
 from tests.support.source_tree import package_source
 
 #: Red by design (test plan §8.2): TC-REQ-134 and TC-REQ-135 landed with #690 — after
 #: their own written-ahead fixture bugs were fixed at the landing — and run unmarked;
-#: TC-REQ-136 stays `writtenahead` per test on the whole build-gate chain (#696's review
-#: walk among it), per its registry entry.
+#: TC-REQ-136 ran red on the whole build-gate chain until #696's review walk landed, carried
+#: `writtenahead` per test per its registry entry, and was unmarked at that landing.
 pytestmark = [pytest.mark.contract, pytest.mark.integration]
 
 #: The repo root, three levels up from `tests/contract/requires/`.
@@ -486,44 +492,75 @@ def test_tc_req_135_every_authoring_call_rides_m_prov(tmp_path, network_guard, m
 def _declared_build_outcome(expected: dict, af: Path) -> str:
     """The fixture's declared per-fixture build outcome — the corpus contract this case bets on.
 
-    Disclosed bet (see the module docstring): the pairwise case reads each fixture's
-    `expected.toml` for `[build] outcome = "builds" | "refused"` — the outcome class the tests
-    assert. A fixture whose declaration is missing or unknown fails HERE, naming the corpus
-    clause, rather than letting the case derive the fixture's outcome from itself: a
-    self-derived outcome would make the builds/refused dichotomy vacuous in the weak direction,
-    because an incompletely-completed review would silently turn a "builds" fixture into a
-    "refused" one and the gate's agreement would never be checked."""
-    build = expected.get("build")
-    outcome = build.get("outcome") if isinstance(build, dict) else None
-    if outcome not in ("builds", "refused"):
+    Disclosed bet, reconciled at the #696 landing: the corpus declares a scalar
+    `build = "publishes" | "refused"` in each fixture's `expected.toml` — the outcome class
+    the tests assert. A fixture whose declaration is missing or unknown fails HERE, naming the
+    corpus clause, rather than letting the case derive the fixture's outcome from itself: a
+    self-derived outcome would make the publishes/refused dichotomy vacuous in the weak
+    direction, because an incompletely-completed review would silently turn a "publishes"
+    fixture into a "refused" one and the gate's agreement would never be checked."""
+    outcome = expected.get("build")
+    if outcome not in ("publishes", "refused"):
         pytest.fail(
             f"{af.name}/expected.toml declares no build outcome this case can assert: found "
-            f"{build!r}. The pairwise case bets on [build] outcome = \"builds\" | \"refused\" "
-            f"— the outcome class the tests assert (design delta §5.1). The corpus contract "
-            f"(#686) must state it, or the case cannot prove the gate agrees with the review "
-            f"gate per fixture.")
+            f"{expected.get('build')!r}. The pairwise case bets on build = \"publishes\" | "
+            f"\"refused\" — the outcome class the tests assert (design delta §5.1). The "
+            f"corpus contract (#686) must state it, or the case cannot prove the gate agrees "
+            f"with the review gate per fixture.")
     return str(outcome)
 
 
 def _scripted_answers(expected: dict, af: Path) -> dict:
     """The fixture's scripted review answers — the disclosed second corpus bet.
 
-    Read as `[review] answers`, item id → the teacher's plain-language value. A fixture whose
-    review completes the draft (AF-07's "review completes to ready") carries the answers here;
-    a fixture whose outcome class keeps a placeholder (AF-11's "build refused until filled")
-    carries none, and the sentinel survives to the build on purpose."""
+    Read as `[review] answers`, item id → value, or → a list of values when the same item id
+    occurs more than once in the draft (one value per occurrence, in document order — AF-08's
+    two unkeyed `key` items take their letters in that order). A fixture whose review
+    completes the draft carries the answers here; a fixture whose outcome class keeps a
+    placeholder (AF-09's and AF-11's refused builds) carries no `[review]` table at all, and
+    the sentinel survives to the build on purpose."""
     review = expected.get("review")
     if review is None:
         return {}
     if not isinstance(review, dict) or not isinstance(review.get("answers", {}), dict):
         pytest.fail(
             f"{af.name}/expected.toml has a [review] table this case cannot read (bets on "
-            f"[review] answers, item id -> value): {review!r}. The corpus contract (#686) owns "
-            f"the shape; reconcile the bet in this case's docstring with it.")
+            f"[review] answers, item id -> value or list of values): {review!r}. The corpus "
+            f"contract (#686) owns the shape; reconcile the bet in this case's docstring "
+            f"with it.")
     return dict(review.get("answers", {}))
 
 
-@pytest.mark.writtenahead
+def _expand_scripted_answers(expected: dict, af: Path, draft_text: str,
+                             answer_cls) -> tuple[list, set]:
+    """One answer per placeholder occurrence, the corpus's values handed out in document order.
+
+    `placeholder_fields` lists every sentinel occurrence, so a repeated item id (AF-08's two
+    `key` items, AF-12's two `model_answer` items) consumes its declared list front to back; a
+    scalar value answers every occurrence of its id. Declared ids that no occurrence carries
+    are returned in `unused` so the case can fail legibly — a typo'd corpus answer would
+    otherwise make the contract weaker without a word."""
+    declared = _scripted_answers(expected, af)
+    queues = {item: (list(value) if isinstance(value, list) else None)
+              for item, value in declared.items()}
+    answers, used = [], set()
+    for field in placeholder_fields(draft_text):
+        if field not in declared:
+            continue
+        used.add(field)
+        queue = queues[field]
+        if queue is None:
+            value = declared[field]
+        elif queue:
+            value = queue.pop(0)
+        else:
+            pytest.fail(
+                f"{af.name}: [review] answers ran out for {field!r} — the draft carries more "
+                f"occurrences of the item id than the corpus declares values for.")
+        answers.append(answer_cls(item_id=str(field), value=str(value)))
+    return answers, set(declared) - used
+
+
 def test_tc_req_136_the_fixture_drafts_face_the_real_build_gate(tmp_path, capsys):
     """`TC-REQ-136` (`M-AUTHOR` → `M-PKG`, FR-PKG-28, CT-PKG-23): every fixture draft in the
     authoring corpus, driven end to end at rung 2 — drafted against the corpus's own recordings,
@@ -571,14 +608,21 @@ def test_tc_req_136_the_fixture_drafts_face_the_real_build_gate(tmp_path, capsys
     for af in fixture_dirs:
         expected = tomllib.loads((af / "expected.toml").read_text(encoding="utf-8"))
         outcome = _declared_build_outcome(expected, af)
-        answers = [ReviewAnswer(item_id=str(item), value=str(value))
-                   for item, value in _scripted_answers(expected, af).items()]
         result = service.draft(sorted(af.glob("*.pdf")), tmp_path / af.name / "draft")
         assert isinstance(result, DraftResult), (
             f"fixture: {af.name}'s draft run returned {type(result).__name__}, not DraftResult")
-        review = service.review(result.draft_path, answers=answers)
         draft_text = result.draft_path.read_text(encoding="utf-8")
-        sentinels = sorted(set(re.findall(r"<<PLACEHOLDER: ([^>]+)>>", draft_text)))
+        # The scripted answers are expanded against the DRAFT: one answer per placeholder
+        # occurrence, in document order (a repeated item id consumes its declared list).
+        answers, unused = _expand_scripted_answers(expected, af, draft_text, ReviewAnswer)
+        assert not unused, (
+            f"{af.name}: [review] answers declare {sorted(unused)} but the draft carries no "
+            f"such item id — the corpus contract names an item that does not exist")
+        review = service.review(result.draft_path, answers=answers)
+        # Re-read after the review: the sentinel census the oracles compare is the COMPLETED
+        # draft's, not the raw one the answers were expanded against.
+        sentinels = sorted(set(re.findall(
+            r"<<PLACEHOLDER: ([^>]+)>>", result.draft_path.read_text(encoding="utf-8"))))
         data_dir = tmp_path / af.name / "data"
         for sub in ("packages", "cohorts", "blobs"):
             (data_dir / sub).mkdir(parents=True)
@@ -587,7 +631,7 @@ def test_tc_req_136_the_fixture_drafts_face_the_real_build_gate(tmp_path, capsys
             ["package", "build", "--data-dir", str(data_dir), "--spec", str(result.draft_path)])
         captured = capsys.readouterr()
 
-        if outcome == "builds":
+        if outcome == "publishes":
             problems = []
             if sentinels:
                 problems.append(

@@ -7,3 +7,6 @@ build = "publishes"
 retry_of = "AF-01"
 carry_over = "changed-item-dropped-unchanged-carried"
 notes = "the changed item's carried answers drop with a named reason; the unchanged items carry over, provisional until review confirms"
+
+[review.answers]
+"approved_by" = "Sample-materials teacher"

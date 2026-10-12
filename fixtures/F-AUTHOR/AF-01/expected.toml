@@ -5,3 +5,6 @@ outcome = "resolved"
 placeholders = []
 build = "publishes"
 notes = "every criterion resolves to bands; zero placeholders"
+
+[review.answers]
+"approved_by" = "Sample-materials teacher"

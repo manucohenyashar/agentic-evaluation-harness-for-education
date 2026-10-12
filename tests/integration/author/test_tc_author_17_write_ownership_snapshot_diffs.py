@@ -63,7 +63,7 @@ from tests.support.author_vocabulary import (
 from tests.support.impl import require, require_path
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 #: The story whose closure removes this file's marker (`#698 determinism snapshots` in
 #: `tests/support/impl.py`). The `aeh.author` surface itself lands with #690; the registry

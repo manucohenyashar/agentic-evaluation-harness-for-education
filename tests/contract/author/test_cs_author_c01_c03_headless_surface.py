@@ -37,7 +37,7 @@ from tests.support.author_vocabulary import (
 )
 from tests.support.impl import require, require_attr, require_path
 
-pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.contract]
 
 
 def _guards(make_fixture_provider, tmp_path: Path) -> tuple:

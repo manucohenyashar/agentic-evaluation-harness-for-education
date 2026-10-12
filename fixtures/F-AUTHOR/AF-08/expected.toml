@@ -5,3 +5,7 @@ outcome = "partial"
 placeholders = ["key"]
 build = "publishes"
 notes = "key placeholders for the unkeyed items (3 and 5)"
+
+[review.answers]
+"approved_by" = "Sample-materials teacher"
+"key" = ["C", "B"]
