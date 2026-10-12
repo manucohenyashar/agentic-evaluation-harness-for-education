@@ -44,6 +44,11 @@ CONTROL_SURFACE_ACTIONS: tuple[str, ...] = (
     # mutation only as an enumerated control row — the same rule that made cohort creation a
     # sixteenth action.
     "publish package",
+    # The console-redesign delta's write action (FR-CONF-34): the guided configuration edit,
+    # through M-CONF's `update_profile_edits` — validated with the loader's own rules and
+    # written atomically. `CT-CONSOLE-02`'s enumeration must include it from the moment it
+    # exists, so it enters this tuple with its effect, not after it.
+    "update configuration",
 )
 
 
@@ -172,6 +177,11 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
         "package_version.locked",
         "package_version.published_by",
     ),
+    # FR-CONF-34: the guided edit writes the configuration file through M-CONF's
+    # `update_profile_edits` — no store row anywhere. The empty tuple is the declaration of
+    # that: an action whose effect lands outside the store is still enumerated (so the census
+    # and the dynamic sweep see it), it just admits no row.
+    "update configuration": (),
 }
 
 

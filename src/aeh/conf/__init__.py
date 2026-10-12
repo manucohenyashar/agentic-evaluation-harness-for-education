@@ -23,6 +23,8 @@ Files:
     resolution.py      `resolve_run_config`: environment and file in, one frozen `RunConfig` out
     rehydrate.py       rebuilding a stored run's config and refusing a mismatched resume
     audit_log.py       the one structured log line a run start emits
+    projection.py      `configuration_projection`: every setting as a renderable view model
+    writes.py          `update_profile_edits`: the guided, atomic write path into a config file
 
 Detailed design notes (the full original module description): `docs/code-notes/conf.md`.
 """
@@ -95,6 +97,8 @@ from .qa_model import QA_MODEL_KEY
 from .resolution import resolve_run_config
 from .rehydrate import rehydrate_run_config, RUN_CONFIG_FIELDS
 from .audit_log import log_run_start, LOGGER_NAME, RUN_START_EVENT
+from .projection import EDITABLE_SETTINGS, SettingView, configuration_projection
+from .writes import EditOutcome, UpdateResult, update_profile_edits
 
 
 __all__ = [
@@ -117,8 +121,11 @@ __all__ = [
     "CONSENTED_CLASSES",
     "ConsentGateError",
     "ConsentOverride",
+    "configuration_projection",
     "DEFAULT_HOSTED_CONCURRENCY",
     "DEFAULT_HOSTED_PREFIX_TOKEN_CEILING",
+    "EDITABLE_SETTINGS",
+    "EditOutcome",
     "environment_snapshot",
     "FLOATING_TAGS",
     "hardware_policy_for",
@@ -141,6 +148,9 @@ __all__ = [
     "RUN_START_EVENT",
     "RunConfig",
     "RunConfigError",
+    "SettingView",
     "UnresolvedModelRefError",
+    "update_profile_edits",
+    "UpdateResult",
     "WEIGHTS_SUFFIXES",
 ]
