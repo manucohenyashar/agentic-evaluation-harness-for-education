@@ -37,6 +37,7 @@ from .vocabulary import (
     PACKAGE_SETUP_READ,
     PAPERS_READ,
     PARKED_READ,
+    READABLE_EXPORT_READ,
     RESULTS_CLASS_READ,
     RESULTS_EXPORT_READ,
     RESULTS_SCREEN_READ,
@@ -46,6 +47,7 @@ from .vocabulary import (
     RUN_START_STATE_READ,
     STUDENT_DETAIL_READ,
     SYSTEM_STATUS_READ,
+    WORKBOOK_EXPORT_READ,
 )
 
 #: The API's version prefix. A breaking change to the API moves to `/api/v2/` beside it.
@@ -144,6 +146,14 @@ def _build_routes() -> tuple[ApiRoute, ...]:
         ApiRoute("GET", f"{API_PREFIX}/results/class", None, RESULTS_CLASS_READ),
         ApiRoute("GET", f"{API_PREFIX}/results/student", None, RESULTS_STUDENT_READ),
         ApiRoute("GET", f"{API_PREFIX}/results/export", None, RESULTS_EXPORT_READ),
+        # #762 (FR-CONSOLE-58/59): the export reads — the run's marks workbook and the
+        # package's readable export (the deterministic teacher-readable PDF, and its
+        # `.aehpkg` backup behind the same door's `format` parameter, the way the results
+        # export carries csv and pdf on one route). File-returning reads beside the
+        # existing results export, not control rows: bytes cannot ride the control-outcome
+        # JSON, and they write nothing the control surface owns.
+        ApiRoute("GET", f"{API_PREFIX}/results/workbook", None, WORKBOOK_EXPORT_READ),
+        ApiRoute("GET", f"{API_PREFIX}/packages/readable", None, READABLE_EXPORT_READ),
         # M-HELP (FR-HELP-01): the manuals page's reads, and the grounded Q&A ask. The ask is a
         # GET, not a POST: its only write is the assistant's own Q&A log (`CT-HELP-04`), so it
         # is not a control action and the route carries no control row.

@@ -39,6 +39,7 @@ from .authoring_reads import authoring_draft_read, authoring_preview_read
 from .cohort_editor import roster_editor_payload
 from .config_read import config_read
 from .errors import ConsoleBindRefused
+from .export_reads import readable_package_export_read, workbook_export_read
 from .hub_state import hub_payload
 from .parity import parity_inventory
 from .results_reads import results_class_read, results_export_read, results_student_read
@@ -82,6 +83,7 @@ from .vocabulary import (
     PACKAGE_SETUP_READ,
     PAPERS_READ,
     PARKED_READ,
+    READABLE_EXPORT_READ,
     RESULTS_CLASS_READ,
     RESULTS_EXPORT_READ,
     RESULTS_SCREEN_READ,
@@ -91,6 +93,7 @@ from .vocabulary import (
     RUN_START_STATE_READ,
     STUDENT_DETAIL_READ,
     SYSTEM_STATUS_READ,
+    WORKBOOK_EXPORT_READ,
 )
 
 JSON_TYPE = "application/json; charset=utf-8"
@@ -132,6 +135,10 @@ _READS = {
     RESULTS_CLASS_READ: lambda _console, app, _params, query: results_class_read(app, query),
     RESULTS_STUDENT_READ: lambda _console, app, _params, query: results_student_read(app, query),
     RESULTS_EXPORT_READ: lambda _console, app, _params, query: results_export_read(app, query),
+    # #762 (FR-CONSOLE-58/59): the export reads — file answers beside the results export.
+    WORKBOOK_EXPORT_READ: lambda _console, app, _params, query: workbook_export_read(app, query),
+    READABLE_EXPORT_READ: lambda _console, app, _params, query: readable_package_export_read(
+        app, query),
     "manuals": lambda _console, _app, _params, _query: manuals_payload(),
     "manual": lambda _console, _app, params, _query: manual_payload(params.get(MANUAL_ID_PARAM, "")),
     # #632: the parity inventory, generated from the live `aeh` parser — the read is pure

@@ -4,13 +4,15 @@ operator-requirements test plan §5.0.
 
 | Case | Input | Expected |
 |---|---|---|
-| `TC-STORE-26` (flipped) | `tomllib.load(pyproject.toml)` | `[project].dependencies` contains exactly `pypdf>=6.0`, `pypdfium2>=4.0`, `Pillow>=10.0`, `typesafe-sdk==0.7.2`, each a declared string; `optional-dependencies` is absent; `[build-system].requires` contains `setuptools>=69`; `[project.scripts].aeh == "aeh.pipeline:main"`; package data includes `aeh/console_assets/*` and covers the SPA bundle directory |
+| `TC-STORE-26` (flipped) | `tomllib.load(pyproject.toml)` | `[project].dependencies` contains exactly `pypdf>=6.0`, `pypdfium2>=4.0`, `Pillow>=10.0`, `typesafe-sdk==0.7.2`, `openpyxl>=3.1,<4`, each a declared string; `optional-dependencies` is absent; `[build-system].requires` contains `setuptools>=69`; `[project.scripts].aeh == "aeh.pipeline:main"`; package data includes `aeh/console_assets/*` and covers the SPA bundle directory |
 
 **Why it flipped.** ADR-36 supersedes ADR-11's packaging clause: the operator's one install
 command, `pip install .`, must leave the system complete (user directive R-1). The PDF readers,
 the page-picture decoder and the TypeSafe SDK move from the `live-ingest` / `jev-cloud` extras
 into the core dependency list, and the extras are retired. The *import* boundary does not move:
-the four stay lazy-imported, which is `TC-PIPE-12`'s and `TC-INGEST-01`'s business, not this file's.
+the five stay lazy-imported, which is `TC-PIPE-12`'s and `TC-INGEST-01`'s business, not this file's.
+(`openpyxl` joined by ADR-49, #762: the workbook export's writer, declared in the supply-chain
+inventory in the same change.)
 
 **Which arms were red, and why.** Written ahead of #614 (the packaging story) and of #634 (the
 bundle): the dependency-set and no-extras arms waited on #614 — the core list was `[]` and both
@@ -41,8 +43,15 @@ CONSOLE_ASSETS = REPO_ROOT / "src" / "aeh" / "console_assets"
 
 EXPECTED_BUILD_REQUIRE = "setuptools>=69"
 EXPECTED_ENTRY_POINT = "aeh.pipeline:main"
-#: FR-STORE-20, transcribed — never read back from the file under test.
-EXPECTED_DEPENDENCIES = ("pypdf>=6.0", "pypdfium2>=4.0", "Pillow>=10.0", "typesafe-sdk==0.7.2")
+#: FR-STORE-20, transcribed — never read back from the file under test. `openpyxl`
+#: joined by ADR-49 (#762): the results workbook export's writer, upper-bounded at <4.
+EXPECTED_DEPENDENCIES = (
+    "pypdf>=6.0",
+    "pypdfium2>=4.0",
+    "Pillow>=10.0",
+    "typesafe-sdk==0.7.2",
+    "openpyxl>=3.1,<4",
+)
 EXPECTED_PACKAGE_DATA = "console_assets/*"
 #: The SPA's entry document. FR-UI-01 ships the built bundle as package data under
 #: `console_assets/`; its exact sub-directory is #634's call, so the arm finds it by its entry
@@ -72,11 +81,13 @@ def test_tc_store_26_the_console_script_points_at_m_pipes_main() -> None:
     )
 
 
-def test_tc_store_26_the_core_declares_exactly_the_four_standard_dependencies() -> None:
-    """FR-STORE-20 (flipped from `dependencies == []`): exactly the four declared strings.
+def test_tc_store_26_the_core_declares_exactly_the_standard_dependencies() -> None:
+    """FR-STORE-20 (flipped from `dependencies == []`): exactly the declared strings.
 
     Compared as a multiset of the literal strings: order is not a packaging fact, but a
     duplicate, an extra entry, a missing one, or any respelling of a specifier is.
+    (The list grew by one when ADR-49 admitted `openpyxl`, #762; the census is the same
+    census, transcribed at its new length.)
     """
     dependencies = _pyproject()["project"].get("dependencies")
     assert isinstance(dependencies, list), f"[project].dependencies is {dependencies!r}"

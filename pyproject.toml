@@ -29,6 +29,7 @@ dependencies = [
     "pypdfium2>=4.0",       # M-INGEST, #226 (F10): the live PdfiumRasterizer (FR-INGEST-13)
     "Pillow>=10.0",         # M-INGEST/M-STORE, #226: PdfBitmap.to_pil() decodes page pictures
     "typesafe-sdk==0.7.2",  # M-PROV, TS-124 (#500): JevOpenRouterProvider's SDK (FR-PROV-42, NFR-PROV-10)
+    "openpyxl>=3.1,<4",     # M-CONSOLE, #762: the results workbook export (FR-CONSOLE-58, ADR-49)
 ]
 
 # The installed command. `aeh.pipeline:main` lands with the M-PIPE composition story; the

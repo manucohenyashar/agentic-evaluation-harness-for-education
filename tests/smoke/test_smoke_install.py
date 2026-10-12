@@ -63,8 +63,16 @@ SERVER_ARTIFACTS = {"Dockerfile", "docker-compose.yml", "docker-compose.yaml", "
 
 #: FR-STORE-20 (ADR-36, #614), transcribed rather than read back from the file under test: the
 #: complete runtime set `pip install .` carries. Pip resolves these in the one install step, so
-#: they are not an additional step — an entry outside this set is.
-STANDARD_DEPENDENCIES = ("pypdf>=6.0", "pypdfium2>=4.0", "Pillow>=10.0", "typesafe-sdk==0.7.2")
+#: they are not an additional step — an entry outside this set is. (`openpyxl` joined by
+#: ADR-49, #762: the workbook export's writer, upper-bounded at <4; it is lazy-imported inside
+#: the export call like the rest, so the smoke's import surface is unchanged.)
+STANDARD_DEPENDENCIES = (
+    "pypdf>=6.0",
+    "pypdfium2>=4.0",
+    "Pillow>=10.0",
+    "typesafe-sdk==0.7.2",
+    "openpyxl>=3.1,<4",
+)
 
 
 def test_tc_smoke_01_clean_install_needs_nothing_beyond_a_venv_and_a_data_dir(
