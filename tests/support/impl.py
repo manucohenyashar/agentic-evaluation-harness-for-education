@@ -2359,13 +2359,21 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # LANDED (#690): the TS-157 probe resolved and the reasoning-steps file ran green at
     # the landing — the entry was dropped and the file unmarked, the test kept.
 
+    # #697's library delta — the carry-over (`aeh.author.carryover`), the casefolded
+    # fingerprint seed and the case-insensitive prior-artifact lookup — LANDED, and
+    # `tests/unit/author/test_tc_author_27_carry_over_variants.py` ran green for the right
+    # reason at the landing, so it was dropped from this entry and unmarked, the test kept.
+    # The two integration files stay here and stay marked: their probes resolve only the
+    # library surface, and the cases themselves still red inside `TEST_CMD` naming #695 —
+    # `aeh author draft`'s registration is the limb they own that has not landed. When #695
+    # lands, re-run both green from fresh processes and unmark them; the entry (and its
+    # probe) drops then.
     "#697 retry recreate": (
         "command",
         _AUTHOR_RETRY_PROBE,
         (
             "tests/integration/author/test_tc_author_25_fresh_redraft.py",
             "tests/integration/author/test_tc_author_26_overwrite_matrix.py",
-            "tests/unit/author/test_tc_author_27_carry_over_variants.py",
         ),
     ),
 

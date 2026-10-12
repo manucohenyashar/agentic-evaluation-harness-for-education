@@ -8,10 +8,11 @@ each pinned to its exact outcome (the package-authoring test plan §5.2; design 
     carry nothing.
     Oracle: exact carry-over outcomes.
 
-Story #697 (TS-163), which depends on #696; written ahead of it, keyed `#697 retry recreate`
-in `WRITTEN_AHEAD_BLOCKERS`; when #697 closes the marker comes off — never the test. The
-`aeh.author` surface itself lands with the first service story (#690), which is the
-disclosure the registry entry carries.
+Story #697 (TS-163), which depends on #696. The library carry-over landed with #697
+(`aeh.author.carryover`): this file's marker came off at that landing and the file rejoined
+`TEST_CMD` (the test was kept, never rewritten — the assertions below are the ones written
+ahead of the implementation). The `aeh.author` surface itself landed with the first service
+story (#690).
 
 **Rung 1 (headless in-process), and the limbs this case owns.** `TC-AUTHOR-C19`/`C20`'s
 clause file pins the *accountability* (every recorded answer is either carried provisional
@@ -71,8 +72,6 @@ import shutil
 import tomllib
 from pathlib import Path
 
-import pytest
-
 from tests.support.author_vocabulary import (
     AF13_PAIR,
     AUTHOR_MODULE,
@@ -88,8 +87,6 @@ from tests.support.author_vocabulary import (
     scripted_answers,
 )
 from tests.support.impl import require, require_path
-
-pytestmark = [pytest.mark.writtenahead]
 
 TEACHER = "Sample-materials teacher"
 VANISHED_ITEM = "vanished-item-no-draft-has-this"

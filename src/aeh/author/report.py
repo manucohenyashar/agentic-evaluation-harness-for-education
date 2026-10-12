@@ -20,6 +20,7 @@ from typing import Any
 
 from .extraction import AuthoringDocument
 from .spec import Assembly, Gap, sentinel
+from .types import CarriedAnswer, DroppedAnswer
 
 #: The report's file name for a package: `<package>.authoring-report.md` (FR-AUTHOR-01).
 def report_filename(package_id: str) -> str:
@@ -33,13 +34,18 @@ def draft_filename(package_id: str) -> str:
 
 def render_report(assembly: Assembly, documents: tuple[AuthoringDocument, ...],
                   outcomes: list[dict[str, Any]], models_used: list[str],
-                  draft_path: Path) -> str:
+                  draft_path: Path,
+                  carried: tuple[CarriedAnswer, ...] = (),
+                  dropped: tuple[DroppedAnswer, ...] = ()) -> str:
     """The report's markdown. `outcomes` are the Steps section's records, in run order: each
-    a mapping with `step`, `item_id`, `status`, `model`, `attempts`, `failures`."""
+    a mapping with `step`, `item_id`, `status`, `model`, `attempts`, `failures`. `carried`
+    and `dropped` are the carry-over's accounts (FR-AUTHOR-23, empty when nothing was
+    carried): they render as the Items section's `### Answers recorded at review` rows —
+    the same section, and row grammar, the review walk merges against."""
     lines: list[str] = [f"# Authoring report — {assembly.package_id}", ""]
     lines.extend(_documents(documents))
     lines.extend(_steps(outcomes))
-    lines.extend(_items(assembly))
+    lines.extend(_items(assembly, carried, dropped))
     lines.extend(_unresolved(assembly, outcomes))
     lines.extend(_next_command(assembly, draft_path))
     return "\n".join(lines)
@@ -83,7 +89,8 @@ def _steps(outcomes: list[dict[str, Any]]) -> list[str]:
     return lines
 
 
-def _items(assembly: Assembly) -> list[str]:
+def _items(assembly: Assembly, carried: tuple[CarriedAnswer, ...] = (),
+           dropped: tuple[DroppedAnswer, ...] = ()) -> list[str]:
     lines = ["## Items", ""]
     for qid, status in assembly.statuses.items():
         detail = assembly.details.get(qid, "")
@@ -92,6 +99,20 @@ def _items(assembly: Assembly) -> list[str]:
     if not assembly.statuses:
         lines.append("No question was inventoried: every reasoning step failed (the report "
                      "is still written, FR-AUTHOR-12).")
+    if carried or dropped:
+        # The carry-over's account (FR-AUTHOR-23): every recorded answer from the prior
+        # report is either carried — provisional, fingerprinted against the regenerated
+        # content — or dropped and named with the reason and the recorded value, never
+        # silent. The row grammar is the review walk's, so a later review merges against
+        # these rows on the same terms (`review._ANSWER_ROW_RE`).
+        lines.extend(["", "### Answers recorded at review", ""])
+        for record in carried:
+            lines.append(f"- **{record.item_id}** — carried: {record.display} (content "
+                         f"fingerprint {record.fingerprint}). Provisional — confirm at "
+                         "review.")
+        for record in dropped:
+            lines.append(f"- **{record.item_id}** — dropped: {record.reason} The recorded "
+                         f"answer ({record.display}) was not re-applied.")
     lines.append("")
     return lines
 
@@ -144,16 +165,25 @@ def _next_command(assembly: Assembly, draft_path: Path) -> list[str]:
 
 
 def summary_paragraph(assembly: Assembly, models_used: list[str], draft_path: Path,
-                      outcomes: list[dict[str, Any]]) -> str:
+                      outcomes: list[dict[str, Any]],
+                      carried: tuple[CarriedAnswer, ...] = (),
+                      dropped: tuple[DroppedAnswer, ...] = ()) -> str:
     """FR-AUTHOR-18's one-paragraph summary: how many items resolved, how many are
     placeholders, which models were used, and the exact next commands — naming the actual
     draft file the review command will open. The counts are over the steps' own items
-    (the outcome rows), the same denominator `DraftResult` reports."""
+    (the outcome rows), the same denominator `DraftResult` reports. With a carry-over, the
+    carried/dropped split is named so the summary does not read as if every placeholder
+    were brand new (FR-AUTHOR-23)."""
     resolved = sum(1 for row in outcomes if row["status"] in ("resolved", "derived"))
     placeholders = assembly.placeholder_count
     unresolved = sum(1 for row in outcomes if row["status"] == "unresolved")
     models = ", ".join(models_used) if models_used else "none (every call failed)"
+    carry = ""
+    if carried or dropped:
+        carry = (f" Carry-over: {len(carried)} answer(s) carried from the prior report "
+                 "(provisional — confirm at review)"
+                 + (f"; {len(dropped)} dropped (named in the report)." if dropped else "."))
     return (f"Drafted {assembly.package_id}: {resolved} item(s) resolved, "
             f"{placeholders} placeholder(s) to fill, {unresolved} unresolved. "
             f"Models used: {models}. Next: `aeh author review --draft {draft_path.name}`, "
-            f"then `aeh package build --spec {draft_path.name}`.")
+            f"then `aeh package build --spec {draft_path.name}`.{carry}")
