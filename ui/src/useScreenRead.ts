@@ -17,9 +17,13 @@ const POLL_FALLBACK_MS = 3000;
  * monitor's), with both outcomes in state — a failed read is a named message, never an
  * unhandled rejection. The retry is explicit (CT-UI-04's recovery), and it also fires
  * automatically when the route remounts. Nothing is kept outside this component's memory.
+ *
+ * A null path reads nothing and stays null: the shell mounts a read only when the selection
+ * it depends on exists, so an absent class or package makes no read at all rather than a
+ * failing one.
  */
 export function useScreenRead<T>(
-  path: string,
+  path: string | null,
   params?: Record<string, string>,
   pollMs?: number,
 ): ScreenRead<T> {
@@ -33,6 +37,12 @@ export function useScreenRead<T>(
   // read to answer), and a fetch registered a task late can be missed by a network-idle wait
   // that the page already qualified for (CT-UI-04's recovery arms on that wait).
   useLayoutEffect(() => {
+    if (path === null) {
+      // No read without its subject: drop whatever a previous subject's read left behind.
+      setData(null);
+      setError(null);
+      return;
+    }
     const controller = new AbortController();
     let stopped = false;
     let timer: number | undefined;
@@ -67,10 +77,11 @@ export function useScreenRead<T>(
       }
       controller.abort();
     };
-    // `attempt` is in deps: the retry re-runs the effect from scratch. `params` is an object
-    // literal at call sites — screens pass stable values per mount.
+    // `attempt` is in deps: the retry re-runs the effect from scratch. The params object is
+    // an object literal at call sites, so its shape — not its identity — is the dependency:
+    // a changed ref (class, run, package, …) refetches, an identical one does not.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, attempt, pollMs, params?.run_id, params?.submission_id, params?.cohort_id]);
+  }, [path, attempt, pollMs, JSON.stringify(params ?? {})]);
 
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
   return { data, error, retry };
