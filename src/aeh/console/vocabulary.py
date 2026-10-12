@@ -115,6 +115,18 @@ AUTHORING_PREVIEW_READ = "authoring preview"
 AUTHORING_DRAFT_READ = "authoring draft"
 
 
+#: The export reads (FR-CONSOLE-58, FR-CONSOLE-59, #762): the run's results workbook and
+#: the package's readable export. Reads beside the existing results export
+#: (`FR-CONSOLE-44`), not control rows — §3.2.2 lists them among the new actions, and
+#: their behaviour column says what they are: *synchronous, returns the file like the
+#: existing exports*. The existing exports are file-returning GET reads; bytes cannot
+#: ride the control-outcome JSON, the exports write nothing the control surface owns,
+#: and the write-surface enumeration (`FR-CONSOLE-32`) stays exactly the actions that
+#: write store rows.
+WORKBOOK_EXPORT_READ = "results workbook"
+READABLE_EXPORT_READ = "readable package export"
+
+
 #: The per-action field contract (§11.8's Effect column): the store fields each action may
 #: write, as dotted `table.field` names. `perform` writes no field outside this map, which is
 #: what makes the dynamic sweep decisive.

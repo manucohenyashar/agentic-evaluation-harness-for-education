@@ -16,7 +16,8 @@ Files:
     stored_rows.py   reading stored score rows, with amendment overrides applied
     schema.py        migrations, the append-only triggers, and the SQL statements
     records.py       the grades, reports and rollups returned to callers
-    pdf.py           one student's feedback document as a PDF
+    pdf.py           one student's feedback document as a PDF, and the shared text emitter
+    workbook.py      the run's marks as an `.xlsx` workbook (the console's workbook export)
     finalization.py  coverage counts and the batch finalization action
     amendments.py    manual amendments and their audit records
     reporting.py     the run rollup and export methods of the service
@@ -84,6 +85,7 @@ from .amendments import AmendmentMixin
 from .reporting import ReportingMixin
 from .service import GradingService, open_grade
 from .exports import export_grade_artifacts
+from .workbook import WorkbookExport, export_grade_workbook, grade_workbook_bytes
 from .results import run_class_view, run_grade_records, run_results
 from .signals import evaluate_grade_alerts, GradeAlert, record_grade_signals
 
@@ -107,6 +109,7 @@ __all__ = [
     "GradingService",
     "FinalizationRecord",
     "HARNESS_EXPORT_DIR_ENV",
+    "WorkbookExport",
     "RollupBlock",
     "RollupFinding",
     "CriterionLine",
@@ -124,6 +127,8 @@ __all__ = [
     "evaluate_grade_alerts",
     "export_dir",
     "export_grade_artifacts",
+    "export_grade_workbook",
+    "grade_workbook_bytes",
     "open_grade",
     "policy_version_of",
     "record_grade_signals",

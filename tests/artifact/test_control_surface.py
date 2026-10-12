@@ -259,12 +259,19 @@ _CONSOLE_BARE_MIGRATION_IMPORTS: frozenset[str] = frozenset(
 #:   reports what `validate_draft` reports. The three names are not re-exported from
 #:   `aeh.author`'s `__init__`, so the submodule edges are declared directly rather than
 #:   widened on the package's public surface.
+#: - `aeh.grade.pdf` — #762, `FR-CONSOLE-59`. The readable package export renders through
+#:   `text_pdf_bytes`, the deterministic hand-rolled emitter M-GRADE's student PDFs already
+#:   use — the same one-implementation rule the marks CSV follows with the school-facing
+#:   export — so the console holds no PDF writer of its own and the readable document is
+#:   byte-identical machinery to the feedback documents (`TC-CONSOLE-67`'s oracle). Imported
+#:   by `export_reads.py` (a console subpackage module, so this is a module-scope import of
+#:   that module, not of `console.py` itself), never at the facade's scope.
 _CONSOLE_SYMBOL_IMPORT_MODULES: frozenset[str] = frozenset(
     {"aeh.author.extraction", "aeh.author.report", "aeh.author.validation",
      "aeh.conf", "aeh.conf.decision_engine", "aeh.conf.qa_model", "aeh.det", "aeh.grade",
-     "aeh.help", "aeh.orch", "aeh.pipeline", "aeh.pipeline.cli", "aeh.pipeline.driver",
-     "aeh.pipeline.runtime", "aeh.pkg", "aeh.prov", "aeh.review", "aeh.setup",
-     "aeh.stats", "aeh.store"}
+     "aeh.grade.pdf", "aeh.help", "aeh.orch", "aeh.pipeline", "aeh.pipeline.cli",
+     "aeh.pipeline.driver", "aeh.pipeline.runtime", "aeh.pkg", "aeh.prov", "aeh.review",
+     "aeh.setup", "aeh.stats", "aeh.store"}
 )
 
 

@@ -70,6 +70,19 @@ def logs_page_size() -> int:
     return max(1, _env_int("HARNESS_CONSOLE_LOG_PAGE", 200))
 
 
+#: The readable package export's page depth (FR-CONSOLE-59, #762): how many text lines one
+#: page of the deterministic PDF carries before a continuation page starts. Env-gated
+#: (seam 3) and read at call time, like every knob here; the production default is the
+#: emitter's own constant (`aeh.grade.pdf.PDF_PAGE_LINES`), not a number this module
+#: recomputes — imported lazily inside the function, so the settings module stays
+#: import-light.
+def pdf_page_lines() -> int:
+    """How many text lines one readable-export PDF page carries (the setting is read each time)."""
+    from aeh.grade.pdf import PDF_PAGE_LINES
+
+    return max(1, _env_int("HARNESS_CONSOLE_PDF_PAGE_LINES", PDF_PAGE_LINES))
+
+
 #: The teacher-document size ceiling (CT-CONSOLE-36): `HARNESS_AUTHOR_DOC_MAX_BYTES`,
 #: default 10 MB. Values at or below zero, or above 100 MB, are refused with a message
 #: naming the knob, the value and the domain — the declared knob discipline (seam 3) —
