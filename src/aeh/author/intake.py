@@ -29,6 +29,8 @@ The intake surface (consumed by the console reads/actions tier and by the intake
   reasoning prompts quote.
 - `normalized_from_authoring(document) -> NormalizedDocument` — wrap an extracted PDF
   (`extraction.AuthoringDocument`) into the representation.
+- `log_intake(document) -> None` — the stage-level observability line the console's upload
+  path can log the same way the draft flow does (seam 4).
 """
 
 from __future__ import annotations
@@ -70,6 +72,14 @@ PASSWORD_SENTENCE = (
 NO_TEXT_SENTENCE = "We couldn't find any text in this file."
 UNSUPPORTED_SENTENCE = (
     "We can read .docx, .txt and .pdf files. Save this as one of those and upload it again."
+)
+
+#: Outside the matrix: the file exists but could not be read (permissions, a lock held by
+#: another program). The matrix's closest row ("no text") would claim we read the file and
+#: found nothing, which is false — so this refusal says what actually happened instead.
+UNREADABLE_SENTENCE = (
+    "We couldn't read this file. Close it if it's open in another program, then upload "
+    "it again."
 )
 
 #: The images-only-PDF arm of the empty row — a note, not a refusal: the FR-AUTHOR-01
@@ -139,7 +149,7 @@ def _preflight(path: Path, max_bytes: int) -> tuple[bytes, str]:
         data = path.read_bytes()
     except OSError as error:
         raise DocumentRefusedError(
-            NO_TEXT_SENTENCE, path.name,
+            UNREADABLE_SENTENCE, path.name,
             detail=f"the file could not be read: {type(error).__name__}: {error}") from error
     if not data:
         raise DocumentRefusedError(
@@ -151,10 +161,16 @@ def _preflight(path: Path, max_bytes: int) -> tuple[bytes, str]:
     if data.startswith(_OLE_MAGIC):
         # Both a legacy `.doc` and Word's password-protected `.docx` are OLE compound
         # files; the encrypted ones carry an EncryptedPackage stream, so the stream's name
-        # in the directory is what separates the two rows of the matrix. The check runs
+        # in the directory is what separates the two rows of the matrix. Only the full
+        # stream name counts: the bare word "Encrypted" appears in ordinary document text
+        # (stored UTF-16LE in a `.doc`), and a legacy document holding that word is not a
+        # password-protected one. A password-protected legacy `.doc` — an encrypted
+        # WordDocument stream, no EncryptedPackage — lands on the legacy row: it IS a
+        # legacy `.doc`, and that row's next step is what unblocks it. The check runs
         # for every suffix: a legacy `.doc` renamed `.txt` is still a legacy `.doc`.
-        if (b"E\x00n\x00c\x00r\x00y\x00p\x00t\x00e\x00d" in data
-                or b"EncryptedPackage" in data):
+        encrypted_package = (b"E\x00n\x00c\x00r\x00y\x00p\x00t\x00e\x00d\x00"
+                             b"P\x00a\x00c\x00k\x00a\x00g\x00e\x00")
+        if encrypted_package in data or b"EncryptedPackage" in data:
             raise DocumentRefusedError(
                 PASSWORD_SENTENCE, path.name,
                 detail="an OLE compound file carrying an encrypted package")
@@ -274,9 +290,7 @@ def normalized_from_authoring(document: AuthoringDocument) -> NormalizedDocument
         warnings.extend(page_warnings)
     if not any(text for _, text, _ in blocks):
         warnings.append(IntakeWarning(
-            code="image_not_carried", message=_bounded(
-                f"{SCANNED_PDF_SENTENCE} Check this document in the report's Documents "
-                "section."), detail="no page yielded a text layer"))
+            code="image_not_carried", message=_bounded(SCANNED_PDF_SENTENCE), detail="no page yielded a text layer"))
     return _assemble(document.name, "pdf", data, blocks, warnings)
 
 
@@ -312,6 +326,7 @@ def _normalize_docx(name: str, data: bytes) -> NormalizedDocument:
     parser, and the package's own XML scanned for everything mammoth drops silently
     (text boxes, tracked deletions) or drops without a location (equations)."""
     xml_parts = _ooxml_parts(name, data)
+    mammoth_data, broken_images = _strip_unreadable_images(data)
     try:
         import mammoth
     except ImportError as error:  # pragma: no cover - mammoth is a project dependency
@@ -319,7 +334,7 @@ def _normalize_docx(name: str, data: bytes) -> NormalizedDocument:
             f"mammoth is not available; .docx documents cannot be read ({error})."
         ) from error
     try:
-        converted = mammoth.convert_to_html(io.BytesIO(data))
+        converted = mammoth.convert_to_html(io.BytesIO(mammoth_data))
     except Exception as error:  # noqa: BLE001 - any conversion failure refuses the file
         lowered = str(error).lower()
         if "encrypt" in lowered and "password" in lowered:
@@ -335,7 +350,8 @@ def _normalize_docx(name: str, data: bytes) -> NormalizedDocument:
     parser.feed(converted.value)
     parser.close()
     blocks = parser.blocks
-    warnings = _docx_warnings(name, parser, _scan_ooxml(xml_parts), converted.messages)
+    warnings = _docx_warnings(name, parser, _scan_ooxml(xml_parts), converted.messages,
+                              broken_images=broken_images)
     if not any(text for kind, text, _ in blocks if kind != "image_ref"):
         raise DocumentRefusedError(
             NO_TEXT_SENTENCE, name,
@@ -379,8 +395,72 @@ def _ooxml_parts(name: str, data: bytes) -> list[tuple[str, str]]:
     return parts
 
 
+#: A picture's OOXML containers, outermost first: `w:object` may hold a `w:pict`, so the
+#: backreference keeps a single match per container and the inner one goes with it.
+_UNREADABLE_CONTAINER = re.compile(
+    r"<w:(object|drawing|pict)(?:\s[^>]*)?>.*?</w:\1>", re.S)
+
+
+def _strip_unreadable_images(data: bytes) -> tuple[bytes, int]:
+    """`document.xml` with its unreadable pictures removed, and how many went.
+
+    mammoth resolves a picture's relationship eagerly, and a relationship the document's
+    parts do not declare raises a bare `KeyError` out of the conversion — refusing a
+    document that has perfectly good text under the wrong matrix row ("no text"). Word
+    itself tolerates such files (it shows a placeholder), so intake mirrors that: the
+    unreadable picture is removed before conversion and accounted as an
+    `image_not_carried` warning instead. Everything but `document.xml` is copied through
+    byte for byte; the sanitized bytes feed mammoth only — the `NormalizedDocument` still
+    fingerprints the file the teacher gave us. A hyperlink pointing at a missing
+    relationship loses only its `r:id` (the text stays, unlinked): mammoth raises there
+    too, and the link target is not worth a refusal.
+    """
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(data))
+    except zipfile.BadZipFile:  # not reachable after _ooxml_parts; stay inert regardless
+        return data, 0
+    with archive:
+        document_xml = archive.read("word/document.xml").decode("utf-8", "replace")
+        try:
+            rels = archive.read("word/_rels/document.xml.rels").decode("utf-8", "replace")
+        except KeyError:
+            rels = ""
+        declared = set(re.findall(r'Id="(rId\d+)"', rels))
+        referenced = set(re.findall(r'\br:(?:embed|link|id)="(rId\d+)"', document_xml))
+        missing = referenced - declared
+        if not missing:
+            return data, 0
+        removed = 0
+
+        def drop_unreadable(match: re.Match[str]) -> str:
+            nonlocal removed
+            span = match.group(0)
+            if any(relationship_id in span for relationship_id in missing):
+                removed += 1
+                return ""
+            return span
+
+        document_xml = _UNREADABLE_CONTAINER.sub(drop_unreadable, document_xml)
+
+        def drop_dead_link(match: re.Match[str]) -> str:
+            return "" if match.group(1) in missing else match.group(0)
+
+        document_xml = re.sub(r'\s+r:id="(rId\d+)"', drop_dead_link, document_xml)
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as fresh:
+            for info in archive.infolist():
+                payload = (document_xml.encode("utf-8")
+                           if info.filename == "word/document.xml"
+                           else archive.read(info.filename))
+                entry = zipfile.ZipInfo(info.filename, date_time=info.date_time)
+                fresh.writestr(entry, payload, compress_type=info.compress_type)
+        return buffer.getvalue(), removed
+
+
 #: The OOXML tokens the scan walks: where text lives (`w:t`), where dropped content lives
-#: (`w:del`/`w:delText`, `m:oMath`, `w:drawing`/`w:pict`, `w:txbxContent`).
+#: (`w:del`/`w:delText`, `m:oMath`, `w:drawing`/`w:pict`, `w:txbxContent`), and where a
+#: shape's modern and fallback forms live (`mc:AlternateContent` — mammoth reads only the
+#: `mc:Fallback` branch, so a block with one is carried, not dropped).
 _OOXML_TOKEN = re.compile(
     r"<w:delText(?:\s[^>]*)?>(.*?)</w:delText>"
     r"|</w:del>"
@@ -389,6 +469,8 @@ _OOXML_TOKEN = re.compile(
     r"|<w:drawing(?:\s[^>]*)?>"
     r"|<w:pict(?:\s[^>]*)?>"
     r"|<w:txbxContent(?:\s[^>]*)?>"
+    r"|<mc:AlternateContent(?:\s[^>]*)?>"
+    r"|</mc:AlternateContent>"
     r"|<w:t(?:\s[^>]*)?>(.*?)</w:t>",
     re.S,
 )
@@ -397,17 +479,36 @@ _OOXML_TOKEN = re.compile(
 def _scan_ooxml(parts: list[tuple[str, str]]) -> dict[str, list[tuple[str, str, str]]]:
     """The parts' dropped-content inventory: `(kind, anchor, part)` triples, where the
     anchor is the last run of body text seen before the element — the "near '…'" of the
-    warning. Empirically (probed against mammoth 1.13) text boxes and tracked deletions
-    produce **no** mammoth message at all, and equations produce one without a location —
-    so this scan, not the messages list, is the honest source for those three."""
+    warning.
+
+    Grounded in mammoth 1.13's own source: `mc:AlternateContent` is read through its
+    `mc:Fallback` children only (so a text box's text and a fallback picture ARE carried,
+    silently), `w:del` is silently ignored, `m:oMath` has no handler (a warning without a
+    location), and an image is always carried once its relationship resolves. So the scan
+    skips the contents of an AlternateContent block that carries a Fallback — mammoth
+    carries those — and classifies a `w:drawing`/`w:pict` that holds a `w:txbxContent` as
+    a text box rather than a picture (the box's text is carried; the box itself is not),
+    except inside a block with no Fallback, where mammoth reads nothing and the box's
+    text is a genuine drop (`textboxes_dropped`).
+    Equations and tracked deletions are counted everywhere: mammoth never carries either.
+    """
     found: dict[str, list[tuple[str, str, str]]] = {
         "images": [], "equations": [], "deleted": [], "textboxes": [],
+        "textboxes_dropped": [],
     }
     for part_name, xml in parts:
         last_text = ""
         del_depth = 0
         del_anchor = ""
         del_texts: list[str] = []
+        # An open AlternateContent block whose Fallback exists: its contents are mammoth's
+        # source, not a loss. A stack, because the blocks nest.
+        carried_blocks: list[bool] = []
+        # The AlternateContent blocks (by stack depth) that already gave up a text box.
+        counted_boxes: set[int] = set()
+        # The span of the drawing/pict container last classified: its own inner
+        # `w:txbxContent` token must not count a second time.
+        box_until = -1
         for match in _OOXML_TOKEN.finditer(xml):
             token = match.group(0)
             if token.startswith("<w:delText"):
@@ -431,9 +532,45 @@ def _scan_ooxml(parts: list[tuple[str, str]]) -> dict[str, list[tuple[str, str, 
             elif token.startswith("<m:oMath"):
                 found["equations"].append((_clip("an equation", _ANCHOR_CHARS),
                                            last_text, part_name))
+            elif token.startswith("<mc:AlternateContent"):
+                fallback = xml.find("<mc:Fallback", match.end())
+                closes = xml.find("</mc:AlternateContent>", match.end())
+                carried_blocks.append(fallback != -1 and (closes == -1
+                                                          or fallback < closes))
+            elif token == "</mc:AlternateContent>":
+                if carried_blocks:
+                    carried_blocks.pop()
             elif token.startswith("<w:drawing") or token.startswith("<w:pict"):
-                found["images"].append((last_text, last_text, part_name))
+                carried_here = bool(carried_blocks and carried_blocks[-1])
+                tag = token[1:].split(">", 1)[0].split(" ", 1)[0]
+                end = xml.find(f"</{tag}>", match.end())
+                box_until = end if end != -1 else len(xml)
+                body = xml[match.start(): box_until]
+                if "w:txbxContent" in body:
+                    # A shape without a Fallback branch is read by mammoth as nothing at
+                    # all: its text is genuinely dropped, unlike a Fallback-borne box's.
+                    # Either way the box is counted — its text (or its absence) is the
+                    # account; the box itself never survives.
+                    if carried_blocks and not carried_blocks[-1]:
+                        found["textboxes_dropped"].append(
+                            (last_text, last_text, part_name))
+                    elif not carried_here:
+                        found["textboxes"].append((last_text, last_text, part_name))
+                    else:
+                        # One AlternateContent block, one box: Word writes the box's
+                        # content in both the Choice and the Fallback, and mammoth reads
+                        # only the Fallback's copy — count the block's box once.
+                        block_id = len(carried_blocks) - 1
+                        if block_id not in counted_boxes:
+                            counted_boxes.add(block_id)
+                            found["textboxes"].append((last_text, last_text, part_name))
+                elif not carried_here:
+                    # An image inside a Fallback-bearing block arrives through that
+                    # Fallback, so it is carried; anywhere else it is mammoth's own read.
+                    found["images"].append((last_text, last_text, part_name))
             elif token.startswith("<w:txbxContent"):
+                if 0 <= box_until and match.start() < box_until:
+                    continue  # inside a container the drawing/pict branch accounted for
                 found["textboxes"].append((last_text, last_text, part_name))
     return found
 
@@ -442,25 +579,72 @@ def _scan_ooxml(parts: list[tuple[str, str]]) -> dict[str, list[tuple[str, str, 
 #: through with the style's ID, so there is nothing to warn about.
 _STYLE_NOTICE = re.compile(r"Paragraph style with ID .* was referenced but not defined")
 
+#: mammoth carries an image it cannot name a browser-safe type for — the picture is in the
+#: draft as a data URI, but the browser may render nothing where it stood. An advisory, not
+#: a drop (`mammoth/docx/body_xml.py`: the warning is emitted on the carried-image path).
+_IMAGE_ADVISORY = "unlikely to display"
+
 
 def _docx_warnings(name: str, parser: "_DocxHTMLParser",
                    scan: dict[str, list[tuple[str, str, str]]],
-                   messages) -> list[IntakeWarning]:
+                   messages, broken_images: int = 0) -> list[IntakeWarning]:
     """The `.docx` warning list: the scan's inventory first (each with its location), then
-    whatever mammoth's own messages name beyond that."""
+    whatever mammoth's own messages name beyond that.
+
+    mammoth's image messages split by what actually happened: "unlikely to display" rode
+    the carried-image path (the picture is in the draft; only its renderability is in
+    question), while the rest name a picture mammoth did not carry. The body images the
+    scan counted but mammoth never yielded are reconciled in aggregate — the dropped ones
+    cannot be identified by position once a drop precedes a carry — after subtracting the
+    drops mammoth's own messages already account for.
+    """
+    # mammoth's messages, classified before anything is appended, so the scan's
+    # reconciliation can subtract the drops the messages already name.
+    drop_notes: list[str] = []
+    advisory_notes: list[str] = []
+    other_notes: list[tuple[bool, str]] = []  # (is an equation notice, text)
+    for message in messages:
+        text = message.message
+        if _STYLE_NOTICE.match(text):
+            continue
+        if "oMath" in text:
+            other_notes.append((True, text))
+        elif "mage" in text:
+            if _IMAGE_ADVISORY in text:
+                advisory_notes.append(text)
+            else:
+                drop_notes.append(text)
+        else:
+            other_notes.append((False, text))
+
     warnings: list[IntakeWarning] = []
     body_images = [entry for entry in scan["images"] if entry[2] == "word/document.xml"]
-    # mammoth inlines the images it can carry as data URIs; the extras — unsupported
-    # formats, pictures in headers and footers — are the ones the warnings name.
-    for index, (anchor, _, part) in enumerate(body_images):
-        if index >= parser.image_count:
-            where = _anchor(anchor) if anchor else \
-                _part_where(part)
-            warnings.append(IntakeWarning(
-                code="image_not_carried",
-                message=_bounded(f"This picture{where} was not carried into the draft — "
-                                 "add it by hand if it matters."),
-                detail=f"a drawing/picture element in {part} has no carried counterpart"))
+    uncarried = (len(body_images) - parser.image_count - len(drop_notes)
+                 - broken_images)
+    if uncarried > 0:
+        warnings.append(IntakeWarning(
+            code="image_not_carried",
+            message=_bounded(f"{uncarried} of the {len(body_images)} pictures in this "
+                             "document were not carried into the draft — add them by "
+                             "hand if they matter."),
+            detail=f"{uncarried} of {len(body_images)} drawing/picture element(s) in the "
+                   "document body have no carried counterpart"))
+    if broken_images == 1:
+        warnings.append(IntakeWarning(
+            code="image_not_carried",
+            message=_bounded("One picture in this document could not be read and was "
+                             "not carried into the draft — add it by hand if it "
+                             "matters."),
+            detail="1 picture references a relationship the document's parts do not "
+                   "declare"))
+    elif broken_images:
+        warnings.append(IntakeWarning(
+            code="image_not_carried",
+            message=_bounded(f"{broken_images} pictures in this document could not be "
+                             "read and were not carried into the draft — add them by "
+                             "hand if they matter."),
+            detail=f"{broken_images} pictures reference relationships the document's "
+                   "parts do not declare"))
     for entry in scan["images"]:
         if entry[2] != "word/document.xml":
             warnings.append(IntakeWarning(
@@ -483,18 +667,40 @@ def _docx_warnings(name: str, parser: "_DocxHTMLParser",
                              f"{_anchor(anchor) or ' somewhere'} was not carried."),
             detail=f"deleted text near '{deleted}' in {part}"))
     for anchor, _, part in scan["textboxes"]:
+        # mammoth flattens a text box's text into the body without a message; what is
+        # lost is the box — its placement and border.
+        warnings.append(IntakeWarning(
+            code="formatting_dropped",
+            message=_bounded(
+                f"This document has a text box{_anchor(anchor)}: its text was carried "
+                "into the draft, but the box's placement was not — check it in the "
+                "original file."),
+            detail=f"a text box (w:txbxContent) in {part}"))
+    for anchor, _, part in scan["textboxes_dropped"]:
+        # A shape with no Fallback branch: mammoth reads nothing from it, text included.
         warnings.append(IntakeWarning(
             code="formatting_dropped",
             message=_bounded(f"This text box{_anchor(anchor)} was not carried — move its "
                              "text into the document body if it matters."),
-            detail=f"a text box (w:txbxContent) in {part}"))
+            detail=f"a text box without a fallback form in {part}"))
     saw_equation_warning = any(warning.code == "equation_not_carried"
                                for warning in warnings)
-    for message in messages:
-        text = message.message
-        if _STYLE_NOTICE.match(text):
-            continue
-        if "oMath" in text:
+    for text in advisory_notes:
+        warnings.append(IntakeWarning(
+            code="formatting_dropped",
+            message=_bounded("This picture may not display in the draft — check it in "
+                             "the original file."),
+            detail=_clip(text, WARNING_MAX_CHARS)))
+    for text in drop_notes:
+        # A mammoth drop notice the scan did not locate (it counted nothing) still means
+        # a picture was not carried.
+        warnings.append(IntakeWarning(
+            code="image_not_carried",
+            message=_bounded("This picture was not carried into the draft — add it by "
+                             "hand if it matters."),
+            detail=_clip(text, WARNING_MAX_CHARS)))
+    for is_equation, text in other_notes:
+        if is_equation:
             # The scan owns equations — unless it found none, in which case mammoth's own
             # notice is the only account and it stands (without a location).
             if saw_equation_warning:
@@ -505,17 +711,6 @@ def _docx_warnings(name: str, parser: "_DocxHTMLParser",
                                  "them in words where they belong."),
                 detail=_clip(text, WARNING_MAX_CHARS)))
             saw_equation_warning = True
-            continue
-        if "mage" in text:
-            # Image messages ride the scan's reconciliation; a mammoth image notice the
-            # scan did not locate (it counted nothing) still means a picture was dropped.
-            if any(warning.code == "image_not_carried" for warning in warnings):
-                continue
-            warnings.append(IntakeWarning(
-                code="image_not_carried",
-                message=_bounded("This picture was not carried into the draft — add it "
-                                 "by hand if it matters."),
-                detail=_clip(text, WARNING_MAX_CHARS)))
             continue
         warnings.append(IntakeWarning(
             code="formatting_dropped",
@@ -549,7 +744,6 @@ class _DocxHTMLParser(HTMLParser):
         self._kind = "paragraph"
         self._level: int | None = None
         self._pieces: list[str] | None = None
-        self._in_table = 0
         self._row: list[str] = []
         self._rows: list[list[str]] = []
         self._cell: list[str] | None = None
@@ -593,7 +787,6 @@ class _DocxHTMLParser(HTMLParser):
         elif tag == "li":
             self._start_capture("list_item", self._list_depth)
         elif tag == "table":
-            self._in_table += 1
             self._rows = []
         elif tag == "tr":
             self._row = []
@@ -630,7 +823,6 @@ class _DocxHTMLParser(HTMLParser):
                 self._rows.append(self._row)
             self._row = []
         elif tag == "table":
-            self._in_table = max(0, self._in_table - 1)
             text = "\n".join("\t".join(row) for row in self._rows)
             self._rows = []
             if text.strip():
@@ -741,7 +933,9 @@ def _encoding_warning(name: str, data: bytes, encoding: str,
                       candidates: list[str]) -> IntakeWarning:
     """The `encoding_fallback` warning, in the design's sentence, naming the encoding the
     file was read as."""
-    display = _ENCODING_DISPLAY.get(encoding, encoding)
+    # The BOM branch passes the codec spellings ("utf-16"); the map keys follow
+    # charset-normalizer's ("utf_16") — normalize before the lookup.
+    display = _ENCODING_DISPLAY.get(encoding.replace("-", "_"), encoding)
     if encoding.startswith("utf"):
         message = (f"This file uses a less common Unicode encoding — we read it as "
                    f"{display}; check that special characters look right.")
@@ -824,14 +1018,28 @@ def _blocks_from_lines(text: str, *, tables: bool, lists: bool, warn_structure: 
             if warn_structure:
                 warnings.append(_structure_warning("list", start, stripped[0]))
             continue
-        if len(stripped) == 1:
-            level = _heading_candidate(stripped[0], followed_by_blank)
+        # The heading rules apply per line, not per run (FR-AUTHOR-26): an ALL-CAPS line
+        # and a `Question 3`-numbered line are candidates wherever they stand — a quiz's
+        # `Question 1` sits on its own line right above its first question, with no blank
+        # line to set it off. The "short line set off by a blank line" rule needs the
+        # blank after it, so only a run's last line can satisfy it. Consecutive
+        # non-candidate lines stay one paragraph, as before.
+        paragraph: list[str] = []
+        for offset, line in enumerate(stripped):
+            level = _heading_candidate(line, followed_by_blank
+                                       and offset == len(stripped) - 1)
             if level:
-                blocks.append(("heading", stripped[0], level))
+                if paragraph:
+                    blocks.append(("paragraph", "\n".join(paragraph), None))
+                    paragraph = []
+                blocks.append(("heading", line, level))
                 if warn_structure:
-                    warnings.append(_structure_warning("heading", start, stripped[0]))
-                continue
-        blocks.append(("paragraph", "\n".join(stripped), None))
+                    warnings.append(_structure_warning(
+                        "heading", start + offset, line))
+            else:
+                paragraph.append(line)
+        if paragraph:
+            blocks.append(("paragraph", "\n".join(paragraph), None))
     if guard is not None:
         projected = "\n\n".join(item[1] for item in blocks)
         if projected != guard:

@@ -27,8 +27,8 @@ from .errors import AuthoringInputError, DocumentRefusedError, OverwriteRefusedE
 from .extraction import AUTHOR_TRANSCRIBE_TEMPLATE_V, AuthoringDocument, PageText, \
     TRANSCRIBE_MIN_TEXT_LAYER_CHARS
 from .grades import AUTHOR_GRADES_TEMPLATE_V
-from .intake import check_document, document_text, normalize_document, normalize_documents, \
-    normalized_from_authoring
+from .intake import check_document, document_text, log_intake, normalize_document, \
+    normalize_documents, normalized_from_authoring
 from .inventory import AUTHOR_INVENTORY_TEMPLATE_V
 from .rubric import AUTHOR_RUBRIC_TEMPLATE_V
 from .service import PROMPT_VERSIONS, AuthoringService, authoring_service
@@ -92,6 +92,7 @@ __all__ = [
     "check_document",
     "document_text",
     "normalized_from_authoring",
+    "log_intake",
     # the knob vocabulary (seam 3)
     "ATTEMPTS_ENV",
     "TIMEOUT_ENV",
