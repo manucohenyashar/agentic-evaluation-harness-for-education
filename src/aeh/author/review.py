@@ -244,6 +244,11 @@ def run_review(draft_path: Path, answers: Iterable[ReviewAnswer] | None) -> Revi
                 f"re-validation refused the answer: the updated draft fails {fields} "
                 f"({reason}) — the item stays open"))
             LOGGER.warning("review/%s: rejected at re-validation — %s", item.item_id, reason)
+            # The item stays open and re-askable — in the NEXT run (`aeh author review`
+            # again; the outcome's Next command names it). Within THIS run a same-id retry
+            # cannot match: the scripted answers were matched to pendings up front, and
+            # the gate runs after the whole answer list was read (disclosed residual —
+            # the follow-up review's MAJOR 2 reconciliation; cross-run re-ask is probed).
             continue
         committed.extend(group)
         committed_issues |= {(issue.field, issue.message)
@@ -275,7 +280,10 @@ def run_review(draft_path: Path, answers: Iterable[ReviewAnswer] | None) -> Revi
     for issue in issues:
         # A validator locator that already names a standing item ("question 'Q2'
         # model_answer" beside the model_answer sentinel) is the same open item twice —
-        # the item id is what the teacher was asked, so it carries the listing.
+        # the item id is what the teacher was asked, so it carries the listing. A locator
+        # that names no item id — a plan refusal whose `_field_of` extraction yields a
+        # message fragment (the residual the follow-up review's MINOR 7 named) — surfaces
+        # raw below; the answerable item ids carry the listing first.
         if any(item_id in issue.field for item_id in remaining):
             continue
         if issue.field not in remaining:
