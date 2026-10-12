@@ -75,6 +75,24 @@ def validate_draft(spec: Mapping[str, Any]) -> list[DraftIssue]:
     return issues
 
 
+def first_plan_issue(spec: Mapping[str, Any]) -> DraftIssue | None:
+    """The plan layer's refusal on its own — the first one `plan_package` reports, or
+    `None` when the plan layer is clear.
+
+    `validate_draft` folds this refusal into its list, which is the right shape for a
+    reader going down the issues one by one, but the wrong shape for a before/after
+    comparison: the plan reports **one refusal — its first** — so a diff of two whole
+    `validate_draft` lists pairs a still-standing refusal with a masked one (the reviewer's
+    finding on `apply_structured_edit`, #760). Consumers that diff a draft against itself
+    pull this layer out with this helper and diff the remaining (complete, entry-wise)
+    layers wholesale.
+    """
+    if not isinstance(spec, Mapping):
+        return None
+    issues = _plan_issues(spec)
+    return issues[0] if issues else None
+
+
 def _plan_issues(spec: Mapping[str, Any]) -> list[DraftIssue]:
     """`plan_package`'s refusals, converted. The import is lazy as a guard, not as
     isolation — `spec.py` already pulls `aeh.pipeline.spec_export`'s rendering helpers at

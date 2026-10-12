@@ -74,6 +74,16 @@ class ConsoleApp(StoreReadsMixin, ScreenRenderingMixin, SetupScreensMixin, RunSc
         #: run threads, never pipeline state. Run jobs are mirrored from the run rows by
         #: the jobs read; from #760 the authoring jobs live here.
         self._jobs = JobsRegistry()
+        #: The authoring jobs' console-held state (`#760`, `ADR-47`): each live job's
+        #: cancel event (checked at the workflow's own step boundaries), the single-writer
+        #: lock table for the draft directories and draft files (`ADR-45`), the worker
+        #: threads, and the attempt count per content-addressed draft job. Console memory,
+        #: guarded by the one lock the table is read and written under — never store state.
+        self._authoring_cancels: dict[str, Any] = {}
+        self._authoring_locks: dict[str, str] = {}
+        self._authoring_threads: dict[str, Any] = {}
+        self._authoring_attempts: dict[str, int] = {}
+        self._authoring_lock_guard = threading.Lock()
         #: The run configuration "start run" resolves from, set by the serving layer from
         #: its cfg (`ConsoleServer`); `None` resolves from the environment alone.
         self.run_config: dict[str, Any] | None = None

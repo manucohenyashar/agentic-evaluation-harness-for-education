@@ -70,6 +70,9 @@ class ControlOutcome:
     dispatched: bool = False
     detail: str = ""
     next_action: str | None = None
+    #: The job id a dispatched background action started (`FR-CONSOLE-61`): the draft job
+    #: the jobs page then tracks. `None` for every synchronous action.
+    job_id: str | None = None
 
 
 @dataclass(frozen=True)

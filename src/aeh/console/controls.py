@@ -15,6 +15,7 @@ from .errors import _RefreshRequired
 from .html import _now, _row_get
 from .records import ControlOutcome, GradeRecord, _HeldAction
 from .write_rows import _rows_for
+from .authoring_actions import AUTHORING_CONTROL_ACTIONS
 
 
 class ControlActionsMixin:
@@ -157,6 +158,16 @@ class ControlActionsMixin:
                 dispatched=False,
                 detail="held after the read stage; the write stage is suspended",
             )
+        if action in AUTHORING_CONTROL_ACTIONS:
+            # The authoring actions (#760) dispatch before the row machinery: four of the
+            # five write no store row the control surface owns (the draft's state is the
+            # draft files, `ADR-45`; a review and an edit rewrite those files through
+            # `aeh.author`; an approval builds through M-PKG's own door), and the draft
+            # carries a job id the row path has no place for. The lazy import keeps this
+            # module's import surface unchanged.
+            from .authoring_actions import apply_authoring_action
+
+            return apply_authoring_action(self, action, params)
         rows = _rows_for(action, params)
         try:
             if not rows:
