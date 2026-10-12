@@ -707,8 +707,9 @@ def _cancel_job(app: Any, params: Mapping[str, Any]) -> ControlOutcome:
 def _cancel_run(app: Any, job_id: str) -> ControlOutcome:
     rows = _rows_for("pause/resume", {"run_id": job_id, "state": "paused"})
     result = app._write_rows("pause/resume", rows, {"run_id": job_id, "state": "paused"})
-    # Indexed unpacking on purpose: `#761` widens this return with a fourth element, and
-    # the first three keep their meaning across that change.
+    # Indexed unpacking on purpose: `#761` widens this return with a fourth element, the
+    # PR #794 follow-up with a fifth (`refused`), and the first three keep their meaning
+    # across both.
     written, detail, dispatched = result[0], result[1], result[2]
     if not dispatched:
         return _refused(

@@ -777,7 +777,10 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # (Sixth re-pin, #760's: the authoring actions' early dispatch went in
     # above the pause/resume site, moving it down again; same statement.
     # Re-read from the walker, never hand-unioned.)
-    "aeh.console.controls:238",
+    # (Seventh re-pin, PR #794's follow-up: the widened `_write_rows` return
+    # and its docstring reflow shifted the pause/resume site down again; same
+    # statement. Re-read from the walker, never hand-unioned.)
+    "aeh.console.controls:242",
     "aeh.console.effects:138",
     "aeh.console.key_correction:140",
     "aeh.console.driver:120",

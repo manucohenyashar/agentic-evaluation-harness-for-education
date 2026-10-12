@@ -179,29 +179,30 @@ class ControlActionsMixin:
                 detail, dispatched = self._apply_domain_effects(action, params)
                 return ControlOutcome(rows_written=(), refused=False, dispatched=dispatched,
                                       detail=detail)
-            written, detail, dispatched, next_action = self._write_rows(action, rows, params)
+            written, detail, dispatched, refused, next_action = self._write_rows(action, rows, params)
         except _RefreshRequired as stale:
             return ControlOutcome(rows_written=(), refused=True, refresh_required=True,
                                   dispatched=False, detail=str(stale))
         self._applied[action] = written
-        return ControlOutcome(rows_written=written, refused=False, dispatched=dispatched,
+        return ControlOutcome(rows_written=written, refused=refused, dispatched=dispatched,
                               detail=detail, next_action=next_action)
 
     def _write_rows(
         self, action: str, rows: list[tuple[str, dict[str, Any]]], params: dict[str, Any]
-    ) -> tuple[tuple[Any, ...], str, bool, str | None]:
-        """Write one action's rows to the store. Returns the rows written, the message owed to
-        the operator, whether anything was actually dispatched, and the next action a refusal
-        names (`CT-CONSOLE-33`; `None` when the action does not carry one). On the audit double
-        the payload is stored with the row. On a real store each write goes to the tier that
-        owns its table, in that tier's own transaction, never nested inside another tier's
-        transaction (CT-STORE-03).
+    ) -> tuple[tuple[Any, ...], str, bool, bool, str | None]:
+        """Write one action's rows to the store. Returns the rows written, the message
+        owed to the operator, whether anything was actually dispatched, whether the action
+        was refused, and the next action a refusal names (`CT-CONSOLE-33`; `None` when the
+        action does not carry one). On the audit double the payload is stored with the
+        row. On a real store each write goes to the tier that owns its table, in that
+        tier's own transaction, never nested inside another tier's transaction
+        (CT-STORE-03).
         """
         if getattr(self._store, "data_dir", None) is not None:
             return self._write_rows_real(action, rows, params)
         handle = self._tier("durable")
         if handle is None:
-            return (), "no store is attached; nothing was written", False, None
+            return (), "no store is attached; nothing was written", False, False, None
         written: list[Any] = []
         with handle.transaction() as tx:
             if getattr(tx, "execute", None) is None:
@@ -211,23 +212,26 @@ class ControlActionsMixin:
                     payload = {"table": table, **fields}
                     tx.enqueue_write(payload)
                     written.append(payload)
-                return tuple(written), "row payload recorded on the write-audit double", True, None
-        return (), "the store's write seam is not the audit double; nothing was written", False, None
+                return (tuple(written), "row payload recorded on the write-audit double",
+                        True, False, None)
+        return (), "the store's write seam is not the audit double; nothing was written", \
+            False, False, None
 
     def _write_rows_real(
         self, action: str, rows: list[tuple[str, dict[str, Any]]], params: dict[str, Any]
-    ) -> tuple[tuple[Any, ...], str, bool, str | None]:
+    ) -> tuple[tuple[Any, ...], str, bool, bool, str | None]:
         """The real-store path: each action writes the row its schema allows, in one tier and one
         transaction, and reports only what actually happened."""
         if action == "pause/resume":
             run_id = str(params.get("run_id") or "")
             if not run_id:
-                return (), "pause/resume names no run; nothing was written", False, None
+                return (), "pause/resume names no run; nothing was written", False, False, None
             cohort_key = self._cohort_for_run(run_id)
             if cohort_key is None:
                 return (
                     (),
                     f"no cohort ledger holds run {run_id!r}; nothing was written",
+                    False,
                     False,
                     None,
                 )
@@ -248,6 +252,7 @@ class ControlActionsMixin:
                 f"queued as run_control row {control_id} on the run's cohort ledger; "
                 "the orchestrator applies it on its next read (CT-ORCH-13)",
                 True,
+                False,
                 None,
             )
         # The class vocabulary's three actions (`ADR-48`, #761): their effects carry a
@@ -257,6 +262,10 @@ class ControlActionsMixin:
             from .class_actions import CLASS_ACTION_EFFECTS
 
             detail, dispatched, next_action = CLASS_ACTION_EFFECTS[action](self._store, params)
-            return (), detail, dispatched, next_action
+            # Each class effect dispatches exactly when it refused nothing: `False` is a
+            # refusal (the "… refused: …" detail), `True` a landed effect. The refusal
+            # rides `refused=True` the way the authoring actions' outcomes carry theirs
+            # (PR #794's finding 3 — the shipped shape left it False here).
+            return (), detail, dispatched, not dispatched, next_action
         detail, dispatched = self._apply_domain_effects(action, params)
-        return (), detail, dispatched, None
+        return (), detail, dispatched, False, None

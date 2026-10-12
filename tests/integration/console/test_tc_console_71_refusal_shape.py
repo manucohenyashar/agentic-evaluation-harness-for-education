@@ -13,11 +13,12 @@ refusing arm the neighbouring cases drive, scanned as a body.
    refusals here (the textless edit, the cancel of an unknown job) carry no
    `next_action` at all — the plan's "every body has detail + next_action" holds only
    for the arms that ship one.
-2. The staleness arm's `ControlOutcome` sets `refresh_required=True`, but
-   `outcome_json` drops that field: the HTTP body never carries it, and the refresh
-   request reaches the SPA only inside the detail text ("refresh the queue before
-   acting"). The scan asserts the text, which is the only shipped signal.
-3. The class-vocabulary refusals keep `refused=False` (asserted in `TC-CONSOLE-65`).
+2. ~~The staleness arm's `ControlOutcome` sets `refresh_required=True`, but
+   `outcome_json` drops that field~~ — fixed in the follow-up to PR #794's finding 4:
+   the body now carries `refresh_required: true` when the outcome set it, and the scan
+   below asserts the flag alongside the text.
+3. ~~The class-vocabulary refusals keep `refused=False`~~ — fixed in the follow-up to
+   PR #794's finding 3: they now set `refused=True` (asserted in `TC-CONSOLE-65`).
 
 **Isolation: rung 3 (E1)** — real store, real console over real HTTP, the recorded
 provider where an authoring fixture is needed.
@@ -181,9 +182,14 @@ def test_tc_console_71_the_reads_the_unknown_job_and_the_stale_item_speak_teache
     stale = json.loads(stale_raw)
     assert stale_status == 200
     assert stale["refused"] is True and stale["dispatched"] is False, stale
+    # PR #794's finding 4 fixed: `outcome_json` carries the outcome's `refresh_required`
+    # when the staleness refusal set it, so the SPA reads the refresh request from the
+    # body, not only out of the detail text.
+    assert stale.get("refresh_required") is True, (
+        f"the staleness body does not carry the refresh request the outcome set: "
+        f"{stale!r}")
     _scan_body("stale review item", stale)
     assert "is stale" in stale["detail"] and "superseded" in stale["detail"], (
         f"the refusal does not name the supersession: {stale['detail']!r}")
     assert "refresh the queue before acting" in stale["detail"], (
-        "the refusal does not tell the teacher to refresh; the body never carries "
-        "the outcome's `refresh_required` flag, so the text is the shipped signal")
+        f"the refusal does not tell the teacher to refresh: {stale['detail']!r}")

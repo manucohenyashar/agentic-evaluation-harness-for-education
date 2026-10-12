@@ -577,8 +577,10 @@ def _item_id(params: Mapping[str, Any], target: str) -> str:
 def _text(params: Mapping[str, Any], key: str, where: str) -> str:
     value = params.get(key)
     if value is None or not str(value).strip():
+        # The field's own name closes the clause — interpolating it after a fixed noun
+        # doubled the word ("… no text text …", PR #794's finding 5).
         raise AuthoringInputError(
-            f"{where}: the edit carries no {key} text. Nothing was saved.")
+            f"{where}: the edit carries no {key}. Nothing was saved.")
     return str(value).strip()
 
 

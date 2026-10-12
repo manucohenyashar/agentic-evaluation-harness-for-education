@@ -107,9 +107,11 @@ REFUSED_BODY_DRAIN_BYTES = 64 * 1024
 
 def outcome_json(action: str, outcome: Any) -> bytes:
     """A control outcome as the JSON both transports answer with. `next_action` is carried
-    only when the action set one (a refusal's named next step, `CT-CONSOLE-33`, #761), and
-    `job_id` only when the outcome dispatched a job (`#760`'s authoring actions), so no
-    outcome that predates either field changes shape."""
+    only when the action set one (a refusal's named next step, `CT-CONSOLE-33`, #761),
+    `refresh_required` only when the outcome set it (§3.19's stale-screen refusal asks
+    for the refresh, PR #794's finding 4), and `job_id` only when the outcome dispatched
+    a job (`#760`'s authoring actions), so no outcome that predates any of the three
+    fields changes shape."""
     answer = {
         "action": action,
         "dispatched": bool(getattr(outcome, "dispatched", False)),
@@ -120,6 +122,8 @@ def outcome_json(action: str, outcome: Any) -> bytes:
     next_action = getattr(outcome, "next_action", None)
     if next_action:
         answer["next_action"] = str(next_action)
+    if getattr(outcome, "refresh_required", False):
+        answer["refresh_required"] = True
     job_id = getattr(outcome, "job_id", None)
     if job_id:
         answer["job_id"] = str(job_id)
