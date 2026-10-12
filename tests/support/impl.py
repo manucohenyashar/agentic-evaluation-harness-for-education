@@ -2234,6 +2234,15 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # landing). The remaining limb is #696's review walk (TC-AUTHOR-17's scripted answers),
     # so the conjunction below adds `AuthoringService.review` — the last-landing limb.
     # Re-run both files green before unmarking, never on the notice alone.
+    #
+    # #698's own landing (the audit PR): the determinism/write-ownership machinery the
+    # story's Goal names shipped with the #690-#694 series — the audit found no delta on
+    # the draft surface, so the entry is kept untouched. At that landing TC-AUTHOR-18 ran
+    # green (both fixtures, in-process and cross-interpreter under differing
+    # PYTHONHASHSEED) and TC-AUTHOR-17's failure-path arm ran green; the review arm is the
+    # one red, on #696's `AuthoringService.review`. The markers stay on BOTH files until
+    # the conjunction resolves: the unmark and the entry drop are one step, taken by
+    # whoever lands #696, after both files re-run green.
     "#698 determinism snapshots": (
         "symbols",
         "aeh.author:AuthoringService,aeh.author:AuthoringService.review",
