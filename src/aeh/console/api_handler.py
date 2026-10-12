@@ -12,6 +12,8 @@ import json
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
+from aeh.help import ScreenContext, parse_screen_context
+
 from .help_read import (
     MANUAL_ID_PARAM,
     ask_payload,
@@ -21,6 +23,7 @@ from .help_read import (
 
 from .api import (
     API_ROUTES,
+    ASK_CONTEXT_PARAM,
     ASK_QUERY_PARAM,
     UPLOAD_CONTROL,
     allowed_methods,
@@ -216,7 +219,13 @@ class ApiRequestsMixin:
 
     def _help_ask(self, query: dict[str, str]) -> None:
         """The grounded Q&A ask (`M-HELP`, `CT-HELP-01`): one read-only GET whose only write
-        is the assistant's own Q&A log row, written after the model answered."""
+        is the assistant's own Q&A log row, written after the model answered.
+
+        The optional `context` query parameter (FR-HELP-06) carries the JSON of
+        ``{screen, refs}`` — the ids the asking screen already renders. It is parsed here, at
+        the edge, so a malformed or smuggled shape is the caller's mistake and answers 400
+        before anything reaches the model; the assistant joins what survives to the prompt as
+        the identifiers it is (`CT-UI-07`)."""
         question = query.get(ASK_QUERY_PARAM, "").strip()
         if not question:
             body = json.dumps(
@@ -224,8 +233,19 @@ class ApiRequestsMixin:
             ).encode("utf-8")
             self._respond(400, body, JSON_TYPE)
             return
+        raw_context = query.get(ASK_CONTEXT_PARAM, "").strip()
+        context: ScreenContext | None = None
+        if raw_context:
+            try:
+                context = parse_screen_context(json.loads(raw_context))
+            except ValueError as refusal:  # JSONDecodeError is one, as is every shape refusal
+                body = json.dumps(
+                    {"error": f"the ask read could not take the context: {refusal}"}
+                ).encode("utf-8")
+                self._respond(400, body, JSON_TYPE)
+                return
         try:
-            payload = ask_payload(self._console.help_assistant(), question)
+            payload = ask_payload(self._console.help_assistant(), question, context)
         except Exception as error:  # noqa: BLE001 — a failed ask is a 500, never a dropped socket
             body = json.dumps({"error": str(error)}).encode("utf-8")
             self._respond(500, body, JSON_TYPE, close=True)

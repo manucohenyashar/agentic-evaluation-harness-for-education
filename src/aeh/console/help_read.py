@@ -92,9 +92,14 @@ def build_help_assistant(store: Any, cfg: Mapping[str, Any]) -> HelpAssistant:
     return HelpAssistant(store=store, provider=provider_for(model_ref), model_ref=model_ref)
 
 
-def ask_payload(assistant: Any, question: str) -> dict[str, Any]:
-    """One ask, answered and logged: the prose answer and the sections it was grounded on."""
-    answer = assistant.ask(question)
+def ask_payload(assistant: Any, question: str, context: Any | None = None) -> dict[str, Any]:
+    """One ask, answered and logged: the prose answer and the sections it was grounded on.
+
+    ``context`` (FR-HELP-06) is the asking screen's context — a `ScreenContext` or the JSON
+    mapping the endpoint parsed — passed through to the assistant, which joins it to the
+    prompt alongside the manuals. ``None`` asks exactly as before the field existed, so a
+    contextless request's behaviour and recorded replay are unchanged."""
+    answer = assistant.ask(question, context)
     return {
         "answer": answer.answer,
         "citations": [
