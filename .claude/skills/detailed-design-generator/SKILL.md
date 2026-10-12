@@ -7,18 +7,15 @@ description: Converts a high-level design (HLD) or architecture document into an
 
 Turns a high-level design (HLD) into a **Detailed Design Document**: one section per module, engineering-grade detail, with a stable requirement ID scheme.
 
-**This skill owns the design and nothing else.** It is stage 1 of a four-stage pipeline (see `CLAUDE.md`):
+**This skill owns the design and nothing else.** It is stage 1 of the four-stage pipeline —
+`/detailed-design-generator → /create-test-plan → /plan-to-issues → /fix-issue | /write-tests`
+— whose ownership table lives in `CLAUDE.md`. It does not produce a test plan or a story
+backlog: those belong to the later stages as the *single* owners of each artifact, and two
+skills producing a backlog is how this harness once ended up with two incompatible ones.
 
-```
-/detailed-design-generator → detailed-design.md   ← you are here
-/create-test-plan          → test-plan.md
-/plan-to-issues            → GitHub issues
-/fix-issue | /write-tests  → PRs
-```
-
-Earlier versions of this skill also produced a test plan and a story backlog. They no longer do, and the reason is worth stating so nobody adds them back: `/create-test-plan` and `/plan-to-issues` produce those artifacts with more depth and, crucially, as the *single* owner of each. Two skills producing a backlog produced two incompatible backlogs from one design, with different story IDs and different granularity, and the second one silently discarded the first. One owner per artifact is what keeps the traceability chain intact.
-
-What this skill still owns, and what everything downstream depends on, is the **`FR-*` / `NFR-*` / `CT-*` ID scheme**. Get the requirements right, numbered, and independently testable, and the rest of the pipeline works. Get them vague and every downstream stage inherits the vagueness.
+What this skill owns, and what everything downstream depends on, is the **`FR-*` / `NFR-*` /
+`CT-*` ID scheme**. Get the requirements right, numbered, and independently testable, and the
+rest of the pipeline works; get them vague and every downstream stage inherits the vagueness.
 
 `CT-*` is the **module contract**: the subset of a module's design that other modules are entitled to
 rely on, stated as assertions and given stable IDs. It is what makes a regression suite possible. A
@@ -49,58 +46,44 @@ Produce a **Module Inventory** table: `Module ID | Name | Responsibility (one se
 
 ## Phase 2 - Per-Module Detailed Design
 
-For each module, fill out the template in `references/detailed-design-template.md`. Work through modules one at a time rather than trying to hold the whole system in your head at once - build the document section by section, the same way you'd build any long technical document.
+For each module, fill out the template in `references/detailed-design-template.md` — it holds
+the field-by-field spec for every section below. Work through modules one at a time rather than
+trying to hold the whole system in your head at once - build the document section by section,
+the same way you'd build any long technical document.
 
 Every module section needs, at minimum:
 
-- **Responsibility & scope** - what it owns, what it explicitly does not own
-- **Functional requirements** - numbered (`FR-<ModuleID>-01`, ...), each one independently testable
-- **Interfaces** - inputs and outputs: API contracts (method, path, request/response schema, status/error codes) or function signatures if it's a library; who calls this module and what it calls
-- **Data structures & data model** - entities, fields, types, constraints, relationships; state model if the module has one
-- **Data flow** - how data moves through the module step by step; a short sequence description (Mermaid is fine) for any non-trivial flow
-- **Dependencies** - other modules, external services, libraries, and any version constraints; note which are upstream (this module needs them) vs. downstream (they need this module)
-- **Non-functional requirements** (`NFR-<ModuleID>-01`, ...) - pull from the ISO 25010 categories in the checklist so you don't just default to "performance and security" and skip reliability, maintainability, or portability when they matter
-- **Performance requirements** - concrete targets where the HLD or reasonable defaults support them (latency, throughput, capacity, scaling approach), assumptions flagged as such
-- **Security requirements** - authn/authz model, data classification, encryption in transit/at rest, input validation, secrets handling; run the module through the STRIDE checklist for anything handling sensitive data or exposed externally
-- **Error handling & resilience** - failure modes, retries, timeouts, idempotency, what happens when a dependency is down
-- **Observability** - what gets logged/measured/traced, and what would page someone
-- **Configuration** - externalized config, environment variables, feature flags
-- **Contract** (`CT-<ModuleID>-NN`) - the binding, externally-visible subset of all of the above. Phase 2b below; it is not optional and it is not a summary.
+- **Responsibility & scope**, **functional requirements** (`FR-<ModuleID>-01`, ..., each
+  independently testable), **interfaces**, **data structures & data model**, **data flow**,
+  **dependencies**, **non-functional requirements** (`NFR-<ModuleID>-01`, ... — pull from the
+  ISO 25010 categories in the checklist so reliability/maintainability/portability don't get
+  skipped), **performance requirements**, **security requirements** (STRIDE for anything
+  handling sensitive data or exposed externally), **error handling & resilience**,
+  **observability**, **configuration**
+- **Contract** (`CT-<ModuleID>-NN`) - the binding, externally-visible subset of all of the
+  above. Phase 2b below; it is not optional and it is not a summary.
 - **Open questions / assumptions** - anything you filled in rather than found in the HLD
 
-Not every module needs deep treatment of every field - a stateless utility library doesn't need a data retention policy, and an internal batch job may not need an authn section. Use judgment; don't pad the document with boilerplate the module doesn't have. Do keep the requirement numbering and the section headings consistent across modules, since `/create-test-plan` and `/plan-to-issues` both work by walking these IDs in order - an inconsistent scheme here surfaces as missing coverage two stages later.
+Not every module needs deep treatment of every field - a stateless utility library doesn't
+need a data retention policy, and an internal batch job may not need an authn section. Use
+judgment; don't pad the document with boilerplate the module doesn't have. Do keep the
+requirement numbering and the section headings consistent across modules, since
+`/create-test-plan` and `/plan-to-issues` both work by walking these IDs in order - an
+inconsistent scheme here surfaces as missing coverage two stages later.
 
 ## Phase 2b - The Module Contract
 
-Every module gets a contract, and the contract is the point of the whole document. The rest of a
-module section tells an implementer what to build. The contract tells **everyone else** what they may
-depend on — and, by omission, what they may not. Without it, "don't break other modules" is a hope
-enforced by whoever happens to remember; with it, it is a test suite.
+Every module gets a contract, and the contract is the point of the whole document. The rest of
+a module section tells an implementer what to build. The contract tells **everyone else** what
+they may depend on — and, by omission, what they may not. Without it, "don't break other
+modules" is a hope enforced by whoever happens to remember; with it, it is a test suite.
 
-The failure this prevents is specific and common. A module is refactored, its own unit tests pass,
-and three sibling modules break — because they relied on a return being sorted, an error being
-retryable, a write landing before the call returned, or a field never being null. None of those was
-ever written down, so none was ever tested, so nothing failed until integration. The contract's job
-is to make each of those a numbered, assertable clause **before** anyone writes code against it.
-
-### What a contract is, and is not
-
-A contract is a **promise about observable behaviour at the module boundary**. It is not a summary of
-the section above it and it must not restate internals.
-
-The test: *if this were changed, would code outside the module have to change, or silently start
-being wrong?* Yes → it belongs in the contract. No → it is an implementation detail and putting it in
-the contract is actively harmful, because it freezes a decision nobody needs frozen and the
-regression suite will then fight every legitimate refactor.
-
-Two corollaries worth stating, because both get violated by default:
-
-- **Under-specify and callers depend on it anyway.** Anything observable will eventually be depended
-  on whether promised or not (Hyrum's law). So promise it deliberately, or state explicitly that it
-  is *not* promised — "iteration order is unspecified" is a real clause and it is the clause that
-  lets you change the order later.
-- **Over-specify and the contract becomes the design.** A clause naming a private helper, an internal
-  table, or an algorithm nobody can observe is a clause that will be broken by correct work.
+A contract is a **promise about observable behaviour at the module boundary** — not a summary
+of the section above it, and it must not restate internals. The test: *if this were changed,
+would code outside the module have to change, or silently start being wrong?* Yes → it belongs
+in the contract; no → it is an implementation detail. The full theory — Hyrum's law and
+under-specification, what must never go in a contract, the failure pattern this prevents — is
+in `references/best-practices-checklist.md`; read it before writing your first contract block.
 
 ### Clause kinds — the completeness checklist
 

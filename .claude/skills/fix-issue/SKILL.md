@@ -40,9 +40,9 @@ Exit plan mode and make the change. Implement to the design's stated interface �
 signatures, field names, status codes, and error types in `detailed-design.md` — because
 the tests written from the test plan assert against that interface, not against whatever
 you find natural. A story that works but renames a field breaks a test suite that was
-correct.
-
-consider the following while implementing: Code readability, and maintainability, by human reviewers and future maintainers. Avoid long files and super complex functions. For example avoid super long python modules and instead create a structured package. Favor small, focused functions and classes. Use clear and descriptive names for variables, functions, and classes. Avoid deep nesting of code blocks. Use comments to explain why something is done, not what is done. Avoid magic numbers and strings; use named constants instead. Write code that is easy to test and debug. Structure your code in a meaningful way, grouping related functionality together. Follow the project's coding standards and style guides. Write code that is efficient and avoids unnecessary computations or memory usage. Consider edge cases and error handling. Use version control effectively, committing logical chunks of work with clear messages.
+correct. Write code that reads like the surrounding code and that a human reviewer can
+follow — readability, small focused units, and clear names are part of the deliverable;
+the `reviewer` subagent pass in §4 is where anything less gets caught.
 
 ### The test boundary
 

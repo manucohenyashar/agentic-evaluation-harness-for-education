@@ -80,9 +80,8 @@ PR. A test in the repo but not in the plan makes the plan lie about coverage.
 
 ### The four seams — build them in, don't retrofit them
 
-From `/harness-bootstrap` ; rationale in
-`docs/harness-adoption.md`). These are cheap now and expensive later, so every module carries
-them from its first commit:
+From `/harness-bootstrap`; rationale in `docs/harness-adoption.md`. These are cheap now and
+expensive later, so every module carries them from its first commit:
 
 1. **A headless driver.** The system runs end-to-end from code, returning a structured result
    plus a per-stage trace. Nothing may require the console to run — `CT-CONSOLE-01`.
@@ -111,50 +110,18 @@ pass, and every bug found later becomes a permanent case.
 
 ### Store opens require the full migration chain
 
-The tier migration chains in `TIER_MIGRATIONS` are concatenated **at import time** by the
-modules that own the schema they add. Before the first store open in any process, import all
-eleven contributors: `import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.ingest, aeh.integ, aeh.judge, aeh.orch, aeh.pkg, aeh.review, aeh.synth` —
-`import aeh.pkg` alone is not enough (Tier P's chain is short by `aeh.det`'s migration without it;
-`aeh.pkg` owns Package's last migration — #525's `pkg_published_baseline_evidence`, 16; #622's `pkg_criterion_score_method` was 15; #454's `pkg_decision_engine_noninferior` was 14; #528's `pkg_export_gate_outcome` was 13; #373's `pkg_validation_baseline` was 12; #369's
-`pkg_criterion_evaluation_mode` was 11 — and
-`aeh.det`'s `det_selection_policy_columns` is 10),
-`aeh.integ` owns Cohort's last migration (#597's `integ_evidence_work_index`, 34),
-`aeh.ingest` the one before that (#620's `ingest_roster_names`, 33; #531's
-`ingest_upload_part` was 32),
-`aeh.orch` the one before that (#527's `orch_run_config`, 31),
-`aeh.agg` the one before that (#524's `agg_criterion_score_state_reason`, 30),
-`aeh.judge` the one before that (#448's `judge_verdict_engine`, 29) and the one before that
-(#448's `judge_decision_prescreen`, 28),
-`aeh.ingest` the one before that (#373's `ingest_region_question_owner`, 27),
-`aeh.review` the one before it (#367's `review_queue_columns`, 26),
-`aeh.integ` the one before it (#363's `integ_gate_reads_and_panel_state`, 25),
-`aeh.orch` the one before it (#362's `orch_cell_phase`, 24),
-`aeh.ingest` the one before it (#355's `ingest_selection_biconditional`, 23),
-`aeh.judge` the one before it (#361's `judge_verdict_assessment`, 22),
-`aeh.extract` the one before it (#361's `extract_latency`, 21),
-`aeh.agg` the one before it (#359's `agg_run_scoped_score`, 20),
-`aeh.grade` the one before it (#103's `grade_superseded_at_and_append_only`, 19;
-#101's `grade_submission_grade_key` was 18),
-`aeh.judge` the one before it (#80's `judge_verdict_response_columns`, 17),
-`aeh.agg` the one before it (#92's `agg_confidence_columns`, 16), `aeh.review` owns
-Durable's last migration (#514's `review_label_backend_profile`, 12), `aeh.store` itself owns
-the one before it (#375's `calib_dual_scored_roster`, 11 — it is M-CALIB's table, but
-`TC-REQ-89` runs the console with `aeh.calib` absent, so no module the system must run WITHOUT
-may own a mandatory link in a chain; that is why this one is declared in `aeh.store` (`store/migrations.py`) against the
-convention, and it stays there), `aeh.review` owns the one before it (#368's
-`review_label_columns`, 10), `aeh.judge` the one before it
-(#361's `judge_run_metrics_judge_dimension`, 9), `aeh.pkg` the one
-before it (#118's `pkg_validation_record`, 8), `aeh.grade` the one
-before it (#103's `grade_audit_record_append_only`, 7; #110's
-`review_label_store_columns` was 6), `aeh.integ` the one
-before that (#73's `integ_rate_dimensions`, 5), `aeh.synth` the one before
-that (#97's `synth_narrative_key`, 13), `aeh.orch` the one before that (#61's
-`orch_run_lifecycle`, 12), and `aeh.extract` the one before that (11). An open on a
-truncated chain builds the file at the base schema and the missing columns surface later, far
-from the open, as a distant `no such column: parent_version_id`. The open site refuses a short
-chain — `IncompleteMigrationChainError`, pinned per tier by `COMPLETE_SCHEMA_VERSIONS` in
-`store/migrations.py` (`#234`) — so the failure names its cause at the open, never at a distance. Chain
-*order* is not the caller's duty: `_VersionOrderedRegistry` (`#269`) sorts each tier's chain at
-write time, so import order cannot produce a reverse version step — only completeness is on
-the caller. A migration added to a chain bumps its pin in the same change; the pin's gate test
-fails until it does.
+Tier migration chains (`TIER_MIGRATIONS` in `src/aeh/store/migrations.py`) are concatenated
+**at import time** by the modules that own the schema they add. Two authoring rules:
+
+1. A module that owns a schema adds its migration to its **own** chain at import time, and
+   bumps its tier's pin in `COMPLETE_SCHEMA_VERSIONS` in the same change — the pin's gate test
+   fails until it does.
+2. Before the first store open in any process, import all eleven contributors:
+   `import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.ingest, aeh.integ, aeh.judge, aeh.orch, aeh.pkg, aeh.review, aeh.synth`.
+   An open on a truncated chain refuses with `IncompleteMigrationChainError` (which names the
+   full list); without the refusal, the file builds short of the schema and the missing columns
+   surface far from the open as a distant `no such column`. Chain *order* is not the caller's
+   duty (`_VersionOrderedRegistry` sorts each chain at write time) — only completeness is.
+
+Chain contents, per-migration ownership, and history live in `store/migrations.py` and git
+history — not here.
