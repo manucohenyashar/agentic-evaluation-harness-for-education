@@ -47,7 +47,8 @@ AUTHOR_TRANSCRIBE_TEMPLATE = (
 )
 
 #: The rasterization resolution for a page with no text layer. Deliberately **not** an
-#: environment knob (CT-AUTHOR-14 keeps the authoring surface at exactly three knobs), and
+#: environment knob (CT-AUTHOR-14 keeps the authoring surface at exactly its declared
+#: knobs — three until the intake delta added the size ceiling), and
 #: deliberately fixed: the transcription request's key covers the payload, and the image
 #: bytes are in the payload — a per-environment DPI would make every recording tree
 #: environment-bound. 200 DPI is the submission path's working resolution.
@@ -105,6 +106,7 @@ def extract_documents(
     transcriber: ModelRef | None,
     call: Callable[[PromptPayload, ModelRef], Completion],
     transcribe_enabled: bool,
+    allow_no_text: bool = False,
 ) -> tuple[AuthoringDocument, ...]:
     """Extract every document's text, riding the transcriber where the knob allows.
 
@@ -121,6 +123,12 @@ def extract_documents(
     means the transcription itself failed mid-run: the pages stand missing and recorded
     (FR-AUTHOR-02), and the run continues over the quoted empty text — the reasoning items
     land unresolved, both artifacts are still written (CT-AUTHOR-10, the resilience sweep).
+
+    `allow_no_text` is the mixed-source amendment the intake tier brings (FR-AUTHOR-24):
+    when other documents in the same draft have already yielded text through intake, a
+    PDF set with no text of its own must not fail the run — its pages stand missing and
+    recorded, exactly as a mid-run transcription failure would. The default (`False`)
+    keeps the all-PDF behaviour, and every existing call site, unchanged.
     """
     extracted: list[AuthoringDocument] = []
     failures: list[str] = []
@@ -133,7 +141,7 @@ def extract_documents(
         if not document.has_text:
             failures.append(document.name)
     if not extracted or (all(not document.has_text for document in extracted)
-                         and not transcribe_enabled):
+                         and not transcribe_enabled and not allow_no_text):
         raise AuthoringInputError(_no_text_message(documents, extracted, failures,
                                                    transcribe_enabled))
     return tuple(extracted)
