@@ -377,12 +377,24 @@ def render_draft(assembly: Assembly) -> str:
         lines.append("")
         lines.append("[grades]")
         for name, floor in grades.items():
-            if floor is None:
-                item_id = f"grades {name}"
+            if floor is None or _is_sentinel(floor):
+                # A boundary the draft cannot yet state renders as the sentinel, quoted,
+                # with its reason comment above it (`FR-AUTHOR-11`): `None` from the
+                # grades step, or a sentinel string on a draft re-rendered after a parse
+                # (an edit's round-trip — written unquoted, the rewritten file stopped
+                # parsing; PR #794's finding 1). The sentinel's own text names the item,
+                # so a round-tripped table re-attaches the same gap the next time too.
+                item_id = (floor[len("<<PLACEHOLDER: "):-len(">>")]
+                           if floor is not None else f"grades {name}")
                 lines.extend(comment(None, sentinel(item_id)))
                 lines.append(f"{_toml_key(name)} = {_toml_str(sentinel(item_id))}")
-            else:
+            elif isinstance(floor, (int, float)):
                 lines.append(f"{_toml_key(name)} = {floor}")
+            else:
+                # Any other non-numeric floor — a plain string a hand edit left in the
+                # spec — renders quoted too: the loop's job is that the rewritten file
+                # parses, whatever the parsed-back spec holds.
+                lines.append(f"{_toml_key(name)} = {_toml_str(floor)}")
     lines.append("")
     return "\n".join(lines)
 
