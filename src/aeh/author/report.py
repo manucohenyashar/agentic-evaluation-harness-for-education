@@ -111,8 +111,13 @@ def _unresolved(assembly: Assembly, outcomes: list[dict[str, Any]]) -> list[str]
         failures = "; ".join(row["failures"]) or "every model in the chain was exhausted"
         lines.append(f"- {row['item_id']} — the reasoning did not converge: {failures}.")
     def priority(gap: Gap) -> tuple[int, int]:
-        qid = gap.item_id.rsplit(" ", 1)[1] if " " in gap.item_id else None
-        unresolved = qid is not None and assembly.statuses.get(qid) == "unresolved"
+        # The gap's owning question: the longest status key the item id ends with. The ids
+        # are built as "<field> <qid>" ("criterion Q3", "points Q3"), but a question id may
+        # itself carry spaces, so the last word of an rsplit is not the id ("Q 1" would
+        # rsplit to "1", missing the status and silently demoting the gap a tier).
+        qid = max((q for q in assembly.statuses if gap.item_id.endswith(" " + q)),
+                  key=len, default=None)
+        unresolved = qid is not None and assembly.statuses[qid] == "unresolved"
         return (0 if unresolved else 1, 0 if gap.in_draft else 1)
 
     ordered = sorted((gap for gap in assembly.gaps if gap.item_id != "approved_by"),

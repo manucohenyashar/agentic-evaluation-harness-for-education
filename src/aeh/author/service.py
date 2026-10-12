@@ -169,9 +169,11 @@ class AuthoringService:
             LOGGER.warning("%d placeholder(s) standing in %s", assembly.placeholder_count,
                            draft_path.name)
             # Per placeholder, its field: the report names the item, and the log names it
-            # too (FR-AUTHOR-19) — `approved_by` is the sign-off slot, never counted.
+            # too (FR-AUTHOR-19) — every gap `placeholder_count` counts, the report-only
+            # omissions included (`in_draft=False`: named in the report, no sentinel in
+            # the draft); `approved_by` alone is excepted as the sign-off slot.
             for gap in assembly.gaps:
-                if gap.in_draft and gap.item_id != "approved_by":
+                if gap.item_id != "approved_by":
                     LOGGER.warning("placeholder: %s — %s", gap.item_id, gap.reason)
         LOGGER.info("draft written: %s; report: %s", draft_path.name, report_path.name)
 
