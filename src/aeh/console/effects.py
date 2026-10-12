@@ -215,6 +215,8 @@ class DomainEffectsMixin:
             return self._publish_package_effect(params)
         if action == "export/import package":
             return self._export_effect(params)
+        if action == "update configuration":
+            return self._update_configuration_effect(params)
         if action == "approve exemplar paraphrases at export":
             # FR-CONSOLE-34: present-and-unavailable. The paraphrase approval flow is
             # Phase 3.5; the console says so rather than claiming an approval happened.
@@ -591,6 +593,44 @@ class DomainEffectsMixin:
             f"(approved by {actor})",
             True,
         )
+
+    def _update_configuration_effect(self, params: dict[str, Any]) -> tuple[str, bool]:
+        """`update configuration` (`FR-CONF-34`): the guided edit through M-CONF's
+        `update_profile_edits` — the teacher-editable subset only, validated with the loader's
+        own rules, written atomically. The file path is never taken from the request: it comes
+        only from the configuration this console process was started with (`config_path`, set
+        by the serving layer), so a caller cannot point the write at an arbitrary file. A
+        refusal — an unknown setting, a credential-named one, a value the loader refuses — is
+        the honest outcome: nothing was written, and the console does not report a refused
+        edit as done. M-CONF's refusal messages never echo a model reference or credential
+        (`NFR-CONF-02`), so the detail is safe to render."""
+        from aeh.conf import RunConfigError, update_profile_edits
+
+        path = getattr(self, "config_path", None)
+        if not path:
+            return (
+                "the console was started without a configuration file, so there is nothing "
+                "to update; edit the settings file directly",
+                False,
+            )
+        edits = params.get("edits")
+        if not isinstance(edits, dict) or not edits:
+            return "update configuration names no edit; nothing was written", False
+        profile = params.get("profile") or (self.run_config or {}).get("HARNESS_PROFILE")
+        try:
+            result = update_profile_edits(
+                path, edits, profile=str(profile) if profile else None)
+        except RunConfigError as exc:
+            return (
+                f"the settings were not changed: {exc}",
+                False,
+            )
+        except Exception as exc:  # noqa: BLE001 — a refusal is the honest outcome
+            return (
+                f"the settings were not changed: {exc} — nothing was written",
+                False,
+            )
+        return result.detail, True
 
     def _recover_effect(self, params: dict[str, Any]) -> tuple[str, bool]:
         """`recover runs` (`FR-CONSOLE-41`, #632): M-PIPE's `recover` — the door `aeh recover`

@@ -20,7 +20,7 @@ requires-python = ">=3.11"
 
 # FR-STORE-20 / ADR-36 (#614): everything the documented operator workflows use is a standard
 # dependency, so `pip install .` alone leaves the system complete — there are no extras. ADR-36
-# supersedes only ADR-11's packaging clause: the IMPORT boundary does not move. All four are
+# supersedes only ADR-11's packaging clause: the IMPORT boundary does not move. All seven are
 # lazy-imported inside the code paths that need them, so `import aeh.*` and the fast tier load
 # none of them (TC-INGEST-01, TC-PIPE-12, CT-PROV-29). Each entry is enumerated with its reason in
 # the supply-chain inventory (tests/artifact/test_supply_chain.py, SEC-14).
@@ -29,7 +29,9 @@ dependencies = [
     "pypdfium2>=4.0",       # M-INGEST, #226 (F10): the live PdfiumRasterizer (FR-INGEST-13)
     "Pillow>=10.0",         # M-INGEST/M-STORE, #226: PdfBitmap.to_pil() decodes page pictures
     "typesafe-sdk==0.7.2",  # M-PROV, TS-124 (#500): JevOpenRouterProvider's SDK (FR-PROV-42, NFR-PROV-10)
-    "openpyxl>=3.1,<4",     # M-CONSOLE, #762: the results workbook export (FR-CONSOLE-58, ADR-49)
+    "mammoth>=1.6,<2",      # M-AUTHOR, #754 (ADR-49): .docx -> semantic HTML for intake (FR-AUTHOR-25)
+    "charset-normalizer>=3.0,<4",  # M-AUTHOR, #754 (ADR-49): .txt encoding detection (FR-AUTHOR-26)
+    "openpyxl>=3.1,<4",     # M-CONSOLE, #762 (ADR-49): the results workbook export (FR-CONSOLE-58)
 ]
 
 # The installed command. `aeh.pipeline:main` lands with the M-PIPE composition story; the

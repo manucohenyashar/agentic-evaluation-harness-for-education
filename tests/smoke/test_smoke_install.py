@@ -8,12 +8,14 @@ required.
 The oracle has two halves, because "no additional install step" is a claim about **what the
 repository declares** and **what the source tree actually does**:
 
-1.  **Declared** — `pyproject.toml` ships exactly the four standard dependencies of
-    `FR-STORE-20` (ADR-36, #614, which superseded ADR-11's empty `dependencies = []`), so one
-    pip step resolves everything from the package index, and no extras exist; and the tracked
-    tree carries no npm manifest, no lockfile, no container image, no server-composition file.
-    Anything a fresh machine needs beyond `python -m venv` and that one pip step is an
-    additional install step by definition.
+1.  **Declared** — `pyproject.toml` ships exactly the seven standard dependencies of
+    `FR-STORE-20` (ADR-36, #614, which superseded ADR-11's empty `dependencies = []`;
+    ADR-49, #754, added the intake tier's `mammoth` and `charset-normalizer` to the same
+    list, and ADR-49, #762, added the workbook export's `openpyxl`), so one pip step
+    resolves everything from the package index, and no extras exist;
+    and the tracked tree carries no npm manifest, no lockfile, no container image, no
+    server-composition file. Anything a fresh machine needs beyond `python -m venv` and that
+    one pip step is an additional install step by definition.
 2.  **Demonstrated** — the `TC-STORE-19` pattern (issue #16): a subprocess whose environment
     carries nothing but the OS minimum and `HARNESS_DATA_DIR` imports the whole assembled
     system (the eleven migration-chain contributors) from the source tree, opens a store,
@@ -30,9 +32,11 @@ the whole-system version, which is why its child imports all eleven contributors
 One residual masking vector the demonstration cannot see: its child runs on the dev venv's
 interpreter, so an undeclared **eager** runtime import of a package that the dev venv
 happens to carry would ride in with the interpreter and pass. The declared half (the exact
-four-package set above) and the shipped lazy-import convention hold that line —
-`pypdfium2`/`pypdf`/`PIL`/`typesafe_sdk` are imported inside the implementations that need
-them, not at module top — which is why the demonstration is the second wall, not the only one.
+seven-package set above) and the shipped lazy-import convention hold that line —
+`pypdfium2`/`pypdf`/`PIL`/`typesafe_sdk` and, since the intake tier, `mammoth` and
+`charset_normalizer`, and, since the workbook export, `openpyxl` are imported inside the
+implementations that need them, not at module top — which is why the demonstration is the
+second wall, not the only one.
 
 `Written ahead of implementation: yes` is stale — every module the smoke suite drives is
 landed (#42-#302); the suite runs green by design, exactly as §8.2's unmarking rule predicts.
@@ -61,17 +65,15 @@ NPM_MANIFESTS = {"package.json", "package-lock.json", "yarn.lock", "pnpm-lock.ya
 #: run. The console's loopback server is opt-in at runtime, not an install requirement.
 SERVER_ARTIFACTS = {"Dockerfile", "docker-compose.yml", "docker-compose.yaml", "Vagrantfile"}
 
-#: FR-STORE-20 (ADR-36, #614), transcribed rather than read back from the file under test: the
+#: FR-STORE-20 (ADR-36, #614; ADR-49, #754, added mammoth and charset-normalizer; ADR-49,
+#: #762, added openpyxl), transcribed rather than read back from the file under test: the
 #: complete runtime set `pip install .` carries. Pip resolves these in the one install step, so
-#: they are not an additional step — an entry outside this set is. (`openpyxl` joined by
-#: ADR-49, #762: the workbook export's writer, upper-bounded at <4; it is lazy-imported inside
-#: the export call like the rest, so the smoke's import surface is unchanged.)
+#: they are not an additional step — an entry outside this set is. (`openpyxl` is the workbook
+#: export's writer, upper-bounded at <4; it is lazy-imported inside the export call like the
+#: rest, so the smoke's import surface is unchanged.)
 STANDARD_DEPENDENCIES = (
-    "pypdf>=6.0",
-    "pypdfium2>=4.0",
-    "Pillow>=10.0",
-    "typesafe-sdk==0.7.2",
-    "openpyxl>=3.1,<4",
+    "pypdf>=6.0", "pypdfium2>=4.0", "Pillow>=10.0", "typesafe-sdk==0.7.2",
+    "mammoth>=1.6,<2", "charset-normalizer>=3.0,<4", "openpyxl>=3.1,<4",
 )
 
 

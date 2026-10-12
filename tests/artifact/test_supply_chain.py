@@ -7,9 +7,10 @@ advisory in a shipped dependency. **Cross-cutting** — this traces to no single
 
 The stated oracle has two halves and only one of them is expressible in this repository today.
 
-*The half that is here.* `pyproject.toml` declares exactly five runtime dependencies — `pypdf`,
-`pypdfium2`, `Pillow`, `typesafe-sdk`, `openpyxl` (`FR-STORE-20`; `openpyxl` via ADR-49, #762).
-That is a design decision, not an accident:
+*The half that is here.* `pyproject.toml` declares exactly seven runtime dependencies — `pypdf`,
+`pypdfium2`, `Pillow`, `typesafe-sdk`, and, since the console-redesign intake tier (ADR-49, #754),
+`mammoth` and `charset-normalizer`, and, since the console's workbook export (ADR-49, #762),
+`openpyxl` (`FR-STORE-20`). That is a design decision, not an accident:
 ADR-11 once declared the set empty, and ADR-36 (#614) superseded its packaging clause so that the
 operator's one `pip install .` leaves the system complete. ADR-36's stated mitigation is this file:
 **the shipped set is enumerated, entry by entry, with the reason each one ships**, and every entry is
@@ -17,7 +18,7 @@ exact-pinned or floor-bounded. The thing that widens the advisory surface is som
 dependency, so these cases assert the set as equality against a literal transcribed here, the same
 shape as `TC-CONF-C02`'s field set and `TC-CONF-C11`'s six-key set. Adding `requests` to
 `pyproject.toml` or to `requirements-dev.txt` fails this file. (The import boundary did not move with
-the install boundary: the fast tier still imports none of the five — `NFR-SYS-06`, `TC-INGEST-01`.)
+the install boundary: the fast tier still imports none of the seven — `NFR-SYS-06`, `TC-INGEST-01`.)
 
 *The half that is not.* Running an actual advisory scan needs an advisory database, which needs
 network. Two independent obstructions, both reported in the PR rather than engineered around:
@@ -68,7 +69,13 @@ DECLARED_RUNTIME_DEPENDENCIES: dict[str, str] = {
                     "JevOpenRouterProvider, exact-pinned (NFR-PROV-10). Imported solely inside "
                     "aeh.prov, lazily, at provider construction (CT-PROV-29). Pulls httpx2, "
                     "pydantic, pydantic-core, tenacity and typing-extensions",
-    "openpyxl": "M-CONSOLE, #762, ADR-49 — the results workbook export's writer "
+    "mammoth": "M-AUTHOR, #754 (ADR-49) — .docx intake's converter to semantic HTML "
+               "(FR-AUTHOR-25); its messages list is the warnings stream. Pure Python. "
+               "Lazy-imported inside aeh.author.intake, so the fast tier never loads it",
+    "charset-normalizer": "M-AUTHOR, #754 (ADR-49) — .txt intake's encoding detection "
+                          "(FR-AUTHOR-26). Pure Python. Lazy-imported inside "
+                          "aeh.author.intake, so the fast tier never loads it",
+    "openpyxl": "M-CONSOLE, #762 (ADR-49) — the results workbook export's writer "
                 "(FR-CONSOLE-58): the only maintained pure-Python xlsx writer. Upper-bounded "
                 "at <4 because openpyxl's minor releases have rewritten workbook internals "
                 "under the same 3.x line. Imported solely inside aeh.grade.workbook, lazily, "
@@ -78,7 +85,8 @@ DECLARED_RUNTIME_DEPENDENCIES: dict[str, str] = {
 #: The exact specifier strings FR-STORE-20 pins, so a loosened pin is caught here as well as in
 #: `TC-STORE-26`: an advisory obligation is only answerable if the shipped version is known.
 DECLARED_RUNTIME_SPECIFIERS: frozenset[str] = frozenset(
-    {"pypdf>=6.0", "pypdfium2>=4.0", "Pillow>=10.0", "typesafe-sdk==0.7.2", "openpyxl>=3.1,<4"}
+    {"pypdf>=6.0", "pypdfium2>=4.0", "Pillow>=10.0", "typesafe-sdk==0.7.2",
+     "mammoth>=1.6,<2", "charset-normalizer>=3.0,<4", "openpyxl>=3.1,<4"}
 )
 
 #: Every distribution `requirements-dev.txt` is allowed to install, with the story that added it.
@@ -153,7 +161,7 @@ def test_sec_14_the_shipped_dependency_set_is_the_enumerated_inventory():
 
     This is the assertion the whole case rests on. ADR-36 traded ADR-11's empty runtime set for
     the operator's one-command install, and named this enumeration as the mitigation: the advisory
-    surface of a school node is exactly these five distributions and their transitive sets.
+    surface of a school node is exactly these seven distributions and their transitive sets.
     """
     entries = _declared_runtime_entries()
     declared = {_REQUIREMENT.match(entry).group(1).lower() for entry in entries}
@@ -251,7 +259,7 @@ def test_sec_14_no_option_line_redirects_the_install():
 def test_sec_14_no_lockfile_claims_a_dependency_set_that_does_not_exist():
     """A stale lockfile is a supply-chain claim nobody is maintaining.
 
-    This repository has no lockfile: its five runtime dependencies are pinned in `pyproject.toml`
+    This repository has no lockfile: its seven runtime dependencies are pinned in `pyproject.toml`
     and enumerated above, so the declaration itself is the maintained claim. The
     case exists so that adding one is a decision: a `poetry.lock` or `requirements.txt` that
     nobody regenerates describes an install that never happens, and it is the artifact a reader
