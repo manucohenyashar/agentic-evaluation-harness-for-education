@@ -8,6 +8,7 @@ registration duty — store opens never require importing it.
 """
 
 from aeh.help.assistant import Answer, Citation, HelpAssistant
+from aeh.help.context import ScreenContext, parse_screen_context
 from aeh.help.log import qa_log
 from aeh.help.manuals import (
     MANIFEST,
@@ -28,8 +29,10 @@ __all__ = [
     "ManualRecord",
     "Passage",
     "RetrievalIndex",
+    "ScreenContext",
     "build_index",
     "load_manuals",
     "manuals_manifest",
+    "parse_screen_context",
     "qa_log",
 ]

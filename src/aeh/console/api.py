@@ -49,6 +49,11 @@ UPLOAD_CONTROL = "upload scans"
 #: The query parameter the ask read takes the question from (`M-HELP`).
 ASK_QUERY_PARAM = "q"
 
+#: The query parameter the ask read takes the optional screen context from (FR-HELP-06): the
+#: JSON of ``{screen, refs}`` — the ids the asking screen already renders, never student text
+#: (`CT-UI-07`). Absent (or blank) asks exactly as before the context existed.
+ASK_CONTEXT_PARAM = "context"
+
 #: Media types by suffix. Explicit rather than `mimetypes`, which on Windows reads the
 #: registry and can answer `text/plain` for `.js` — a module script the browser then refuses.
 CONTENT_TYPES: dict[str, str] = {

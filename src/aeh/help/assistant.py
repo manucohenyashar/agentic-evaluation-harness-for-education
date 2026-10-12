@@ -1,5 +1,5 @@
-"""The grounded, answers-only QA assistant (FR-HELP-02/03, FR-HELP-05): one operation,
-``ask(question) -> {answer, citations}``, and nothing else.
+"""The grounded, answers-only QA assistant (FR-HELP-02/03, FR-HELP-05, FR-HELP-06): one
+operation, ``ask(question, context=None) -> {answer, citations}``, and nothing else.
 
 Answers-only is enforced by construction rather than by parsing the reply: retrieval selects
 the passages (or none), the model is called exactly once on those passages, the reply passes
@@ -9,14 +9,21 @@ construction (`CT-HELP-02`). A question that shares no informative word with the
 never sent to the model at all: it gets the explicit not-found answer and a `not-found` log
 row, with zero tokens (`FR-HELP-02` — a model-memory answer cannot leak through a call that
 never happened).
+
+The optional screen context (FR-HELP-06) rides with the question when the ask carries one and
+joins the prompt as grounding material alongside the passages, so the answer is about the
+screen the operator is looking at. It changes nothing about grounding: the same retrieval
+picks the passages, the same rules hold, the context is identifiers only (`CT-UI-07`), and a
+question without context assembles the exact payload it always did.
 """
 
 from __future__ import annotations
 
 import time
 from datetime import datetime, timezone
-from typing import Any, NamedTuple
+from typing import Any, Mapping, NamedTuple
 
+from aeh.help.context import ScreenContext, parse_screen_context
 from aeh.help.log import OUTCOME_GROUNDED, OUTCOME_NOT_FOUND, record_exchange
 from aeh.help.manuals import load_manuals
 from aeh.help.prompts import build_prompt
@@ -67,12 +74,21 @@ class HelpAssistant:
         self.index = build_index(load_manuals(manuals_dir))
         self._sampling = SamplingParams(temperature=0.0)
 
-    def ask(self, question: str) -> Answer:
-        """Answer one question, grounded on the manuals, and log the exchange."""
+    def ask(self, question: str,
+            context: ScreenContext | Mapping[str, Any] | None = None) -> Answer:
+        """Answer one question, grounded on the manuals, and log the exchange.
+
+        ``context`` (FR-HELP-06) is the asking screen's :class:`ScreenContext` — or a plain
+        ``{"screen": ..., "refs": [...]}`` mapping, which is coerced, refusing anything else —
+        and only ever reaches the model as the identifiers it is: no store read resolves a ref
+        to the object it names, so the prompt can carry no student text by construction
+        (`CT-UI-07`). ``None`` asks exactly as before `FR-HELP-06`."""
+        if context is not None and not isinstance(context, ScreenContext):
+            context = parse_screen_context(context)
         started = time.perf_counter()
         passages = retrieve(self.index, question)
         if passages:
-            prompt = build_prompt(passages, question)
+            prompt = build_prompt(passages, question, context)
             completion = self._provider.complete(prompt, self._model_ref, self._sampling)
             answer = completion.text
             citations = tuple(Citation(passage.manual_id, passage.anchor) for passage in passages)
