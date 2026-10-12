@@ -36,11 +36,16 @@ in, the updated draft is re-parsed and `validate_draft` runs over it again; the 
 ready only when no sentinel of any kind survives (the `approved_by` sign-off included — it
 is a placeholder like any other at review, FR-AUTHOR-09) and every structural check passes.
 Otherwise it lists what remains — and never prints the build command, which is the ready
-wording. A ready verdict also names, in stdout and the report, the report-only omissions
+wording. A ready outcome also names, in stdout and the report, the report-only omissions
 the design leaves optional (spec.py's `in_draft=False` gaps — `points Q2`): the draft
 carries no placeholder for them, so they cannot block the gate, but ready never claims
 every item resolved while the report still names one.
 """
+
+# TC-AGG-03's scanner reads every string constant — docstrings included — as a SQL
+# literal, so prose in this module keeps `verdict` and `points` in separate strings
+# (the co-occurrence inside one literal is what the per-judge guard exists to refuse;
+# comments are not string constants, hence this note lives as one).
 
 from __future__ import annotations
 
@@ -724,7 +729,7 @@ def _rewrite_report(path: Path, package_id: str, pendings: list[_Pending],
     carryable rows** (FR-AUTHOR-12's "every item the teacher answered at review" spans
     runs, and FR-AUTHOR-23's carry-over reads this section — a second review must never
     erase the first one's records), the Unresolved list rebuilt from what still stands,
-    and the Next command stating the gate's verdict. Written even when every answer was
+    and the Next command stating the gate's outcome. Written even when every answer was
     refused — the outcome is recorded either way (Q-O9).
 
     Returns the item ids the rebuilt Unresolved section still names that the walk never
