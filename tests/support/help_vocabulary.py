@@ -410,6 +410,26 @@ STUDENT_T = Transcript(
     tokens_in=1200, tokens_out=23,
 )
 
+#: TC-HELP-06 (issue #770): the context arm's transcript. The question is asked WITH the
+#: screen context (`WIZARD_STAGE_3` + `CONTEXT_DRAFT_REF`); the reply names the review stage —
+#: scripted, so asserting it proves the context ask's pass-through, not the model (the weight
+#: of the arm sits on the assembled prompt carrying the context). The question must ground:
+#: the cases check that as a precondition against the packaged manuals, never assumed.
+CONTEXT_T = Transcript(
+    question="What do I review on this screen before I finalize the grades?",
+    reply=("This is the review stage of the wizard: check each placeholder answer and the "
+           "suggested mark, then approve the draft to continue."),
+    tokens_in=1600, tokens_out=35,
+)
+
+#: TC-HELP-06: the asking screen's id and the one opaque ref it renders (`CT-UI-07`) — the
+#: plan's arm (a) shape, `{screen: 'wizard-stage-3', refs: [draft_id]}`. The ref is
+#: deliberately NOT a store-derived id (the seeded world's ids are the sweep's forbidden
+#: tokens): the assistant never resolves a ref, so a ref that names no stored object is
+#: exactly as answerable as one that does, and the privacy sweep stays honest.
+WIZARD_STAGE_3 = "wizard-stage-3"
+CONTEXT_DRAFT_REF = "d-ctx-7Q"
+
 #: TC-HELP-05's reference question set: twenty manuals questions, each with a recorded latency
 #: envelope spread across the profile's plausible range (the max sits under the budget; a
 #: change to the envelope that crosses it is a visible edit here).
@@ -432,7 +452,8 @@ REFERENCE_SET: tuple[Transcript, ...] = tuple(
 )
 
 TRANSCRIPTS: tuple[Transcript, ...] = (
-    GROUNDED_T, NOT_FOUND_T, INJECTION_T, NESTED_T, ACTION_T, STUDENT_T, *REFERENCE_SET,
+    GROUNDED_T, NOT_FOUND_T, INJECTION_T, NESTED_T, ACTION_T, STUDENT_T, CONTEXT_T,
+    *REFERENCE_SET,
 )
 
 
