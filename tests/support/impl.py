@@ -33,7 +33,6 @@ from tests.support.extract_vocabulary import (
     TS26_EXTRACT_SYMBOLS,
     TS65_EXTRACT_SYMBOLS,
 )
-from tests.support.intake_vocabulary import INTAKE_MODULE as _INTAKE_MODULE_VOCAB
 
 # --- the implementation under test -------------------------------------------------------
 # The design and the test plan fix the *test* layout (`tests/unit/...`) and the tooling
@@ -484,30 +483,19 @@ _AUTHOR_REPAIR_PROBE = (
     "raise SystemExit(0 if pairs else 1)\""
 )
 
-# --- #768, the intake suite's two held halves -----------------------------------------------
-# Two `command` probes for the TC-AUTHOR-32..42 suite, where a name key cannot discriminate
+# --- #768, the intake suite's held capture pass ----------------------------------------------
+# One `command` probe for the TC-AUTHOR-32..42 suite, where a name key cannot discriminate
 # (the names have already landed — #754 shipped the whole §3.1.1 surface — so only the
 # behaviour itself tells the blocker from the resolved state).
 #
-# `_INTAKE_DIVERGENCE_PROBE` guards TC-AUTHOR-34/36's fixture halves, which assert two
-# §5.1-declared warnings the shipped intake does not emit: AF-15's `image_not_carried` (the
-# picture IS carried as an `image_ref` block — silently, where §5.1 and FR-AUTHOR-25 declare
-# "a warning plus a placeholder") and AF-17's `structure_guessed` (the heading-less prose
-# `.txt` emits zero warnings, where §5.1's row declares the warning). It exits 0 exactly when
-# BOTH fire, so the gate keeps naming the remaining half the day either lands alone. The
-# module is resolved through `intake_vocabulary.INTAKE_MODULE`, so the rename path stays one
-# line even here.
-_INTAKE_DIVERGENCE_PROBE = (
-    "python -c \"import sys; sys.path.insert(0, 'src');"
-    "import pathlib\n"
-    f"from {_INTAKE_MODULE_VOCAB} import normalize_document\n"
-    "root = pathlib.Path('fixtures', 'F-AUTHOR')\n"
-    "af15 = normalize_document(sorted((root / 'AF-15').glob('*.docx'))[0])\n"
-    "ok = any(w.code == 'image_not_carried' for w in af15.warnings)\n"
-    "af17 = normalize_document(sorted((root / 'AF-17').glob('*.txt'))[0])\n"
-    "ok = ok and any(w.code == 'structure_guessed' for w in af17.warnings)\n"
-    "raise SystemExit(0 if ok else 1)\""
-)
+# A second probe here, `_INTAKE_DIVERGENCE_PROBE`, guarded TC-AUTHOR-34/36's fixture halves
+# while the shipped intake diverged from the corpus on two §5.1-declared warnings (AF-15's
+# `image_not_carried` — the picture was carried as an `image_ref` block but silently, where
+# §5.1 and FR-AUTHOR-25 declare "a warning plus a placeholder" — and AF-17's
+# `structure_guessed`, the heading-less prose `.txt` emitting zero warnings). The intake
+# emits both now, the probe resolved, the two cases ran green and unmarked, and the probe
+# went with its entry — the #689 rung-3 precedent: a registry's `command` probes are dropped
+# once the behaviour they probe is the shipped state.
 
 # `_INTAKE_CAPTURE_PROBE` guards TC-AUTHOR-38's cross-format carry-over journey (#768): the
 # plan's rung-2 journey replays a `.docx` draft and re-drafts from its `.txt` twin, which
@@ -2279,33 +2267,21 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # the three value types, and `DocumentRefusedError` — the vocabulary's `IntakeRefused`
     # bet renamed, the one-line path this block's disclosed-bets section described), and the
     # fixture-half file was re-checked GREEN at the unmarking per the original entry's own
-    # rule. Ten of its twelve cases pass unmarked. The two that do not are NOT test bugs —
-    # they are real implementation-vs-corpus divergences, disclosed here and held marked
-    # under the `command` entry below (a name key cannot discriminate: every §3.1.1 name has
-    # already landed, so only the divergent behaviour itself tells blocker from resolved):
-    #
-    #   * TC-AUTHOR-34: AF-15's picture IS carried (an `image_ref` block,
-    #     `stats.image_count == 1`) but NO `image_not_carried` warning fires — where the
-    #     design delta's §5.1 AF-15 row and FR-AUTHOR-25 both declare the carried figure as
-    #     "a warning plus a placeholder". A silently carried figure is precisely the honesty
-    #     gap the code exists for.
-    #   * TC-AUTHOR-36's warning limb: AF-17 (a heading-less prose `.txt`) emits ZERO
-    #     warnings, where §5.1's AF-17 row declares `structure_guessed` ("draft builds,
-    #     review asks to confirm the outline"). FR-AUTHOR-26's candidate-rule letter is
-    #     consistent with zero candidates for AF-17 — a genuine spec tension — but the
-    #     corpus is census-pinned to §5.1, so the row's warning is the pinned half. The
-    #     draft-builds limb is NOT held: it passes unmarked in #768's suite
-    #     (`test_tc_author_36_af17_the_guessed_outline_still_drafts`).
-    #
-    # The probe (`_INTAKE_DIVERGENCE_PROBE`, built above) exits 0 exactly when BOTH warnings
-    # fire, so the gate keeps naming the remaining half the day either lands alone. At
-    # resolution: re-check the fixture-half file GREEN before unmarking, never on the notice
-    # alone.
-    "#754 intake tier — the corpus-divergence halves (TC-AUTHOR-34/36, test story #753)": (
-        "command",
-        _INTAKE_DIVERGENCE_PROBE,
-        ("tests/unit/author/test_tc_author_32_38_intake_fixtures.py",),
-    ),
+    # rule. Ten of its twelve cases passed unmarked at that landing. The other two were NOT
+    # test bugs — they were real implementation-vs-corpus divergences, held marked under a
+    # `command` entry keyed on the divergent behaviour itself (a name key cannot
+    # discriminate once every §3.1.1 name has landed): AF-15's `image_not_carried` (the
+    # picture was carried as an `image_ref` block but silently, where §5.1 and FR-AUTHOR-25
+    # declare "a warning plus a placeholder") and AF-17's `structure_guessed` (the
+    # heading-less prose `.txt` emitted zero warnings, where §5.1's row declares one —
+    # FR-AUTHOR-26's candidate-rule letter was consistent with zero candidates, a genuine
+    # spec tension, but the corpus is census-pinned to §5.1). LANDED (the #754 divergence
+    # fix): the intake now emits both warnings — the carried figure as a per-picture
+    # `image_not_carried` naming its nearest heading (or by count when the pairing with the
+    # scan is ambiguous), and one outline `structure_guessed` when a `.txt` produces blocks
+    # with no heading/table/list rule having fired — the two cases re-ran GREEN and lost
+    # their markers, and the entry went with its probe (the #689 rung-3 precedent: a
+    # `command` probe is dropped once the behaviour it probes is the shipped state).
 
     # --- TC-AUTHOR-38's cross-format carry-over journey (#768), tests/unit/author/test_tc_author_32_42_intake_suite.py
     #

@@ -67,10 +67,8 @@ SOURCE_FORMATS = ("docx", "txt", "pdf")
 
 #: Every symbol the TC-AUTHOR-32..38 fixture-half cases resolve from `aeh.author`, in one
 #: tuple — the test file's `require()` argument lists are built from this (or spelled to
-#: match), so the tests cannot resolve a name this file stopped declaring. The writtenahead
-#: registry entry is deliberately NOT a conjunction over this tuple: #690 already shipped
-#: `aeh.author`, so a conjunction including this file's invented entry-point name would
-#: never resolve if #754 spelled that name differently, and a resolved-but-actually-red case
-#: is worse than the re-check rule's cost — the registry keys on the design-named type alone
-#: (see the entry's comment in `tests/support/impl.py`).
+#: match), so the tests cannot resolve a name this file stopped declaring. (The writtenahead
+#: registry entry that once keyed on this surface LANDED and is gone: #754 shipped every
+#: name here, the fixture-half cases unmarked, and the history lives in
+#: `tests/support/impl.py`'s registry comments.)
 INTAKE_SYMBOLS = (*INTAKE_SURFACE, INTAKE_ENTRY, INTAKE_REFUSAL)

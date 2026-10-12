@@ -597,6 +597,13 @@ def _docx_warnings(name: str, parser: "_DocxHTMLParser",
     scan counted but mammoth never yielded are reconciled in aggregate — the dropped ones
     cannot be identified by position once a drop precedes a carry — after subtracting the
     drops mammoth's own messages already account for.
+
+    A picture mammoth DID carry is not a silent success either (`§5.1`, FR-AUTHOR-25): what
+    reaches the draft is an `image_ref` placeholder, the image data itself is not carried,
+    so each carried picture is warned as `image_not_carried` as well — per picture, located
+    by block position (the nearest heading above it), when the scan's body entries pair
+    one-to-one with the parser's placeholders; by count when a drop or a broken picture
+    makes the pairing ambiguous.
     """
     # mammoth's messages, classified before anything is appended, so the scan's
     # reconciliation can subtract the drops the messages already name.
@@ -629,6 +636,45 @@ def _docx_warnings(name: str, parser: "_DocxHTMLParser",
                              "hand if they matter."),
             detail=f"{uncarried} of {len(body_images)} drawing/picture element(s) in the "
                    "document body have no carried counterpart"))
+    if parser.image_count:
+        # mammoth carries every resolvable picture as a data-URI `<img>`; the parser turns
+        # each into an `image_ref` placeholder and drops the data. A placeholder is not the
+        # figure — FR-AUTHOR-25's shape is "a warning plus a placeholder", so the carried
+        # pictures are named too, per location when the scan's entries pair one-to-one
+        # with the parser's placeholders (no drop shifted the positions), and by count when
+        # they do not.
+        placeholders = parser.image_count
+        if not broken_images and not drop_notes and placeholders == len(body_images):
+            # The clean pairing is in document order on both sides: the scan walked the
+            # body XML and the parser read mammoth's HTML, so the i-th scanned picture is
+            # the i-th `image_ref` block — the location comes from block position, never
+            # from text matching (the same sentence can stand under two sections).
+            image_positions = [position for position, (kind, _, _)
+                               in enumerate(parser.blocks) if kind == "image_ref"]
+            for entry, position in zip(body_images, image_positions):
+                location = _heading_above(parser, position) or entry[0]
+                warnings.append(IntakeWarning(
+                    code="image_not_carried",
+                    message=_bounded(
+                        f"This picture{_anchor(location)} was carried only as a "
+                        "placeholder — the image itself is not in the draft; add it by "
+                        "hand if it matters."),
+                    detail=_clip(f"a picture carried as an image_ref placeholder (the "
+                                 f"image data is not in the draft), near '{location}'",
+                                 WARNING_MAX_CHARS)))
+        else:
+            if placeholders == 1:
+                message = ("1 picture in this document was carried only as a placeholder "
+                           "— the image itself is not in the draft; add it by hand if it "
+                           "matters.")
+            else:
+                message = (f"{placeholders} pictures in this document were carried only "
+                           "as placeholders — the images themselves are not in the "
+                           "draft; add them by hand if they matter.")
+            warnings.append(IntakeWarning(
+                code="image_not_carried", message=_bounded(message),
+                detail=f"{placeholders} image_ref placeholder block(s); the image data "
+                       "is not in the draft"))
     if broken_images == 1:
         warnings.append(IntakeWarning(
             code="image_not_carried",
@@ -653,7 +699,7 @@ def _docx_warnings(name: str, parser: "_DocxHTMLParser",
                                  "into the draft — add it by hand if it matters."),
                 detail=f"a drawing/picture element in {entry[2]} (outside the document body)"))
     if scan["equations"]:
-        first_anchor = _anchor(scan["equations"][0][1])
+        first_anchor = _anchor(_nearest_heading(parser, scan["equations"][0][1]))
         warnings.append(IntakeWarning(
             code="equation_not_carried",
             message=_bounded(f"Equations were not carried over — write them out in words "
@@ -726,6 +772,39 @@ def _part_where(part: str) -> str:
     if "footer" in part:
         return " in the page footer"
     return ""
+
+
+def _heading_above(parser: "_DocxHTMLParser", index: int) -> str:
+    """The nearest heading block at or before block `index`, '' when none stands above
+    it. This is the location clause's source when the element's block position is known —
+    the honest way to name a section, never dependent on text matching."""
+    for kind, text, _ in reversed(parser.blocks[:index + 1]):
+        if kind == "heading":
+            return text
+    return ""
+
+
+def _nearest_heading(parser: "_DocxHTMLParser", anchor: str) -> str:
+    """The heading text a warning's location clause names (`§3.1.1`: the message "names the
+    location — \\"Figure near 'Question 3'\\"").
+
+    The scan's anchor is the last run of body text seen before the element, so the block it
+    opens is where the element stands, and the nearest heading at or before that block is
+    the section the element belongs to. The anchor itself stands in when the anchor matches
+    no block (an element inside a paragraph whose runs mammoth split differently) or when
+    no heading stands above it — a location clause still names something. Callers that know
+    the element's block position (the carried placeholders, paired positionally with the
+    scan's entries) use `_heading_above` directly: text matching can hit the wrong
+    occurrence when the same sentence stands under two sections.
+    """
+    if not anchor:
+        return anchor
+    probe = anchor[:-1] if anchor.endswith("…") else anchor
+    index = next((position for position, (kind, text, _) in enumerate(parser.blocks)
+                  if kind != "image_ref" and text.startswith(probe)), None)
+    if index is None:
+        return anchor
+    return _heading_above(parser, index) or anchor
 
 
 class _DocxHTMLParser(HTMLParser):
@@ -1040,6 +1119,22 @@ def _blocks_from_lines(text: str, *, tables: bool, lists: bool, warn_structure: 
                 paragraph.append(line)
         if paragraph:
             blocks.append(("paragraph", "\n".join(paragraph), None))
+    if (warn_structure and len(blocks) > 1
+            and not any(warning.code == "structure_guessed" for warning in warnings)):
+        # A heading-less prose file (§5.1's AF-17 row): no heading/table/list rule fired,
+        # so the outline itself is the guess — the blocks came from blank-line separation
+        # alone, and presenting them as read would hide it. The design's heading sentence
+        # is the message; the review walk, not the intake, is where a wrong guess gets
+        # fixed (FR-AUTHOR-26).
+        warnings.append(IntakeWarning(
+            code="structure_guessed",
+            message=_bounded("We guessed where the headings are — check the outline on "
+                             "the next screen."),
+            # "using", not "from": "from" beside "table" below is two SQL keywords in one
+            # f-string, and SEC-15's source scanner (tests/support/sql_scan.py) cannot tell
+            # teacher-facing prose from an assembled statement — the tree must stay clean.
+            detail=f"the outline was guessed using blank lines alone: {len(blocks)} "
+                   "blocks, no heading/table/list rule matched"))
     if guard is not None:
         projected = "\n\n".join(item[1] for item in blocks)
         if projected != guard:
