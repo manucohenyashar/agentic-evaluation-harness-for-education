@@ -229,6 +229,21 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
         "roster.student_ref",
         "roster.full_name",
     ),
+    # The console-redesign delta's authoring actions (#760). Three write no store row at
+    # all — the draft's state is the draft files (`ADR-45`), and a review and an edit
+    # rewrite those files through `aeh.author` — so their field tuples are empty, the same
+    # declaration `update configuration` makes. `approve draft package` builds through
+    # M-PKG's own door (`build_package`), whose flip touches the same two version fields
+    # `publish package` names; `cancel job` pauses a run through the one `run.status` row
+    # the run monitor writes (an authoring job's cancellation is cooperative, no row).
+    "draft package from documents": (),
+    "answer authoring review": (),
+    "edit draft package": (),
+    "approve draft package": (
+        "package_version.locked",
+        "package_version.published_by",
+    ),
+    "cancel job": ("run.status",),
 }
 
 #: The three actions §11.8 places **before any scoring exists**, inside the §6.2 lock.

@@ -64,6 +64,7 @@ DESIGN = "docs/design/detailed-design.md"
 HLD = "docs/agentic-evaluation-harness-for-education.md"
 DELTA = "docs/design/operator_requirements_design_delta.md"
 REDESIGN_DELTA = "docs/design/console_redesign_design_delta.md"
+REDESIGN_TEST_PLAN = "docs/design/console_redesign_test_plan.md"
 
 
 def _normalized(repo_root, relative: str) -> str:
@@ -240,11 +241,20 @@ def test_the_delta_control_actions_are_the_requirements_that_add_them(repo_root)
 def test_the_redesign_control_actions_are_the_requirements_that_add_them(repo_root):
     """The actions the console-redesign delta adds, each from a requirement that adds a console
     write — the same rule `test_the_delta_control_actions_...` applies to the operator-
-    requirements delta, cited from the redesign delta's own §3.4 requirement table.
+    requirements delta. Each id is pinned in the document that actually states it: the delta
+    names FR-CONF-34 and the review, edit and cancel ids; the draft-job and approve
+    requirements (FR-CONSOLE-61, FR-CONSOLE-62) are minted only by the delta's test plan,
+    whose TC-CONSOLE-61 and TC-CONSOLE-64 are the clauses that trace them.
     """
     redesign = _normalized(repo_root, REDESIGN_DELTA)
+    plan = _normalized(repo_root, REDESIGN_TEST_PLAN)
     assert REDESIGN_CONTROL_ACTIONS == {
         "update configuration": "FR-CONF-34",
+        "draft package from documents": "FR-CONSOLE-61",
+        "answer authoring review": "FR-CONSOLE-55",
+        "edit draft package": "FR-CONSOLE-56",
+        "approve draft package": "FR-CONSOLE-62",
+        "cancel job": "FR-CONSOLE-57",
     }, (
         "a redesign control action was added or removed: that is a design decision, cite it here"
     )
@@ -254,6 +264,27 @@ def test_the_redesign_control_actions_are_the_requirements_that_add_them(repo_ro
         "the console-redesign delta no longer names FR-CONF-34, so the `update configuration` "
         "control row has lost the requirement that adds it"
     )
+    for action, requirement in (
+        ("answer authoring review", "fr-console-55"),
+        ("edit draft package", "fr-console-56"),
+        ("cancel job", "fr-console-57"),
+    ):
+        assert requirement in redesign, (
+            f"the console-redesign delta no longer names {requirement.upper()}, so the "
+            f"`{action}` control row has lost the requirement that adds it"
+        )
+    # The two ids the delta's own text never states, pinned where they are minted:
+    # TC-CONSOLE-61 (the draft job end-to-end, beside the jobs read) and TC-CONSOLE-64
+    # (the approve gate, beside FR-PKG-28) are the requirements' only homes. Losing either
+    # citation loses the enumeration's reason (`CT-CONSOLE-02`'s rule).
+    for action, requirement in (
+        ("draft package from documents", "fr-console-61"),
+        ("approve draft package", "fr-console-62"),
+    ):
+        assert requirement in plan, (
+            f"the console-redesign test plan no longer names {requirement.upper()}, so the "
+            f"`{action}` control row has lost the requirement that adds it"
+        )
 
 
 def test_the_knob_defaults_transcribe_the_design_configuration_line(repo_root):

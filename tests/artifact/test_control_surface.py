@@ -259,6 +259,17 @@ _CONSOLE_BARE_MIGRATION_IMPORTS: frozenset[str] = frozenset(
 #:   reports what `validate_draft` reports. The three names are not re-exported from
 #:   `aeh.author`'s `__init__`, so the submodule edges are declared directly rather than
 #:   widened on the package's public surface.
+#: - `aeh.author` — #760, the same declared edge's package face: the authoring actions
+#:   drive `AuthoringService.draft` (the worker thread), the scripted review walk and the
+#:   structured edit/approve path through the library's public surface, which is the
+#:   delta's one new edge in §4.1's words ("the console drives `AuthoringService` as a
+#:   library"). Re-exported names (`run_review`, `commit_artifacts`, the edit path, the
+#:   markers) keep the edge at the package rather than growing one per submodule.
+#: - `aeh.pipeline.packages` — #760, `FR-CONSOLE-62`. `approve draft package` builds
+#:   through the one door `aeh package build` opens (`read_package_spec` / `build_package`,
+#:   the §3.2.2 row's "builds on the existing M-PKG build path"), never a second builder:
+#:   the placeholder refusal, the plan and the publication are M-PKG's own, and the gate's
+#:   idempotency rides the draft's approval marker beside them.
 #: - `aeh.grade.pdf` — #762, `FR-CONSOLE-59`. The readable package export renders through
 #:   `text_pdf_bytes`, the deterministic hand-rolled emitter M-GRADE's student PDFs already
 #:   use — the same one-implementation rule the marks CSV follows with the school-facing
@@ -267,11 +278,11 @@ _CONSOLE_BARE_MIGRATION_IMPORTS: frozenset[str] = frozenset(
 #:   by `export_reads.py` (a console subpackage module, so this is a module-scope import of
 #:   that module, not of `console.py` itself), never at the facade's scope.
 _CONSOLE_SYMBOL_IMPORT_MODULES: frozenset[str] = frozenset(
-    {"aeh.author.extraction", "aeh.author.report", "aeh.author.validation",
+    {"aeh.author", "aeh.author.extraction", "aeh.author.report", "aeh.author.validation",
      "aeh.conf", "aeh.conf.decision_engine", "aeh.conf.qa_model", "aeh.det", "aeh.grade",
      "aeh.grade.pdf", "aeh.help", "aeh.orch", "aeh.pipeline", "aeh.pipeline.cli",
-     "aeh.pipeline.driver", "aeh.pipeline.runtime", "aeh.pkg", "aeh.prov", "aeh.review",
-     "aeh.setup", "aeh.stats", "aeh.store"}
+     "aeh.pipeline.driver", "aeh.pipeline.packages", "aeh.pipeline.runtime", "aeh.pkg",
+     "aeh.prov", "aeh.review", "aeh.setup", "aeh.stats", "aeh.store"}
 )
 
 

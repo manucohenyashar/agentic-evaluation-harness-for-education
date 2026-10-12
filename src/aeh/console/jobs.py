@@ -36,11 +36,18 @@ def job_record(
     cost_usd: float | None = None,
     error_detail: str | None = None,
     error_next_action: str | None = None,
+    stage: str | None = None,
+    attempt: int | None = None,
+    attempts: int | None = None,
 ) -> dict[str, Any]:
     """One job record in `CT-CONSOLE-37`'s shape, exactly: the identity fields, the progress
     triple, the two stamps, the cost where it is known (`None` is "not known yet", never a
     fabricated zero — `CT-PROV-03`'s rule for cost figures), and the error pair. A job with
-    no error answers `error.detail` of `None`; the SPA renders no error block from it."""
+    no error answers `error.detail` of `None`; the SPA renders no error block from it.
+
+    `stage`, `attempt` and `attempts` are the authoring job's step-boundary fields (`#760`,
+    mapped from `AuthoringProgress`, `FR-AUTHOR-30`); a run job leaves them `None`, and the
+    SPA renders no step line from a `None`."""
     return {
         "job_id": str(job_id),
         "kind": str(kind),
@@ -49,6 +56,9 @@ def job_record(
         "started_at": started_at,
         "finished_at": finished_at,
         "cost_usd": cost_usd,
+        "stage": stage,
+        "attempt": attempt,
+        "attempts": attempts,
         "error": {"detail": error_detail, "next_action": error_next_action},
     }
 
@@ -83,6 +93,7 @@ class JobsRegistry:
     def update(
         self, job_id: str, *, state: str | None = None, done: int | None = None,
         total: int | None = None, current: str | None = None, cost_usd: float | None = None,
+        stage: str | None = None, attempt: int | None = None, attempts: int | None = None,
     ) -> dict[str, Any] | None:
         """Move a live job forward. Only the fields the caller names change; an unknown id
         answers `None` (the job is gone — a console restart dropped it — and the caller
@@ -102,6 +113,12 @@ class JobsRegistry:
                 progress["current"] = str(current)
             if cost_usd is not None:
                 record["cost_usd"] = float(cost_usd)
+            if stage is not None:
+                record["stage"] = str(stage)
+            if attempt is not None:
+                record["attempt"] = int(attempt)
+            if attempts is not None:
+                record["attempts"] = int(attempts)
             return dict(record)
 
     def finish(

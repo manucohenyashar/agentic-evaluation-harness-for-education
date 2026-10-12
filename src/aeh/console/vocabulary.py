@@ -62,6 +62,17 @@ CONTROL_SURFACE_ACTIONS: tuple[str, ...] = (
     # and classes have. Targets the class state; the preview before its commit is the
     # `roster preview` read below, not a second write path.
     "import roster file",
+    # The console-redesign delta's authoring actions (#760): §3.2.2's five rows. The four
+    # authoring verbs drive `AuthoringService` through its console seam (`FR-AUTHOR-29/30`)
+    # — a draft as a staged job, a review and an edit synchronous over the draft file, an
+    # approval through M-PKG's own build door — and `cancel job` reaches every job the
+    # registry holds (`ADR-47`), delegating for a run to the `pause/resume` row. They enter
+    # this tuple with their effects, per `CT-CONSOLE-02`'s enumeration rule.
+    "draft package from documents",  # FR-CONSOLE-61
+    "answer authoring review",       # FR-CONSOLE-55
+    "edit draft package",            # FR-CONSOLE-56
+    "approve draft package",         # FR-CONSOLE-62
+    "cancel job",                    # FR-CONSOLE-57
 )
 
 
@@ -258,6 +269,21 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
         "roster.student_ref",
         "roster.full_name",
     ),
+    # The authoring actions (#760): three write nothing the store owns — a draft's state is
+    # the draft files (`ADR-45`) and a review/edit rewrite them through `aeh.author`; the
+    # empty tuples declare that, exactly as `update configuration`'s does. `approve draft
+    # package` builds through M-PKG's own door (`build_package`), whose flip touches the
+    # same two version fields `publish package` names. `cancel job` pauses a run through
+    # the one `run.status` row the run monitor writes; an authoring job's cancellation is
+    # cooperative and touches no row.
+    "draft package from documents": (),
+    "answer authoring review": (),
+    "edit draft package": (),
+    "approve draft package": (
+        "package_version.locked",
+        "package_version.published_by",
+    ),
+    "cancel job": ("run.status",),
 }
 
 
