@@ -474,7 +474,7 @@ def main(argv: "Sequence[str] | None" = None) -> int:
             # NFR-CONSOLE-08: a run the killed server was driving continues here, on a
             # worker this server owns, once `recover` has reclaimed its leases.
             resume_runs_in_background(store, config=config)
-            server = serve_console(store, cfg=config)
+            server = serve_console(store, cfg=config, config_path=args.config)
             if config.get("HARNESS_PROFILE"):
                 # Which backend a run started from this console will call (seam 4): the same
                 # line `aeh run` prints, so an operator can see a stray HARNESS_FIXTURE_DIR.

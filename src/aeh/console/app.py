@@ -77,6 +77,11 @@ class ConsoleApp(StoreReadsMixin, ScreenRenderingMixin, SetupScreensMixin, RunSc
         #: The run configuration "start run" resolves from, set by the serving layer from
         #: its cfg (`ConsoleServer`); `None` resolves from the environment alone.
         self.run_config: dict[str, Any] | None = None
+        #: The configuration file this console process was started with, set by the serving
+        #: layer (`ConsoleServer`). `update configuration` writes only this file — never a
+        #: path a request names — so a caller cannot point the guided edit at an arbitrary
+        #: file; `None` means the console has no configuration file to edit.
+        self.config_path: str | None = None
 
     # -- lifecycle -----------------------------------------------------------------------------------
 

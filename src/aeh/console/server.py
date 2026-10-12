@@ -390,6 +390,7 @@ class ConsoleServer:
         environ: Any = None,
         spa_dir: Any = None,
         help_assistant: Any = None,
+        config_path: str | None = None,
     ) -> None:
         self._cfg = dict(cfg or {})
         #: Where `/` and `/assets/` are served from (FR-CONSOLE-45): the packaged bundle unless a
@@ -415,6 +416,10 @@ class ConsoleServer:
         # the configuration file itself — `run_config` is already profile-flattened, its
         # `profiles` table gone, so the raw file is what a section selection needs.
         self.app.file_config = dict(self._cfg)
+        # "update configuration" (`FR-CONF-34`) writes only the file this process was started
+        # with: the path is server-held, never taken from a request, so a caller cannot point
+        # the guided edit at an arbitrary file.
+        self.app.config_path = config_path
         self._httpd = _ConsoleHTTPServer(
             (host, int(resolved_port)), _ConsoleRequestHandler, self
         )
@@ -555,6 +560,7 @@ def serve_console(
     environ: Any = None,
     spa_dir: Any = None,
     help_assistant: Any = None,
+    config_path: str | None = None,
 ) -> ConsoleServer:
     """Serve the console. Before binding it refuses, in this order: the `cloud-hosted` deployment
     profile (never allowed, whatever the settings), then any non-loopback address. Both are read
@@ -563,9 +569,10 @@ def serve_console(
     packaged one (`SPA_BUNDLE_DIR`) when omitted (FR-CONSOLE-45). `help_assistant` names a
     prebuilt QA assistant the ask is answered with (the recorded-provider seam, operator plan
     §4 rule 7); when omitted the assistant is built lazily at the first ask from the effective
-    configuration (`FR-CONF-30`)."""
+    configuration (`FR-CONF-30`). `config_path` names the configuration file this process was
+    started with — the only file `update configuration` may write (`FR-CONF-34`)."""
     return ConsoleServer(store, run_id=run_id, cfg=cfg, environ=environ, spa_dir=spa_dir,
-                         help_assistant=help_assistant)
+                         help_assistant=help_assistant, config_path=config_path)
 
 
 def start_console(
@@ -576,10 +583,12 @@ def start_console(
     environ: Any = None,
     spa_dir: Any = None,
     help_assistant: Any = None,
+    config_path: str | None = None,
 ) -> ConsoleServer:
     """Start the console with `cfg`. The same refusals apply in the same order: the profile first,
     then the address, so the refusal cannot be turned off like a default (CT-CONSOLE-20). Both use
     the effective configuration, with environment variables taking priority over `cfg`
-    (FR-CONSOLE-36). `spa_dir` and `help_assistant` are as `serve_console` takes them."""
+    (FR-CONSOLE-36). `spa_dir`, `help_assistant` and `config_path` are as `serve_console` takes
+    them."""
     return ConsoleServer(store, run_id=run_id, cfg=cfg, environ=environ, spa_dir=spa_dir,
-                         help_assistant=help_assistant)
+                         help_assistant=help_assistant, config_path=config_path)

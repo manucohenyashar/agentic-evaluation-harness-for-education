@@ -159,6 +159,15 @@ class ControlActionsMixin:
             )
         rows = _rows_for(action, params)
         try:
+            if not rows:
+                # An action whose declared field tuple is empty admits no store row: its
+                # effect lands outside the store, through the module that owns it (the
+                # enumerated-but-rowless shape, `FR-CONF-34`'s configuration edit). Routing
+                # through the rowless branch keeps the action enumerated without writing a
+                # row for a table no tier owns.
+                detail, dispatched = self._apply_domain_effects(action, params)
+                return ControlOutcome(rows_written=(), refused=False, dispatched=dispatched,
+                                      detail=detail)
             written, detail, dispatched = self._write_rows(action, rows, params)
         except _RefreshRequired as stale:
             return ControlOutcome(rows_written=(), refused=True, refresh_required=True,

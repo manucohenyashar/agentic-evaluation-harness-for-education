@@ -769,7 +769,9 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # (Third re-pin, still #127's: review fixes added the correction's grain
     # pre-checks and its completed-before-refusal progress disclosure above the
     # tail sites — moving the seven tail sites down again; same statements.)
-    "aeh.console.controls:215",
+    # (Fourth re-pin, #756's: the rowless-effect branch went in above the
+    # controls tail site, moving it down nine lines; same statement.)
+    "aeh.console.controls:224",
     "aeh.console.effects:138",
     "aeh.console.key_correction:140",
     "aeh.console.driver:120",

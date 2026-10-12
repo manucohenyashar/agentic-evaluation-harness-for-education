@@ -196,6 +196,11 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
         "work_unit.lease_expires_at",
         "submission_grade.finalized_at",
     ),
+    # The console-redesign delta (FR-CONF-34): the guided configuration edit writes the
+    # configuration file through M-CONF's `update_profile_edits` — no store row anywhere, so
+    # its field tuple is empty. An empty tuple is still enumerated: the action exists, it just
+    # admits no row for a scoring prompt to read.
+    "update configuration": (),
 }
 
 #: The three actions §11.8 places **before any scoring exists**, inside the §6.2 lock.
