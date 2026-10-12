@@ -17,3 +17,11 @@ fixtures/** text eol=lf
 # so a CRLF checkout on Windows would damage every file. They contain no NUL byte, so Git
 # would otherwise guess "text". (Same reason as the fixtures/ rule above.)
 docs/live-tests/sample-materials/pdf/** binary
+
+# The F-AUTHOR intake fixtures (#753) are generated containers: the AF-15 .docx embeds a PNG
+# whose signature is `\x89PNG\r\n\x1a\n` -- the \r\n is mandated by the PNG spec, so the
+# fixtures/** rule above strips it on commit and a fresh clone checks out bytes the
+# generator cannot reproduce (the census diffs bytes). Git guesses "text" on the stored XML,
+# so these need the explicit binary mark. (Same reason as the sample-PDF rule above.)
+fixtures/F-AUTHOR/**/*.docx binary
+fixtures/F-AUTHOR/**/*.doc binary

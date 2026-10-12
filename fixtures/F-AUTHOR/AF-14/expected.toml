@@ -1,0 +1,12 @@
+af = "AF-14"
+description = "one document; .docx with a real rubric table; happy path"
+documents = ["hist7-rome-01-test-and-grading.docx"]
+outcome = "resolved"
+placeholders = []
+build = "publishes"
+format = ["docx"]
+table_rows = [['Band', 'What an answer at this band looks like'], ['4', "Accurate and complete, in the pupil's own words."], ['3', 'Mostly accurate; one part missing or vague.'], ['2', 'Partly accurate; more wrong than right.'], ['1', 'Little or no correct content.']]
+notes = "the rubric table is carried as table blocks, its cells matching table_rows (TC-AUTHOR-33); drafting resolves"
+
+[review.answers]
+"approved_by" = "Sample-materials teacher"

@@ -1,0 +1,8 @@
+af = "AF-18"
+description = "one document; legacy .doc (an OLE container)"
+documents = ["geo6-mapwork-01-legacy.doc"]
+outcome = "refused"
+placeholders = []
+build = "refused"
+refusal = "This file was saved in an older Word format. Open it in Word and save it as .docx, then upload again."
+notes = "refused on the OLE magic before any provider call (TC-AUTHOR-37a)"

@@ -1,0 +1,11 @@
+af = "AF-21"
+description = "mixed set: .docx test + .txt memo, plus AF-14's content as .txt"
+documents = ["mus8-instruments-01-test.docx", "mus8-instruments-01-marking-memo.txt", "hist7-rome-01-test-and-grading.txt"]
+outcome = "resolved"
+placeholders = []
+build = "publishes"
+format = ["docx", "txt", "txt"]
+notes = "both formats normalize together, and the third document is AF-14's content re-encoded as .txt -- the cross-format twin TC-AUTHOR-32/TC-AUTHOR-38 assert against (TC-E2E-11's carry-over)"
+
+[review.answers]
+"approved_by" = "Sample-materials teacher"

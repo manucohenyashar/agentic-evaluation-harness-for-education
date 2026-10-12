@@ -1,0 +1,18 @@
+# The adversarial intake set: the refusal-matrix arms whose file shape belongs to no numbered
+# fixture (test plan §3.1, TC-AUTHOR-37). Each entry names a file in this directory and the
+# exact FR-AUTHOR-28 teacher sentence the intake refuses it with.
+
+[[file]]
+name = "encrypted-test.docx"
+looks_like = "a password-protected .docx: a Compound File Binary container holding an EncryptedPackage stream, wearing the .docx extension (that is what an encrypted docx actually is -- OLE bytes, not a zip)"
+refusal = "This document is password-protected. Remove the password and upload it again."
+
+[[file]]
+name = "reading-list.rtf"
+looks_like = "rich text; .rtf is outside the three formats the intake reads"
+refusal = "We can read .docx, .txt and .pdf files. Save this as one of those and upload it again."
+
+[[file]]
+name = "hist8-sources-01-test.docx"
+looks_like = "PDF magic bytes under a .docx name (saved through a PDF printer that kept the old extension)"
+refusal = "This file isn't what its name says. Rename it to match what it actually is (.txt, .docx, or .pdf) and upload again."

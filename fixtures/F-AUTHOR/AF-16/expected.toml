@@ -1,0 +1,12 @@
+af = "AF-16"
+description = "one document; .txt written cp1252 with accented words"
+documents = ["lang7-food-01-cafe-vocabulary.txt"]
+outcome = "resolved"
+placeholders = []
+build = "publishes"
+warnings = ["encoding_fallback"]
+format = ["txt"]
+notes = "cp1252 detected and named, the accented words intact (TC-AUTHOR-35, RS-01)"
+
+[review.answers]
+"approved_by" = "Sample-materials teacher"

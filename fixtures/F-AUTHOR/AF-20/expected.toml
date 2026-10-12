@@ -1,0 +1,8 @@
+af = "AF-20"
+description = "one document; zero-byte .docx (empty file)"
+documents = ["sci5-grouping-01-empty.docx"]
+outcome = "refused"
+placeholders = []
+build = "refused"
+refusal = "We couldn't find any text in this file."
+notes = "zero bytes; refused with the no-text sentence (TC-AUTHOR-37d)"

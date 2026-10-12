@@ -579,7 +579,7 @@ def test_tc_req_136_the_fixture_drafts_face_the_real_build_gate(tmp_path, capsys
     tests read the config's models, never hard-code them — so the recorded requests key exactly."""
     corpus = require_path(
         REPO_ROOT / "fixtures" / "F-AUTHOR",
-        "the authoring fixture corpus AF-01..AF-13 (with expected.toml each and recordings/)",
+        "the authoring fixture corpus AF-01..AF-21 (with expected.toml each and recordings/)",
         issue="#686")
     AuthoringService, DraftResult = require(
         AUTHOR_MODULE, "AuthoringService", "DraftResult", issue="#690")
@@ -599,13 +599,21 @@ def test_tc_req_136_the_fixture_drafts_face_the_real_build_gate(tmp_path, capsys
         for t in section.get("escalation_judge", ()))
     fixture_dirs = sorted(p for p in corpus.iterdir() if p.is_dir() and p.name.startswith("AF-"))
     assert fixture_dirs, f"control: no AF-* fixture directories under {corpus}"
+    # The corpus also carries the console-redesign intake fixtures (AF-14..21, #753): .docx
+    # and .txt hand-ins the shipped draft() cannot take — they normalize through the intake
+    # tier (#754), whose recordings do not exist until its capture pass. This case's recorded
+    # gate covers the PDF fixtures it was written against, so a directory with no PDF is not
+    # drafted here; the intake fixtures' expected outcomes are TC-AUTHOR-32..38's (#753's
+    # writtenahead suite, unmarked when #754 lands).
+    draftable = [af for af in fixture_dirs if any(af.glob("*.pdf"))]
+    assert draftable, f"control: no PDF fixture directories under {corpus}"
 
     service = AuthoringService(
         chain=chain, provider=RecordedFixtureProvider(fixture_dir=corpus / "recordings"),
         transcriber=section["transcriber"], settings=author_module.AuthoringSettings())
 
     built, refused = [], []
-    for af in fixture_dirs:
+    for af in draftable:
         expected = tomllib.loads((af / "expected.toml").read_text(encoding="utf-8"))
         outcome = _declared_build_outcome(expected, af)
         result = service.draft(sorted(af.glob("*.pdf")), tmp_path / af.name / "draft")
