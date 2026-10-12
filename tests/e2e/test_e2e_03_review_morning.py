@@ -1,10 +1,10 @@
 """`TC-E2E-03` — the review morning, and the honest residual (§4.2.3, rung 4).
 
 Issue #144 (TS-51), against the **assembled** system: every module in the
-journey is the real implementation, driven over one real store - the same
-world the other two journeys use, with no doubles at any module boundary and
-no egress but the journey's own `RecordedFixtureProvider` (`CT-PROV-10`,
-`CT-PROV-15`).
+journey is the real implementation, driven over one real store - the composed
+F-SYNTH world the other journeys' re-base drives (`tests.support.composed_synth`),
+with no doubles at any module boundary and no egress but the journey's own
+`RecordedFixtureProvider` (`CT-PROV-10`, `CT-PROV-15`).
 
 The block form (test plan §6.2, design §4.2.3): the teacher states 30 minutes;
 10 are reserved for the blind sample **before** ranking; the queue's header
@@ -19,41 +19,59 @@ equals the blind label count and not the total label count.
 
 Drive-shape disclosures, made once here:
 
-* **The overnight run stops before its completing settlement.** Journey 2 pins
-  the run-completion finalization road (`CT-GRADE-09`'s automatic-on-completion
-  half) and compares the full journey against its committed baseline. The
-  review morning's journey pins the OTHER roads the same clause names: this
-  world's drive runs every overnight leg, issues the grades while the run is
-  still running (they read `provisional` - the window is open), and leaves the
-  settlement to the morning: `finalize_batch` is the one action naming its
-  coverage, and - in the failure variant, where the teacher does none of it -
-  the lapse of the configured review window settles the same grades with no
-  teacher action anywhere (`CT-GRADE-09`, HLD `R60`). The window is per-package
-  data (`ADR-3`) and a published version is immutable (`FR-PKG-01`), so the
-  world's constructor attaches this journey's policy BEFORE the version's
-  publication - the journey-3 worlds pass `review_window_hours=48`, and the
-  lapse road is real rather than vacuous.
-* **The auto-accepted population is engineered, and says so.** `whole_grade_sample`
-  draws only from submissions whose every criterion routed `auto`. At the
-  design's Assumption thresholds a unanimous three-judge holistic panel carries
-  confidence `1.0 x 0.85` (the holistic multiplier) - below the default 0.90
-  threshold, so under journey 2's configuration no judged cell ever routes
-  auto. Journey 3's walks inject `auto_threshold_holistic=0.85` through the
-  world's `agg_config_kwargs` (Q-04: the tests inject the thresholds; the
-  assertions are stated against the injection, never against the literals), so
-  the unanimous panels the world's judges actually produce route auto and both
-  populations exist: items to review, and a system-only population to sample.
-  Journey 2's baseline pins the default thresholds.
-* **The review queue is the breaker's halt, on purpose.** The same injection
-  routes every widened unanimous panel auto, so with escalations widening
-  freely the queue would empty and the morning would have nothing to review.
-  Journey 3's walks therefore hand the criterion breaker journey-2's variant
-  (c) knobs (rate 0.50, window minimum 4): the cells whose widening is halted
-  keep the panel's own figure routed `provisional`, state
-  `ungradeable_by_panel` (`FR-ORCH-13`, `FR-AGG-11`'s precedence) - the
-  population the morning's queue reviews, groups over, and draws its blind
-  sample from. The trip is asserted (the world's `breaker_marked` is
-  non-empty), not assumed.
+* **The morning state is the composed run's own, held at the road the morning
+  pins** (the TS-98 re-base, issue #392; §5.0's reconciliation row - nothing
+  is seeded). This world is `ComposedSynthWorld`: every overnight leg runs
+  through `M-PIPE`'s composed hooks, `run_to_completion` one pass at a time
+  until the ledger holds no leasable work (deterministic, extract, score,
+  aggregation, escalations). The run-completion finalization road
+  (`CT-GRADE-09`'s automatic-on-completion half) is journey 2's to pin: a full
+  composed drive synthesizes and grades at completion, and `FR-GRADE-10`'s
+  settlement clause settles every grade final in the same breath - measured,
+  not assumed: `_settlement_state` (`src/aeh/grade/service.py`) answers
+  `final` whenever the run is complete, whatever the window says. So this
+  journey takes the OTHER roads the same clause names, exactly as the hand
+  drive did: the drive stops one single-pass drive short of the completing
+  settlement (the ledger is drained; the run is still `running`), and
+  M-GRADE's own `compute_all` issues the grades while the run is running.
+  They read `provisional` - this journey's package carries the 48-hour review
+  window (`ADR-3`'s per-package data, attached BEFORE the version's
+  publication; a published version is immutable, `FR-PKG-01`) - and the
+  settlement stays the morning's: `finalize_batch` is the one action naming
+  its coverage, and - in the failure variant, where the teacher does none of
+  it - the lapse of the configured review window settles the same grades with
+  no teacher action anywhere (`CT-GRADE-09`, HLD `R60`). One delta the
+  composition forces, disclosed: the hand drive ran the synthesis leg before
+  grading; the composed run's synthesis is the completion-time hook
+  (`FR-PIPE-06` orders synthesis then grading at completion), so this drive -
+  one pass short of completion - has not synthesized, and the morning state
+  is the composed run's scoring state. The morning's oracles read no
+  narrative.
+* **The queue's population is the shipped policy's teacher routing, and says
+  so.** The composed hook reads no aggregation configuration (`CT-AGG-01`), so
+  the walks' `auto_threshold_holistic` injection is gone with the walks: at the
+  shipped thresholds a unanimous three-judge holistic panel carries confidence
+  `1.0 x 0.85` (the holistic multiplier) - below the 0.90 auto threshold - so
+  every judged cell routes `queued` (`CT-AGG-06`'s teacher routing), and the
+  queue the morning reviews, groups over, and draws its blind sample from is
+  exactly that population. Journey 2's committed baseline pins the same policy
+  from the other side: its graded submissions' `criteria_auto` is the mcq
+  count. The criterion breaker is off (the composed world's default) - it was
+  the walks' device for keeping cells OUT of an injected auto routing, and with
+  no injection there is nothing for it to hold back.
+* **The whole-grade sample's population is what the shipped policy makes it,
+  and says so.** `whole_grade_sample` draws only from submissions whose every
+  scored criterion routed `auto` (`CT-REVIEW-11`'s membership rule,
+  unchanged). At the shipped thresholds no judged cell routes auto, so that
+  population is the quarantined submissions - their mcq cells scored by the
+  deterministic evaluator, their judged cells never run (journey 2's baseline
+  pins the same coverage counters) - and the morning's whole-grade offer is
+  drawn from it. The membership assertions below are unchanged and still
+  exact; what changed is which submissions satisfy them, and this disclosure
+  is that change. (Finding, carried to the PR: `select_auto_grades` admits a
+  submission with MISSING criteria rows - a quarantined grade is neither
+  complete nor final, which `FR-REVIEW-14`'s "complete final grades" names;
+  the walks' injected population masked the edge.)
 * **The agreement pair is the recorded-not-shown protocol.** The blind flow's
   labels are one-sided by construction (`#111`: `system_band` NULL - the flow
   cannot reach a score row, and the honest label says so). The kappa the
@@ -89,7 +107,7 @@ committed baseline.
 
 Three-judge base-panel disclosure: the world's judged cells are scored by
 three-judge panels, so every routing figure below is a three-judge figure at
-the injected threshold; escalations widen to the next odd count the policy
+the shipped threshold; escalations widen to the next odd count the policy
 targets, exactly as in journey 2.
 """
 
@@ -100,11 +118,13 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from tests.support.composed_synth import ComposedSynthWorld
 from tests.support.e2e_world import E2E_COHORT_ID, PKG_ID, SynthWorld
 from tests.support.grade_vocabulary import backdate_grades
 
 from aeh.console import render_agreement_block
 from aeh.grade import open_grade
+from aeh.orch import ORCH_STATEMENTS
 from aeh.review import (
     LabelRecord,
     ReviewError,
@@ -121,30 +141,31 @@ ISSUE = "#144"
 
 #: The variant scale - the journeys' reduced execution scale (the same reading
 #: journey 2's variants take; see that module's docstring). Sixty: enough
-#: submissions that the breaker's windows trip on the cohort's own escalation
-#: share (below) while the whole-grade sample's auto population and the queue's
-#: signature groups both exist at the injected threshold.
+#: submissions that the queue's signature groups and the blind draw both exist
+#: at the shipped threshold, and the quarantine population (indices 10 and 40
+#: at this scale) gives the whole-grade sample its population.
 COHORT_N = 60
-
-#: Journey 3's injected holistic auto threshold (Q-04): the unanimous panel's
-#: confidence `1.0 x 0.85` routes auto, so the auto-accepted population exists
-#: and the queue still holds the split panels. Stated as fixture data.
-AUTO_THRESHOLD_HOLISTIC = 0.85
-WALK_KWARGS = {"auto_threshold_holistic": AUTO_THRESHOLD_HOLISTIC}
-
-#: The criterion-breaker knobs the walks hand the breaker - journey-2's variant
-#: (c) values (rate 0.50; the window minimum pinned below the shipped 20 so the
-#: cohort's own first four completions per criterion are the window). The same
-#: injection that routes the unanimous widened panels auto would EMPTY the queue
-#: if escalations widened freely; the trip is what leaves cells routed
-#: provisional (state `ungradeable_by_panel`) for the morning to review.
-BREAKER_RATE = "0.50"
-BREAKER_MIN_N = "4"
 
 #: The review window the world's package carries (`ADR-3` per-package data) and
 #: how far past its edge the failure variant backdates (the disclosed seam).
 WINDOW_HOURS = 48
 LAPSED_HOURS = 72
+
+#: The per-pass drive's iteration bound. The composed drive's pass width is the
+#: run's frozen concurrency ceiling - the hardware policy's shipped value
+#: (`FR-CONF-07`; `HARNESS_CONCURRENCY` can only lower a ceiling, never raise
+#: it) - so the judged legs take one pass per batch of four units and the drain
+#: takes hundreds of passes at this cohort's scale. The bound is generous over
+#: the measured drain; a stall guard (below) fails the fixture in seconds when
+#: a drive is broken, so the cap only bounds the pathological loop.
+DRIVE_PASS_CAP = 1500
+
+#: Single-pass drives that terminalise nothing before the fixture is declared
+#: broken. A replay against a recorded corpus never rate-limits and never OOMs,
+#: so any pass holding leasable work terminalises at least one unit; only the
+#: hook-only passes between a drain and its aggregation run without moving the
+#: terminal count, and those are one pass wide.
+DRIVE_STALL_PASSES = 8
 
 #: The morning's stated budget and the blind reserve (`FR-REVIEW-02`'s block
 #: numbers, as the service's knobs), and the blind draw at the declared range's
@@ -156,39 +177,105 @@ BLIND_DRAW_N = 25
 
 # --- the drive ------------------------------------------------------------------------------
 
-def _morning_drive(world: SynthWorld, monkeypatch) -> None:
-    """The control drive through the overnight legs, WITHOUT the completing
-    settlement: the run starts, the deterministic leg runs in topo order, the
-    integrity gate passes, the judged legs run, the walk enqueues escalations,
-    the widened panels re-aggregate, synthesis runs - and `compute_all` issues
-    the grades while the run is still running. The walk's aggregation is the
-    injected configuration (see the module docstring's auto-population
-    disclosure); the window the roads hang off was attached to the package
-    version before its publication, by the world's own constructor."""
+def _morning_drive(world: SynthWorld) -> None:
+    """The composed morning drive: `run_to_completion` one pass at a time,
+    stopping when the ledger holds no leasable work - every overnight leg
+    (deterministic, extract, score, aggregation, escalations) has run through
+    `M-PIPE`'s composed hooks, and the run is still `running`. M-GRADE's own
+    `compute_all` then issues the grades while the run is running: they read
+    `provisional` against this journey's open window, and the settlement stays
+    the morning's (the module docstring's first disclosure). The queue's
+    population is the shipped policy's teacher routing: the unanimous holistic
+    panel's `1.0 x 0.85` sits below the 0.90 auto threshold, so every judged
+    cell routes `queued`."""
     world.build_run()
     world.start_run()
-    world.drive_deterministic()
-    world.integrity_pass()
-    world.drive_extract()
-    world.drive_score()
-    world.integrity_pass(capture=True)
-    walk = dict(
-        monkeypatch=monkeypatch, agg_config_kwargs=dict(WALK_KWARGS),
-        breaker_rate=BREAKER_RATE, breaker_min_n=BREAKER_MIN_N)
-    world.aggregate_walk(**walk)
-    world.drive_score(include_escalations=True)
-    world.aggregate_walk(**walk)
-    world.drive_synthesis()
+    terminal_before = 0
+    stalled = 0
+    for _pass in range(DRIVE_PASS_CAP):
+        leasable = world.handle.query(
+            "SELECT COUNT(*) AS n FROM work_unit WHERE run_id = :r "
+            "AND status IN ('pending', 'leased')",
+            r=world.run_id,
+        )[0]["n"]
+        # The composition hooks run at a pass's START, so a ledger that just
+        # drained may still hold cells the aggregate hook has not settled
+        # (`select_ready_aggregate` - the hook's own readiness statement, read
+        # rather than re-derived). The loop keeps driving while either holds;
+        # a pass it makes always has one of the two, and `run_to_completion`'s
+        # completing resume belongs only to a pass whose opening ledger holds
+        # neither - the call this loop never makes. The morning pins the
+        # unsettled road.
+        ready = (
+            world.handle.query(ORCH_STATEMENTS["select_ready_aggregate"],
+                               run_id=world.run_id)
+            or world.handle.query(ORCH_STATEMENTS["select_ready_integrity_pre"],
+                                  run_id=world.run_id)
+        )
+        if not leasable and not ready:
+            break
+        result = world.drive(max_passes=1)
+        assert result.status == "running", (
+            f"the composed drive read {result.status!r} ({result.pause_reason!r}) "
+            "- the morning opens on the composed run's own unsettled state, "
+            "not a hand-held one"
+        )
+        # The stall guard: a pass this loop makes holds leasable work or ready
+        # cells, and a replay against a recorded corpus never rate-limits and
+        # never OOMs, so the pass terminalises at least one unit - unless it is
+        # a hook-only pass between a drain and its aggregation, and those are
+        # one pass wide. More than DRIVE_STALL_PASSES consecutive still passes
+        # is a broken drive, failed in seconds rather than at the cap.
+        terminal = world.handle.query(
+            "SELECT COUNT(*) AS n FROM work_unit WHERE run_id = :r "
+            "AND status IN ('done', 'quarantined')",
+            r=world.run_id,
+        )[0]["n"]
+        if terminal > terminal_before:
+            terminal_before, stalled = terminal, 0
+        else:
+            stalled += 1
+            assert stalled <= DRIVE_STALL_PASSES, (
+                f"{stalled} single-pass drives terminalised no unit while the "
+                f"ledger holds {leasable} leasable and {len(ready)} ready cells "
+                "- a replay never rate-limits, so a healthy pass always moves; "
+                "the drive is broken, and the morning state was never reached"
+            )
+    else:
+        pytest.fail(
+            f"the composed drive did not drain within {DRIVE_PASS_CAP} "
+            f"single-pass drives ({terminal_before} units terminal) - the "
+            "overnight legs never drained, and the morning state was never "
+            "reached"
+        )
+    # The ledger is drained: every overnight leg ran through the composed
+    # hooks, and the run is one single-pass drive from its completing
+    # settlement - journey 2's road, left deliberately untaken. The grades
+    # issue NOW, while the run is still running, from the composed run's own
+    # scores (nothing is seeded): the window is open, so they read provisional,
+    # and the settlement is the morning's.
+    assert world.orchestrator.run_handle(world.run_id).status == "running", (
+        "the drained ledger did not leave the run running - the completing "
+        "settlement fired early, and the provisional road is gone"
+    )
     open_grade(world.store).compute_all(world.run_id)
-    # The queue's population is the breaker's halt - asserted, not assumed: the
-    # durable mark on the cells is what the morning's queue reviews, groups
-    # over, and draws its blind sample from (the module docstring's disclosure).
-    marked = world.handle.query(
-        "SELECT COUNT(*) AS n FROM criterion_score WHERE state = 'ungradeable_by_panel'")
-    assert marked[0]["n"] > 0, (
-        "the criterion breaker never left a marked cell - the queue's population "
-        "is the breaker's halt, and an untripped walk routes every widened "
-        "unanimous panel auto, with nothing for the morning to review"
+    states = _grade_states(world)
+    assert states.get("provisional", 0) > 0, (
+        f"the grades read {states} - grades issued while the run is running "
+        "read provisional against the journey's open window, leaving the "
+        "settlement to the morning's one action (the design §4.2.3 shape)"
+    )
+    routed = world.handle.query(
+        "SELECT criterion_id, routing FROM criterion_score WHERE run_id = :r",
+        r=world.run_id,
+    )
+    judged_routings = {row["routing"] for row in routed
+                       if row["criterion_id"] in world.open_ids}
+    assert judged_routings == {"queued"}, (
+        f"the judged cells routed {judged_routings} - the shipped policy holds "
+        "the unanimous holistic panel at 0.85 under the 0.90 auto threshold, "
+        "so every judged cell is the teacher's (CT-AGG-06), and the queue "
+        "below reviews exactly that population"
     )
 
 
@@ -248,20 +335,10 @@ def test_tc_e2e_03_review_morning_shows_its_residual_and_collects_its_evidence(
     attached, the whole-grade sample from the auto population, the class
     finalized in one action naming its coverage - and the record advanced with
     that evidence."""
-    world = SynthWorld(tmp_data_dir, tmp_path / "fixtures",
-                       n_submissions=COHORT_N, monkeypatch=monkeypatch,
-                       review_window_hours=WINDOW_HOURS)
-    _morning_drive(world, monkeypatch)
-
-    # The morning opens on provisional grades: the run is still running and the
-    # window is open, so the settlement below is the morning's action, not the
-    # overnight run's.
-    states = _grade_states(world)
-    assert states.get("provisional", 0) > 0, (
-        f"the grades read {states} - the drive was to issue them provisional "
-        "against the journey's windowed policy, leaving the settlement to the "
-        "morning's one action (the design §4.2.3 shape)"
-    )
+    world = ComposedSynthWorld(tmp_data_dir, tmp_path / "fixtures",
+                               n_submissions=COHORT_N, monkeypatch=monkeypatch,
+                               review_window_hours=WINDOW_HOURS)
+    _morning_drive(world)
 
     service = open_review(
         world.data_dir,
@@ -429,14 +506,19 @@ def test_tc_e2e_03_review_morning_shows_its_residual_and_collects_its_evidence(
         "with the system's stored band recorded onto the same label"
     )
 
-    # The whole-grade sample draws from the auto-accepted population: every
-    # sampled submission's every criterion row routed auto, and the offer is
-    # presented as the student would receive it (FR-REVIEW-14).
+    # The whole-grade sample draws from the auto-accepted population - the
+    # membership rule is unchanged (CT-REVIEW-11), and under the shipped policy
+    # the population is the quarantined submissions' deterministic-only rows
+    # (the module docstring's disclosure): no judged cell routes auto at the
+    # shipped thresholds, so the submissions whose every scored criterion
+    # routed auto are exactly the ones whose judged cells never ran. The offer
+    # is presented as the student would receive it (FR-REVIEW-14), and the
+    # rule's exclusion is asserted per draw.
     sample = service.whole_grade_sample(E2E_COHORT_ID, n=10)
     assert sample, (
-        "the whole-grade sample drew nothing - the injected threshold was to "
-        "route the unanimous panels auto, so the auto-accepted population "
-        "exists for the sample to draw from"
+        "the whole-grade sample drew nothing - the cohort's quarantined "
+        "submissions have every scored criterion routed auto, and the draw's "
+        "population was to be non-empty at this scale"
     )
     for grade in sample:
         non_auto = world.handle.query(
@@ -546,10 +628,10 @@ def test_tc_e2e_03_teacher_does_none_of_it_and_the_absence_is_honest(
     place (`FR-REVIEW-13`, `FR-CONSOLE-24` - the RISK-08 carry-forward,
     exercised against a prior administration whose record holds a real
     figure)."""
-    world = SynthWorld(tmp_data_dir, tmp_path / "fixtures",
-                       n_submissions=COHORT_N, monkeypatch=monkeypatch,
-                       review_window_hours=WINDOW_HOURS)
-    _morning_drive(world, monkeypatch)
+    world = ComposedSynthWorld(tmp_data_dir, tmp_path / "fixtures",
+                               n_submissions=COHORT_N, monkeypatch=monkeypatch,
+                               review_window_hours=WINDOW_HOURS)
+    _morning_drive(world)
 
     # A prior administration holds a real record - the figure the console must
     # NOT present as current. Its blind collection is the recorded-not-shown
