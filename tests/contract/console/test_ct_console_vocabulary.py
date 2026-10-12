@@ -37,6 +37,7 @@ from tests.support.console_vocabulary import (
     OBSERVABILITY_METRICS,
     OPERATOR_ROUTES,
     OPTIONAL_SETUP_STEPS,
+    REDESIGN_CONTROL_ACTIONS,
     PILOT_QUESTIONS,
     REFERENCE_COHORT_SIZE,
     REVIEW_QUEUE_BUDGET_SECONDS,
@@ -62,6 +63,7 @@ pytestmark = pytest.mark.contract
 DESIGN = "docs/design/detailed-design.md"
 HLD = "docs/agentic-evaluation-harness-for-education.md"
 DELTA = "docs/design/operator_requirements_design_delta.md"
+REDESIGN_DELTA = "docs/design/console_redesign_design_delta.md"
 
 
 def _normalized(repo_root, relative: str) -> str:
@@ -182,7 +184,9 @@ def test_the_control_surface_transcribes_hld_11_8(repo_root):
     assert len(set(CONTROL_SURFACE_ACTIONS)) == len(CONTROL_SURFACE_ACTIONS), (
         "the enumeration has a duplicate"
     )
-    assert CONTROL_SURFACE_ACTIONS == HLD_CONTROL_ACTIONS + tuple(DELTA_CONTROL_ACTIONS)
+    assert CONTROL_SURFACE_ACTIONS == (
+        HLD_CONTROL_ACTIONS + tuple(DELTA_CONTROL_ACTIONS) + tuple(REDESIGN_CONTROL_ACTIONS)
+    )
 
 
 def test_the_delta_control_actions_are_the_requirements_that_add_them(repo_root):
@@ -231,6 +235,25 @@ def test_the_delta_control_actions_are_the_requirements_that_add_them(repo_root)
         "`recover runs` control row has lost the requirement that adds it"
     )
     assert "| fr-ui-05 | every destructive or irreversible action (publish package, start" in delta
+
+
+def test_the_redesign_control_actions_are_the_requirements_that_add_them(repo_root):
+    """The actions the console-redesign delta adds, each from a requirement that adds a console
+    write — the same rule `test_the_delta_control_actions_...` applies to the operator-
+    requirements delta, cited from the redesign delta's own §3.4 requirement table.
+    """
+    redesign = _normalized(repo_root, REDESIGN_DELTA)
+    assert REDESIGN_CONTROL_ACTIONS == {
+        "update configuration": "FR-CONF-34",
+    }, (
+        "a redesign control action was added or removed: that is a design decision, cite it here"
+    )
+    # FR-CONF-34 is the guided configuration write path (M-CONF), admitted as the enumerated
+    # control action `update configuration` by CT-CONSOLE-30's own rule.
+    assert "fr-conf-34" in redesign, (
+        "the console-redesign delta no longer names FR-CONF-34, so the `update configuration` "
+        "control row has lost the requirement that adds it"
+    )
 
 
 def test_the_knob_defaults_transcribe_the_design_configuration_line(repo_root):

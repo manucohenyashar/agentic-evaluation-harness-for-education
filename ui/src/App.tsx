@@ -1,8 +1,6 @@
-import { useEffect, useState, type ComponentType, type ReactElement } from "react";
-import type { HubState } from "./api";
-import { DESTINATIONS } from "./destinations";
+import { useEffect, useMemo, useState, type ComponentType, type ReactElement } from "react";
+import type { ContextDoc } from "./api";
 import { Navigate } from "./navigate";
-import { Hub } from "./screens/Hub";
 import { BlindSample } from "./screens/BlindSample";
 import { ClassSetup } from "./screens/ClassSetup";
 import { Help } from "./screens/Help";
@@ -15,22 +13,32 @@ import { RunStart } from "./screens/RunStart";
 import { StudentDetail } from "./screens/StudentDetail";
 import { SystemStatus } from "./screens/SystemStatus";
 import { NotFound } from "./screens/screens";
-import { useHubState } from "./useHubState";
+import { useContextPoll } from "./useContextPoll";
+import { ContextHeader } from "./wizard/ContextHeader";
+import {
+  deriveWizard,
+  impactLine,
+  nextLine,
+  resolveSelection,
+  type Selection,
+} from "./wizard/derivation";
+import { Sidebar } from "./wizard/Sidebar";
+import { WizardHome } from "./wizard/WizardHome";
+import { useWizardReads } from "./wizard/useWizardReads";
 
 /**
- * The console's shell. Hash-based routing: the server answers only `/` and `/assets/…` and
- * owes an unknown path a 404, so the routes live in the fragment (`#/review`) and navigation
- * never leaves the origin. The hub's cards are the shell's navigation — one link per
- * destination (FR-UI-02), present beside every screen, so each destination stays one click
- * away from wherever the teacher is.
+ * The console's shell (FR-CONSOLE-47). Hash-based routing: the server answers only `/` and
+ * `/assets/…` and owes an unknown path a 404, so the routes live in the fragment and
+ * navigation never leaves the origin. The wizard is the hub — the wizard home at `/`, the
+ * context header and the sidebar ride every screen, and the address carries the teacher's
+ * selection (class, package, run) as opaque refs in the fragment's query, never anything
+ * stored (`CT-UI-07`).
  */
-type ScreenProps = { state: HubState | null };
-type ScreenComponent = ComponentType<ScreenProps>;
 
-const ROUTES: Record<string, ScreenComponent> = {
-  "/": Hub,
-  "/package": PackageSetup,
+/** The lifecycle screens the redesign keeps; later stories fill the remaining routes. */
+const ROUTES: Record<string, ComponentType> = {
   "/class": ClassSetup,
+  "/package": PackageSetup,
   "/papers": Papers,
   "/run": RunStart,
   "/monitor": Monitor,
@@ -39,71 +47,209 @@ const ROUTES: Record<string, ScreenComponent> = {
   "/status": SystemStatus,
 };
 
+/** The routes later stories own (#764, #766): named, reachable, and saying so. */
+const COMING: Record<string, string> = {
+  "/package/author": "Author the package",
+  "/package/review": "Review the draft",
+  "/package/edit": "Edit the package",
+  "/issues": "Issues",
+  "/logs": "Logs",
+  "/parked": "Parked",
+  "/jobs": "Jobs",
+  "/settings": "Settings",
+};
+
 /** A results row's student link: `#/results/students/<submission id>`. */
 const STUDENT_ROUTE = /^\/results\/students\/([^/]+)$/;
 
-function routeOf(hash: string): string {
-  const path = hash.replace(/^#/, "");
-  return path.startsWith("/") ? path : "/";
+/** The selection keys the address carries (`CT-UI-07`: opaque refs, nothing else). */
+const SELECTION_KEYS = ["class", "package", "run"] as const;
+
+type SelectionPatch = Partial<Record<(typeof SELECTION_KEYS)[number], string | null>>;
+
+interface Address {
+  path: string;
+  params: URLSearchParams;
+}
+
+/** An empty document: what the wizard derives from before the context read has answered. */
+const EMPTY_CONTEXT: ContextDoc = { classes: [], cohorts: [], packages: [], runs: [] };
+
+function addressOf(hash: string): Address {
+  const raw = hash.replace(/^#/, "");
+  if (!raw.startsWith("/")) {
+    return { path: "/", params: new URLSearchParams() };
+  }
+  const mark = raw.indexOf("?");
+  if (mark === -1) {
+    return { path: raw, params: new URLSearchParams() };
+  }
+  return { path: raw.slice(0, mark), params: new URLSearchParams(raw.slice(mark + 1)) };
 }
 
 export function App() {
-  const [route, setRoute] = useState<string>(() => routeOf(window.location.hash));
-  const hub = useHubState();
+  const [address, setAddress] = useState<Address>(() => addressOf(window.location.hash));
+  const { context, failed, retry } = useContextPoll();
 
   useEffect(() => {
-    const follow = (): void => setRoute(routeOf(window.location.hash));
+    const follow = (): void => setAddress(addressOf(window.location.hash));
     window.addEventListener("hashchange", follow);
     return () => window.removeEventListener("hashchange", follow);
   }, []);
 
-  const student = STUDENT_ROUTE.exec(route);
+  // The selection: the address's explicit refs win when they still name something; the
+  // rest falls back to what the context read can stand behind (a lone entity selects
+  // itself, a selected run names its package, the class's newest run is in focus).
+  const selection = useMemo<Selection>(
+    () =>
+      resolveSelection(context ?? EMPTY_CONTEXT, {
+        class: address.params.get("class") ?? undefined,
+        package: address.params.get("package") ?? undefined,
+        run: address.params.get("run") ?? undefined,
+      }),
+    [context, address],
+  );
+
+  // The supplemental reads live in the shell, not on the wizard home: the compact strip on
+  // every secondary page and the full stepper derive from the same answered reads, so no
+  // stage state is ever rendered from the absence of a read.
+  const reads = useWizardReads(context, selection);
+
+  // One derivation, feeding both the wizard home's full rows and the sidebar's strip.
+  const rows = useMemo(
+    () =>
+      deriveWizard(context ?? EMPTY_CONTEXT, selection, {
+        papers: reads.papers.data,
+        parked: reads.parked.data,
+        jobs: reads.jobs.data,
+        impact: reads.impact.data,
+      }),
+    [context, selection, reads],
+  );
+  const next = useMemo(() => nextLine(rows), [rows]);
+  // The IMPACT line: the impact read's own wording; with no published version to read, the
+  // context alone answers — nothing unpublished can have anything downstream.
+  const impact =
+    reads.impact.data !== null
+      ? impactLine(reads.impact.data)
+      : context !== null && reads.publishedVersion === null
+        ? "Nothing downstream yet."
+        : null;
+  const readsFailed =
+    failed ||
+    reads.papers.error !== null ||
+    reads.parked.error !== null ||
+    reads.jobs.error !== null ||
+    reads.impact.error !== null;
+  const retryAll = (): void => {
+    retry();
+    reads.papers.retry();
+    reads.parked.retry();
+    reads.jobs.retry();
+    reads.impact.retry();
+  };
+
+  const threadedQuery = useMemo(() => {
+    const params = new URLSearchParams();
+    for (const key of SELECTION_KEYS) {
+      const value = address.params.get(key);
+      if (value !== null) {
+        params.set(key, value);
+      }
+    }
+    const query = params.toString();
+    return query === "" ? "" : `?${query}`;
+  }, [address]);
+  const stageHref = useMemo(
+    () => (stageRoute: string) => `#${stageRoute}${threadedQuery}`,
+    [threadedQuery],
+  );
+
+  /** One navigation: set the fragment, keeping the selection threaded through it. */
+  const goTo = (path: string, patch?: SelectionPatch): void => {
+    const params = new URLSearchParams(address.params);
+    if (patch !== undefined) {
+      for (const key of SELECTION_KEYS) {
+        const value = patch[key];
+        if (value === undefined) continue;
+        if (value === null) {
+          params.delete(key);
+        } else {
+          params.set(key, value);
+        }
+      }
+    }
+    const query = params.toString();
+    window.location.hash = `#${path}${query === "" ? "" : `?${query}`}`;
+  };
+
+  const student = STUDENT_ROUTE.exec(address.path);
   let screen: ReactElement;
   if (student !== null) {
     screen = <StudentDetail submissionId={student[1] ?? ""} />;
-  } else if (route === "/review/blind") {
+  } else if (address.path === "/review/blind") {
     screen = <BlindSample />;
-  } else if (route === "/help") {
-    // The help screen reads nothing of its own (TC-REQ-129: the SPA's api traffic is the hub
-    // read and the ask — #638's pin), so its degradation (FR-UI-07) rides the hub read's own
-    // failure: a named message and the hub read's retry, the same recoverable shape every
-    // other screen renders.
-    screen = <Help failed={hub.failed} onRetry={hub.retry} />;
+  } else if (address.path === "/help") {
+    // The help screen reads nothing of its own (TC-REQ-129), so its degradation
+    // (FR-UI-07) rides the shell's context read's failure: a named message and the
+    // context read's retry, the same recoverable shape every other screen renders.
+    screen = <Help failed={failed} onRetry={retry} />;
+  } else if (address.path === "/") {
+    screen = (
+      <WizardHome
+        rows={rows}
+        next={next}
+        impact={impact}
+        stageHref={stageHref}
+        failed={readsFailed}
+        retry={retryAll}
+      />
+    );
   } else {
-    const Screen = ROUTES[route] ?? NotFound;
-    screen = <Screen state={hub.state} />;
+    const coming = COMING[address.path];
+    const Route = ROUTES[address.path];
+    if (coming !== undefined) {
+      screen = <ComingScreen title={coming} />;
+    } else if (Route !== undefined) {
+      screen = <Route />;
+    } else {
+      screen = <NotFound />;
+    }
   }
+
   return (
-    <Navigate.Provider value={setRoute}>
-      <nav className="hub" aria-label="Console destinations">
-        <ul className="hub-grid">
-          {DESTINATIONS.map((destination) => (
-            <li key={destination.path}>
-              <a
-                className="card"
-                href={`#${destination.path}`}
-                onClick={() => setRoute(destination.path)}
-              >
-                <h2>{destination.title}</h2>
-                <p className="card-note">{destination.note}</p>
-                {destination.path === "/run" && hub.state !== null && (
-                  <p className="card-state">Engine in force: {hub.state.engine}</p>
-                )}
-              </a>
-            </li>
-          ))}
-        </ul>
-      </nav>
-      <main className="screen">
-        {/* The hub's own alert rides the hub route alone (CT-UI-04): a screen's error is the
-            screen's own named message, so one screen's failure never answers for another. */}
-        {route === "/" && hub.failed && (
-          <p role="alert" className="hub-alert">
-            The console could not read its state. It will keep trying.
-          </p>
-        )}
-        {screen}
-      </main>
+    <Navigate.Provider value={goTo}>
+      <div className="shell">
+        <ContextHeader
+          context={context}
+          selection={selection}
+          onSelection={(patch) => goTo(address.path, patch)}
+        />
+        <div className="shell-body">
+          <Sidebar
+            rows={context === null ? null : rows}
+            route={address.path}
+            stageHref={stageHref}
+          />
+          <main className="screen">{screen}</main>
+        </div>
+      </div>
     </Navigate.Provider>
+  );
+}
+
+/**
+ * A route a later story owns (#764, #766): reachable now, named for what it will be, and
+ * pointing back at the wizard — no fake content, no dead end.
+ */
+function ComingScreen({ title }: { title: string }) {
+  return (
+    <section className="coming">
+      <h1>{title}</h1>
+      <p>This page is on its way.</p>
+      <p>
+        <a href="#/">Back to the wizard</a>
+      </p>
+    </section>
   );
 }

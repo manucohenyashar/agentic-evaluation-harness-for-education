@@ -159,6 +159,15 @@ class ControlActionsMixin:
             )
         rows = _rows_for(action, params)
         try:
+            if not rows:
+                # An action whose declared field tuple is empty admits no store row: its
+                # effect lands outside the store, through the module that owns it (the
+                # enumerated-but-rowless shape, `FR-CONF-34`'s configuration edit). Routing
+                # through the rowless branch keeps the action enumerated without writing a
+                # row for a table no tier owns.
+                detail, dispatched = self._apply_domain_effects(action, params)
+                return ControlOutcome(rows_written=(), refused=False, dispatched=dispatched,
+                                      detail=detail)
             written, detail, dispatched, next_action = self._write_rows(action, rows, params)
         except _RefreshRequired as stale:
             return ControlOutcome(rows_written=(), refused=True, refresh_required=True,
@@ -202,13 +211,14 @@ class ControlActionsMixin:
         if action == "pause/resume":
             run_id = str(params.get("run_id") or "")
             if not run_id:
-                return (), "pause/resume names no run; nothing was written", False
+                return (), "pause/resume names no run; nothing was written", False, None
             cohort_key = self._cohort_for_run(run_id)
             if cohort_key is None:
                 return (
                     (),
                     f"no cohort ledger holds run {run_id!r}; nothing was written",
                     False,
+                    None,
                 )
             state = str(params.get("state") or params.get("status") or "paused")
             control_action = "resume" if state in ("running", "resumed") else "pause"

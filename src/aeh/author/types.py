@@ -1,12 +1,15 @@
 """The §3.1 data structures: the vocabulary every caller of `aeh.author` speaks.
 
 Pinned by the design's Data-structures block and re-exported from the package root — the
-tests construct through these names, so they live in exactly one place.
+tests construct through these names, so they live in exactly one place. The intake tier's
+value types (`NormalizedDocument`, `Block`, `IntakeWarning`, `IntakeStats`) are the console
+redesign delta's §3.1.1 amendment (ADR-46): the one representation every supported document
+format normalizes into, which `AuthoringService.draft` consumes.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
@@ -82,3 +85,82 @@ class DroppedAnswer:
     item_id: str
     display: str
     reason: str
+
+
+# -- the intake tier's value types (console redesign delta §3.1.1, ADR-46) -------------------
+
+#: Where a normalized document came from. Every supported format — and only these three —
+#: normalizes into the one representation (FR-AUTHOR-24); anything else is refused per
+#: FR-AUTHOR-28 before normalization is attempted.
+SourceFormat = Literal["docx", "txt", "pdf"]
+
+#: What one block of the representation is. `image_ref` marks where a picture stood — the
+#: picture itself is never carried (`FR-AUTHOR-25`: it becomes a warning, never silently
+#: dropped content).
+BlockKind = Literal["heading", "paragraph", "list_item", "table", "image_ref"]
+
+
+@dataclass(frozen=True)
+class IntakeWarning:
+    """One thing intake did not carry, or had to guess, in the teacher's own language
+    (FR-AUTHOR-24/25/26). `message` is what the teacher reads — it names the location and
+    never quotes more than the surrounding sentence of document text (`CT-AUTHOR-26`);
+    `detail` is the operator-facing expansion, equally bounded."""
+
+    code: "IntakeWarningCode"
+    message: str
+    detail: str = ""
+
+
+#: What intake can warn about. The set is closed: a new honesty gap is a new code, decided
+#: in design — never an ad-hoc string (`CT-AUTHOR-26`'s leak bound is asserted per code).
+IntakeWarningCode = Literal[
+    "image_not_carried",      # a picture was not carried (FR-AUTHOR-25)
+    "equation_not_carried",   # an equation was not carried (FR-AUTHOR-25)
+    "structure_guessed",      # inferred heading/table/list structure in an unmarked format
+    "formatting_dropped",     # styling or content the converter could not carry (FR-AUTHOR-25)
+    "encoding_fallback",      # a `.txt` was not UTF-8; the detected encoding was used
+]
+
+
+@dataclass(frozen=True)
+class Block:
+    """One block of the representation, in document order. `text` is plain text; a table
+    carries one row per line with its cells tab-separated (the same plain-text encoding a
+    `.txt` twin of the same content produces, so cross-format equality holds, `TC-AUTHOR-32`).
+    `level` is a heading's level 1–6 where the format carries one (`None` otherwise).
+    `ordinal` is the block's 0-based position in the document."""
+
+    kind: BlockKind
+    text: str
+    ordinal: int
+    level: int | None = None
+
+
+@dataclass(frozen=True)
+class IntakeStats:
+    """What intake counted, next to the status (seam 4): the representation's own shape."""
+
+    word_count: int
+    block_count: int
+    table_count: int
+    image_count: int
+
+
+@dataclass(frozen=True)
+class NormalizedDocument:
+    """The one internal document representation (FR-AUTHOR-24, ADR-46): an in-memory value
+    type — not a file format, not a store row; the draft files remain the only durable
+    authoring artefact (ADR-45). `source_sha256` fingerprints the original bytes; the
+    carry-over's content fingerprints are defined over the normalized block text (§3.1.1),
+    so a `.txt` re-draft of `.docx` content carries answers wherever the content matches."""
+
+    source_name: str           # the teacher's filename, shown back to them
+    source_format: SourceFormat
+    source_sha256: str         # content fingerprint of the original bytes
+    byte_size: int
+    blocks: tuple[Block, ...]  # the document's content, in order
+    warnings: tuple[IntakeWarning, ...] = field(default=())
+    stats: IntakeStats = field(
+        default_factory=lambda: IntakeStats(word_count=0, block_count=0, table_count=0,
+                                            image_count=0))

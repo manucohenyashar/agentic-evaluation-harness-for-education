@@ -20,7 +20,7 @@ from typing import Any
 
 from .extraction import AuthoringDocument
 from .spec import Assembly, Gap, sentinel
-from .types import CarriedAnswer, DroppedAnswer
+from .types import CarriedAnswer, DroppedAnswer, NormalizedDocument
 
 #: The report's file name for a package: `<package>.authoring-report.md` (FR-AUTHOR-01).
 def report_filename(package_id: str) -> str:
@@ -32,7 +32,8 @@ def draft_filename(package_id: str) -> str:
     return f"{package_id}.package.draft.toml"
 
 
-def render_report(assembly: Assembly, documents: tuple[AuthoringDocument, ...],
+def render_report(assembly: Assembly,
+                  documents: tuple[AuthoringDocument | NormalizedDocument, ...],
                   outcomes: list[dict[str, Any]], models_used: list[str],
                   draft_path: Path,
                   carried: tuple[CarriedAnswer, ...] = (),
@@ -51,9 +52,12 @@ def render_report(assembly: Assembly, documents: tuple[AuthoringDocument, ...],
     return "\n".join(lines)
 
 
-def _documents(documents: tuple[AuthoringDocument, ...]) -> list[str]:
+def _documents(documents: tuple[AuthoringDocument | NormalizedDocument, ...]) -> list[str]:
     lines = ["## Documents", ""]
     for document in documents:
+        if isinstance(document, NormalizedDocument):
+            lines.extend(_normalized_entry(document))
+            continue
         sources: list[str] = []
         text_layer = sum(1 for page in document.pages if page.source == "text layer")
         transcribed = sum(1 for page in document.pages if page.source == "transcriber")
@@ -67,6 +71,22 @@ def _documents(documents: tuple[AuthoringDocument, ...]) -> list[str]:
         how = "; ".join(sources) if sources else "no text extracted"
         lines.append(f"- **{document.name}** — {document.page_count} page(s): {how}.")
     lines.append("")
+    return lines
+
+
+def _normalized_entry(document: NormalizedDocument) -> list[str]:
+    """A normalized `.docx`/`.txt` source's entry (`FR-AUTHOR-24`): what intake understood
+    — the blocks, and the tables and images it counted — followed by every warning, which
+    is the honest account of what was *not* carried, in the plain language the warnings
+    carry. No document text is quoted at any level (FR-AUTHOR-19, NFR-AUTHOR-04)."""
+    counts = [f"{document.stats.block_count} block(s)"]
+    if document.stats.table_count:
+        counts.append(f"{document.stats.table_count} table(s)")
+    if document.stats.image_count:
+        counts.append(f"{document.stats.image_count} image(s) noted")
+    lines = [f"- **{document.source_name}** — {document.source_format}: "
+             f"{', '.join(counts)}."]
+    lines.extend(f"  - {warning.message}" for warning in document.warnings)
     return lines
 
 

@@ -154,13 +154,21 @@ def test_the_write_field_map_covers_every_declared_control_action():
     HLD (TS-77's vocabulary test), so this is the other column: §11.8's Effect, at field
     granularity. An action mapped to an empty tuple would silently drop out of every set operation
     built on this map.
+
+    The one deliberate empty tuple is `update configuration` (`FR-CONF-34`): the guided edit
+    writes the configuration file through M-CONF's `update_profile_edits` — no store row
+    anywhere. It is still enumerated (the census and the dynamic sweep must see it), and the
+    named exception below is what keeps a SECOND rowless action from slipping in unexamined.
     """
     assert set(CONSOLE_WRITE_FIELDS) == set(CONTROL_SURFACE_ACTIONS), (
         f"the write-field map and the action list disagree: "
         f"{sorted(set(CONSOLE_WRITE_FIELDS) ^ set(CONTROL_SURFACE_ACTIONS))}"
     )
     empty = [action for action, fields in CONSOLE_WRITE_FIELDS.items() if not fields]
-    assert not empty, f"these control actions are mapped to no field at all: {empty}"
+    assert empty == ["update configuration"], (
+        f"the rowless control actions changed: {empty}. An action writing no store row is a "
+        "design decision to cite here, not a gap to shrug at."
+    )
 
     assert PRE_LOCK_ACTIONS <= set(CONTROL_SURFACE_ACTIONS), (
         f"PRE_LOCK_ACTIONS names something that is not a control action: "

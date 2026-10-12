@@ -1,4 +1,4 @@
-"""The three authoring knobs (seam 3), read and validated **per invocation** (CT-AUTHOR-14).
+"""The authoring knobs (seam 3), read and validated **per invocation** (CT-AUTHOR-14).
 
 Authoring freezes nothing (ADR-43), so unlike the run path's `RetryPolicy` — read once and
 fixed — these knobs are re-read at the start of every `draft()` call: a knob discovered
@@ -6,6 +6,9 @@ invalid before the first extraction never half-drives a run, and a long-lived
 `AuthoringService` picks up an operator's correction without being rebuilt. An explicit
 field beats nothing, the environment beats the default, and every refusal names the knob
 and its legal range.
+
+The console-redesign delta (§3.1.3) adds the fourth knob, `HARNESS_AUTHOR_DOC_MAX_BYTES`:
+the per-file size ceiling intake enforces on teacher documents.
 """
 
 from __future__ import annotations
@@ -40,6 +43,15 @@ TRANSCRIBE_AUTO = "auto"
 TRANSCRIBE_OFF = "off"
 DEFAULT_TRANSCRIBE = TRANSCRIBE_AUTO
 
+#: The per-file size ceiling intake enforces on teacher documents (`FR-AUTHOR-28`'s
+#: oversize row), in bytes — 10 MB by default. The bound is an *upload*-time refusal: the
+#: console checks it at upload (`CT-CONSOLE-36`), and `normalize_document` enforces it
+#: again before any content is parsed. Values above the ceiling (`DOC_MAX_BYTES_CEILING`)
+#: or non-positive are refused with a message naming the knob, the value and the domain.
+DOC_MAX_BYTES_ENV = "HARNESS_AUTHOR_DOC_MAX_BYTES"
+DEFAULT_DOC_MAX_BYTES = 10 * 1024 * 1024
+DOC_MAX_BYTES_CEILING = 100 * 1024 * 1024
+
 
 @dataclass(frozen=True)
 class AuthoringSettings:
@@ -53,13 +65,14 @@ class AuthoringSettings:
 
     The reasoning chain is deliberately absent: it is the run configuration's panel and
     escalation judges (FR-AUTHOR-04, ADR-42), never a knob. A `HARNESS_AUTHOR_MODEL`-style
-    override is not read by anything in this module, and no other environment variable
-    changes authoring behaviour (CT-AUTHOR-14).
+    override is not read by anything in this module, and the only environment variables
+    that change authoring behaviour are this module's own knobs (CT-AUTHOR-14).
     """
 
     attempts: int | None = None
     timeout_s: int | None = None
     transcribe: str | None = None
+    doc_max_bytes: int | None = None
 
     def effective(self) -> "AuthoringSettings":
         """Resolve the invocation's settings: environment first, then the explicit fields,
@@ -77,6 +90,7 @@ class AuthoringSettings:
                 f"is seconds, not minutes; NFR-AUTHOR-02's assumption)",
             ),
             transcribe=self._resolve_transcribe(),
+            doc_max_bytes=resolve_doc_max_bytes(self.doc_max_bytes),
         )
 
     @property
@@ -119,3 +133,30 @@ class AuthoringSettings:
                 f"or '{TRANSCRIBE_OFF}' (refuse them; FR-AUTHOR-02)."
             )
         return value
+
+
+def resolve_doc_max_bytes(explicit: int | None = None) -> int:
+    """The per-file size ceiling intake enforces (`FR-AUTHOR-28`'s oversize row): the
+    environment's value when `HARNESS_AUTHOR_DOC_MAX_BYTES` is set, else the explicit
+    value, else the 10 MB default — and a refusal, before any document is read, for a
+    non-positive value or one above the 100 MB ceiling, naming the knob, the value and
+    the domain (CT-CONF-04's rule, `CT-CONSOLE-36`)."""
+    raw = os.environ.get(DOC_MAX_BYTES_ENV)
+    if raw is None or not raw.strip():
+        value = DEFAULT_DOC_MAX_BYTES if explicit is None else explicit
+    else:
+        try:
+            value = int(raw.strip())
+        except ValueError:
+            raise ConfigurationError(
+                f"{DOC_MAX_BYTES_ENV}={raw!r} is not an integer. The knob bounds the "
+                "per-file size of teacher documents and is read at call time, so a "
+                "malformed value never half-drives a run."
+            ) from None
+    if value <= 0 or value > DOC_MAX_BYTES_CEILING:
+        raise ConfigurationError(
+            f"{DOC_MAX_BYTES_ENV}={value} is outside its legal range: the ceiling is a "
+            "positive number of bytes per teacher document, at most "
+            f"{DOC_MAX_BYTES_CEILING} ({DOC_MAX_BYTES_CEILING // (1024 * 1024)} MB)."
+        )
+    return value

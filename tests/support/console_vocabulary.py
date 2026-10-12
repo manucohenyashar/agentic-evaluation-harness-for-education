@@ -176,8 +176,18 @@ DELTA_CONTROL_ACTIONS: dict[str, str] = {
     "import roster file": "FR-CONSOLE-63",
 }
 
-#: The whole enumerated write surface `FR-CONSOLE-32` pins: §11.8's fifteen plus the delta's.
-CONTROL_SURFACE_ACTIONS: tuple[str, ...] = HLD_CONTROL_ACTIONS + tuple(DELTA_CONTROL_ACTIONS)
+#: The control actions the console-redesign delta adds (`docs/design/
+#: console_redesign_design_delta.md` §3.4), each with the requirement that makes it one. Kept
+#: apart from `DELTA_CONTROL_ACTIONS` — that one transcribes the operator-requirements delta,
+#: and each document's actions are cited from their own.
+REDESIGN_CONTROL_ACTIONS: dict[str, str] = {
+    "update configuration": "FR-CONF-34",
+}
+
+#: The whole enumerated write surface `FR-CONSOLE-32` pins: §11.8's fifteen plus the deltas'.
+CONTROL_SURFACE_ACTIONS: tuple[str, ...] = (
+    HLD_CONTROL_ACTIONS + tuple(DELTA_CONTROL_ACTIONS) + tuple(REDESIGN_CONTROL_ACTIONS)
+)
 
 #: Design §3.19's route table, split by surface. `CT-CONSOLE-17`'s sweep needs the routes to know
 #: what "a reachable screen" means, and `CT-CONSOLE-16` asserts the provenance gate is one.
