@@ -38,6 +38,7 @@ from .decision_engine import DECISION_PROVIDERS_BY_PROFILE
 from .errors import ConfigurationError
 from .model_ref import ModelRef, _ref_to_dict
 from .projection import EDITABLE_SETTINGS, _ref_of, _ref_text
+from .qa_model import QA_MODEL_KEY, QA_MODEL_PROVIDER, QA_MODEL_ROLE
 from .run_config import CohortRef
 from .resolution import resolve_run_config
 from .sources import parse_config_document, select_profile_config
@@ -98,9 +99,12 @@ _DECISION_MODEL_KEYS: tuple[str, ...] = (
 #: `money` parses like a decimal but is spelled quoted: a bare TOML `7.5` reaches the loader as
 #: a Python float, and `_resolve_cost` refuses a float ceiling — a spend ceiling is money
 #: (`FR-CONF-07`), so the file spelling must survive the parse as a decimal-typed value.
+#: `qa_assistant_model` is deliberately not here: its file key takes the bare OpenRouter build
+#: string (`resolve_qa_model` hard-wires the provider), while the guided form names the whole
+#: `provider|build_id` reference the projection shows — so the edit is parsed as a model
+#: reference and only the build is spelled into the file (`_ops_for`).
 _SCALAR_SETTINGS: Mapping[str, tuple[str, str]] = {
     "decision_engine": ("HARNESS_DECISION_ENGINE", "str"),
-    "qa_assistant_model": ("HARNESS_QA_MODEL", "str"),
     "decision_confidence_gate": ("decision_confidence_threshold", "decimal"),
     "decision_citation_gate": ("HARNESS_JEV_CITE_THRESHOLD", "decimal"),
     "decision_citation_question_limit": ("HARNESS_JEV_MAX_CITATION_QUESTIONS", "int"),
@@ -150,6 +154,18 @@ def _parse_ref(value: Any, setting: str) -> ModelRef:
             f"{setting} must be 'provider|build_id[|quantization]' with no empty field; "
             f"the value is not echoed here (NFR-CONF-02)."
         )
+    if setting == "qa_assistant_model":
+        # The assistant's file key is a bare OpenRouter build string (`resolve_qa_model`
+        # hard-wires the provider and builds its ref with no quantization), so the guided
+        # form is `openrouter|build_id` and nothing else: another provider names a model
+        # no call would use, and a quantization field has no file key to land in.
+        if parts[0].strip() != QA_MODEL_PROVIDER or len(parts) == 3:
+            raise ConfigurationError(
+                f"{setting} must be '{QA_MODEL_PROVIDER}|build_id' — the assistant runs on "
+                f"{QA_MODEL_PROVIDER}, and it takes no quantization."
+            )
+        return ModelRef(role=QA_MODEL_ROLE, provider=QA_MODEL_PROVIDER,
+                        build_id=parts[1].strip(), quantization=None)
     role = "decision" if setting == "decision_engine_model" else _MODEL_SETTINGS[setting][0]
     return ModelRef(
         role=role,  # type: ignore[arg-type]
@@ -223,8 +239,17 @@ def _plan_edits(edits: Mapping[str, Any]) -> tuple[_Plan, ...]:
 
     plans: list[_Plan] = []
     for setting, value in edits.items():
-        if setting in _MODEL_SETTINGS or setting == "decision_engine_model":
+        if setting in _MODEL_SETTINGS or setting in ("decision_engine_model",
+                                                     "qa_assistant_model"):
             ref = _parse_ref(value, setting)
+            if setting == "qa_assistant_model":
+                # The file spells the bare build; what is shown back is the whole reference
+                # the projection renders, so the outcome row and `/settings` agree.
+                plans.append(_Plan(setting=setting, after=_ref_text(ref),
+                                   spelling=_toml_string(ref.build_id),
+                                   model=ref, scalar_key=QA_MODEL_KEY, scalar_kind="str",
+                                   scalar_value=ref.build_id))
+                continue
             plans.append(_Plan(setting=setting, after=value, spelling=value, model=ref))
             continue
         key, kind = _SCALAR_SETTINGS[setting]
@@ -390,6 +415,10 @@ def _ops_for(plan: _Plan) -> tuple[tuple[str, str] | None, dict[str, Any]]:
                 "HARNESS_JEV_BUILD": ("set", _toml_string(ref.build_id)),
                 "HARNESS_JEV_QUANTIZATION": quantization,
             }
+        if plan.setting == "qa_assistant_model":
+            # The bare build string: `resolve_qa_model` hard-wires the provider, so spelling
+            # the whole reference would grow a prefix on every round-trip.
+            return None, {QA_MODEL_KEY: ("set", plan.spelling)}
         _, table = _MODEL_SETTINGS[plan.setting]
         return ("array" if table == "panel" else "table", table), {
             "provider": ("set", _toml_string(ref.provider)),
@@ -458,8 +487,27 @@ def _rewrite_block(block_lines: list[str], ops: Mapping[str, Any], newline: str)
         position = len(out)
         while position > 0 and not out[position - 1].strip():
             position -= 1
+        if position > 0 and not out[position - 1].endswith(("\r\n", "\n", "\r")):
+            # The file's last line carries no line ending: give it one before inserting,
+            # or the two lines would concatenate into one broken key.
+            out[position - 1] = out[position - 1] + newline
         out.insert(position, f"{name} = {spelling}{newline}")
     return out
+
+
+def _refuse_multiline(text: str) -> None:
+    """A file that carries a triple-quoted multi-line string is beyond the splice's
+    confidence: a key-shaped line inside such a string would be edited like code, and a
+    header-shaped one would split the block structure, while the line-wise scan cannot tell
+    string body from code — escapes included, since a backslash-escaped terminator reads as a
+    close to any line scan. Rather than guess, refuse: the file stays byte-identical and the
+    teacher edits it directly. A configuration file that needs multi-line values is outside
+    the guided form's reach by design."""
+    if '"""' in text or "'''" in text:
+        raise ConfigurationError(
+            "the config file carries a multi-line string; the guided edit cannot apply to it "
+            "confidently; edit the file directly."
+        )
 
 
 def _apply_toml(text: str, plans: tuple[_Plan, ...], has_sections: bool,
@@ -527,7 +575,28 @@ def _apply_json(doc: Mapping[str, Any], plans: tuple[_Plan, ...], has_sections: 
                 else:
                     scope.pop(_DECISION_MODEL_KEYS[2], None)
                 continue
-            entries = scope.get(_MODEL_SETTINGS[plan.setting][1])
+            if plan.setting == "qa_assistant_model":
+                # The bare build string: `resolve_qa_model` hard-wires the provider.
+                scope[QA_MODEL_KEY] = ref.build_id
+                continue
+            _, table = _MODEL_SETTINGS[plan.setting]
+            if plan.setting == "page_reader_model":
+                # The transcriber is one table, not an array: rewrite it in place, keeping
+                # whatever else the file's table carried (the same rule the TOML splice
+                # follows — exactly the edited keys and nothing else).
+                current = scope.get(table)
+                if not isinstance(current, Mapping):
+                    raise _no_table(plan.setting, profile)
+                entry = dict(current)
+                entry["provider"] = ref.provider
+                entry["build_id"] = ref.build_id
+                if ref.quantization:
+                    entry["quantization"] = ref.quantization
+                else:
+                    entry.pop("quantization", None)
+                scope[table] = entry
+                continue
+            entries = scope.get(table)
             if not isinstance(entries, list) or not entries:
                 raise _no_table(plan.setting, profile)
             for entry in entries:
@@ -571,6 +640,14 @@ def _current_text(doc: Mapping[str, Any], has_sections: bool, profile: str | Non
             return _ref_text(ModelRef(role="decision", provider=provider,
                                       build_id=str(build).strip(),
                                       quantization=scope.get("HARNESS_JEV_QUANTIZATION") or None))
+        if plan.setting == "qa_assistant_model":
+            # The file spells the bare build; the outcome row shows the reference the
+            # projection renders, so what was shown is what was edited.
+            build = scope.get(QA_MODEL_KEY)
+            if build is None or (isinstance(build, str) and not build.strip()):
+                return ""
+            return _ref_text(ModelRef(role=QA_MODEL_ROLE, provider=QA_MODEL_PROVIDER,
+                                      build_id=str(build).strip(), quantization=None))
         _, table = _MODEL_SETTINGS[plan.setting]
         entries = scope.get(table)
         if not entries:
@@ -705,6 +782,7 @@ def update_profile_edits(
     if fmt == "json":
         new_text = _apply_json(doc, plans, has_sections, profile)
     else:
+        _refuse_multiline(text)
         new_text = _apply_toml(text, plans, has_sections, profile)
 
     new_doc = parse_config_document(new_text, fmt)
