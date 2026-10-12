@@ -26,7 +26,7 @@ export function PackageSetup() {
       title: "Publish this package",
       description:
         `Publishing locks the draft of package ${draft.package_id} — version ` +
-        `${draft.version_id} — through M-PKG's one-transaction flip and records you as ` +
+        `${draft.version_id} — in a single step, and records you as ` +
         "the approver. The run then grades against this version.",
       confirm: "Publish",
       action: "publish package",

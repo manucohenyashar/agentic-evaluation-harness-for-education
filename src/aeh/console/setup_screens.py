@@ -133,5 +133,6 @@ class SetupScreensMixin:
             "blocking",
             "This screen blocks run start until the multiple-choice answer keys are supplied.",
             f"Answer keys read back from the package: {count}.",
-            "The keys are read back to you before the lock; the lock is M-PKG's.",
+            "The keys are read back to you before the lock; once the package locks, these "
+            "are the keys the run grades against.",
         )

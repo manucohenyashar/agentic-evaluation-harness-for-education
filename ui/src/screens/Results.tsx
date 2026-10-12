@@ -191,7 +191,7 @@ export function Results() {
             "settles nothing — a confirm whose work is done is a no-op (FR-CONSOLE-02). " +
             "Afterward a correction is an amendment, recorded."
           : `Finalizing settles the ${not_final} not-yet-final grade(s) of run ` +
-            `${doc.run_id} through M-GRADE: the batch's grades stop being provisional. ` +
+            `${doc.run_id}: the batch's grades stop being provisional. ` +
             "Afterward a correction is an amendment, recorded.",
       confirm: "Finalize",
       action: "finalize batch",
