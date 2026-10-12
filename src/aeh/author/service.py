@@ -193,6 +193,16 @@ class AuthoringService:
         report_text = render_report(assembly, extracted, rows, models_used, draft_path,
                                     carried=carried, dropped=dropped)
         output.mkdir(parents=True, exist_ok=True)
+        # The write replaces the prior artifacts *by name*: when the prior pair was
+        # written under a different spelling of the same case-insensitive package id
+        # (M-PKG's collision rule — the refusal above counts AF-01's `HIST7-ROME-01`
+        # files as AF-13's), removing the old-spelling files first is what "replace"
+        # promised the teacher; otherwise a case-sensitive filesystem would hold two
+        # drafts and two reports for one package id after the overwrite was confirmed.
+        for prior, fresh in ((existing_draft, draft_path),
+                             (existing_report, report_path)):
+            if prior is not None and prior.name != fresh.name:
+                prior.unlink()
         draft_path.write_text(draft_text, encoding="utf-8")
         report_path.write_text(report_text, encoding="utf-8")
         if assembly.placeholder_count:
