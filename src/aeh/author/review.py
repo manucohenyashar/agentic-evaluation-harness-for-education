@@ -66,8 +66,10 @@ from typing import Any
 from aeh.pipeline.spec_export import _toml_str
 
 from .errors import AuthoringInputError
+from .progress import check_cancel, commit_artifacts, emit, emit_completion
 from .report import report_filename
-from .types import ReviewAnswer, ReviewResult
+from .types import AuthoringCancel, AuthoringObserver, AuthoringProgress, ReviewAnswer, \
+    ReviewResult
 from .validation import DraftIssue, validate_draft
 
 LOGGER = logging.getLogger("aeh.author")
@@ -145,9 +147,20 @@ class _Rejected:
 # --- the walk -------------------------------------------------------------------------------------
 
 
-def run_review(draft_path: Path, answers: Iterable[ReviewAnswer] | None) -> ReviewResult:
+def run_review(draft_path: Path, answers: Iterable[ReviewAnswer] | None, *,
+               observer: AuthoringObserver | None = None,
+               cancel: AuthoringCancel | None = None) -> ReviewResult:
     """The review walk over one draft: answer what it can, re-validate, rewrite both
-    artifacts, and report ready only when nothing stands (FR-AUTHOR-16/17)."""
+    artifacts, and report ready only when nothing stands (FR-AUTHOR-16/17).
+
+    The console's progress seam (`FR-AUTHOR-30`): `observer`, when given, hears the
+    'reviewing' stage once per answer processed and the 'writing draft' stage around the
+    rewrite; `cancel` is checked at those same boundaries and stops the walk with
+    `AuthoringCancelled` — the walk's patches live in memory until the single atomic
+    commit, so a cancelled walk leaves the draft and the report byte-for-byte as it found
+    them (`CT-AUTHOR-24`). Both default to `None`, so the terminal walk (and every
+    existing caller) is unchanged."""
+    check_cancel(cancel)
     path = Path(draft_path)
     if not path.is_file():
         raise AuthoringInputError(
@@ -193,7 +206,14 @@ def run_review(draft_path: Path, answers: Iterable[ReviewAnswer] | None) -> Revi
         LOGGER.info("review/%s: accepted the local checks, awaiting re-validation",
                     item.item_id)
 
+    # The 'reviewing' stage's boundary counters (`FR-AUTHOR-30`): one item per answer the
+    # walk processes, the total the walk's own denominator — the answers it was given when
+    # scripted, the items it will ask when terminal.
+    review_done = 0
+    review_total = 0
+
     if scripted:
+        review_total = len(answer_list)
         for answer in answer_list:
             index = next((i for i, pending in enumerate(pendings)
                           if pending.item_id == answer.item_id and i not in consumed), None)
@@ -202,9 +222,14 @@ def run_review(draft_path: Path, answers: Iterable[ReviewAnswer] | None) -> Revi
                     str(answer.item_id),
                     "no open item in the draft carries this id — every item it names is "
                     "already answered, or the draft never had it"))
-                continue
-            consume(index, pendings[index], str(answer.value))
+            else:
+                consume(index, pendings[index], str(answer.value))
+            review_done += 1
+            emit(observer, cancel, AuthoringProgress(
+                stage="reviewing", done=review_done, total=review_total,
+                current=str(answer.item_id), attempt=1, attempts=1))
     else:
+        review_total = len(pendings)
         for index, item in enumerate(pendings):
             _prompt(item)
             line = sys.stdin.readline()
@@ -223,8 +248,16 @@ def run_review(draft_path: Path, answers: Iterable[ReviewAnswer] | None) -> Revi
                     consume(index, item, item.carried)
                 else:
                     print(f"(no answer — {item.item_id} stays open)")
+                review_done += 1
+                emit(observer, cancel, AuthoringProgress(
+                    stage="reviewing", done=review_done, total=review_total,
+                    current=item.item_id, attempt=1, attempts=1))
                 continue
             consume(index, item, raw)
+            review_done += 1
+            emit(observer, cancel, AuthoringProgress(
+                stage="reviewing", done=review_done, total=review_total,
+                current=item.item_id, attempt=1, attempts=1))
 
     # The re-validation gate (Q-O9's second half): each locally accepted answer is applied
     # to the whole draft and `validate_draft` runs over the result — an answer that
@@ -285,10 +318,10 @@ def run_review(draft_path: Path, answers: Iterable[ReviewAnswer] | None) -> Revi
                              for issue in _answer_caused(candidate_issues)}
         applied.add(index)
 
+    # The rewrite commits at the end, atomically (`FR-AUTHOR-30`): until here the walk's
+    # patches live in memory, so a cancel at any boundary above leaves the draft and the
+    # report byte-for-byte as the walk found them (`CT-AUTHOR-24`).
     new_text = _apply(text, _merge(committed)) if committed else text
-    if committed:
-        path.write_text(new_text, encoding="utf-8")
-        LOGGER.info("review rewrote the draft in place: %s", path.name)
     new_spec = tomllib.loads(new_text)
     issues = validate_draft(new_spec)
 
@@ -327,8 +360,26 @@ def run_review(draft_path: Path, answers: Iterable[ReviewAnswer] | None) -> Revi
         for item_id in remaining:
             LOGGER.warning("review: %s still stands in %s", item_id, path.name)
 
-    report_only = _rewrite_report(path, package_id, pendings, standing, accepted, rejected,
-                                  issues, ready, new_spec)
+    report_path = path.parent / report_filename(package_id)
+    report_text, report_only = _rebuilt_report(path, package_id, pendings, standing,
+                                               accepted, rejected, issues, ready, new_spec)
+    # The 'writing draft' stage (`FR-AUTHOR-30`): the boundary before the commit is the
+    # last cancel checkpoint — the two artifacts are then committed atomically
+    # (`progress.commit_artifacts`), and no cancel is checked after the final write, since
+    # there is no next step left to stop.
+    emit(observer, cancel, AuthoringProgress(
+        stage="writing draft", done=0, total=2, current=path.name, attempt=1, attempts=1))
+    pairs: list[tuple[Path, str]] = []
+    if committed:
+        pairs.append((path, new_text))
+    pairs.append((report_path, report_text))
+    commit_artifacts(path.parent, pairs)
+    if committed:
+        LOGGER.info("review rewrote the draft in place: %s", path.name)
+    LOGGER.info("review rewrote the report: %s", report_path.name)
+    emit_completion(observer, AuthoringProgress(
+        stage="writing draft", done=2, total=2, current=report_path.name,
+        attempt=1, attempts=1))
     _print_outcome(path, standing, issues, ready, report_only)
     return result
 
@@ -776,23 +827,25 @@ def _owner(item: _Pending, spec: Mapping[str, Any], package_id: str) -> tuple[st
 # --- the report rewrite -----------------------------------------------------------------------------
 
 
-def _rewrite_report(path: Path, package_id: str, pendings: list[_Pending],
+def _rebuilt_report(path: Path, package_id: str, pendings: list[_Pending],
                     standing: list[_Pending], accepted: list[_Accepted],
                     rejected: list[_Rejected], issues: list[DraftIssue], ready: bool,
-                    new_spec: Mapping[str, Any]) -> list[str]:
-    """The report, rewritten (FR-AUTHOR-16): the Documents and Steps head kept, the Items
+                    new_spec: Mapping[str, Any]) -> tuple[str, list[str]]:
+    """The report, rebuilt (FR-AUTHOR-16): the Documents and Steps head kept, the Items
     section's question rows updated (a question whose sentinels all fell reads resolved —
     unless the report still names a report-only omission in its scope), an
     Answers-recorded section rebuilt from this run's rows **merged with the prior report's
     carryable rows** (FR-AUTHOR-12's "every item the teacher answered at review" spans
     runs, and FR-AUTHOR-23's carry-over reads this section — a second review must never
     erase the first one's records), the Unresolved list rebuilt from what still stands,
-    and the Next command stating the gate's outcome. Written even when every answer was
-    refused — the outcome is recorded either way (Q-O9).
+    and the Next command stating the gate's outcome. Rebuilt even when every answer was
+    refused — the outcome is recorded either way (Q-O9) — and returned as text: the walk
+    commits it together with the draft, atomically (`FR-AUTHOR-30`).
 
-    Returns the item ids the rebuilt Unresolved section still names that the walk never
-    asked about — spec.py's `in_draft=False` omissions (`points Q2`): they stand in no
-    draft span, so the ready wording names them rather than implying everything resolved.
+    Returns `(report text, item ids the rebuilt Unresolved section still names that the
+    walk never asked about)` — spec.py's `in_draft=False` omissions (`points Q2`): they
+    stand in no draft span, so the ready wording names them rather than implying
+    everything resolved.
     """
     report_path = path.parent / report_filename(package_id)
     old = report_path.read_text(encoding="utf-8") if report_path.is_file() else \
@@ -852,9 +905,7 @@ def _rewrite_report(path: Path, package_id: str, pendings: list[_Pending],
                     "The review walk asks for every item above, one at a time, and for the "
                     "approval (`approved_by`) — then, when nothing is left:", "",
                     f"`aeh package build --spec {path.name}`", ""])
-    report_path.write_text("\n".join(out), encoding="utf-8")
-    LOGGER.info("review rewrote the report: %s", report_path.name)
-    return report_only
+    return "\n".join(out), report_only
 
 
 def _scope_of(item_id: str, spec: Mapping[str, Any]) -> str | None:
