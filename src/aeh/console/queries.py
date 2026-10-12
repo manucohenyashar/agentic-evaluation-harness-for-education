@@ -204,3 +204,100 @@ _SELECT_SUBMISSION_EXISTS = (
 _SELECT_SUBMISSION_IDENTITY = (
     "SELECT v3_identity, student_ref FROM submission WHERE submission_id = :submission_id"
 )
+
+
+# --- the SPA read surface (FR-CONSOLE-47…52, FR-CONSOLE-60, #755) ---------------------------------------
+#
+# The redesign SPA's reads read the same rows the server-rendered screens read, through the
+# same tier handles. Every statement is a declared constant (`FR-STORE-08`, SEC-15) and
+# every parameter is bound, never interpolated.
+
+#: Every run row, across the cohort files: the context read's run entities and the jobs
+#: read's run-mirrored job records. `cost_spend` is the ledger's own accrual figure —
+#: a zero is a measured zero, never a fabricated one (`CT-PROV-03`).
+_SELECT_RUNS_ALL = (
+    "SELECT run_id, cohort_id, package_id, package_version_id, status, "
+    "started_at, completed_at, cost_spend, pause_reason FROM run ORDER BY run_id"
+)
+
+
+#: One run's work units in completion order: the logs read's stage records. `done_ticks`
+#: is the monotonic completion order (`FR-ORCH-13`); units without ticks (never completed)
+#: sort last by id — a read is not promised row order (`TierHandle.query`), so the ORDER BY
+#: here is the display order the SPA renders, not a dependency.
+_SELECT_RUN_WORK_UNITS = (
+    "SELECT work_id, submission_id, stage, criterion_id, judge_id, status, attempts, "
+    "last_error, done_ticks FROM work_unit WHERE run_id = :run_id "
+    "ORDER BY CASE WHEN done_ticks IS NULL THEN 1 ELSE 0 END, done_ticks, work_id"
+)
+
+
+#: One run's second-opinion requests and breaker latches: the issues read's escalation
+#: and breaker records, in the order they were requested.
+_SELECT_RUN_ESCALATIONS = (
+    "SELECT request_id, submission_id, criterion_id, admitted, requested_at, detail "
+    "FROM escalation_request WHERE run_id = :run_id ORDER BY requested_at, request_id"
+)
+
+
+_SELECT_RUN_BREAKERS = (
+    "SELECT breaker_id, criterion_id, kind, tripped_at, detail "
+    "FROM circuit_breaker WHERE run_id = :run_id ORDER BY tripped_at, breaker_id"
+)
+
+
+#: The parked papers, across the cohort files: the quarantine flag's rows with the
+#: diagnosis and the identity evidence beside each (`_SELECT_QUARANTINE`'s scope, plus the
+#: columns the parked read needs to say who the paper matched, or why it could not).
+_SELECT_PARKED_PAPERS = (
+    "SELECT submission_id, cohort_id, ingest_status, v3_identity, student_ref "
+    "FROM submission WHERE quarantined = 1 ORDER BY submission_id"
+)
+
+
+#: A ledger's population counts, roster first (`FR-CONSOLE-44`'s safe form: the roster is
+#: the class list; submissions are the papers that arrived) plus its run count — the three
+#: numbers the context read derives a ledger's kind and state from.
+_SELECT_LEDGER_POPULATION = (
+    "SELECT (SELECT COUNT(*) FROM roster) AS roster_n, "
+    "(SELECT COUNT(*) FROM submission) AS papers_n, "
+    "(SELECT COUNT(*) FROM run) AS runs_n"
+)
+
+
+#: The versions of one package, with the published flag: the context read's package
+#: entities and their wizard state.
+_SELECT_PACKAGE_VERSIONS = (
+    "SELECT package_version_id, locked FROM package_version ORDER BY package_version_id"
+)
+
+
+#: The runs a package version graded, and how many students it has already reached
+#: (FR-CONSOLE-49's impact read): the current grades of every run over that version.
+_SELECT_VERSION_RUNS = (
+    "SELECT run_id, cohort_id, status, started_at FROM run "
+    "WHERE package_version_id = :package_version_id ORDER BY run_id"
+)
+
+
+_SELECT_VERSION_REACHED_STUDENTS = (
+    "SELECT COUNT(DISTINCT g.submission_id) AS n FROM submission_grade g "
+    "JOIN run r ON r.run_id = g.run_id "
+    "WHERE r.package_version_id = :package_version_id AND g.is_current = 1"
+)
+
+
+#: The run's current grades still short of `final`: what separates the reviewing stage
+#: from the exporting one in the context read's stage derivation.
+_SELECT_RUN_UNFINALIZED = (
+    "SELECT COUNT(*) AS n FROM submission_grade "
+    "WHERE run_id = :run_id AND is_current = 1 AND state != 'final'"
+)
+
+
+#: The run's papers holding a current grade: the jobs read's per-job `items graded`
+#: figure (FR-CONSOLE-52), read from the ledger that holds the run.
+_SELECT_RUN_GRADED_STUDENTS = (
+    "SELECT COUNT(DISTINCT submission_id) AS n FROM submission_grade "
+    "WHERE run_id = :run_id AND is_current = 1"
+)

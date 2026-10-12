@@ -24,6 +24,7 @@ from .results_screens import ResultsScreensMixin
 from .queues import QueuesMixin
 from .controls import ControlActionsMixin
 from .effects import DomainEffectsMixin
+from .jobs import JobsRegistry
 from .key_correction import KeyCorrectionMixin
 from .views import ReadViewsMixin
 from .grade_actions import GradeActionsMixin
@@ -69,6 +70,10 @@ class ConsoleApp(StoreReadsMixin, ScreenRenderingMixin, SetupScreensMixin, RunSc
         #: "start run"'s server-owned workers, by run id (NFR-CONSOLE-08). Held so a test
         #: or an operator can join one; the thread itself outlives any request.
         self._run_threads: dict[str, Any] = {}
+        #: The console-initiated work registry (`ADR-47`, #755): console memory beside the
+        #: run threads, never pipeline state. Run jobs are mirrored from the run rows by
+        #: the jobs read; from #760 the authoring jobs live here.
+        self._jobs = JobsRegistry()
         #: The run configuration "start run" resolves from, set by the serving layer from
         #: its cfg (`ConsoleServer`); `None` resolves from the environment alone.
         self.run_config: dict[str, Any] | None = None

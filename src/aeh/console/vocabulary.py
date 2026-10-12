@@ -91,6 +91,25 @@ STUDENT_DETAIL_READ = "student detail"
 SYSTEM_STATUS_READ = "system status"
 
 
+#: The redesign SPA's read surface (FR-CONSOLE-47…52, FR-CONSOLE-60, #755): the secondary
+#: pages' documents and the context header's switcher feed. Reads, not controls — each is
+#: a pure store/service projection that writes nothing (`ADR-45`/`ADR-47`/`ADR-48`), so the
+#: API adds no write path by carrying them. The one exception in shape is the authoring
+#: preview, a POST whose body carries the uploaded documents (document content can never
+#: travel in a URL or a query string, `CT-CONSOLE-34`); it writes nothing, and the census
+#: admits it by its own named-exception mechanism, citing `FR-CONSOLE-50`.
+CONTEXT_READ = "context"
+IMPACT_READ = "impact"
+JOBS_READ = "jobs"
+JOB_READ = "job"
+ISSUES_READ = "issues"
+LOGS_READ = "logs"
+PARKED_READ = "parked"
+CONFIG_READ = "config"
+AUTHORING_PREVIEW_READ = "authoring preview"
+AUTHORING_DRAFT_READ = "authoring draft"
+
+
 #: The per-action field contract (§11.8's Effect column): the store fields each action may
 #: write, as dotted `table.field` names. `perform` writes no field outside this map, which is
 #: what makes the dynamic sweep decisive.

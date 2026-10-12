@@ -72,9 +72,14 @@ MUTATING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 READ_METHODS = frozenset({"GET", "HEAD"})
 
 #: The one mutation admitted beside the fifteen control actions, with the requirement that
-#: makes it a pre-existing write rather than a new one (see the module docstring).
+#: makes it a pre-existing write rather than a new one (see the module docstring). The
+#: authoring preview joins the same mechanism (#755): a POST read whose body must carry the
+#: uploaded documents (document content can never travel in a URL or a query string,
+#: `CT-CONSOLE-34`), so it answers by POST while writing nothing — the census counts it
+#: here, by label with its requirement, never by path pattern.
 NON_CONTROL_MUTATIONS: dict[str, str] = {
     "upload scans": "FR-CONSOLE-04 — uploads stream to the content-addressed blob store",
+    "authoring preview": "FR-CONSOLE-50 — the intake preview read; a POST that writes nothing",
 }
 
 #: Hosts that are this machine. A URL naming one of them is not an external origin.
