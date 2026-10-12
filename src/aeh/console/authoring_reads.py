@@ -38,6 +38,8 @@ from aeh.author.extraction import (
 from aeh.author.report import draft_filename
 from aeh.author.validation import PLACEHOLDER_PREFIX, validate_draft
 
+from .settings import author_doc_max_bytes
+
 
 #: The directories a draft may live in, under the data directory: the authoring workspace
 #: and, beside the packages it belongs to. Confined globs — an arbitrary path never
@@ -150,15 +152,28 @@ def draft_placeholders(path: Path | None) -> int | None:
 
 def _project_question(question: dict[str, Any]) -> dict[str, Any]:
     """One draft item, as the editor renders it: its id, type, points, text, options and
-    model answer — the spec's own words, which are already teacher vocabulary."""
-    return {
+    model answer — the spec's own words, which are already teacher vocabulary. The labels
+    ride an additive map beside the letters (`options` stays the list the read has always
+    answered, so no existing consumer's shape changes): the editor shows what an option
+    says and can only add or remove one — retitling an option is not an operation the
+    structured edit surface carries."""
+    raw_options = question.get("options")
+    projected: dict[str, Any] = {
         "id": str(question.get("id") or ""),
         "type": str(question.get("type") or ""),
         "points": question.get("points"),
         "text": str(question.get("text") or ""),
-        "options": list(question.get("options") or ()),
+        # The letters only, and only when the options are really a table: a placeholder
+        # sentinel standing as the whole options table is the draft's own "no options
+        # yet" marker, and listing its characters would dress it up as three options.
+        "options": sorted(raw_options) if isinstance(raw_options, dict) else [],
         "model_answer": question.get("model_answer"),
     }
+    if isinstance(raw_options, dict):
+        projected["option_labels"] = {
+            str(letter): str(label) for letter, label in raw_options.items()
+        }
+    return projected
 
 
 def _project_criterion(criterion: dict[str, Any]) -> dict[str, Any]:
@@ -196,13 +211,19 @@ def authoring_draft_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     data_dir = getattr(app._store, "data_dir", None)
     package_id = str((query or {}).get("package_id") or "").strip()
     path = find_draft_for(data_dir, package_id) if package_id else find_any_draft(data_dir)
+    # The upload ceiling rides every answer (`CT-CONSOLE-36`): the SPA enforces the same
+    # bound client-side, with the same teacher sentence, so the knob's value in force
+    # travels with the read rather than being copied into the bundle.
+    doc_max_bytes = author_doc_max_bytes()
     if path is None:
-        return {"draft": None, "projected": {"items": 0, "criteria": 0,
-                                             "placeholders": 0, "issues": 0}}
+        return {"draft": None, "doc_max_bytes": doc_max_bytes,
+                "projected": {"items": 0, "criteria": 0,
+                              "placeholders": 0, "issues": 0}}
     spec = _load_draft(path)
     if spec is None:
-        return {"draft": None, "projected": {"items": 0, "criteria": 0,
-                                             "placeholders": 0, "issues": 0}}
+        return {"draft": None, "doc_max_bytes": doc_max_bytes,
+                "projected": {"items": 0, "criteria": 0,
+                              "placeholders": 0, "issues": 0}}
     try:
         raw_text = path.read_text(encoding="utf-8")
     except OSError:
@@ -236,6 +257,7 @@ def authoring_draft_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
             "issues": issue_rows,
             "missing_pieces": len(placeholders),
         },
+        "doc_max_bytes": doc_max_bytes,
         "projected": {
             "items": len(questions),
             "criteria": len(criteria),
@@ -265,8 +287,6 @@ def _preview_document(name: str, data: bytes) -> dict[str, Any]:
     stats, and its warnings. Read through `aeh.author`'s extractor, text layer only —
     the same extraction the drafting job runs, minus the model calls."""
     from tempfile import TemporaryDirectory
-
-    from .settings import author_doc_max_bytes
 
     if len(data) > author_doc_max_bytes():
         limit_mb = author_doc_max_bytes() / (1024 * 1024)

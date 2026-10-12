@@ -33,7 +33,7 @@ from .grades import AUTHOR_GRADES_TEMPLATE_V
 from .intake import check_document, document_text, log_intake, normalize_document, \
     normalize_documents, normalized_from_authoring
 from .progress import commit_artifacts
-from .inventory import AUTHOR_INVENTORY_TEMPLATE_V
+from .inventory import AUTHOR_INVENTORY_TEMPLATE_V, slugify_package_id
 from .rubric import AUTHOR_RUBRIC_TEMPLATE_V
 from .review import run_review
 from .service import PROMPT_VERSIONS, AuthoringService, authoring_service
@@ -140,6 +140,10 @@ __all__ = [
     # library through its one public surface
     "run_review",
     "commit_artifacts",
+    # the package-id slug rule (FR-AUTHOR-29): the from-scratch start names a draft with
+    # the same rule the fallback id uses, re-exported so the console drives it through
+    # this one surface
+    "slugify_package_id",
     # the extraction records (the report's Documents section speaks in these)
     "AuthoringDocument",
     "PageText",

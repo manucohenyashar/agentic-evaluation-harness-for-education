@@ -141,6 +141,11 @@ export type ActionResult = {
   refused?: boolean;
   detail?: string;
   error?: string;
+  /** The job id a dispatched background action started (the draft job) — set only when
+   * the console dispatched one, so the screen can watch it on the jobs read. */
+  job_id?: string;
+  /** The next step a refusal or an outcome names (`CT-CONSOLE-33`), when one is set. */
+  next_action?: string;
 };
 
 /**
@@ -343,6 +348,13 @@ export interface JobRecord {
   job_id: string;
   kind: string;
   state: string;
+  /** The authoring job's stage word ("reading documents", "drafting", "writing draft") —
+   * set only while an authoring job reports stage-level progress (FR-AUTHOR-30). */
+  stage?: string | null;
+  /** The tries the current step item spent and the budget it had — the draft job's
+   * per-item retry state, shown as "attempt x of y". */
+  attempt?: number | null;
+  attempts?: number | null;
   progress: { done: number | null; total: number | null; current: string | null };
   started_at: string | null;
   finished_at: string | null;
@@ -460,4 +472,136 @@ export async function fetchManuals(signal?: AbortSignal): Promise<ManualsIndexDo
 
 export async function fetchManual(manualId: string, signal?: AbortSignal): Promise<ManualDoc> {
   return fetchRead<ManualDoc>(`/api/v1/manuals/${encodeURIComponent(manualId)}`, signal);
+}
+
+// --- the authoring screens' reads (FR-UI-11..13, #764) --------------------------------------------
+
+/**
+ * The one POST read the SPA makes: the authoring preview. Its body carries the uploaded
+ * documents themselves, because document content can never travel in a URL or a query
+ * string (`CT-CONSOLE-34`), and the read writes nothing anywhere. A refusal (a body the
+ * read cannot use) comes back as a thrown named message, the same shape `fetchRead`
+ * renders.
+ */
+export async function postRead<T>(
+  path: string,
+  body: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<T> {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!response.ok) {
+    const refusal = await response.text().catch(() => "");
+    let detail = "";
+    try {
+      detail = String(JSON.parse(refusal).error ?? "");
+    } catch {
+      detail = "";
+    }
+    throw new Error(detail || "the console could not read that");
+  }
+  return (await response.json()) as T;
+}
+
+/** One uploaded document, as the preview read answers it: accepted documents carry their
+ * blocks, counts and warnings; refused ones carry the refusal with its next step. */
+export interface PreviewDocument {
+  name: string;
+  accepted: boolean;
+  pages?: number;
+  blocks?: Array<{ kind: string; ordinal: number; page: number; text: string }>;
+  stats?: {
+    page_count: number;
+    block_count: number;
+    word_count: number;
+    table_count: number;
+    image_count: number;
+  };
+  warnings?: Array<{ code: string; message: string }>;
+  refusal?: { detail: string; next_action: string };
+}
+
+export interface PreviewDoc {
+  documents: PreviewDocument[];
+  projected: { received: number; accepted: number; refused: number; blocks: number };
+}
+
+export async function previewDocuments(
+  documents: Array<{ name: string; content_base64: string }>,
+  signal?: AbortSignal,
+): Promise<PreviewDoc> {
+  return postRead<PreviewDoc>("/api/v1/authoring/preview", { documents }, signal);
+}
+
+/** One missing piece in the draft, as the draft read carries it: the item's id, its
+ * location through the structure, the reason it stands, and what to supply. */
+export interface DraftPlaceholder {
+  item_id: string;
+  location: string;
+  reason: string;
+  supply: string;
+}
+
+/** One question in the draft, as the structure read projects it. `options` is the letters
+ * the read has always answered; the labels ride the additive `option_labels` map beside
+ * them. A question whose options stand as a placeholder sentinel arrives with an empty
+ * letters list. */
+export interface DraftQuestion {
+  id: string;
+  type: string;
+  points: number | null;
+  text: string;
+  options: string[];
+  option_labels?: Record<string, string>;
+  model_answer: string | null;
+}
+
+/** One grading point in the draft, with its score levels as the read carries them. */
+export interface DraftCriterion {
+  id: string;
+  question: string;
+  points: number | null;
+  score_method: string | null;
+  component_of: string | null;
+  score_levels: Array<{ name: string; points: number | null; descriptor: string }>;
+  key?: string | string[] | null;
+}
+
+/** One validation issue the draft already carries, as the read projects it. */
+export interface DraftIssueRow {
+  field: string;
+  message: string;
+}
+
+/** The draft-structure read (`GET /api/v1/authoring/draft`): the draft as structure —
+ * never as TOML text (`ADR-45`). `draft` is null when no readable draft stands; the
+ * upload ceiling rides every answer (`CT-CONSOLE-36`), so the screens enforce the same
+ * bound client-side with the same teacher sentence. */
+export interface AuthoringDraftDoc {
+  draft: {
+    package_id: string;
+    file_name: string;
+    package: string | null;
+    approved_by: string | null;
+    items: DraftQuestion[];
+    criteria: DraftCriterion[];
+    grades: unknown;
+    placeholders: DraftPlaceholder[];
+    issues: DraftIssueRow[];
+    missing_pieces: number;
+  } | null;
+  doc_max_bytes: number;
+  projected: { items: number; criteria: number; placeholders: number; issues: number };
+}
+
+export async function fetchAuthoringDraft(
+  signal?: AbortSignal,
+  packageId?: string | null,
+): Promise<AuthoringDraftDoc> {
+  const params = packageId ? { package_id: packageId } : undefined;
+  return fetchRead<AuthoringDraftDoc>("/api/v1/authoring/draft", signal, params);
 }

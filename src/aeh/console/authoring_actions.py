@@ -74,6 +74,8 @@ from aeh.author import (
     run_review,
     with_approval_marker,
 )
+from aeh.author import slugify_package_id
+from aeh.author.report import draft_filename
 from aeh.pipeline.packages import PackageSpecError, build_package, read_package_spec
 from aeh.pipeline.runtime import _open_store, _provider_for
 
@@ -90,6 +92,7 @@ from .write_rows import _rows_for
 AUTHORING_CONTROL_ACTIONS: frozenset[str] = frozenset(
     {
         "draft package from documents",
+        "draft package from scratch",
         "answer authoring review",
         "edit draft package",
         "approve draft package",
@@ -101,11 +104,13 @@ AUTHORING_CONTROL_ACTIONS: frozenset[str] = frozenset(
 def apply_authoring_action(
     app: Any, action: str, params: Mapping[str, Any]
 ) -> ControlOutcome:
-    """The dispatch `perform` calls for the five authoring actions. Every teacher-facing
+    """The dispatch `perform` calls for the six authoring actions. Every teacher-facing
     refusal returns an outcome (never a raise), so the sweep that performs each action
     bare sees a refusal, not an exception."""
     if action == "draft package from documents":
         return _draft_package_from_documents(app, params)
+    if action == "draft package from scratch":
+        return _draft_package_from_scratch(app, params)
     if action == "answer authoring review":
         return _answer_authoring_review(app, params)
     if action == "edit draft package":
@@ -346,6 +351,66 @@ def _draft_worker(
 
 
 # --- the synchronous draft actions ----------------------------------------------------------------------
+
+
+def _draft_package_from_scratch(app: Any, params: Mapping[str, Any]) -> ControlOutcome:
+    """The from-scratch start (`FR-UI-13`, the editor's second entry): the service's
+    deterministic skeleton (`FR-AUTHOR-29`) written under the package id the title
+    slugifies to, synchronously — it makes no model call and reads no documents, so it
+    is a fast action beside the review and edit rows, not a job. The same single-writer
+    rule holds (`ADR-45`): the directory lock is held for the write, and the would-be
+    draft file is the file lock's key, so a from-scratch start never lands behind a draft
+    job or a running review of the draft it would replace."""
+    title = str(params.get("title") or "").strip()
+    if not title:
+        return _refused(
+            "a package started from scratch needs a name: the name becomes the package "
+            "id the empty draft is written under. Give the package a name and start "
+            "again.")
+    data_dir = _data_dir(app)
+    if data_dir is None:
+        return _refused("no store is attached; the empty draft cannot be written.")
+    config = app.run_config if isinstance(app.run_config, dict) else {}
+    profile = str(config.get("HARNESS_PROFILE") or "")
+    if not profile:
+        return _refused(
+            "no backend profile is configured for authoring, and a package cannot be "
+            "started without one. Set the profile in the configuration, then start again.",
+            next_action="open the configuration screen and set the profile.")
+    package_id = slugify_package_id(title)
+    path = Path(data_dir, "authoring", draft_filename(package_id))
+
+    def run() -> ControlOutcome:
+        try:
+            provider = _provider_for({"backend_profile": profile})
+            service = authoring_service(config, profile, provider=provider)
+            result = service.draft_from_scratch(Path(data_dir, "authoring"), title)
+        except AuthoringInputError as refused:
+            return _refused(str(refused))
+        except OverwriteRefusedError as refused:
+            # The library's refusal names the output directory by its server path; the
+            # teacher surface never carries one (`CT-CONSOLE-31`), so the folder is
+            # projected out and the file names stay.
+            message = str(refused).replace(
+                str(Path(data_dir, "authoring")), "the authoring folder")
+            return _refused(
+                message,
+                next_action=(
+                    "open the standing draft on the editor screen, or give the new "
+                    "package its own name and start again."))
+        except Exception as error:  # noqa: BLE001 - a failed start is a refusal
+            return _refused(
+                f"the empty draft could not be written ({_strip_exception_name(error)}); "
+                "nothing stands changed.")
+        return ControlOutcome(
+            rows_written=(), refused=False, dispatched=True,
+            next_action="open the editor: add the questions, then the grading points.",
+            detail=(
+                f"the empty draft for package {package_id!r} stands "
+                f"({result.draft_path.name}); it has no questions and no grading points "
+                "yet — the editor is where both are added."))
+
+    return _with_draft_lock(app, path, data_dir, "scratch", run)
 
 
 def _draft_path_for(app: Any, params: Mapping[str, Any]) -> Path | None:
