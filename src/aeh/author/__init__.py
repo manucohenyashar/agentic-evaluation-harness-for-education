@@ -12,7 +12,7 @@ The workflow runs headless from code (seam 1), makes every model call through `M
 surfaces what each step did next to the status — in the report and in `DraftResult` (seam 4).
 
 Story: #690 (TS-155). Review is #696's; the CLI registration is #695's; the console census
-is #700's; retry/recreate/carry-over is #697's.
+is #700's; retry/recreate/answer carry-over landed with #697 (`carryover.py`).
 """
 
 from __future__ import annotations

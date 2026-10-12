@@ -24,7 +24,8 @@ class OverwriteRefusedError(RuntimeError):
     `--force`: `draft(..., force=True)`).
 
     Raised before anything is written — the refusal names what would be replaced and that
-    recorded review answers may carry over (the carry-over itself is the retry story's,
-    #697). Nothing is written without confirmation: a half-reviewed draft holds the
-    teacher's work.
+    recorded review answers may carry over (FR-AUTHOR-23: the carry-over itself reads the
+    prior report and re-applies matching answers provisionally at draft time, through
+    `carryover.apply_carry_over`). Nothing is written without confirmation: a
+    half-reviewed draft holds the teacher's work.
     """

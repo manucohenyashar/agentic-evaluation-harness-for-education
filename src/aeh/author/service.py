@@ -29,6 +29,7 @@ from aeh.conf import ConfigurationError, ModelRef, panel_for_profile, select_pro
 from aeh.conf.panel import _build_identity
 from aeh.prov import InferenceProvider, PromptPayload, SamplingParams
 
+from .carryover import apply_carry_over, prior_artifacts
 from .errors import AuthoringInputError, OverwriteRefusedError
 from .extraction import AuthoringDocument, extract_documents
 from .grades import AUTHOR_GRADES_TEMPLATE_V, grades_payload, parse_grades
@@ -39,7 +40,8 @@ from .review import run_review
 from .rubric import AUTHOR_RUBRIC_TEMPLATE_V, parse_rubric, rubric_payload
 from .settings import AuthoringSettings
 from .spec import assemble, render_draft
-from .types import DraftResult, ReviewAnswer, ReviewResult, StepOutcome
+from .types import CarriedAnswer, DraftResult, DroppedAnswer, ReviewAnswer, ReviewResult, \
+    StepOutcome
 
 LOGGER = logging.getLogger("aeh.author")
 
@@ -106,10 +108,16 @@ class AuthoringService:
         """Run the workflow over the documents and write the two artifacts into `output_dir`.
 
         Re-running is always the retry and the recreate (FR-AUTHOR-21): the draft is
-        regenerated from the documents as they are at invocation. Over an existing draft and
-        report for the same package id the service refuses until confirmed — `force=True`,
-        the library mirror of the CLI's `--force` (FR-AUTHOR-22); the carry-over of recorded
-        review answers is the retry story's (#697).
+        regenerated from the documents as they are at invocation, and the only state the
+        retry reads is the output directory's own prior report (ADR-43 — no store, no
+        process state). Over an existing draft and report for the same package id the
+        service refuses until confirmed — `force=True`, the library mirror of the CLI's
+        `--force` (FR-AUTHOR-22); nothing is written before that confirmation. When a
+        prior report for the same package id holds recorded review answers, the re-draft
+        carries them over: an answer whose item still stands and whose content
+        fingerprint still matches is re-applied provisionally (the sentinel stays; the
+        review walk re-asks it and the ready gate refuses until the teacher confirms),
+        everything else is dropped and named in the new report (FR-AUTHOR-23).
         """
         settings = self._settings.effective()  # knob refusals precede everything
         paths = [Path(document) for document in documents]
@@ -154,16 +162,47 @@ class AuthoringService:
         output = Path(output_dir)
         draft_path = output / draft_filename(package_id)
         report_path = output / report_filename(package_id)
-        if not force and draft_path.is_file() and report_path.is_file():
+        # The existing artifacts are matched by name ignoring case: a package's identity is
+        # case-insensitive (M-PKG's collision rule), so AF-13's `hist7-rome-01` re-draft
+        # sees AF-01's `HIST7-ROME-01` artifacts as its own (`carryover.prior_artifacts`).
+        existing_draft, existing_report = prior_artifacts(output, package_id)
+        if not force and existing_draft is not None and existing_report is not None:
             raise OverwriteRefusedError(
-                f"{draft_path.name} and {report_path.name} already exist in {output} for "
-                f"package {package_id!r}: a draft the teacher may have reviewed holds "
-                "recorded answers that can carry over (FR-AUTHOR-22, FR-AUTHOR-23). "
-                "Confirm the overwrite (force) to replace them; nothing was written.")
+                f"{existing_draft.name} and {existing_report.name} already exist in "
+                f"{output} for package {package_id!r}: a draft the teacher may have "
+                "reviewed holds recorded answers that can carry over (FR-AUTHOR-22, "
+                "FR-AUTHOR-23). Confirm the overwrite (force) to replace them; nothing "
+                "was written.")
 
         draft_text = render_draft(assembly)
-        report_text = render_report(assembly, extracted, rows, models_used, draft_path)
+        # The carry-over (FR-AUTHOR-23): the prior report is the source of truth, and it
+        # is read before either artifact is written. No records — nothing changes, and the
+        # re-draft stays byte-identical to a run with no prior report at all.
+        carried: tuple[CarriedAnswer, ...] = ()
+        dropped: tuple[DroppedAnswer, ...] = ()
+        if existing_report is not None:
+            draft_text, carried, dropped = apply_carry_over(
+                draft_text, package_id, existing_report.read_text(encoding="utf-8"))
+            for record in carried:
+                LOGGER.info(
+                    "carry-over: %s carried from the prior report — provisional, confirm "
+                    "at review (FR-AUTHOR-23)", record.item_id)
+            for record in dropped:
+                LOGGER.warning("carry-over: %s dropped — %s (FR-AUTHOR-23)",
+                               record.item_id, record.reason)
+        report_text = render_report(assembly, extracted, rows, models_used, draft_path,
+                                    carried=carried, dropped=dropped)
         output.mkdir(parents=True, exist_ok=True)
+        # The write replaces the prior artifacts *by name*: when the prior pair was
+        # written under a different spelling of the same case-insensitive package id
+        # (M-PKG's collision rule — the refusal above counts AF-01's `HIST7-ROME-01`
+        # files as AF-13's), removing the old-spelling files first is what "replace"
+        # promised the teacher; otherwise a case-sensitive filesystem would hold two
+        # drafts and two reports for one package id after the overwrite was confirmed.
+        for prior, fresh in ((existing_draft, draft_path),
+                             (existing_report, report_path)):
+            if prior is not None and prior.name != fresh.name:
+                prior.unlink()
         draft_path.write_text(draft_text, encoding="utf-8")
         report_path.write_text(report_text, encoding="utf-8")
         if assembly.placeholder_count:
@@ -178,7 +217,8 @@ class AuthoringService:
                     LOGGER.warning("placeholder: %s — %s", gap.item_id, gap.reason)
         LOGGER.info("draft written: %s; report: %s", draft_path.name, report_path.name)
 
-        print(summary_paragraph(assembly, models_used, draft_path, rows))
+        print(summary_paragraph(assembly, models_used, draft_path, rows,
+                                carried=carried, dropped=dropped))
         return DraftResult(
             draft_path=draft_path, report_path=report_path,
             outcomes=tuple(StepOutcome(step=row["step"], item_id=row["item_id"],

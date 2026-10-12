@@ -60,3 +60,25 @@ class ReviewResult:
 
     ready: bool
     remaining: tuple[str, ...]  # item ids still placeholder/unresolved
+
+
+@dataclass(frozen=True)
+class CarriedAnswer:
+    """One recorded review answer the re-draft carried over, provisional until the teacher
+    confirms it at review (FR-AUTHOR-23). `fingerprint` is the recorded content
+    fingerprint that matched — the hash over the item's id and the underlying content,
+    never over the answer (CT-AUTHOR-20)."""
+
+    item_id: str
+    display: str
+    fingerprint: str
+
+
+@dataclass(frozen=True)
+class DroppedAnswer:
+    """One recorded review answer the re-draft did NOT re-apply, named with the reason it
+    was dropped (FR-AUTHOR-23: dropped answers are accounted for, never silent)."""
+
+    item_id: str
+    display: str
+    reason: str

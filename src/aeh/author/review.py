@@ -29,7 +29,10 @@ exactly the two artifacts it was given — the draft and its report, nothing els
 fingerprint: the hash over the item's id and the underlying content it was given against —
 the owning question's id and text as the FINAL draft carries it, or the package id for the
 package-level items — never over the answer itself, so the fingerprint follows the content
-across flows (FR-AUTHOR-23).
+across flows (FR-AUTHOR-23). An item the draft-time carry-over marked provisional
+(`carryover.py`'s `# CARRIED OVER` comment) is asked like any other: the recorded answer is
+shown for confirmation, Enter accepts it through the same checks and gate, and until that
+confirmation it satisfies nothing — the sentinel stands and the gate refuses ready.
 
 Ready (FR-AUTHOR-17) is re-proved, never remembered: after the accepted answers are patched
 in, the updated draft is re-parsed and `validate_draft` runs over it again; the walk reports
@@ -79,10 +82,24 @@ _BARE_SENTINEL_RE = re.compile(r"<<PLACEHOLDER: ([^<>\n]+?)>>")
 #: The `# PLACEHOLDER(<reason>): <supply>` comment above a sentinel line.
 _COMMENT_RE = re.compile(r"#\s*PLACEHOLDER\((.+)\):\s*(.+?)\s*$")
 
+#: The `# CARRIED OVER (provisional — confirm at review): <display>` comment the draft-time
+#: carry-over (`carryover.py`) writes above a surviving sentinel, parsed back so the review
+#: walk re-asks the carried item and offers the recorded answer. `CARRIED_COMMENT_PREFIX` is
+#: the single spelling both sides share.
+_CARRIED_LINE_RE = re.compile(r"#\s*CARRIED OVER \(provisional[^)]*\):\s*(.*?)\s*$")
+CARRIED_COMMENT_PREFIX = "# CARRIED OVER (provisional — confirm at review): "
+
+_CARRIED_REASON = "carried over from the prior report (provisional — confirm at review)"
+_CARRIED_SUPPLY = "confirm the carried answer, or replace it"
+
 #: The report's Items rows (`report._items`' rendering), parsed back for the rewrite.
 _ITEM_ROW_RE = re.compile(r"^- \*\*(.+?)\*\* — ([a-z]+)(?: — (.*))?\.$")
-#: The report's Answers-recorded rows, parsed back so a prior run's records merge.
-_ANSWER_ROW_RE = re.compile(r"^- \*\*(.+?)\*\* — (?:answered|rejected): ")
+#: The report's Answers-recorded rows, parsed back so a prior run's records merge — the
+#: carried and dropped rows the draft-time carry-over writes (`carryover.py`) merge on the
+#: same terms: a run that touches an item supersedes that item's prior row, whatever kind
+#: it was.
+_ANSWER_ROW_RE = re.compile(
+    r"^- \*\*(.+?)\*\* — (?:answered|rejected|carried|dropped): ")
 #: The leading scope id of a non-sentinel Unresolved row (`- criterion Q1 — the reasoning
 #: did not converge: …`).
 _ROW_SCOPE_RE = re.compile(r"^- (.+?) — ")
@@ -105,6 +122,11 @@ class _Pending:
     supply: str
     value_span: tuple[int, int]  # quoted token, or the whole line for the grades table
     comment_span: tuple[int, int] | None
+    #: The recorded answer the draft-time carry-over annotated above this sentinel
+    #: (`carryover.py`), or `None` when the item is a plain placeholder. A carried item is
+    #: asked like any other — the value lands in the draft only when the teacher confirms
+    #: it here (FR-AUTHOR-23: provisional until confirmed at review).
+    carried: str | None = None
 
 
 @dataclass(frozen=True)
@@ -192,7 +214,15 @@ def run_review(draft_path: Path, answers: Iterable[ReviewAnswer] | None) -> Revi
                 break
             raw = line.strip()
             if not raw:
-                print(f"(no answer — {item.item_id} stays open)")
+                if item.carried is not None:
+                    # Enter accepts the carried answer: the same consume path as a typed
+                    # one — the field's checks and the re-validation gate still apply, and
+                    # the comment above the sentinel is removed with the patch (the
+                    # provisional marker is spent by the confirmation).
+                    print(f"(accepting the carried answer — {item.item_id} recorded)")
+                    consume(index, item, item.carried)
+                else:
+                    print(f"(no answer — {item.item_id} stays open)")
                 continue
             consume(index, item, raw)
 
@@ -305,12 +335,18 @@ def run_review(draft_path: Path, answers: Iterable[ReviewAnswer] | None) -> Revi
 
 def _prompt(item: _Pending) -> None:
     """The walk's one prompt: the item, its current value, why it is missing and what to
-    supply — the current value IS the sentinel (the field holds nothing else yet)."""
+    supply — the current value IS the sentinel (the field holds nothing else yet). For a
+    carried item the recorded answer is the current value, shown for confirmation."""
     print(f"[aeh author review] {item.item_id}")
-    print(f"  current value: <<PLACEHOLDER: {item.item_id}>>")
-    print(f"  missing because: {item.reason}")
-    print(f"  what to supply: {item.supply}")
-    print("  your answer (blank to skip this item, end of input to stop): ", end="")
+    if item.carried is not None:
+        print(f"  carried answer (provisional — confirm at review): {item.carried}")
+        print("  your answer (press Enter to accept the carried answer, end of input to "
+              "stop): ", end="")
+    else:
+        print(f"  current value: <<PLACEHOLDER: {item.item_id}>>")
+        print(f"  missing because: {item.reason}")
+        print(f"  what to supply: {item.supply}")
+        print("  your answer (blank to skip this item, end of input to stop): ", end="")
     sys.stdout.flush()
 
 
@@ -378,12 +414,12 @@ def _walk(spec: Mapping[str, Any], text: str) -> list[_Pending]:
             item_id = value[len(_PREFIX):-len(_SUFFIX)]
             span = claim(item_id)
             kind = _kind_of(section, key)
-            reason, supply, comment_span = _comment_above(text, span)
+            reason, supply, comment_span, carried = _comment_above(text, span)
             whole_line = (section, key) == ("top", "grades")
             value_span = _line_span(text, span) if whole_line else span
             pendings.append(_Pending(item_id=item_id, kind=kind, owner_qid=owner_qid,
                                      reason=reason, supply=supply, value_span=value_span,
-                                     comment_span=comment_span))
+                                     comment_span=comment_span, carried=carried))
 
     for key, value in spec.items():
         if key in ("question", "criterion"):
@@ -427,20 +463,29 @@ def _kind_of(section: str, key: str) -> str:
     return _KINDS.get((section, key), "string")
 
 
-def _comment_above(text: str, span: tuple[int, int]) -> tuple[str, str, tuple[int, int] | None]:
-    """The `# PLACEHOLDER(reason): supply` comment on the line above the sentinel line, with
-    the comment line's full span (trailing newline included) for the patch to remove."""
+def _comment_above(text: str, span: tuple[int, int]) -> \
+        tuple[str, str, tuple[int, int] | None, str | None]:
+    """The comment on the line above the sentinel line, with the comment line's full span
+    (trailing newline included) for the patch to remove. A `# PLACEHOLDER(reason): supply`
+    comment gives the reason/supply pair; a `# CARRIED OVER (provisional — ...)` comment
+    (the draft-time carry-over's annotation) gives the recorded answer as the fourth
+    element, the reason/supply pair describing the provisional carry. Neither — the
+    defaults."""
     line_start = text.rfind("\n", 0, span[0]) + 1
     if line_start == 0:
-        return _NO_REASON, _NO_SUPPLY, None
+        return _NO_REASON, _NO_SUPPLY, None, None
     previous_end = line_start - 1  # the newline separating it from the sentinel's line
     previous_start = text.rfind("\n", 0, previous_end) + 1
     previous = text[previous_start:previous_end]
+    remove_end = previous_end + 1 if previous_end < len(text) else previous_end
+    carried = _CARRIED_LINE_RE.match(previous)
+    if carried is not None:
+        return (_CARRIED_REASON, _CARRIED_SUPPLY, (previous_start, remove_end),
+                carried.group(1))
     match = _COMMENT_RE.match(previous)
     if match is None:
-        return _NO_REASON, _NO_SUPPLY, None
-    remove_end = previous_end + 1 if previous_end < len(text) else previous_end
-    return match.group(1).strip(), match.group(2).strip(), (previous_start, remove_end)
+        return _NO_REASON, _NO_SUPPLY, None, None
+    return match.group(1).strip(), match.group(2).strip(), (previous_start, remove_end), None
 
 
 def _line_span(text: str, span: tuple[int, int]) -> tuple[int, int]:
@@ -707,9 +752,14 @@ def _fingerprint(item: _Pending, spec: Mapping[str, Any], package_id: str) -> st
     """The hash over the item's id and the underlying content it was given against — the
     owning question's id and text, or the package id for the package-level items. Never the
     answer: the fingerprint follows the content, so two flows answering differently print
-    the same fingerprint (FR-AUTHOR-23, CT-AUTHOR-19)."""
+    the same fingerprint (FR-AUTHOR-23, CT-AUTHOR-19).
+
+    The id component is casefolded before hashing: a package's identity is
+    case-insensitive (M-PKG's `check_package_id` collision rule), and the carry-over's
+    match reads fingerprints across re-drafts whose inventory may spell the same package
+    id with a different case (AF-01's `HIST7-ROME-01` vs AF-13's `hist7-rome-01`)."""
     owner_id, owner_text = _owner(item, spec, package_id)
-    seed = f"{item.item_id}|{owner_id}|{owner_text}"
+    seed = f"{item.item_id}|{owner_id.casefold()}|{owner_text}"
     return hashlib.sha256(seed.encode("utf-8")).hexdigest()
 
 
