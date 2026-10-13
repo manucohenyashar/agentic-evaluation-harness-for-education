@@ -207,6 +207,16 @@ Negative and boundary cases are marked. Every case names its oracle.
   Expected: no warning `message`/`detail` contains more than 200 characters or the full
   document text; a fixture containing a long paragraph near an image asserts the truncation
   boundary.
+- **TC-AUTHOR-43** (FR-AUTHOR-30 / the draft save's commit) — *the atomic rename waits out a
+  concurrent reader* (the Windows sharing violation PR #797's suite flagged; found because the
+  suite's own first draft polled the draft file while the save ran). Arms at rung 1: a rename
+  failing with the Win32 sharing-violation codes (32/5) is retried and lands once the reader
+  releases; a rename that never succeeds fails with its own error after exactly 1 + retries
+  tries with the `.part` temporaries cleaned up; a non-sharing OSError is never retried; a
+  malformed knob value refuses naming the knob (`CT-AUTHOR-14`'s rule); on Windows, the real
+  defect — a reader holding the draft open — reproduces the sharing violation and then waits it
+  out. Knobs: `HARNESS_AUTHOR_COMMIT_RETRIES` (default 20) /
+  `HARNESS_AUTHOR_COMMIT_BACKOFF_MS` (default 100).
 
 ### 3.2 Console reads and actions (M-CONSOLE) — E1 rung 3 unless noted
 
@@ -359,6 +369,24 @@ heading; `problems` accumulator + `_fail_with`; store digests where state is ass
   ratios; a browser arm asserts badge DOM shape).
 - **TC-UI-21** (CT-UI-11 / RS-13) — *budgets.* FCP ≤ 2000 ms, transition ≤ 300 ms on the new
   bundle (existing E6 budget mechanism).
+
+### 3.5a Regression cases — the shipped defects PR #797's suite flagged
+
+The fix-issue exception's cases: defects in the shipped stories, found by the screens
+suite, each without its own `TC-*` coverage. One regression per defect, written red
+against the unfixed tree and planned here in the same PR as the fix.
+
+- **TC-UI-22** (FR-UI-16) — *the per-student log panel loads.* Opening the drill-down's
+  Details expander starts the logs read (the expander carries its `onToggle`; the panel
+  is read when opened, never eagerly behind a closed one), and the panel renders the
+  run's own records — not the loading placeholder, which the unfixed `StudentDetail`
+  showed permanently (`showDetails` declared, never set).
+- **TC-UI-23** (FR-UI-13) — *an immediate op's failure renders.* A move the console
+  refuses renders the refusal through the state model's outcome line; an op the console
+  errors on (the 500 a failing save answers) renders the outcome *and* re-reads the
+  draft, the server's state being the truth; a dropped connection says the change was
+  not sent and re-reads nothing. The unfixed `DraftEditor` recorded every result through
+  `action.finish` and rendered none of it.
 
 ### 3.6 Vocabulary and the acceptance journeys — E6
 
