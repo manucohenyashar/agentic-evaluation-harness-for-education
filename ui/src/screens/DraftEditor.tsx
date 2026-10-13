@@ -896,9 +896,11 @@ export function DraftEditor({
         package_id: draftId, ...body,
       });
       action.finish(result);
-      if (result.refused !== true && result.error === undefined) {
-        read.retry();
-      }
+      // The read re-runs whatever the console answered: a landed op must show; a refusal
+      // changed nothing, and the re-read proves it; an errored one may or may not have
+      // landed, and the server's state is the truth. Only a change that was never sent
+      // skips the read (the catch below).
+      read.retry();
     } catch (failure: unknown) {
       action.finish({
         action: "edit draft package",
@@ -983,6 +985,10 @@ export function DraftEditor({
         }
         return (
           <>
+            {/* The immediate op's answer, wherever the teacher already is: a refusal, an
+                error or a landed op all speak here, in the same outcome line every other
+                screen renders (`outcomeText`'s refused-as-refused wording). */}
+            <ActionOutcome outcome={action.outcome} />
             {publishedVersion !== null && (
               <div role="alert" className="impact-banner">
                 {impact.data !== null ? (
@@ -1137,9 +1143,9 @@ export function DraftEditor({
                 onDone={(result) => {
                   setDeletePending(null);
                   action.finish(result);
-                  if (result.refused !== true && result.error === undefined) {
-                    read.retry();
-                  }
+                  // The same rule as the moves: whatever the console answered, the read
+                  // re-runs — the server's state is the truth.
+                  read.retry();
                 }}
               />
             )}

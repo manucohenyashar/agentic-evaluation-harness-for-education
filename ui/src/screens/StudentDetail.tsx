@@ -117,7 +117,19 @@ export function StudentDetail({ submissionId }: { submissionId: string }) {
                       runId={doc.run_id}
                       onDone={afterOverride}
                     />
-                    <details className="detail-expander">
+                    {/* The expander starts the logs read: the trail is read only once a
+                        teacher opens an expander, never eagerly behind a closed panel. The
+                        flag latches: every criterion card carries its own expander over the
+                        same run's log, so closing one must not pull the read out from under
+                        another that is still open. */}
+                    <details
+                      className="detail-expander"
+                      onToggle={(event) => {
+                        if (event.currentTarget.open) {
+                          setShowDetails(true);
+                        }
+                      }}
+                    >
                       <summary>Details</summary>
                       <div className="detail-body">
                         <h3>The graders' trail</h3>
