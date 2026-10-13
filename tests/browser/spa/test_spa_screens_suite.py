@@ -761,6 +761,17 @@ def test_tc_ui_10_from_documents_previews_refuses_and_shows_the_drafting_job(
             _goto(page, served.origin, "/package/author")
             page.locator('input[aria-label="Choose files to upload"]').set_input_files(
                 [legacy, pdfs[0]])
+            # The .doc's refusal is the preview read's answer, not a pick-time rule: the
+            # preview button itself is the shipped readiness signal (disabled while any
+            # picked file's bytes are still reading), the teacher asks for the preview,
+            # and the refusal card and the other file's outline answer together in that
+            # one read's response.
+            ask_preview = page.get_by_role("button", name="Show what we understood")
+            if not _wait_for(problems, "arm (b)", page, ask_preview.is_enabled,
+                             "the preview button to enable once the bytes are read",
+                             timeout_ms=60_000):
+                pass
+            ask_preview.click()
             if not _wait_for(problems, "arm (b)", page,
                              lambda: "We cannot read this kind of file yet" in
                              page.locator("main").inner_text(),
@@ -774,7 +785,6 @@ def test_tc_ui_10_from_documents_previews_refuses_and_shows_the_drafting_job(
                                 "next step")
             if "The refused files above are left out; the rest are unaffected." not in main:
                 problems.append("arm (b): the refused-files note is missing")
-            page.get_by_role("button", name="Show what we understood").click()
             _wait_for(problems, "arm (b)", page,
                       lambda: page.locator("section[aria-label='What we understood'] "
                                            ".preview-file").count() > 0,
@@ -2043,11 +2053,16 @@ def test_tc_ui_17_the_settings_screen_projects_every_setting_and_round_trips_a_s
                     problems.append(f"settings: the non-editable row {row['field']!r} is not "
                                     f"in the read-only list")
                     continue
-                # The value itself, read-only: the row's dd renders the read's own value
-                # (an empty value as the em dash; a boolean as JavaScript spells it).
-                raw = row.get("value")
-                shown = "—" if raw == "" else (
-                    "true" if raw is True else "false" if raw is False else str(raw))
+                # The value itself, read-only: the row's dd renders the read's own value —
+                # the credential rows as "Configured ✓"/"Not configured" (the shipped
+                # valueLabel's rule), an empty value as the em dash, a boolean as
+                # JavaScript spells it.
+                if row.get("type") == "secret":
+                    shown = "Configured ✓" if row.get("configured") else "Not configured"
+                else:
+                    raw = row.get("value")
+                    shown = "—" if raw == "" else (
+                        "true" if raw is True else "false" if raw is False else str(raw))
                 value = fixed.first.locator("div.settings-row").filter(
                     has_text=row["label"]).locator("dd")
                 rendered = value.first.inner_text().strip() if value.count() else "nothing"
