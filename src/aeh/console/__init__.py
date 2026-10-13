@@ -169,6 +169,7 @@ from .api import API_ROUTES, ApiRoute, SPA_BUNDLE_DIR
 from .parity import (
     CLI_COMMAND_PURPOSE,
     CLI_CONSOLE_PATHS,
+    CONSOLE_CAPABILITY_PARITY,
     DEBUGGING_ONLY_COMMANDS,
     parity_inventory,
 )
@@ -197,6 +198,7 @@ __all__ = [
     "ApiRoute",
     "CLI_COMMAND_PURPOSE",
     "CLI_CONSOLE_PATHS",
+    "CONSOLE_CAPABILITY_PARITY",
     "DEBUGGING_ONLY_COMMANDS",
     "ConsoleApp",
     "ConsoleBindRefused",

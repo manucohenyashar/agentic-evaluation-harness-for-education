@@ -14,6 +14,13 @@ The authoring commands are listed as debugging-only rows with the reason (`FR-CO
 design delta §3.5): `aeh author draft` / `aeh author review` are CLI first (FR-PIPE-10,
 #695 registered them), and the authoring screens are future console work, so the listing
 says so instead of inventing a console path this delta does not build.
+
+`FR-CONSOLE-41`'s other half is the console-redesign delta's own capabilities (§1.2: every
+new capability "has a terminal counterpart or a debugging-only listing; the parity census is
+updated in the same change that adds the actions"). `CONSOLE_CAPABILITY_PARITY` is that
+census: one decision row per capability the delta added, naming the `aeh` command that opens
+the same door or stating the console-only posture with the reason, rendered beside the
+command rows in `parity_inventory()` (#767 — #760 added the actions without the rows).
 """
 
 from __future__ import annotations
@@ -135,6 +142,83 @@ CLI_COMMAND_PURPOSE: dict[str, str] = {
 }
 
 
+#: The console-redesign delta's capability parity (`FR-CONSOLE-41`, design delta §1.2 and
+#: §3.2.2): every capability the delta adds to the console, each with its **terminal
+#: counterpart** — the `aeh` command that opens the same door — or the statement that the
+#: console is the capability's only surface, with the reason. The design's rule is that the
+#: census is updated in the same change that adds the actions; #760 added the eleven without
+#: touching this module, so the decision rows land here with #767, and a capability added
+#: later without a row is the same silent gap an unlisted subcommand is.
+#:
+#: Keys are the capability names as the design's §3.2.2 table declares them; where the
+#: shipped surface carries a capability as a read rather than a control row (the two
+#: exports, synchronous file deliveries like the existing results export), the row says
+#: which read carries it. The `author draft` / `author review` CLI rows above keep their
+#: present-and-unavailable posture (`FR-CONSOLE-46`, TC-CONSOLE-58's oracle) — this table is
+#: the other direction: the console capability and its terminal door, not the command's row.
+CONSOLE_CAPABILITY_PARITY: dict[str, str] = {
+    "draft package from documents": (
+        "the `aeh author draft` command opens the same AuthoringService door (ADR-45) from "
+        "the terminal; the console stages the same documents as a job (ADR-47) and renders "
+        "the progress the command does not have"
+    ),
+    "answer authoring review": (
+        "`aeh author review` walks the same unresolved items against the same draft file; "
+        "the console answers one item at a time over the same AuthoringService review call, "
+        "so the draft on disk is current under either surface (FR-AUTHOR-16)"
+    ),
+    "edit draft package": (
+        "console-only by design: the structured editor (add/edit/reorder/delete through "
+        "`aeh.author`'s validate/persist path) has no terminal counterpart — `aeh author "
+        "review` resolves review items but applies no structural edit, and the console never "
+        "sends the TOML text a terminal round-trip would need"
+    ),
+    "approve draft package": (
+        "`aeh package build` opens the same M-PKG build and publish door; the console's "
+        "approval adds the placeholder gate (FR-PKG-28) around the same build, so a draft "
+        "the console refuses is one the command refuses too"
+    ),
+    "create class": (
+        "the same cohort-ledger door `aeh cohort create` opens (ADR-48: a class is the "
+        "ledger in a roster-only state); the command creates the ledger without the class "
+        "vocabulary, which is the console's distinction over one storage concept"
+    ),
+    "create cohort from class": (
+        "console-only: copying a class ledger into a grading cohort with consent state "
+        "carried has no terminal command — `aeh cohort create` builds a cohort from a roster "
+        "file, never from another ledger (ADR-48)"
+    ),
+    "import roster file": (
+        "`aeh cohort create` and `aeh cohort add-students` load the same roster files "
+        "through the same validation; the console's import adds the preview-before-commit "
+        "(R7) the commands do not render"
+    ),
+    "update configuration": (
+        "console-only by design: the guided write goes through M-CONF's update write path "
+        "(FR-CONF-34) — validated, atomic, teacher-editable subset only — while the terminal "
+        "path is editing the configuration file by hand, which is exactly what the guided "
+        "form exists to replace"
+    ),
+    "export results workbook": (
+        "console-only for now: `aeh results export` writes the marks CSV and one PDF per "
+        "student, and the workbook (.xlsx via openpyxl, ADR-49) rides the console's "
+        "`results workbook` read (FR-CONSOLE-58) until the command grows the format"
+    ),
+    "export readable package": (
+        "console-only by design: the readable package PDF is the deterministic stdlib writer "
+        "(ADR-49 — no DOCX writer) rendered for the teacher through the `readable package "
+        "export` read (FR-CONSOLE-59), while `aeh package export` writes the spec TOML a "
+        "developer diffs; the two exports answer different questions"
+    ),
+    "cancel job": (
+        "console-only: authoring jobs cancel cooperatively at a step boundary (CT-AUTHOR-24, "
+        "CT-CONSOLE-35) inside the console's own job registry (ADR-47, console memory), and "
+        "a run's cancel is the existing `pause/resume` control row — the terminal has no job "
+        "registry to cancel into"
+    ),
+}
+
+
 def cli_leaf_commands(parser: argparse.ArgumentParser) -> list[str]:
     """Every leaf subcommand of the `aeh` parser, space-joined (`"cohort create"`), walked
     from the parser itself — the inventory is generated, never hand-kept."""
@@ -221,12 +305,26 @@ def parity_inventory() -> dict[str, Any]:
                  "listed here as debugging-only with the reason."),
         "commands": commands,
         "gaps": gaps,
+        # The other half of FR-CONSOLE-41: the console-redesign delta's own capabilities, each
+        # with its terminal counterpart or the console-only statement. Rendered beside the
+        # command rows so the help section answers both directions of the parity question.
+        "console_capabilities": {
+            "rule": ("every capability the console-redesign delta adds to the console has a "
+                     "terminal counterpart — the `aeh` command that opens the same door — or "
+                     "is stated here as the console's only surface, with the reason "
+                     "(FR-CONSOLE-41)."),
+            "capabilities": [
+                {"capability": name, "parity": parity}
+                for name, parity in sorted(CONSOLE_CAPABILITY_PARITY.items())
+            ],
+        },
     }
 
 
 __all__ = [
     "CLI_COMMAND_PURPOSE",
     "CLI_CONSOLE_PATHS",
+    "CONSOLE_CAPABILITY_PARITY",
     "DEBUGGING_ONLY_COMMANDS",
     "cli_leaf_commands",
     "parity_inventory",

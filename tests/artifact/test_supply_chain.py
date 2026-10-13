@@ -39,9 +39,11 @@ tick — the honest reporting the `/write-tests` skill asks for when an oracle c
 
 from __future__ import annotations
 
+import json
 import re
 import tomllib
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -275,3 +277,158 @@ def test_sec_14_no_lockfile_claims_a_dependency_set_that_does_not_exist():
         "deliberate, this case is the place to record who maintains it and how it is "
         "regenerated."
     )
+
+
+# --- the SPA's build-time dependency inventory (ADR-49, #767) ---------------------------------------
+
+#: `ui/package.json`'s `dependencies` — the libraries the SPA build **bundles into the committed
+#: asset** — transcribed with the reason each one is there (the same shape as
+#: `DECLARED_RUNTIME_DEPENDENCIES`, for the other half of ADR-49's policy).
+#:
+#: These never ship as runtime dependencies of the wheel and are never fetched at runtime
+#: (`CT-CONSOLE-06` — the committed bundle is the product; `TC-UI-01 (b)`'s origin sweep is the
+#: never-runtime-fetched half, and the E6 rebuild gate is the bundled-in half). What an
+#: unreviewed addition here widens is the build machine's surface and the committed asset's
+#: bytes, so the admission is the same literal-transcription move: the set changes only in a
+#: diff a reviewer sees.
+#:
+#: **The one design-named dependency that is not here, stated:** ADR-49 names
+#: `@base-ui-components/react` 1.x beside `lucide-react` as the delta's two build-time
+#: libraries, and issue #767's acceptance criteria carry both. The shipped shell does not
+#: declare or import it — the switchers are native `<select>` controls and the dialog, help
+#: panel and state badges are hand-rolled accessible components (recorded on #781's PR:
+#: "only lucide-react was added; the switchers are native controls, so Base UI is not needed
+#: by this story"). Declaring an unused dependency to satisfy the checklist would widen the
+#: very surface this inventory bounds, so the inventory enumerates what ships; if a component
+#: ever adopts a Base UI primitive, it enters this mapping in the same change, per the rule
+#: this file exists to enforce.
+DECLARED_SPA_DEPENDENCIES: dict[str, str] = {
+    "react": "#634 — the SPA's runtime: the hub, the lifecycle screens and the wizard shell "
+             "render through it. Bundled into the committed asset by the pinned Vite build",
+    "react-dom": "#634 — the SPA's renderer, mounted once from `ui/src/main.tsx`. Bundled "
+                 "beside react by the same build",
+    "lucide-react": "#763 (ADR-49) — the icon set behind every state badge and screen glyph "
+                    "(FR-UI-04's icon + label + colour pairings and CT-UI-10's never-colour-"
+                    "alone rule are what it is for). Tree-shaken by the build: only the "
+                    "imported glyphs' paths reach the committed asset, which is why the "
+                    "bundle's bytes, not the package, are the shipped surface",
+}
+
+#: `ui/package.json`'s `devDependencies` — the pinned build toolchain (`TC-UI-C06`'s Q-O3
+#: half: the lockfile is the pin). None of it reaches the bundle; it is inventoried because
+#: it runs on the build machine against the repository, the same A08 reasoning as
+#: `REVIEWED_DEV_DEPENDENCIES`, and because an unbounded toolchain pin is how a rebuild stops
+#: being reproducible (the byte-identity gate's whole premise).
+DECLARED_SPA_DEV_DEPENDENCIES: dict[str, str] = {
+    "@types/react": "#634 — react's type declarations, typecheck-only",
+    "@types/react-dom": "#634 — react-dom's type declarations, typecheck-only",
+    "@vitejs/plugin-react": "#634 — the Vite plugin that compiles the JSX/TSX source",
+    "typescript": "#634 — the compiler `npm run typecheck` runs over the SPA source",
+    "vite": "#634 — the bundler that produces the committed asset (`npm run build`)",
+}
+
+
+def _spa_package_json() -> dict[str, Any]:
+    return json.loads((REPO_ROOT / "ui" / "package.json").read_text(encoding="utf-8"))
+
+
+def _spa_lockfile() -> dict[str, Any]:
+    return json.loads((REPO_ROOT / "ui" / "package-lock.json").read_text(encoding="utf-8"))
+
+
+def _spa_lockfile_roots() -> dict[str, Any]:
+    return _spa_lockfile().get("packages", {}).get("", {})
+
+
+def _is_upper_bounded(specifier: str) -> bool:
+    """True when the specifier names a bounded install: an exact pin (`1.2.3`, bare or
+    `v`-prefixed, or written `==1.2.3`), an explicit upper bound (`<2`), or a caret/tilde
+    range — `^0.577.0` means `>=0.577.0 <0.578.0`, which is an upper bound even though no
+    `<` appears in the string (npm's semver semantics, and the reason the check parses
+    intent rather than grepping for a character). A leading digit covers the bare exact
+    pin and a major-pinned range (`1.x`); `>=3.1` with no `<` still reads as unbounded."""
+    text = specifier.strip()
+    if not text:
+        return False
+    if text.startswith(("^", "~", "v")) or "==" in text:
+        return True
+    if text[0].isdigit():
+        return True
+    return "<" in text
+
+
+def test_sec_14_the_spa_dependency_set_is_the_enumerated_inventory():
+    """`SEC-14`, the build-time half (ADR-49, #767) — every library `ui/package.json` declares
+    under `dependencies` is on the inventory with its reason, and nothing else is, both
+    directions. The bundle is what ships to the school's browser, so a library reaching it is
+    a shipped dependency in the sense that matters, even though the wheel never installs it."""
+    declared = {name.lower(): spec for name, spec in _spa_package_json()["dependencies"].items()}
+    inventory = {name.lower() for name in DECLARED_SPA_DEPENDENCIES}
+
+    assert set(declared) == inventory, (
+        "SEC-14: the SPA's declared dependency set changed.\n"
+        f"  newly declared: {sorted(set(declared) - inventory)}\n"
+        f"  removed:        {sorted(inventory - set(declared))}\n"
+        "Everything under `dependencies` is bundled into the committed asset (ADR-49): an "
+        "addition is a design decision recorded in DECLARED_SPA_DEPENDENCIES with its reason, "
+        "admitted in the same change that adds it — never a dependency bump."
+    )
+    unexplained = sorted(name for name, reason in DECLARED_SPA_DEPENDENCIES.items()
+                         if not reason.strip())
+    assert not unexplained, f"SEC-14: SPA inventory entries with no reason: {unexplained}"
+
+
+def test_sec_14_every_spa_dependency_declares_an_upper_bound():
+    """`SEC-14`, the build-time half — an unbounded SPA dependency resolves to whatever the
+    index served the day the bundle was built, which is exactly the non-reproducibility the
+    byte-identity rebuild gate (TC-UI-01 (c)) cannot then vouch for. The dev toolchain is
+    held to the same bound: the lockfile pins today's build, but the declared range is what
+    the next `npm update` resolves under."""
+    package = _spa_package_json()
+    unbounded = sorted(
+        f"{name} {specifier or '(no specifier)'}"
+        for section in ("dependencies", "devDependencies")
+        for name, specifier in package.get(section, {}).items()
+        if not _is_upper_bounded(specifier)
+    )
+    assert not unbounded, (
+        f"SEC-14: these SPA dependencies are unbounded: {unbounded}. ADR-49 pins every new "
+        "dependency with an upper bound; a caret or tilde range is a bound, a bare name is not"
+    )
+
+
+def test_sec_14_the_spa_lockfile_declares_the_same_set_as_the_manifest():
+    """The lockfile is the toolchain pin the rebuild gate installs with (`npm ci`); if its
+    root entries drift from `package.json`, the gate audits one set while `npm ci` installs
+    another. The lockfile lock-version record is checked too: a lockfile written by a
+    different npm generation is a toolchain change, which is its own reviewed diff."""
+    package = _spa_package_json()
+    roots = _spa_lockfile_roots()
+    problems = []
+    for section in ("dependencies", "devDependencies"):
+        manifest = {name.lower(): spec for name, spec in package.get(section, {}).items()}
+        locked = {name.lower(): spec for name, spec in (roots.get(section) or {}).items()}
+        if manifest != locked:
+            problems.append(f"{section}: manifest {manifest} != lockfile {locked}")
+    lock_version = _spa_lockfile().get("lockfileVersion")
+    if lock_version != 3:
+        problems.append(f"lockfileVersion is {lock_version!r}, not the declared 3")
+    assert not problems, (
+        "SEC-14: the SPA lockfile's claim and the manifest's disagree — `npm ci` would install "
+        f"what the rebuild gate does not audit:\n  " + "\n  ".join(problems))
+
+
+def test_sec_14_control_the_spa_bound_check_rejects_an_unbounded_pin():
+    """The negative control for `_is_upper_bounded`: the four specifier shapes that must pass
+    do, and the bare name — the actual A06 vector — does not. A parser that passed everything
+    would make the case above a tautology, which is the failure TS-57's rule names."""
+    assert _is_upper_bounded("^0.577.0")
+    assert _is_upper_bounded("~5.9.0")
+    assert _is_upper_bounded(">=3.1,<4")
+    assert _is_upper_bounded("==0.7.2")
+    assert _is_upper_bounded("1.2.3")
+    assert _is_upper_bounded("v1.2.3")
+    assert not _is_upper_bounded("lucide-react")
+    assert not _is_upper_bounded("")
+    assert not _is_upper_bounded(">=3.1")
+

@@ -175,10 +175,11 @@ def test_tc_console_65c_the_preview_lists_every_malformed_row_and_the_import_ref
         "class_id": "cl-imp", "consent_class": "synthetic",
         "content": MALFORMED_ROSTER, "name": "roster.csv",
     })
-    # The class vocabulary's refusals carry `dispatched=False` and a "… refused: …"
-    # detail; the boolean `refused` flag stays False for them (unlike the authoring
-    # actions', which set it) — flagged in the PR as an outcome-shape inconsistency, not
-    # papered over here. The refusal itself is what the TC's oracle names.
+    # A class-vocabulary refusal is a refusal: `refused=True` with the refused detail and
+    # its next action, consistent with the authoring actions' outcomes (PR #794's
+    # finding 3 — the shipped shape kept the flag False and signalled only through
+    # `dispatched=False` plus the "… refused: …" detail prefix; fixed in the follow-up).
+    assert imported["refused"] is True, imported["detail"]
     assert imported["dispatched"] is False, imported["detail"]
     assert imported["detail"].startswith("import roster file refused:")
     assert "the roster file still has 2 problem row(s)" in imported["detail"], (

@@ -280,6 +280,19 @@ Negative and boundary cases are marked. Every case names its oracle.
   `http://127.0.0.1:<port>/` + next step; (c) `HARNESS_CONSOLE_AUTO_OPEN=0` suppresses
   browser-open (asserted via a patched opener), default opens in interactive mode;
   (d) `serve_console()` never opens a browser.
+- **TC-CONSOLE-75** (FR-CONSOLE-56 / FR-AUTHOR-11) — *inline regression, the edit round-trip
+  stays parseable* (PR #794's shipped-defect findings 1 and 5, fixed in the follow-up).
+  Arms: (a) a draft whose `[grades]` boundary is still a sentinel takes a structured edit:
+  the rewritten file renders the floor **quoted** with its `# PLACEHOLDER(...)` reason
+  comment above it (`FR-AUTHOR-11`), `tomllib` parses the result, and the sentinel survives
+  for the next pass; (b) a textless edit is refused with the field's own name closing the
+  clause ("the edit carries no text"), not the doubled word the shipped shape emitted.
+- **TC-CONSOLE-76** (FR-CONSOLE-56 / FR-CONSOLE-48) — *inline regression, the draft read
+  projects the table the grammar names* (PR #794's shipped-defect finding 2, fixed in
+  #793's merge; pinned here so it stays fixed). Expected: `authoring_draft_read`'s `items`
+  carry exactly the ids of the draft file's `[[question]]` tables — the grammar's singular
+  key — and `projected.items` equals that count; the shipped `questions` spelling shrank
+  every editor list to zero.
 
 ### 3.3 Configuration write path (M-CONF) — E1 rung 0/1
 

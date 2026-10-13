@@ -8,26 +8,23 @@ operations through the console, each change reported so a failure names the case
 | (c) an invalid edit (a question with no text) | refused with the editor's field-level message naming the question, and the draft file on disk unchanged |
 
 The base draft is the recorded AF-02 draft (`geo8-climate-01`): three open questions,
-three band criteria, numeric grade floors. **Two shipped defects shape arm (a)'s setup,
-both flagged for follow-up in the PR — neither is papered over here:**
+three band criteria, numeric grade floors. Arm (a) seeds the editor's own two-form-steps
+end state into the recorded draft file — the mcq question **and** the key criterion that
+grades it, which is what the plan's ungraded-question rule demands before the plan layer
+stays clear — and then exercises the arm the TC names: `add option` on that question.
 
-1. `render_draft`'s `[grades]` loop writes a non-`None` floor raw (`_toml_key(name) =
-   {floor}`), so a grades placeholder sentinel — a quoted string in the file, parsed back
-   as a string — renders **unquoted** and the draft file stops parsing. Every recorded
-   draft that carries an mcq question (AF-09, AF-11) also carries a grades sentinel, so
-   any edit round-trip on them corrupts the file (observed: the edit after an
-   add-question answers "The draft file could not be read: line 31 does not parse as a
-   draft").
-2. `authoring_draft_read` projects `spec.get("questions")`, but the draft grammar's
-   table key is `question` (singular, as `render_draft`, `validate_draft` and
-   `_structural_issues` all read it) — the read's `items` list is empty for every real
-   draft, so arm (a)'s read-back rides the draft file itself (`tomllib` over the same
-   bytes the console rewrote), not the broken projection.
+Two round-trip facts this file pins came out of the merge PR #794's shipped-defect
+findings, fixed in the follow-up and planned as TC-CONSOLE-75/76 in the console redesign
+plan (the `question` key itself was already corrected in #793):
 
-Arm (a) therefore seeds the editor's own two-form-steps end state into the recorded draft
-file — the mcq question **and** the key criterion that grades it, which is what the
-plan's ungraded-question rule demands before the plan layer stays clear — and then
-exercises the arm the TC names: `add option` on that question.
+1. `render_draft`'s `[grades]` loop renders a sentinel floor **quoted**, with its
+   `# PLACEHOLDER(...)` reason comment above it (`FR-AUTHOR-11`), so a draft whose grades
+   boundary is still a placeholder survives an edit's round-trip — the shipped loop wrote
+   it raw and the rewritten draft stopped parsing
+   (`test_an_edit_round_trip_keeps_a_draft_with_a_grades_placeholder_parseable`).
+2. `authoring_draft_read` projects the grammar's singular `question` key, so the read's
+   `items` mirror the draft file's tables
+   (`test_the_draft_read_projects_the_questions_table_the_grammar_names`).
 
 **Isolation: rung 3 (E1)** — real store, real console over real HTTP, the recorded
 provider (the support module's declared reconcile).
@@ -118,8 +115,7 @@ def test_tc_console_63a_adding_an_option_names_the_question_in_the_change_list(
     assert option["detail"].startswith("the draft was edited (")
 
     # The option stands in the file the edit committed — read through the same grammar
-    # the editor itself parses (`authoring_draft_read`'s items projection is the broken
-    # `questions` key, flagged above).
+    # the editor itself parses; the projection has its own pin further down this file.
     spec = tomllib.loads(Path(path).read_text(encoding="utf-8"))
     questions = [q for q in spec["question"] if str(q.get("id")) == "Q9"]
     assert len(questions) == 1, (
@@ -182,8 +178,80 @@ def test_tc_console_63c_an_invalid_edit_is_refused_in_teacher_language_and_the_d
     assert answer["dispatched"] is False
     assert "the edit carries no text" in answer["detail"], (
         f"the refusal does not name the missing field: {answer['detail']!r}")
+    # PR #794's finding 5: the message doubled the word (`… no text text. Nothing was
+    # saved.`) because it interpolated the field name after the noun. The sentence reads
+    # once, as a teacher meets it.
+    assert "the edit carries no text. Nothing was saved." in answer["detail"], (
+        f"the refusal's sentence is not the single-word form: {answer['detail']!r}")
     assert "Nothing was saved." in answer["detail"]
     assert re.search(r"question '\w+'", answer["detail"]), (
         "the refusal does not name the question it was about")
     assert _file_digest(path) == before, (
         "a refused edit changed the draft file on disk")
+
+
+def test_the_draft_read_projects_the_questions_table_the_grammar_names(served_authoring):
+    """PR #794's finding 2: `authoring_draft_read` projected `spec.get("questions")`, but
+    the draft grammar's table is `question` (singular, as `render_draft`, `validate_draft`
+    and `_structural_issues` all read it) — the read's `items` list was empty for every
+    real draft, so the SPA's per-question views starved. (The key itself was corrected in
+    #793; this pins the projection against the draft file's own grammar.)"""
+    port, _data_dir, path, _package_id = _af02_draft(served_authoring)
+    file_ids = [str(q["id"]) for q in tomllib.loads(
+        path.read_text(encoding="utf-8"))["question"]]
+
+    answer = draft_read(port)
+    document = answer["draft"]
+
+    assert [item["id"] for item in document["items"]] == file_ids, (
+        f"the draft read's items {[item['id'] for item in document['items']]} do not "
+        f"project the draft's questions {file_ids} — the read read a plural key the "
+        "grammar never writes")
+    assert answer["projected"]["items"] == len(file_ids), (
+        f"the read's projected count is {answer['projected']['items']}, not the "
+        f"{len(file_ids)} questions the draft carries")
+
+
+def test_an_edit_round_trip_keeps_a_draft_with_a_grades_placeholder_parseable(
+        served_authoring):
+    """PR #794's finding 1: `render_draft`'s `[grades]` loop wrote a floor that was a
+    sentinel string raw (`f"{_toml_key(name)} = {floor}"`), so a grades placeholder that
+    round-tripped through a parse — a quoted string in the file, a string in the spec —
+    re-rendered unquoted and the rewritten draft no longer parsed (observed: the next
+    edit answers "The draft file could not be read: line N does not parse as a draft").
+    The re-render keeps the sentinel quoted, with its reason comment above it
+    (`FR-AUTHOR-11`), so the file survives the round-trip and the next one too."""
+    port, _data_dir, path, package_id = _af02_draft(served_authoring)
+    text = path.read_text(encoding="utf-8")
+    # AF-10's partial-table shape, dropped into the recorded AF-02 draft: one grade's
+    # boundary a per-grade sentinel with its reason comment above it — the state a draft
+    # carrying a grades placeholder parses back to (`[grades]` is the draft's last table).
+    grades_block = (
+        "[grades]\n"
+        "\n"
+        "# PLACEHOLDER(the document names the grade but states no boundary for it): "
+        "the minimum mark or percentage for grade A\n"
+        'A = "<<PLACEHOLDER: grades A>>"\n'
+    )
+    path.write_text(re.sub(r"\[grades\]\n.*\Z", grades_block, text, flags=re.DOTALL),
+                    encoding="utf-8")
+    spec = tomllib.loads(path.read_text(encoding="utf-8"))
+    qid = next(str(q["id"]) for q in spec["question"])
+
+    answer = _action(port, "edit draft package", {
+        "package_id": package_id, "operation": "edit question",
+        "item_id": qid, "field": "text", "value": "Reworded: what does the data show?",
+    })
+
+    assert answer["refused"] is False, (
+        f"the edit of a placeholder-carrying draft was refused: {answer['detail']!r}")
+    rewritten = path.read_text(encoding="utf-8")
+    parsed = tomllib.loads(rewritten)  # raises: unquoted sentinel text is not TOML
+    assert parsed["grades"] == {"A": "<<PLACEHOLDER: grades A>>"}, (
+        f"the re-render changed the grades table: {parsed['grades']!r}")
+    lines = rewritten.splitlines()
+    sentinel_at = next(index for index, line in enumerate(lines)
+                       if "<<PLACEHOLDER: grades A>>" in line)
+    assert lines[sentinel_at - 1].startswith("# PLACEHOLDER("), (
+        f"the re-rendered sentinel carries no reason comment above it "
+        f"(FR-AUTHOR-11): {lines[max(sentinel_at - 1, 0)]!r}")
