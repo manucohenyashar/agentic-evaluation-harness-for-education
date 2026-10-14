@@ -49,6 +49,7 @@ import os
 import re
 import shutil
 import sqlite3
+import threading
 import time
 import tomllib
 from contextlib import redirect_stdout
@@ -864,7 +865,8 @@ def _extend_mask_for_authoring(mask: dict[str, str], console_dir: Path,
 
 def _serve_and_drive(store, console_dir: Path, scratch: Path, cfg: Any,
                      spec: JourneySpec, shape: _AdoptedShape, plans: tuple[_Plan, ...],
-                     qid: str, new_text: str, export_seen: dict) -> None:
+                     qid: str, new_text: str, export_seen: dict,
+                     monkeypatch: pytest.MonkeyPatch) -> None:
     """The operator's surface, end to end: the class action, the authoring legs in the
     browser, the papers, the run through its confirmation control, the review, the
     results with their justification and override, the exports, and the wizard's
@@ -1008,20 +1010,55 @@ def _serve_and_drive(store, console_dir: Path, scratch: Path, cfg: Any,
                 f"{label}: the preview committed something: {_action_urls(log)!r}")
             assert not list(Path(console_dir, "authoring").glob("*.draft.toml")), (
                 f"{label}: a draft file exists before the teacher confirmed anything")
+            # The preview's text renders AFTER the arrival snapshot (the read answers
+            # when the teacher asks), and it is model-authored outline text — exactly
+            # the surface the forbidden-term scan exists for. Scan the screen as it
+            # now stands, preview and all.
+            visited.append(("/package/author with the preview", spa.main_text(page)))
 
             make = page.get_by_role("button", name="Make the draft")
             _wait_for(page, make.is_enabled, "the draft dispatch to arm")
+            gate = release = None
+            if spec.survival:
+                # The survival probe must catch the job MID-flight, not race it: the
+                # draft's first model call announces itself on a gate and blocks on a
+                # release (the transport stays the recorded one — only the timing is
+                # scripted, the screens suite's TC-UI-10 arm (c) idiom), so the reload
+                # below lands while the job is provably running.
+                gate, release = threading.Event(), threading.Event()
+                from aeh.console import authoring_actions
+                real_provider_for = authoring_actions._provider_for
+
+                def paced_provider_for(environ):
+                    return crw.PacedRecordedProvider(
+                        real_provider_for(environ), gate, release)
+
+                monkeypatch.setattr(
+                    authoring_actions, "_provider_for", paced_provider_for)
             make.click()
             dialog = _dialog(page)
             _wait_for(page, lambda: dialog.count() > 0 and dialog.first.is_visible(),
                       "the draft confirmation to open")
+            visited.append(("/package/author draft confirm", dialog.first.inner_text()))
             dialog.first.get_by_role("button", name="Make the draft").click()
             if spec.survival:
                 # RS-05's positive twin, mid-drafting: the job belongs to the server,
                 # so the page dying under it changes nothing. The dispatch registers,
-                # the page reloads, and the same job is waited out to its draft.
+                # the page reloads, and the reopened author screen must RE-ATTACH to
+                # the job's own progress — the browser-side claim the stage names —
+                # while the job is still running; only then is the paced call released
+                # and the job waited out to its draft.
                 job_id = _draft_job_id(port, label)
+                assert gate is not None and gate.wait(timeout=120), (
+                    f"{label}: the paced draft job never reached its first model call")
                 page.reload(wait_until="domcontentloaded")
+                progress = page.locator("section[aria-label='Drafting progress']")
+                _wait_for(page, progress.is_visible,
+                          "the reopened author screen to re-attach to the running "
+                          "job's progress")
+                release.set()
+                monkeypatch.setattr(
+                    authoring_actions, "_provider_for", real_provider_for)
                 record = crw.wait_for_job(port, job_id, timeout=DRAFT_TIMEOUT_S)
             else:
                 record = _wait_draft_job(port, label)
@@ -1064,6 +1101,8 @@ def _serve_and_drive(store, console_dir: Path, scratch: Path, cfg: Any,
                 # own order, the walk answers in that same order, and the group closes
                 # ranks after every answer — so the head is always the item being
                 # answered, and the leave-the-list wait counts the group down by one.
+                # (The declared values are distinct across each fixture's group, so a
+                # mis-targeted answer could not still satisfy the later fills.)
                 piece = next(row for row in placeholders
                              if str(row["item_id"]) == item_id)
                 reason = str(piece.get("reason") or "")
@@ -1087,6 +1126,7 @@ def _serve_and_drive(store, console_dir: Path, scratch: Path, cfg: Any,
                       lambda: "None — the draft is ready to approve."
                       in page.locator("main").inner_text(),
                       "the ready copy to render once every answer is in")
+            visited.append(("/package/review after the walk", spa.main_text(page)))
             assert int(crw.draft_read(port)["draft"]["missing_pieces"]) == 0, (
                 f"{label}: the draft read still counts pieces after the walk")
             if spec.survival:
@@ -1122,12 +1162,14 @@ def _serve_and_drive(store, console_dir: Path, scratch: Path, cfg: Any,
             page.get_by_role("button", name=re.compile(r"Review changes \(1\)")).click()
             dialog = _dialog(page)
             _wait_for(page, dialog.is_visible, "the save confirmation")
+            visited.append(("/package/edit save confirm", dialog.first.inner_text()))
             dialog.first.get_by_role("button", name="Save the changes").click()
             _wait_for(page, lambda: page.locator(".change-list-applied").count() > 0,
                       "the applied change list to render")
             applied = page.locator(".change-list-applied ul li").all_inner_texts()
             assert applied and not any("Refused:" in text for text in applied), (
                 f"{label}: the editor's save was refused or empty: {applied!r}")
+            visited.append(("/package/edit after the save", spa.main_text(page)))
             assert draft_file.read_bytes() != before_bytes, (
                 f"{label}: the draft file did not change — the editor's save did not "
                 "apply")
@@ -1142,6 +1184,8 @@ def _serve_and_drive(store, console_dir: Path, scratch: Path, cfg: Any,
             dialog = _dialog(page)
             _wait_for(page, lambda: dialog.count() > 0 and dialog.first.is_visible(),
                       "the approve confirmation to open")
+            visited.append(
+                ("/package/review approve confirm", dialog.first.inner_text()))
             dialog.first.get_by_role("button", name="Approve the package").click()
             _wait_for(page,
                       lambda: any("approve-draft-package" in url
@@ -1164,9 +1208,10 @@ def _serve_and_drive(store, console_dir: Path, scratch: Path, cfg: Any,
             _goto(page, f"/?class={spec.cohort_id}")
             # The build created the package file the context read lists, so the wizard
             # now sees the whole story: the review stage reads Done alongside the
-            # published one.
+            # published one — and stage 2, the package leg, with it.
             _badge_becomes(page, 4, "Done", "after the approve leg")
             _badge_becomes(page, 3, "Done", "with the package published")
+            _badge_becomes(page, 2, "Done", "with the package published")
 
             # -- the papers leg (disclosed: direct ingest, the screen driven visually) --
             assessment, sheets = _write_papers(
@@ -1229,6 +1274,8 @@ def _serve_and_drive(store, console_dir: Path, scratch: Path, cfg: Any,
             dialog_text = dialog.first.inner_text()
             assert "dev-ci" in dialog_text, (
                 f"{label}: the start confirmation names no profile: {dialog_text!r}")
+            visited.append(
+                ("/run start confirm", dialog_text))
             confirm = [dialog.first.get_by_role("button", name=re.compile(
                 r"^\s*start", re.I)).nth(i)
                 for i in range(dialog.first.get_by_role(
@@ -1261,6 +1308,7 @@ def _serve_and_drive(store, console_dir: Path, scratch: Path, cfg: Any,
                 f"{label}: the monitor screen does not show the run's terminal phase")
             _goto(page, f"/?class={spec.cohort_id}&run={run_id}")
             _badge_becomes(page, 7, "Done", "after a complete run")
+            _badge_becomes(page, 6, "Done", "after a complete run — the papers read")
 
             # -- the review queue, then the finalize control ----------------------------
             _goto(page, "/review")
@@ -1327,6 +1375,8 @@ def _serve_and_drive(store, console_dir: Path, scratch: Path, cfg: Any,
             _wait_for(page, note.is_visible, "the required-reason refusal to render")
             assert "A reason is required to change a final grade" in note.inner_text(), (
                 f"{label}: the refusal reads {note.inner_text()!r}")
+            visited.append(
+                ("/results drill-down with the refusal", spa.main_text(page)))
             assert _action_urls(log) == override_posts_before, (
                 f"{label}: the reasonless save posted: {_action_urls(log)!r}")
             override.locator("textarea[name='override-reason']").fill(spec.reason)
@@ -1351,6 +1401,9 @@ def _serve_and_drive(store, console_dir: Path, scratch: Path, cfg: Any,
                       and "Final grade changed from" in history.first.inner_text(),
                       "the amendment's render-back to appear")
             assert "the original grade is kept in the history" in history.first.inner_text()
+            visited.append(
+                ("/results drill-down with the amendment history",
+                 spa.main_text(page)))
 
             # -- the exports: the console's own reads ------------------------------------
             status, _headers, csv_bytes = get_bytes(
@@ -1696,7 +1749,7 @@ def run_full_journey(spec: JourneySpec, tmp_path_factory: pytest.TempPathFactory
     export_seen: dict[str, object] = {}
     try:
         _serve_and_drive(console_store, console_dir, scratch, cfg, spec, shape,
-                         plans, qid, new_text, export_seen)
+                         plans, qid, new_text, export_seen, monkeypatch)
     finally:
         _close(console_store)
 
