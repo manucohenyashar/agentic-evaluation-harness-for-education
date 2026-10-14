@@ -612,7 +612,8 @@ def _surrogate_rows(data_dir: Path) -> dict[str, list[dict[str, Any]]]:
     read-only from the store files."""
     rows: dict[str, list[dict[str, Any]]] = {
         "submission": [], "document": [], "region": [], "work_unit": [],
-        "package_version": [], "escalation_request": [],
+        "package_version": [], "escalation_request": [], "run": [],
+        "review_queue": [],
     }
     for db in sorted(Path(data_dir).rglob("*.sqlite")):
         connection = _sqlite_readonly(db)
@@ -640,6 +641,12 @@ def _surrogate_rows(data_dir: Path) -> dict[str, list[dict[str, Any]]]:
                 rows["escalation_request"] = [dict(r) for r in connection.execute(
                     "SELECT request_id, submission_id, criterion_id FROM "
                     "escalation_request")]
+            if "run" in names:
+                rows["run"] = [dict(r) for r in connection.execute(
+                    "SELECT run_id FROM run")]
+            if "review_queue" in names:
+                rows["review_queue"] = [dict(r) for r in connection.execute(
+                    "SELECT queue_id, submission_id, criterion_id FROM review_queue")]
         finally:
             connection.close()
     return rows
@@ -671,6 +678,16 @@ def pairing_mask(console_dir: Path, cli_dir: Path) -> dict[str, str]:
         return student_of
 
     for side in (console, cli):
+        # The run id: the console drive pins its run's id (the bound run-start screen
+        # starts a run that EXISTS), the CLI drive mints `run-<sha12>` — the same run
+        # under two minted names. Both map to `<minted>`, the placeholder the whole-cell
+        # rule already spells for a minted `run-<hex>` id, so every row that cites the
+        # run — its own row, the units and phases named after it
+        # (`integ-unit-run-<run_id>-...`), the audit records — compares.
+        runs = sorted(str(row["run_id"]) for row in side["run"])
+        assert len(runs) == 1, (
+            f"fixture bug: expected one run, found {runs}")
+        mask[runs[0]] = "<minted>"
         # The published version: minted per build (`RUBRIC-METHODS@<12hex>`), one per
         # store here — both sides map to one placeholder, so every row that cites the
         # version (the run's, the grade's, the audit's, the mcq rollup's) compares.
@@ -728,6 +745,13 @@ def pairing_mask(console_dir: Path, cli_dir: Path) -> dict[str, str]:
         for (student, criterion), ids in requests.items():
             for order, request_id in enumerate(sorted(ids), start=1):
                 mask[request_id] = f"<escalation {student}:{criterion}:{order}>"
+        # The review queue's bookkeeping rows: a queue id hashes (run, submission,
+        # criterion), so the twins' ids for the same cell differ. Paired through
+        # student and criterion — one row per cell per run.
+        for row in side["review_queue"]:
+            student = student_of(row["submission_id"])
+            mask[str(row["queue_id"])] = (
+                f"<queue {student}:{row['criterion_id']}>")
     return mask
 
 
@@ -748,6 +772,12 @@ def canonical_tier_rows(data_dir: Path, *, mask: dict[str, str] | None = None,
     * a `work_unit` row's `done_ticks` is the lease clock's tick at completion — a
       monotonic-clock reading, wall-clock by another name — so the cell is dropped,
       the way `tier_rows` drops the `_at`/`_time` columns.
+    * a `label` row's `timestamp` is the wall-clock instant the label was recorded —
+      the same shape `_at`/`_time` name, spelled without the suffix — so the cell is
+      dropped the same way.
+    * a `submission_grade` row's `amendments` JSON quotes each amendment's `at`
+      instant inside the cell; the instant is wall-clock, the amendment record is not,
+      so the timestamp inside the cell is canonicalized to a placeholder.
     * `run_metrics` (wall clock, peak concurrency) and `store_lease_clock` (the
       persisted tick and wall-clock head) are timing records no independent drive
       can match, and are skipped entirely.
@@ -761,6 +791,9 @@ def canonical_tier_rows(data_dir: Path, *, mask: dict[str, str] | None = None,
             ]
         elif key.endswith(":work_unit"):
             rows[key] = [_DONE_TICKS_CELL.sub("", line) for line in lines]
+        rows[key] = [_LABEL_TIMESTAMP_CELL.sub("", line) for line in rows[key]]
+        rows[key] = [_AMENDMENT_AT_CELL.sub(r'"at": "<when>"', line)
+                     for line in rows[key]]
     return rows
 
 
@@ -772,3 +805,12 @@ def _sort_panel_state(match: Any) -> str:
 #: The `work_unit.done_ticks` cell (a monotonic-tick reading) wherever it sits in the
 #: row's repr — mid-row with its trailing separator, or last with the leading one.
 _DONE_TICKS_CELL = re.compile(r", \('done_ticks', [^)]*\)|\('done_ticks', [^)]*\), ")
+
+#: The `label.timestamp` cell — the wall-clock instant the label was recorded, the
+#: `_at`/`_time` shape spelled without the suffix — wherever it sits in the row's repr.
+_LABEL_TIMESTAMP_CELL = re.compile(
+    r", \('timestamp', [^)]*\)|\('timestamp', [^)]*\), ")
+
+#: The `"at": "<ISO instant>"` pair a `submission_grade.amendments` JSON cell quotes —
+#: the amendment's wall-clock record time inside the cell.
+_AMENDMENT_AT_CELL = re.compile(r'"at": "[^"]*"')
