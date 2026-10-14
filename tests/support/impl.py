@@ -499,19 +499,40 @@ _AUTHOR_REPAIR_PROBE = (
 
 # `_INTAKE_CAPTURE_PROBE` guards TC-AUTHOR-38's cross-format carry-over journey (#768): the
 # plan's rung-2 journey replays a `.docx` draft and re-drafts from its `.txt` twin, which
-# needs recordings quoting BOTH twin names — and the corpus holds none (all 80 recordings
+# needs recordings quoting BOTH twin names — and the corpus held none (all 80 recordings
 # quote only the PDF fixtures AF-01..13; a capture pass never ran for the intake fixtures).
-# It exits 0 exactly when a recording carries each `BEGIN DOCUMENT:` marker, which is the
-# capture pass that makes the journey replayable.
+#
+# Marker presence turned out to be necessary but NOT sufficient: a capture pass whose
+# requests do not key-match the dev-ci chain's own requests — e.g. one recorded under a
+# different build id — carries every `BEGIN DOCUMENT:` marker yet still replays as "every
+# model in the chain exhausted" (#773's console-journey recordings quote both twins and
+# still miss, because their keys pin the journeys' own build string). The probe therefore
+# runs the journey's first leg for real: it exits 0 exactly when the AF-14 draft replays
+# with every model call answered under the dev-ci chain — the capture pass that actually
+# makes the journey replayable. (The later legs — review, the `.txt` re-draft, the
+# carry-over — are the unmarked case's own oracles once this fires.)
 _INTAKE_CAPTURE_PROBE = (
-    "python -c \"import pathlib\n"
-    "needles = (b'BEGIN DOCUMENT: hist7-rome-01-test-and-grading.docx',\n"
-    "           b'BEGIN DOCUMENT: hist7-rome-01-test-and-grading.txt')\n"
-    "hits = set()\n"
-    "for p in pathlib.Path('fixtures', 'F-AUTHOR', 'recordings').glob('*.json'):\n"
-    "    data = p.read_bytes()\n"
-    "    hits.update(n for n in needles if n in data)\n"
-    "raise SystemExit(0 if len(hits) == len(needles) else 1)\""
+    "python -c \"import pathlib, tempfile\n"
+    "import aeh.author as author\n"
+    "from aeh.prov import RecordedFixtureProvider\n"
+    "from tests.support.author_vocabulary import RECORDINGS, chain_from_config, "
+    "make_service\n"
+    "hits = misses = 0\n"
+    "class Counting:\n"
+    "    def __init__(self, inner): self.inner = inner\n"
+    "    def complete(self, *args):\n"
+    "        global hits, misses\n"
+    "        try:\n"
+    "            out = self.inner.complete(*args); hits += 1; return out\n"
+    "        except Exception:\n"
+    "            misses += 1; raise\n"
+    "    def __getattr__(self, name): return getattr(self.inner, name)\n"
+    "service = make_service(author, chain_from_config(), "
+    "Counting(RecordedFixtureProvider(RECORDINGS)))\n"
+    "document = RECORDINGS.parent / 'AF-14' / 'hist7-rome-01-test-and-grading.docx'\n"
+    "with tempfile.TemporaryDirectory() as scratch:\n"
+    "    service.draft([document], pathlib.Path(scratch))\n"
+    "raise SystemExit(0 if hits and not misses else 1)\""
 )
 
 
