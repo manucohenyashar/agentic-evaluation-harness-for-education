@@ -52,6 +52,7 @@ import sqlite3
 import threading
 import time
 import tomllib
+import warnings
 from contextlib import redirect_stdout
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -678,7 +679,11 @@ def _phase_a(store, cfg: Any, spec: JourneySpec, authoring_dir: Path,
     the draft (replaying the committed recordings), the review walk's declared
     answers, the editor's structured edit, the build through M-PKG's own writer
     (ADR-45: the only authoring step touching the package tier). Returns ``(package_id,
-    question id, the edited text)`` — the values both twins' legs apply identically."""
+    question id, the edited text)`` — the values both twins' legs apply identically.
+
+    The draft replays the committed recordings; the live journey (``run_live_journey``)
+    has no phase A — its one live draft is the browser's own, so no library-level
+    replay-or-record boundary is constructed here for it."""
     from aeh.author.edit import apply_structured_edit
     from aeh.author.review import run_review
     from aeh.author.service import authoring_service
@@ -737,17 +742,59 @@ def _minted_run_id(store, spec: JourneySpec, whose: str) -> str:
     return str(rows[0]["run_id"])
 
 
-def _await_terminal(handle, run_id: str) -> str:
-    """Poll the run row until a terminal phase; time-boxed by the env knob."""
+def _await_terminal(handle, run_id: str, *,
+                    also_terminal: tuple[str, ...] = ()) -> str:
+    """Poll the run row until a terminal phase; time-boxed by the env knob.
+
+    `also_terminal` widens the terminal set for a caller that must stop on a row
+    its own journey treats as over: the live journeys stop on `paused` — a status
+    a recorded run never reaches (replay is deterministic), so the recorded
+    callers' poll is exactly as merged — and waiting it out would burn the whole
+    time-box before the journey could name why the run stopped."""
+    terminal = ("complete", "failed", "stopped", "cancelled") + also_terminal
     deadline = time.monotonic() + RUN_TIMEOUT_S
     last = ""
     while time.monotonic() < deadline:
         rows = handle.query("SELECT status FROM run WHERE run_id = :r", r=run_id)
         last = rows[0]["status"] if rows else ""
-        if last in ("complete", "failed", "stopped", "cancelled"):
+        if last in terminal:
             return last
         time.sleep(0.25)
     return f"still {last!r} after {RUN_TIMEOUT_S}s"
+
+
+def _live_run_finding(label: str, handle, run_id: str, status: str) -> str:
+    """The live run's finding, named (the plan's rule: a live failure is a finding,
+    never papered over): WHY the run stopped and WHERE the model boundary gave up.
+
+    TC-AUTHOR-31's live precedent names the two things an operator needs from a
+    run that did not complete — the row's `pause_reason` and the score-stage
+    details. Here the score trace is the store's own per-unit ledger
+    (`work_unit`): the failed and quarantined units, at stage/judge granularity
+    with each error excerpt — never a per-student figure, the console's own rule
+    (`CT-CONSOLE-09`). A live provider refusal that the authoring fallback
+    summarizes as "every model in the chain exhausted" names its underlying HTTP
+    refusal here, so the finding survives a nightly log with no captured stderr."""
+    rows = handle.query(
+        "SELECT pause_reason FROM run WHERE run_id = :r", r=run_id)
+    reason = str(rows[0]["pause_reason"] or "") if rows else ""
+    units = handle.query(
+        "SELECT stage, judge_id, status, last_error FROM work_unit "
+        "WHERE run_id = :r AND status IN ('failed', 'quarantined') "
+        "ORDER BY stage, work_id", r=run_id)
+    trace = "; ".join(
+        f"{unit['stage']}/{unit['judge_id']} {unit['status']}: "
+        f"{str(unit['last_error'] or '')[:200]}"
+        for unit in units[:6])
+    parts = [f"the run ended {status!r}"]
+    if reason:
+        parts.append(f"the run row names it: {reason}")
+    if units:
+        parts.append(f"the score trace ({len(units)} given-up unit(s), first "
+                     f"{min(len(units), 6)}): {trace}")
+    else:
+        parts.append("no failed or quarantined work unit recorded an error")
+    return f"{label}: the live run did not complete — " + "; ".join(parts)
 
 
 def _run_catalog(store, cohort_id: str, run_id: str):
@@ -864,14 +911,27 @@ def _extend_mask_for_authoring(mask: dict[str, str], console_dir: Path,
 
 
 def _serve_and_drive(store, console_dir: Path, scratch: Path, cfg: Any,
-                     spec: JourneySpec, shape: _AdoptedShape, plans: tuple[_Plan, ...],
-                     qid: str, new_text: str, export_seen: dict,
-                     monkeypatch: pytest.MonkeyPatch) -> None:
+                     spec: JourneySpec, shape: "_AdoptedShape | None",
+                     plans: "tuple[_Plan, ...] | None", qid: str | None,
+                     new_text: str | None, export_seen: dict,
+                     monkeypatch: pytest.MonkeyPatch, *,
+                     adopt_shape: Any = None,
+                     live: bool = False) -> None:
     """The operator's surface, end to end: the class action, the authoring legs in the
     browser, the papers, the run through its confirmation control, the review, the
     results with their justification and override, the exports, and the wizard's
     stage-flip checkpoints — finishing with the raw-vocabulary scan over every screen
-    the journey visited."""
+    the journey visited.
+
+    The recorded journeys pass the shape, plans, question id and edit text phase A
+    computed (replay makes the browser's draft byte-identical with phase A's, so the
+    twins' edits and papers agree by construction). The live journey passes ``None``
+    for all four and an ``adopt_shape`` callback instead: the browser's OWN draft is
+    the only live draft (one spend, no twin to diverge from), so the question id and
+    edit text are read off the draft the browser just committed, and the shape the
+    papers are written from is adopted from the package the browser's approve leg
+    published — the run then grades papers consistent with the very package that
+    grades them."""
     from aeh.console import serve_console
 
     label = spec.label
@@ -1069,6 +1129,17 @@ def _serve_and_drive(store, console_dir: Path, scratch: Path, cfg: Any,
             package_id = document["package_id"]
             assert package_id, f"{label}: the draft read names no package: {document!r}"
             missing = int(document["missing_pieces"])
+            draft_items = list(document["items"])
+            assert draft_items, (
+                f"{label}: the committed draft declares no question to edit "
+                f"(package {package_id!r}, missing_pieces {missing}, placeholders "
+                f"{[str(row.get('item_id')) for row in document['placeholders']]}) — "
+                "a draft that resolved nothing is a live finding the journey reports, "
+                "never a state it scripts around")
+            if qid is None:  # the live journey: the browser's draft IS the draft
+                qid = str(draft_items[0]["id"])
+            if new_text is None:
+                new_text = str(draft_items[0].get("text") or "") + spec.edit_suffix
             # The wizard's honest gap (a reported finding, not a test-writable state):
             # the context read keys packages off the built `*.pkg.sqlite` files, and a
             # first draft has none — the draft job writes the draft TOML alone, and the
@@ -1088,8 +1159,10 @@ def _serve_and_drive(store, console_dir: Path, scratch: Path, cfg: Any,
             unclaimed = [item for item in listed_ids if item not in declared]
             assert not unclaimed, (
                 f"{label}: the draft asks {unclaimed} — items beyond the corpus's "
-                "declared answers and this journey's disclosed extras; the capture's "
-                "draft and the corpus's contract disagree")
+                "declared answers and this journey's disclosed extras; the draft and "
+                "the corpus's declared contract disagree (recorded, a capture "
+                "divergence; live, a model the corpus does not declare for — a "
+                "finding either way, never scripted around)")
             for item_id in listed_ids:
                 # The list is the draft read's own placeholders, re-rendered after every
                 # answer — answered rows leave it and the rest close ranks. When the
@@ -1214,6 +1287,16 @@ def _serve_and_drive(store, console_dir: Path, scratch: Path, cfg: Any,
             _badge_becomes(page, 2, "Done", "with the package published")
 
             # -- the papers leg (disclosed: direct ingest, the screen driven visually) --
+            if shape is None or plans is None:
+                # The live journey adopts the shape HERE — from the package this
+                # browser's own approve leg just published, so the papers are written
+                # from the very package the run will grade them against.
+                assert adopt_shape is not None, (
+                    f"{label}: no shape and no adopt_shape callback — the journey "
+                    "cannot write the papers from nothing")
+                shape, plans = adopt_shape(store, package_id, version)
+                assert shape is not None and plans, (
+                    f"{label}: the adopt callback returned no shape/plans")
             assessment, sheets = _write_papers(
                 scratch / "console-pdfs", shape, plans,
                 {plan.name: [_page_text(shape, plan, package_id)] for plan in plans},
@@ -1308,7 +1391,13 @@ def _serve_and_drive(store, console_dir: Path, scratch: Path, cfg: Any,
                 "journey starts exactly one")
             run_id = next(iter(threads))
             handle = store.cohort(spec.cohort_id)
-            status = _await_terminal(handle, run_id)
+            status = _await_terminal(handle, run_id,
+                                     also_terminal=("paused",) if live else ())
+            if status != "complete" and live:
+                # The live tier's finding, named — not the generic twin-era line:
+                # the pause reason and the score trace, so a nightly log carries
+                # the WHY without captured stderr (the reviewer's F1).
+                raise AssertionError(_live_run_finding(label, handle, run_id, status))
             assert status == "complete", (
                 f"{label}: the console twin's run did not complete: {status}")
             for thread in threads.values():
@@ -1790,8 +1879,195 @@ def run_full_journey(spec: JourneySpec, tmp_path_factory: pytest.TempPathFactory
     return export_seen
 
 
+# --- the nightly live variant (TC-E2E-13) ----------------------------------------------------------------
+
+
+#: The key the live tier gate reads — the same env name every live case in this repo
+#: gates on (`OPENROUTER_API_KEY`, docs/live-tests/README.md). Its *absence* is the
+#: only fact about it any line here states; the key is never read, logged or asserted
+#: on beyond this emptiness check.
+LIVE_KEY_ENV = "OPENROUTER_API_KEY"
+
+
+def _require_live_key(spec: JourneySpec) -> None:
+    """The key gate, first (the TC-AUTHOR-31 rule): a box with no key spends nothing.
+
+    Skips — cleanly, naming the tier — when the key is unset. This runs before every
+    other gate, so a nightly box without the key gets a skip in milliseconds, never a
+    failure and never a half-started journey."""
+    key = os.environ.get(LIVE_KEY_ENV, "")
+    if not key.strip():
+        pytest.skip(
+            f"{LIVE_KEY_ENV} is unset. {spec.label}'s live journey drafts, ingests "
+            f"and grades against the real OpenRouter endpoint and is nightly-only "
+            f"(test plan §4.7's live tier); set the key from .env-dev on the nightly "
+            f"box to run it. Nothing here reads or logs the key itself.")
+
+
+def _live_document_gates(spec: JourneySpec) -> None:
+    """A live journey's fixture gates: the corpus documents exist, and the console's
+    upload read carries their format (FR-CONSOLE-50's three-format read — the same
+    millisecond gate the recorded journeys run, so a format regression fails HERE,
+    before any browser or any model spend).
+
+    The recorded journeys' third gate — a committed recording quoting each document —
+    is a REPLAY prerequisite, and the live journey replays nothing: it calls the real
+    provider, so the recording check does not apply and is deliberately absent."""
+    from aeh.console import authoring_reads
+
+    for path in spec.doc_paths:
+        require_path(
+            path, f"{spec.af_id}'s corpus document this journey runs", issue="#773")
+    missing = sorted(
+        {path.suffix for path in spec.doc_paths}
+        - set(authoring_reads._SUPPORTED_SUFFIXES))
+    if missing:
+        raise AssertionError(
+            "the console's upload read no longer carries every format this journey "
+            f"uploads (authoring_reads._SUPPORTED_SUFFIXES = "
+            f"{sorted(authoring_reads._SUPPORTED_SUFFIXES)!r}; missing "
+            f"{', '.join(missing)}) — the three-format read of FR-CONSOLE-50 "
+            "regressed; its regression case is "
+            "tests/unit/console/test_tc_ui_10_preview_formats.py")
+
+
+def _recordings_fingerprint() -> dict[str, tuple[int, str]]:
+    """The committed recordings corpus's content fingerprint — every file's relative
+    path, size and sha256 — so the live journey's no-write oracle compares the corpus
+    it must leave untouched before and after the pass, byte for byte."""
+    import hashlib
+
+    return {
+        str(path.relative_to(RECORDINGS)): (
+            path.stat().st_size, hashlib.sha256(path.read_bytes()).hexdigest())
+        for path in sorted(RECORDINGS.rglob("*")) if path.is_file()
+    }
+
+
+def run_live_journey(spec: JourneySpec, tmp_path_factory: pytest.TempPathFactory,
+                     monkeypatch: pytest.MonkeyPatch) -> dict:
+    """TC-E2E-13 — one of the four acceptance journeys against the REAL provider.
+
+    The same drive, the same user-visible assertions, one difference: the provider.
+    The recorded journeys bind `HARNESS_FIXTURE_DIR` and patch every `_provider_for`
+    seam to the replay; this journey binds NO fixture dir and patches NO seam, so
+    every boundary — the browser's draft job, the papers' transcription, the judging
+    run — resolves the production `OpenRouterProvider.enforcing_zero_retention()`
+    through `runtime._provider_for`'s own declared mapping, under the key the
+    environment carries (checked first; a box with no key skips, spends nothing).
+
+    What is deliberately different from `run_full_journey`, and why:
+
+    * **No capture leg, no twin, no differential.** The capture world exists to
+      produce the recordings the twins replay, and the differential asserts the
+      console-authored draft is CLI-indistinguishable — an ADR-45 property over
+      byte-identical replays that a non-deterministic live model cannot underwrite
+      (two live drafts are two model outputs, not one). The live journey's oracle is
+      what the plan names for it: the SAME user-visible assertions — the wizard's
+      stage flips, the review walk, the amendment's refusal and history, the four
+      exports, the raw-vocabulary scan over every visited screen, the no-egress
+      check. It is sampled, not proven, nightly (the plan's honest limit on what the
+      recorded path proves).
+    * **One live draft — the browser's.** The recorded journeys pre-compute the
+      shape, plans, question id and edit text in a phase-A replay because the
+      browser's draft replays the same bytes. Under live there is no "same bytes":
+      `_serve_and_drive` reads the question id and edit text off the draft the
+      browser just committed, and the papers are written from the shape of the
+      package the browser's own approve leg published — the run grades papers
+      consistent with the very package that grades them.
+    * **No recording write, asserted.** The corpus fingerprint (path, size, sha256
+      of every committed recording) is taken before the pass and checked after it —
+      in a `finally`, so a mid-journey failure still reports contamination — and the
+      fixture binding is deleted from the environment up front, which is what makes
+      every provider seam resolve live rather than replay.
+    """
+    _require_live_key(spec)
+    bundle_gates()
+    _live_document_gates(spec)
+    fingerprint = _recordings_fingerprint()
+    scratch = tmp_path_factory.mktemp(f"{spec.af_id.lower()}-live")
+
+    # The live env: the journey's own knobs exactly as the recorded one sets them —
+    # but the fixture binding deliberately ABSENT. With `HARNESS_FIXTURE_DIR` unset,
+    # `runtime._provider_for` resolves the production OpenRouter provider for dev-ci
+    # (its declared mapping); set, it would replay — so the absence is the live
+    # tier's whole posture, and the assert states it as a fact about this drive.
+    monkeypatch.delenv("HARNESS_FIXTURE_DIR", raising=False)
+    assert not os.environ.get("HARNESS_FIXTURE_DIR"), (
+        f"{spec.label}: HARNESS_FIXTURE_DIR could not be cleared; the live journey "
+        "must bind no recorded fixture, or a seam would replay and call the pass "
+        "recorded")
+    for key, value in (
+        ("HARNESS_PROFILE", "dev-ci"),  # pinned: env wins over cfg (conf.sources)
+        ("HARNESS_INGEST_DPI", "72"),
+        ("HARNESS_INGEST_V4_SEMANTIC_FLOOR", "0.0"),
+        ("HARNESS_ORCH_RANDOM_ARM_RATE", "0"),
+        # The operator's live-test posture (docs/live-tests, the TC-AUTHOR-31 note):
+        # the journey config declares no escalation seats, so a widening that seats
+        # an arm with no model behind it would change the outcome class for an
+        # environment reason rather than a model one — the budget is the guide's and
+        # the random extra-judge sample is off. The criterion breaker stays off
+        # (rate 1.0) for the same reason the capture world keeps it off: where a
+        # breaker WOULD trip is scheduling, not a user-visible surface this journey
+        # samples.
+        (ESCALATION_BUDGET_ENV, "1.0"),
+        (CRITERION_BREAKER_RATE_ENV, "1.0"),
+    ):
+        monkeypatch.setenv(key, value)
+    # No `_patch_all_provider_sites` — the twins' replay seam is the one thing this
+    # journey must not bind. Every boundary (the browser's draft job through the
+    # console's `authoring_actions`, the papers' transcription, the run's judging)
+    # resolves the real provider at its own seam.
+
+    cfg_path = scratch / "journey.dev-ci.toml"
+    _config_toml(cfg_path, spec.transcriber_build, spec.judge_build)
+    from aeh.pipeline.runtime import _load_config_file
+
+    cfg = _load_config_file(str(cfg_path))
+
+    console_dir = scratch / "console"
+    store = _open_store_with(console_dir)
+    export_seen: dict[str, object] = {}
+    failure: BaseException | None = None
+    try:
+        def adopt_shape(store_, package_id_, _version):
+            shape_ = _adopt_shape(store_, spec, package_id_)
+            return shape_, _plans_for(shape_)
+
+        _serve_and_drive(store, console_dir, scratch, cfg, spec, None, None,
+                         None, None, export_seen, monkeypatch,
+                         adopt_shape=adopt_shape, live=True)
+    except BaseException as error:  # noqa: BLE001 — re-raised below, after the oracle
+        failure = error
+        raise
+    finally:
+        _close(store)
+        after = _recordings_fingerprint()
+        if after != fingerprint:
+            added = sorted(set(after) - set(fingerprint))
+            removed = sorted(set(fingerprint) - set(after))
+            changed = sorted(
+                name for name in set(after) & set(fingerprint)
+                if after[name] != fingerprint[name])
+            message = (
+                f"{spec.label}: the live journey wrote to the committed recordings "
+                f"corpus ({len(added)} added, {len(removed)} removed, "
+                f"{len(changed)} changed: {added[:3] + changed[:3]}) — a live pass "
+                "must never contaminate the fixtures it exists to be independent of")
+            if failure is None:
+                raise AssertionError(message)
+            # The journey already failed on its own account; that failure is the
+            # finding the operator needs first. The contamination is warned, never
+            # silenced — and never allowed to mask the live failure by raising over
+            # it.
+            warnings.warn(message)
+    assert export_seen, f"{spec.label}: the console's export leg never read the routes"
+    return export_seen
+
+
 __all__ = [
     "JOURNEY_AUTHORING_BUILD",
+    "LIVE_KEY_ENV",
     "JourneySpec",
     "JourneyWorld",
     "RAW_PATTERNS",
@@ -1802,4 +2078,5 @@ __all__ = [
     "document_gates",
     "journey_config_toml",
     "run_full_journey",
+    "run_live_journey",
 ]
