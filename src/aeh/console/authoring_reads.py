@@ -5,13 +5,17 @@ the console drives the authoring library directly, never the CLI).
 **The preview** is a POST read: the request's body carries the uploaded documents
 themselves, because teacher document content can never travel in a URL or a query string
 (`CT-CONSOLE-34`) — and the preview *writes nothing*: each document's bytes go to a
-temporary file only for `aeh.author`'s extractor to open, and nothing is staged into the
+temporary file only for `aeh.author` to open, and nothing is staged into the
 blob store, the store, or a log line. The staging endpoint the draft job later reads from
 belongs to `draft package from documents` (#760); until it lands, the preview is what the
-SPA shows the teacher before any drafting begins, so it drives the extractor exactly as
-the service does — text layer only, the transcription knob off, and a `call` seam that
-refuses to be used (`FR-AUTHOR-03` would route any model call through `M-PROV`, and a
-preview makes none).
+SPA shows the teacher before any drafting begins, so it drives the library exactly as
+the drafting job does, minus the model calls: the extractor for PDFs (text layer only,
+the transcription knob off, and a `call` seam that refuses to be used — `FR-AUTHOR-03`
+would route any model call through `M-PROV`, and a preview makes none), and the same
+intake entry (`intake.normalize_document`) for `.docx` and `.txt` (`FR-CONSOLE-50` /
+R5a: the upload invites all three, so the preview reads all three). A file the intake
+matrix refuses comes back refused with the matrix's own teacher sentence (`FR-AUTHOR-28`),
+never a console paraphrase of it.
 
 **The draft read** answers the current draft as structure — items, grading points, score
 levels, and the missing pieces with their locations — never as TOML text (`ADR-45`: the
@@ -30,11 +34,13 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
+from aeh.author.errors import DocumentRefusedError
 from aeh.author.extraction import (
     AuthoringDocument,
     AuthoringInputError,
     extract_documents,
 )
+from aeh.author.intake import NormalizedDocument, normalize_document
 from aeh.author.report import draft_filename
 from aeh.author.validation import PLACEHOLDER_PREFIX, validate_draft
 
@@ -272,7 +278,13 @@ def authoring_draft_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
 
 # --- the intake preview read (POST) ---------------------------------------------------------------------
 
-_SUPPORTED_SUFFIXES = frozenset({".pdf"})
+#: The formats the preview reads in full (`FR-CONSOLE-50` / R5a): the upload input
+#: invites `.docx`, `.txt` and `.pdf`, the library's intake normalizes all three, and
+#: the drafting job drafts all three — so the preview reads all three. Anything else
+#: routes through intake's envelope too, whose matrix (`FR-AUTHOR-28`) refuses it with
+#: the teacher's sentence — a legacy `.doc` gets its save-as-`.docx` row, a renamed
+#: file its mismatch row — so the console keeps no suffix refusal of its own.
+_SUPPORTED_SUFFIXES = frozenset({".pdf", ".docx", ".txt"})
 
 
 def _refusal(name: str, detail: str, next_action: str) -> dict[str, Any]:
@@ -286,9 +298,10 @@ def _refusal(name: str, detail: str, next_action: str) -> dict[str, Any]:
 
 
 def _preview_document(name: str, data: bytes) -> dict[str, Any]:
-    """One accepted document's NormalizedDocument-shaped summary: its page blocks, its
-    stats, and its warnings. Read through `aeh.author`'s extractor, text layer only —
-    the same extraction the drafting job runs, minus the model calls."""
+    """One accepted document's summary — its blocks, its stats, its warnings — or its
+    refusal. A `.pdf` is read through `aeh.author`'s extractor, text layer only; a
+    `.docx` or `.txt` through the library's own intake entry, the same normalization
+    the drafting job runs. Neither path makes a model call."""
     from tempfile import TemporaryDirectory
 
     if len(data) > author_doc_max_bytes():
@@ -298,43 +311,83 @@ def _preview_document(name: str, data: bytes) -> dict[str, Any]:
             f"That file is larger than the {limit_mb:g} MB limit for one document.",
             "Split the document or export fewer pages, then upload it again.",
         )
-    suffix = Path(name).suffix.lower()
-    if suffix not in _SUPPORTED_SUFFIXES:
-        return _refusal(
-            name,
-            "We cannot read this kind of file yet — Word and text files arrive in a "
-            "later update.",
-            "Save the pages as a PDF and upload that.",
-        )
     with TemporaryDirectory(prefix="aeh-preview-") as tmp:
-        staged = Path(tmp, Path(name).name or "document.pdf")
+        staged = Path(tmp, Path(name).name or "document")
         staged.write_bytes(data)
+        if staged.suffix.lower() == ".pdf":
+            try:
+                (document,) = extract_documents(
+                    [staged], transcriber=None, call=_no_model_call, transcribe_enabled=False,
+                )
+            except AuthoringInputError:
+                # FR-AUTHOR-13's own refusal: the file is a valid document but every page
+                # carries no machine-readable text — the photographed-papers case, whose
+                # honest preview is this refusal with the truthful next step. The draft job
+                # reads such pages aloud (the transcriber, a model call a read never makes);
+                # telling the teacher to re-upload the same file would be advice that fails
+                # the same way twice.
+                return _refusal(
+                    name,
+                    "The pages of this file carry no machine-readable text — it is likely "
+                    "photographs of the test rather than a saved document.",
+                    "You can still upload it: making the draft will read photographed pages "
+                    "aloud. Or upload a PDF saved straight from a document, which this "
+                    "preview reads in full.",
+                )
+            except Exception:  # noqa: BLE001 — one unreadable file is that file's refusal
+                return _refusal(
+                    name,
+                    "The pages of this file could not be read.",
+                    "Check the file opens on your computer, then upload it again.",
+                )
+            return _project_document(document)
+        # Every other kind goes through the library's intake entry (`FR-CONSOLE-50` /
+        # R5a: `.docx` and `.txt` first-class, the same normalization the draft job
+        # runs — no extractor, no model). A file the intake matrix refuses raises
+        # `DocumentRefusedError` carrying the matrix's own teacher sentence
+        # (`FR-AUTHOR-28`), which the console renders as-is.
         try:
-            (document,) = extract_documents(
-                [staged], transcriber=None, call=_no_model_call, transcribe_enabled=False,
-            )
-        except AuthoringInputError:
-            # FR-AUTHOR-13's own refusal: the file is a valid document but every page
-            # carries no machine-readable text — the photographed-papers case, whose
-            # honest preview is this refusal with the truthful next step. The draft job
-            # reads such pages aloud (the transcriber, a model call a read never makes);
-            # telling the teacher to re-upload the same file would be advice that fails
-            # the same way twice.
-            return _refusal(
-                name,
-                "The pages of this file carry no machine-readable text — it is likely "
-                "photographs of the test rather than a saved document.",
-                "You can still upload it: making the draft will read photographed pages "
-                "aloud. Or upload a PDF saved straight from a document, which this "
-                "preview reads in full.",
-            )
+            normalized = normalize_document(staged, max_bytes=author_doc_max_bytes())
+        except DocumentRefusedError as refused:
+            # The matrix sentence carries its own next step when one is needed
+            # (FR-AUTHOR-28: `next_step` only "when the sentence does not already carry
+            # one"), so the console adds nothing of its own.
+            return _refusal(name, refused.sentence, refused.next_step)
         except Exception:  # noqa: BLE001 — one unreadable file is that file's refusal
             return _refusal(
                 name,
                 "The pages of this file could not be read.",
                 "Check the file opens on your computer, then upload it again.",
             )
-        return _project_document(document)
+        return _project_normalized(normalized)
+
+
+def _project_normalized(document: NormalizedDocument) -> dict[str, Any]:
+    """The same summary shape the extractor path projects, for a `.docx` or `.txt`
+    intake (`FR-AUTHOR-24`'s representation): the blocks carry their kinds — a table
+    is counted and rendered (`TC-AUTHOR-33`), a picture its placeholder — the whole
+    file reads as one page, and the warnings are intake's own teacher sentences."""
+    blocks = [
+        {"kind": block.kind, "ordinal": block.ordinal, "page": 1, "text": block.text}
+        for block in document.blocks
+    ]
+    return {
+        "name": document.source_name,
+        "accepted": True,
+        "pages": 1,
+        "blocks": blocks,
+        "stats": {
+            "page_count": 1,
+            "block_count": document.stats.block_count,
+            "word_count": document.stats.word_count,
+            "table_count": document.stats.table_count,
+            "image_count": document.stats.image_count,
+        },
+        "warnings": [
+            {"code": warning.code, "message": warning.message}
+            for warning in document.warnings
+        ],
+    }
 
 
 def _project_document(document: AuthoringDocument) -> dict[str, Any]:

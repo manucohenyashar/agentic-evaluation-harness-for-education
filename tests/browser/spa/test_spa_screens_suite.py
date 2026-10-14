@@ -45,18 +45,19 @@ named here, and never silently weakened):
   a POST on selection change), so the run switch is verified as the wizard's stage-7 row
   re-deriving to the newly selected run plus the run's own state badge in the header — a route
   jump would contradict the switcher's stated contract.
-* **From-documents refusals and warnings (`TC-UI-10`)** — the browser's preview read is the
-  Phase-1 surface that reads PDFs only (`authoring_reads._SUPPORTED_SUFFIXES` is `{".pdf"}`;
-  its own refusal says Word and text files arrive in a later update), so two plan words land
-  differently here, both named: arm (b) drops AF-18's legacy `.doc` and asserts the shipped
-  refusal card — the suffix gate's three-formats sentence with its next step, the other file
-  unaffected — rather than FR-AUTHOR-28's OLE-magic sentence, which is `TC-AUTHOR-37a`'s
-  rung-1 oracle (`extract_documents` refuses the bytes before any provider call; the SPA's
-  suffix gate answers first and honestly). The warnings half of arm (a)'s "outline + warnings"
-  is **not implementable at this rung**: every warnings fixture (AF-15/16/17) is `.docx`/`.txt`
-  and the PDF intake path emits no warnings (its structure/table/list inference is disabled by
-  design, and a text-less PDF refuses rather than warns) — the warnings rendering is proven at
-  rungs 1–2 by `TC-AUTHOR-34/35/36`; the browser arm asserts the outline half in full.
+* **From-documents refusals and warnings (`TC-UI-10`)** — the browser's preview read now
+  carries the formats the upload invites (`authoring_reads._SUPPORTED_SUFFIXES` is
+  `{".pdf", ".docx", ".txt"}`; `.docx`/`.txt` route through the library's own intake
+  entry, the same normalization the draft job runs — the defect the `TC-E2E-08/09/11`
+  journeys found is fixed in this PR, with `TC-UI-10` arm (d) as its regression). Arm
+  (b) drops AF-18's legacy `.doc` and asserts the shipped refusal card — now
+  FR-AUTHOR-28's own OLE-magic sentence with its next step, the other file unaffected —
+  because a `.doc` routes through intake's envelope too and the matrix answers it
+  (`TC-AUTHOR-37a`'s sentence, now reachable from the browser). The warnings half of
+  arm (a)'s "outline + warnings" is **this suite's now**: the read carries the warning
+  stream the PDF path cannot — a `.txt` intake guesses its headings and says so — so
+  arm (a)'s upload carries AF-17's `.txt` beside the PDFs and the warning renders in
+  the browser.
 * **Re-draft carry-over (`TC-UI-11` (c))** — the plan's "confirm copy" is the carry-over
   sentence in the teacher's language; it is asserted where the redesign renders it: the review
   screen's own re-draft section, and — from a from-scratch draft, because a world whose draft
@@ -695,16 +696,18 @@ def test_tc_ui_09_switching_the_header_rederives_every_wizard_row_without_a_post
 def test_tc_ui_10_from_documents_previews_refuses_and_shows_the_drafting_job(
         tmp_data_dir, tmp_path, network_guard, monkeypatch):
     """`TC-UI-10` / FR-UI-11 (P0) — the from-documents entry: (a) a happy upload shows the
-    preview's outline (the file, its page count, its first page's blocks) before any commit —
-    no action request and no draft file exists yet; (b) AF-18's legacy `.doc` renders its
-    refusal card with the next step and leaves the other file unaffected; (c) a drafting job
-    renders its progress (stage, done/total, the tries) with the cancel control, and
-    cancelling stops the job at its next step and returns the upload.
+    preview's outline (the file, its page count, its first page's blocks) and the read's
+    warnings before any commit — no action request and no draft file exists yet; (b) AF-18's
+    legacy `.doc` renders its refusal card with the next step and leaves the other file
+    unaffected; (c) a drafting job renders its progress (stage, done/total, the tries) with
+    the cancel control, and cancelling stops the job at its next step and returns the upload.
 
-    The plan's wording and this rung's shipped surface, named in the module notes: the
-    browser's preview reads PDFs only, so AF-18 is answered by the suffix gate's own refusal
-    (FR-AUTHOR-28's OLE sentence is TC-AUTHOR-37a's rung-1 oracle), and no PDF warns — the
-    warnings half of arm (a) is rungs 1–2's (TC-AUTHOR-34/35/36)."""
+    The read carries the formats the upload invites (`.pdf`, `.docx`, `.txt` — the
+    three-format read this PR fixes, regression-tested at the unit tier in
+    `tests/unit/console/test_tc_ui_10_preview_formats.py`), so arm (a)'s upload carries
+    AF-17's `.txt` beside the PDFs and the `.txt`'s intake warning renders; arm (b)'s
+    legacy `.doc` is answered by FR-AUTHOR-28's own matrix sentence, which the console
+    renders as-is."""
     _require_bundle()
 
     def _copy_fixture(fixture: str) -> list[Path]:
@@ -717,12 +720,18 @@ def test_tc_ui_10_from_documents_previews_refuses_and_shows_the_drafting_job(
 
     with _console(tmp_data_dir, network_guard, monkeypatch, authoring=True,
                   cfg=crw.recorded_authoring_config()) as served:
-        # (a) the happy upload's preview, before any commit.
+        # (a) the happy upload's preview, before any commit. The upload carries a `.txt`
+        # beside the PDFs — the read takes the formats the input invites — and the `.txt`
+        # carries the warnings half: its intake guesses the headings and says so.
         pdfs = _copy_fixture("AF-02")
+        txt_source = crw.af("AF-17") / "hist6-great-fire-01-prose-test.txt"
+        txt = tmp_path / txt_source.name
+        txt.write_bytes(txt_source.read_bytes())
         with spa.spa_page(served.origin) as (page, log):
             problems: list[str] = []
             _goto(page, served.origin, "/package/author")
-            page.locator('input[aria-label="Choose files to upload"]').set_input_files(pdfs)
+            page.locator('input[aria-label="Choose files to upload"]').set_input_files(
+                [*pdfs, txt])
             page.get_by_role("button", name="Show what we understood").click()
             _wait_for(problems, "arm (a)", page,
                       lambda: page.locator("section[aria-label='What we understood'] "
@@ -739,6 +748,10 @@ def test_tc_ui_10_from_documents_previews_refuses_and_shows_the_drafting_job(
             if not pages or not any(text.strip() == "Page 1" for text in pages):
                 problems.append(f"arm (a): the preview's first blocks are not page-marked: "
                                 f"{pages[:3]!r}")
+            _wait_for(problems, "arm (a)", page,
+                      lambda: page.locator("section[aria-label='What we understood'] "
+                                           ".preview-warning").count() > 0,
+                      "the .txt's intake warning to render")
             if _action_urls(log):
                 problems.append(f"arm (a): the preview committed something: {_action_urls(log)!r}")
             if list(Path(served.data_dir, "authoring").glob("*.draft.toml")):
@@ -749,10 +762,10 @@ def test_tc_ui_10_from_documents_previews_refuses_and_shows_the_drafting_job(
             _fail_with(problems)
 
         # (b) the refused file — AF-18's legacy `.doc`, exactly as the plan's arm names —
-        # its own refusal card, the other file unaffected. The SPA's Phase-1 preview reads
-        # PDFs only, so the shipped refusal is the suffix gate's own sentence with its next
-        # step; FR-AUTHOR-28's OLE-magic sentence is the rung-1 refusal underneath
-        # (TC-AUTHOR-37a), reachable here only through the gate that answers first.
+        # its own refusal card, the other file unaffected. A `.doc` routes through the
+        # library's intake envelope like every other kind, and the matrix answers it
+        # (FR-AUTHOR-28's OLE-magic row): the teacher's sentence with its next step,
+        # rendered as-is (TC-AUTHOR-37a's oracle, now reachable from the browser).
         legacy_doc = crw.af("AF-18") / "geo6-mapwork-01-legacy.doc"
         legacy = tmp_path / legacy_doc.name
         legacy.write_bytes(legacy_doc.read_bytes())
@@ -773,14 +786,13 @@ def test_tc_ui_10_from_documents_previews_refuses_and_shows_the_drafting_job(
                 pass
             ask_preview.click()
             if not _wait_for(problems, "arm (b)", page,
-                             lambda: "We cannot read this kind of file yet" in
+                             lambda: "older Word format" in
                              page.locator("main").inner_text(),
                              "the legacy file's refusal card"):
                 pass
             main = page.locator("main").inner_text()
-            if "Refused — We cannot read this kind of file yet — Word and text files " \
-                    "arrive in a later update. Save the pages as a PDF and upload that." \
-                    not in main:
+            if "Refused — This file was saved in an older Word format. Open it in Word " \
+                    "and save it as .docx, then upload again." not in main:
                 problems.append("arm (b): the refusal card does not carry the refusal and its "
                                 "next step")
             if "The refused files above are left out; the rest are unaffected." not in main:

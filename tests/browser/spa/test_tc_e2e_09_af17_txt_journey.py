@@ -37,12 +37,15 @@ the engine module's):
 Issue #773 says "Written ahead of implementation: no" and every dependency is merged,
 so this test is NOT marked ``writtenahead`` and carries no ``WRITTEN_AHEAD_BLOCKERS``
 entry: it must pass when its PR merges. Its gates still fail in milliseconds — BEFORE
-any browser is launched or store built — and name what they are checking. One gate is
-an honest open finding, not a writtenahead claim: the console's authoring read accepts
-PDFs only (``authoring_reads._SUPPORTED_SUFFIXES``), while FR-CONSOLE-50 and the test
-plan require the other formats too — reported with file:line evidence, awaiting the
-coordinator's defect-fix decision. The F-AUTHOR capture pass for AF-17 ran (the
-recordings are committed; ``scripts/capture_authoring_recordings.py`` is the command).
+any browser is launched or store built — and name what they are checking. One gate
+guards the defect this journey family found and this PR fixes: the console's preview
+read once accepted PDFs only (``authoring_reads._SUPPORTED_SUFFIXES``); the fix routes
+`.docx`/`.txt` through the library's own intake entry, and the gate now asserts the
+read carries every format the journey uploads — losing one again fails here, before
+any browser leg (regression case:
+``tests/unit/console/test_tc_ui_10_preview_formats.py``). The F-AUTHOR capture pass
+for AF-17 ran (the recordings are committed; ``scripts/capture_authoring_recordings.py``
+is the command).
 """
 
 from __future__ import annotations

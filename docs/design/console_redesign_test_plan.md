@@ -328,7 +328,15 @@ heading; `problems` accumulator + `_fail_with`; store digests where state is ass
   run → navigates to stage 7; assert **no POST occurred** during switching (request log).
 - **TC-UI-10** (FR-UI-11) — *from documents.* Arms: (a) happy upload → preview shows outline
   + warnings before any commit; (b) AF-18 dropped → refusal card with next step, other file
-  unaffected; (c) drafting job progress renders stage/done/total; cancel button present.
+  unaffected; (c) drafting job progress renders stage/done/total; cancel button present;
+  (d) *defect-fix regression, added with the fix* — the preview read carries every format
+  the upload input invites (`.pdf`, `.docx`, `.txt`): a `.docx` and a `.txt` upload preview
+  through the library's own intake entry (the same normalization the draft job runs —
+  blocks with kinds, a table counted, the warning stream), and a genuinely unreadable kind
+  (AF-18's legacy `.doc`) is refused with FR-AUTHOR-28's own matrix sentence, never a
+  console paraphrase. Found by TC-E2E-08/09/11's journeys (the read refused Word and text
+  files with "arrive in a later update" while the SPA's input advertised all three);
+  regression case at the unit tier (`tests/unit/console/test_tc_ui_10_preview_formats.py`).
 - **TC-UI-11** (FR-UI-12) — *review draft.* Arms: (a) placeholders listed with locations,
   approval blocked with the count; (b) answer one → it leaves the list, reload → still
   answered (survival in the browser); (c) re-draft confirm copy names carry-over in teacher

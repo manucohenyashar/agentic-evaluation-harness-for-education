@@ -34,14 +34,16 @@ disagree; this journey answers the boundaries the way the memo's own lines read 
 (A=8, B=6, C=4, D=0), reports the divergence to the coordinator, and does not edit the
 corpus's generated `expected.toml` to match.
 
-**The honest open finding.** The console's authoring read accepts PDFs only
-(``authoring_reads._SUPPORTED_SUFFIXES``), while FR-CONSOLE-50 and the test plan
-require the other formats too — reported with file:line evidence, awaiting the
-coordinator's defect-fix decision. The format gate raises that finding in
-milliseconds, BEFORE any browser is launched or store built; when the three-format
-read lands, this journey runs end to end with no other change. Issue #773 says
-"Written ahead of implementation: no", so this test is NOT marked ``writtenahead``
-and carries no ``WRITTEN_AHEAD_BLOCKERS`` entry.
+**The defect this journey found, fixed in this PR.** The console's authoring read
+accepted PDFs only (``authoring_reads._SUPPORTED_SUFFIXES``), while FR-CONSOLE-50 and
+the test plan require the other formats too — this journey's format gate raised the
+finding in milliseconds, before any browser leg, with file:line evidence. The fix
+routes `.docx`/`.txt` previews through the library's own intake entry (the same
+normalization the draft job runs); its regression case is
+`tests/unit/console/test_tc_ui_10_preview_formats.py` (`TC-UI-10` arm (d)), added to
+`docs/design/test-plan.md` in this same PR. Issue #773 says "Written ahead of
+implementation: no", so this test is NOT marked ``writtenahead`` and carries no
+``WRITTEN_AHEAD_BLOCKERS`` entry.
 """
 
 from __future__ import annotations

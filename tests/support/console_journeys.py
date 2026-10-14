@@ -268,9 +268,11 @@ def bundle_gates() -> None:
 
 def document_gates(spec: JourneySpec) -> None:
     """A journey's fixture gates: the corpus documents exist; the console's upload
-    read carries their format (FR-CONSOLE-50's three-format read — an honest open
-    finding when it does not, reported to the coordinator, not a writtenahead claim);
-    and a committed recording quotes each document, so the authoring legs can replay."""
+    read carries their format (FR-CONSOLE-50's three-format read — the PDF-only
+    preview was the defect these journeys found, fixed with `TC-UI-10` arm (d) as
+    its regression; a read that lost a format again fails HERE, in milliseconds,
+    before any browser is launched); and a committed recording quotes each document,
+    so the authoring legs can replay."""
     from aeh.console import authoring_reads
 
     for path in spec.doc_paths:
@@ -280,13 +282,13 @@ def document_gates(spec: JourneySpec) -> None:
         {path.suffix for path in spec.doc_paths}
         - set(authoring_reads._SUPPORTED_SUFFIXES))
     if missing:
-        raise NotImplementedYet(
-            "the console's upload read answers PDFs only "
-            f"(authoring_reads._SUPPORTED_SUFFIXES = "
-            f"{sorted(authoring_reads._SUPPORTED_SUFFIXES)!r}) — FR-CONSOLE-50's "
-            f"three-format read is the implementation that opens the journey's "
-            f"stage-2 leg for {', '.join(missing)} (the library intake already "
-            "carries every format; reported as a finding on the merged stories)")
+        raise AssertionError(
+            "the console's upload read no longer carries every format this journey "
+            f"uploads (authoring_reads._SUPPORTED_SUFFIXES = "
+            f"{sorted(authoring_reads._SUPPORTED_SUFFIXES)!r}; missing "
+            f"{', '.join(missing)}) — the three-format read of FR-CONSOLE-50 "
+            "regressed; its regression case is "
+            "tests/unit/console/test_tc_ui_10_preview_formats.py")
     for path in spec.doc_paths:
         needle = f"BEGIN DOCUMENT: {path.name}".encode("utf-8")
         if not any(needle in p.read_bytes() for p in RECORDINGS.glob("*.json")):
