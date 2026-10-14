@@ -1091,7 +1091,11 @@ def _serve_and_drive(store, console_dir: Path, scratch: Path, cfg: Any,
             missing = int(document["missing_pieces"])
             draft_items = list(document["items"])
             assert draft_items, (
-                f"{label}: the committed draft declares no question to edit")
+                f"{label}: the committed draft declares no question to edit "
+                f"(package {package_id!r}, missing_pieces {missing}, placeholders "
+                f"{[str(row.get('item_id')) for row in document['placeholders']]}) — "
+                "a draft that resolved nothing is a live finding the journey reports, "
+                "never a state it scripts around")
             if qid is None:  # the live journey: the browser's draft IS the draft
                 qid = str(draft_items[0]["id"])
             if new_text is None:
@@ -1952,6 +1956,16 @@ def run_live_journey(spec: JourneySpec, tmp_path_factory: pytest.TempPathFactory
         ("HARNESS_INGEST_DPI", "72"),
         ("HARNESS_INGEST_V4_SEMANTIC_FLOOR", "0.0"),
         ("HARNESS_ORCH_RANDOM_ARM_RATE", "0"),
+        # The operator's live-test posture (docs/live-tests, the TC-AUTHOR-31 note):
+        # the journey config declares no escalation seats, so a widening that seats
+        # an arm with no model behind it would change the outcome class for an
+        # environment reason rather than a model one — the budget is the guide's and
+        # the random extra-judge sample is off. The criterion breaker stays off
+        # (rate 1.0) for the same reason the capture world keeps it off: where a
+        # breaker WOULD trip is scheduling, not a user-visible surface this journey
+        # samples.
+        (ESCALATION_BUDGET_ENV, "1.0"),
+        (CRITERION_BREAKER_RATE_ENV, "1.0"),
     ):
         monkeypatch.setenv(key, value)
     # No `_patch_all_provider_sites` — the twins' replay seam is the one thing this
