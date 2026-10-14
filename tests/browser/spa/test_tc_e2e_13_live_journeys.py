@@ -50,8 +50,13 @@ actually serve, not a replay key.
 
 Issue #775 says "Written ahead of implementation: no" — the recorded journeys (#773,
 PR #800) exist — so nothing here is marked ``writtenahead`` and no
-``WRITTEN_AHEAD_BLOCKERS`` entry is added. The ``live`` marker keeps all four out of
-the fast tier (`scripts/test.sh`); they run only where the key is set, nightly.
+``WRITTEN_AHEAD_BLOCKERS`` entry is added. The markers are the established live
+convention (`integration`, `live`, `slow` — TC-AUTHOR-31's set), deliberately NOT the
+``browser`` marker: the plan's browser tier (§4.7) runs ``-m browser`` on every push,
+and a live-marked browser case selected there would spend the nightly tier's budget
+on every push; ``-m live`` — the nightly tier's own selector — is what picks these
+up. The ``live`` marker keeps all four out of the fast tier (`scripts/test.sh`);
+they run only where the key is set, nightly.
 """
 
 from __future__ import annotations
@@ -61,7 +66,6 @@ import pytest
 from tests.support import console_journeys as cj
 
 pytestmark = [
-    pytest.mark.browser,
     pytest.mark.integration,
     pytest.mark.live,
     pytest.mark.slow,
