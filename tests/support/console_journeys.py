@@ -674,26 +674,23 @@ class JourneyWorld(SynthWorld):
 
 
 def _phase_a(store, cfg: Any, spec: JourneySpec, authoring_dir: Path,
-             fixture_dir: Path, *,
-             provider: Any | None = None) -> tuple[str, str, str]:
+             fixture_dir: Path) -> tuple[str, str, str]:
     """Author the fixture's package into ``store`` through the real authoring flow —
     the draft (replaying the committed recordings), the review walk's declared
     answers, the editor's structured edit, the build through M-PKG's own writer
     (ADR-45: the only authoring step touching the package tier). Returns ``(package_id,
     question id, the edited text)`` — the values both twins' legs apply identically.
 
-    ``provider`` is the authoring boundary. The recorded journeys replay, so their
-    default is the recorded fixture provider over the journey's fixture dir; the live
-    journey (``run_live_journey``) passes the production resolution instead and binds
-    no fixture dir at all."""
+    The draft replays the committed recordings; the live journey (``run_live_journey``)
+    has no phase A — its one live draft is the browser's own, so no library-level
+    replay-or-record boundary is constructed here for it."""
     from aeh.author.edit import apply_structured_edit
     from aeh.author.review import run_review
     from aeh.author.service import authoring_service
     from aeh.author.types import ReviewAnswer
     from aeh.pipeline.packages import build_package, read_package_spec
 
-    if provider is None:
-        provider = RecordedFixtureProvider(fixture_dir)
+    provider = RecordedFixtureProvider(fixture_dir)
     service = authoring_service(cfg, "dev-ci", provider=provider)
     authoring_dir.mkdir(parents=True, exist_ok=True)
     result = service.draft(list(spec.doc_paths), authoring_dir)
