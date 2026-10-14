@@ -742,17 +742,59 @@ def _minted_run_id(store, spec: JourneySpec, whose: str) -> str:
     return str(rows[0]["run_id"])
 
 
-def _await_terminal(handle, run_id: str) -> str:
-    """Poll the run row until a terminal phase; time-boxed by the env knob."""
+def _await_terminal(handle, run_id: str, *,
+                    also_terminal: tuple[str, ...] = ()) -> str:
+    """Poll the run row until a terminal phase; time-boxed by the env knob.
+
+    `also_terminal` widens the terminal set for a caller that must stop on a row
+    its own journey treats as over: the live journeys stop on `paused` — a status
+    a recorded run never reaches (replay is deterministic), so the recorded
+    callers' poll is exactly as merged — and waiting it out would burn the whole
+    time-box before the journey could name why the run stopped."""
+    terminal = ("complete", "failed", "stopped", "cancelled") + also_terminal
     deadline = time.monotonic() + RUN_TIMEOUT_S
     last = ""
     while time.monotonic() < deadline:
         rows = handle.query("SELECT status FROM run WHERE run_id = :r", r=run_id)
         last = rows[0]["status"] if rows else ""
-        if last in ("complete", "failed", "stopped", "cancelled"):
+        if last in terminal:
             return last
         time.sleep(0.25)
     return f"still {last!r} after {RUN_TIMEOUT_S}s"
+
+
+def _live_run_finding(label: str, handle, run_id: str, status: str) -> str:
+    """The live run's finding, named (the plan's rule: a live failure is a finding,
+    never papered over): WHY the run stopped and WHERE the model boundary gave up.
+
+    TC-AUTHOR-31's live precedent names the two things an operator needs from a
+    run that did not complete — the row's `pause_reason` and the score-stage
+    details. Here the score trace is the store's own per-unit ledger
+    (`work_unit`): the failed and quarantined units, at stage/judge granularity
+    with each error excerpt — never a per-student figure, the console's own rule
+    (`CT-CONSOLE-09`). A live provider refusal that the authoring fallback
+    summarizes as "every model in the chain exhausted" names its underlying HTTP
+    refusal here, so the finding survives a nightly log with no captured stderr."""
+    rows = handle.query(
+        "SELECT pause_reason FROM run WHERE run_id = :r", r=run_id)
+    reason = str(rows[0]["pause_reason"] or "") if rows else ""
+    units = handle.query(
+        "SELECT stage, judge_id, status, last_error FROM work_unit "
+        "WHERE run_id = :r AND status IN ('failed', 'quarantined') "
+        "ORDER BY stage, work_id", r=run_id)
+    trace = "; ".join(
+        f"{unit['stage']}/{unit['judge_id']} {unit['status']}: "
+        f"{str(unit['last_error'] or '')[:200]}"
+        for unit in units[:6])
+    parts = [f"the run ended {status!r}"]
+    if reason:
+        parts.append(f"the run row names it: {reason}")
+    if units:
+        parts.append(f"the score trace ({len(units)} given-up unit(s), first "
+                     f"{min(len(units), 6)}): {trace}")
+    else:
+        parts.append("no failed or quarantined work unit recorded an error")
+    return f"{label}: the live run did not complete — " + "; ".join(parts)
 
 
 def _run_catalog(store, cohort_id: str, run_id: str):
@@ -873,7 +915,8 @@ def _serve_and_drive(store, console_dir: Path, scratch: Path, cfg: Any,
                      plans: "tuple[_Plan, ...] | None", qid: str | None,
                      new_text: str | None, export_seen: dict,
                      monkeypatch: pytest.MonkeyPatch, *,
-                     adopt_shape: Any = None) -> None:
+                     adopt_shape: Any = None,
+                     live: bool = False) -> None:
     """The operator's surface, end to end: the class action, the authoring legs in the
     browser, the papers, the run through its confirmation control, the review, the
     results with their justification and override, the exports, and the wizard's
@@ -1348,7 +1391,13 @@ def _serve_and_drive(store, console_dir: Path, scratch: Path, cfg: Any,
                 "journey starts exactly one")
             run_id = next(iter(threads))
             handle = store.cohort(spec.cohort_id)
-            status = _await_terminal(handle, run_id)
+            status = _await_terminal(handle, run_id,
+                                     also_terminal=("paused",) if live else ())
+            if status != "complete" and live:
+                # The live tier's finding, named — not the generic twin-era line:
+                # the pause reason and the score trace, so a nightly log carries
+                # the WHY without captured stderr (the reviewer's F1).
+                raise AssertionError(_live_run_finding(label, handle, run_id, status))
             assert status == "complete", (
                 f"{label}: the console twin's run did not complete: {status}")
             for thread in threads.values():
@@ -1987,7 +2036,7 @@ def run_live_journey(spec: JourneySpec, tmp_path_factory: pytest.TempPathFactory
 
         _serve_and_drive(store, console_dir, scratch, cfg, spec, None, None,
                          None, None, export_seen, monkeypatch,
-                         adopt_shape=adopt_shape)
+                         adopt_shape=adopt_shape, live=True)
     except BaseException as error:  # noqa: BLE001 — re-raised below, after the oracle
         failure = error
         raise
