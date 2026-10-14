@@ -36,7 +36,9 @@ stated, and the extraction never invents one (FR-AUTHOR-08). AF-14's capture sat
 its contract exactly. A journey runs the review walk the captured draft actually asks
 for — the corpus's `[review.answers]` plus the journey-disclosed boundary answers —
 and reports the divergence rather than editing the generated corpus to match. See
-`fixtures/F-AUTHOR/recordings/README.md`.
+`fixtures/F-AUTHOR/recordings/README.md`. AF-17's captured rubric also writes its 0-point
+band without a descriptor (an "absent" band that names itself — schema-legal rubric
+output); the band plan quotes the band's name where no descriptor was written.
 """
 
 from __future__ import annotations
@@ -376,14 +378,19 @@ class _AdoptedShape:
             (str(row["grade"]), float(row["scaled_floor"]))
             for row in rm.rows(path, "grade_boundary", version))
         # A fixture bug must read as one: a judged criterion without two named bands
-        # gives the world's band plan nothing to walk.
+        # gives the world's band plan nothing to walk. A band WITHOUT a descriptor is
+        # schema-legal output, not a bug — a 0-point band that names itself ("absent")
+        # is a standard rubric idiom and the captured chains produce one (AF-17's);
+        # what the walk needs is a label per band, and `_descriptor` quotes the name
+        # when the descriptor is empty.
         shallow = [
             cid for cid in self.open_ids if len(self.by_id[cid].bands) < 2
-            or any(not band.descriptor for band in self.by_id[cid].bands)
+            or any(not (band.descriptor or band.band)
+                   for band in self.by_id[cid].bands)
         ]
         assert not shallow, (
             "the adopted shape's judged criteria "
-            f"{shallow} lack two bands with descriptors — the draft the corpus "
+            f"{shallow} lack two bands with a label — the draft the corpus "
             "recorded does not match its own declared shape")
         assert self.open_ids or self.mcq_ids, (
             "the adopted shape declares no criterion at all — nothing to grade")
@@ -446,9 +453,12 @@ def _plans_for(shape: _AdoptedShape) -> tuple[_Plan, ...]:
 
 
 def _descriptor(shape: _AdoptedShape, cid: str, ordinal: int) -> str:
+    """The band's label as the student's evidence line quotes it: the descriptor where
+    the rubric wrote one, the band's own name where it did not (a 0-point band that
+    names itself — "absent" — is schema-legal rubric output, `AF-17`'s capture)."""
     for band in shape.by_id[cid].bands:
         if band.ordinal == ordinal:
-            return band.descriptor
+            return band.descriptor or band.band
     raise KeyError(f"{cid} has no band at ordinal {ordinal}")
 
 

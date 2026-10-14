@@ -24,6 +24,10 @@ the engine module's):
 
 * The stage-2 preview must carry AF-17's declared `structure_guessed` warning verbatim
   — the format oracle this journey exists to carry.
+* The captured rubric writes its 0-point band without a descriptor (an "absent" band
+  that names itself — schema-legal rubric output, not a defect); the papers the world
+  writes quote the band's name where no descriptor was written. The adopted-shape gate
+  asks for a label per band, not a descriptor per band.
 * One review answer is journey-disclosed rather than corpus-declared: the captured
   draft (the only kind there is — the recordings replay it byte-exactly) asks
   `grades D` in addition to `approved_by`, because the capture model read "a D is less"
