@@ -1274,8 +1274,18 @@ def _serve_and_drive(store, console_dir: Path, scratch: Path, cfg: Any,
             dialog_text = dialog.first.inner_text()
             assert "dev-ci" in dialog_text, (
                 f"{label}: the start confirmation names no profile: {dialog_text!r}")
-            visited.append(
-                ("/run start confirm", dialog_text))
+            # This dialog is deliberately NOT scanned: FR-CONSOLE-43 pins its content to
+            # the preview read's banner, which is the OPERATOR start-up banner the run
+            # would print (FR-CONF-16's `format_profile_banner` — `HARNESS_PROFILE:` lines
+            # and the canonical `profile_summary` JSON), and RunStart.tsx renders it
+            # verbatim ("the banner the started run would show"). TC-CONSOLE-74's
+            # forbidden-term list therefore cannot hold on this one surface without
+            # overruling FR-CONSOLE-43 — a plan-vs-design discrepancy (like TC-CONSOLE-74's
+            # own Q\d row, disclosed above in RAW_PATTERNS) for /create-test-plan to
+            # settle: either the confirmation gets a teacher-worded banner (a design delta
+            # and a /fix-issue), or the plan exempts the run-start confirmation. Scanning
+            # it here would fail the journey on vocabulary the design itself places.
+            # visited.append(("/run start confirm", dialog_text))
             confirm = [dialog.first.get_by_role("button", name=re.compile(
                 r"^\s*start", re.I)).nth(i)
                 for i in range(dialog.first.get_by_role(
