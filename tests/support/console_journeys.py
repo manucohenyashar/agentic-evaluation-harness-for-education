@@ -1055,19 +1055,28 @@ def _serve_and_drive(store, console_dir: Path, scratch: Path, cfg: Any,
                 "draft and the corpus's contract disagree")
             for item_id in listed_ids:
                 # The list is the draft read's own placeholders, re-rendered after every
-                # answer — answered rows leave it and the rest close ranks, so the row
-                # is targeted by its reason text, never by a shifting position.
+                # answer — answered rows leave it and the rest close ranks. When the
+                # reason sentence is unique (one placeholder kind), the row is targeted
+                # by its text; when several placeholders SHARE one reason sentence
+                # (AF-21's four grade boundaries all read "The grade table — the
+                # document names the grade but states no boundary for it"), the walk
+                # answers the head of that group: the rows render in the draft read's
+                # own order, the walk answers in that same order, and the group closes
+                # ranks after every answer — so the head is always the item being
+                # answered, and the leave-the-list wait counts the group down by one.
                 piece = next(row for row in placeholders
                              if str(row["item_id"]) == item_id)
                 reason = str(piece.get("reason") or "")
                 rows = page.locator("ul.placeholder-list li.placeholder-row")
-                target = rows.filter(has_text=reason) if reason else rows
-                _wait_for(page, lambda: target.count() == 1,
-                          f"the row for {item_id!r} ({reason!r}) to render")
-                target.first.get_by_role("button", name="Answer").click()
+                matching = rows.filter(has_text=reason) if reason else rows
+                _wait_for(page, lambda: matching.count() > 0,
+                          f"a row for {item_id!r} ({reason!r}) to render")
+                standing = matching.count()
+                target = matching.first
+                target.get_by_role("button", name="Answer").click()
                 page.locator("#answer-value").fill(declared[item_id])
                 page.get_by_role("button", name="Send the answer").click()
-                _wait_for(page, lambda: target.count() == 0,
+                _wait_for(page, lambda: matching.count() == standing - 1,
                           f"the answered piece {item_id!r} to leave the list")
             if spec.survival:
                 # RS-05's positive twin, mid-review: the reload re-attaches to the
