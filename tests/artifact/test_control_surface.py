@@ -277,8 +277,14 @@ _CONSOLE_BARE_MIGRATION_IMPORTS: frozenset[str] = frozenset(
 #:   byte-identical machinery to the feedback documents (`TC-CONSOLE-67`'s oracle). Imported
 #:   by `export_reads.py` (a console subpackage module, so this is a module-scope import of
 #:   that module, not of `console.py` itself), never at the facade's scope.
+#: - `aeh.author.intake`, `aeh.author.errors` — #773, `TC-UI-10`'s arm (d): the preview
+#:   read routes the formats the upload invites beyond PDF (`.docx`, `.txt`) through the
+#:   library's own intake (`normalize_document`), and a refusal carries the matrix
+#:   sentence (`DocumentRefusedError`) verbatim — the console adds no paraphrase of its
+#:   own (`FR-AUTHOR-28`). The same declared M-AUTHOR library edge #755 opened, read side.
 _CONSOLE_SYMBOL_IMPORT_MODULES: frozenset[str] = frozenset(
-    {"aeh.author", "aeh.author.extraction", "aeh.author.report", "aeh.author.validation",
+    {"aeh.author", "aeh.author.errors", "aeh.author.extraction", "aeh.author.intake",
+     "aeh.author.report", "aeh.author.validation",
      "aeh.conf", "aeh.conf.decision_engine", "aeh.conf.qa_model", "aeh.det", "aeh.grade",
      "aeh.grade.pdf", "aeh.help", "aeh.orch", "aeh.pipeline", "aeh.pipeline.cli",
      "aeh.pipeline.driver", "aeh.pipeline.packages", "aeh.pipeline.runtime", "aeh.pkg",

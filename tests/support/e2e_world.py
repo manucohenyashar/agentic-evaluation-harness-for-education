@@ -498,11 +498,16 @@ class LedgerEvidenceView:
         cursor = 0
         for row in rows:
             content = row["content"] or ""
-            start = markdown.find(content, cursor) if content else cursor
-            if start < 0:
-                start = cursor  # a region the canonical text no longer carries
+            start_char = markdown.find(content, cursor) if content else cursor
+            if start_char < 0:
+                start_char = cursor  # a region the canonical text no longer carries
+            # Byte offsets, the space the evidence spans speak (`verification.py`):
+            # the gate's overlap/containment signals compare regions against spans,
+            # and a char offset diverges the moment one multi-byte character sits
+            # before the region. The cursor stays in char space: `find` searches it.
+            start = len(markdown[:start_char].encode("utf-8"))
             end = start + len(content.encode("utf-8"))
-            cursor = max(cursor, start)
+            cursor = max(cursor, start_char)
             items.append(SimpleNamespace(
                 region_kind=row["region_kind"], start=start, end=end,
                 ocr_conf=row["ocr_conf"], crop_ref=row["crop_ref"],
@@ -807,12 +812,18 @@ class SynthWorld:
             for cid in self.open_ids:
                 needle = self._render_band(
                     cid, self._ordinal_for(submission, cid))
-                start = markdown.find(needle, cursor)
-                assert start >= 0, (
+                start_char = markdown.find(needle, cursor)
+                assert start_char >= 0, (
                     f"fixture bug: the band line for {cid} of index {index} is not "
                     "in the stored markdown")
-                end = start + len(needle)
-                cursor = end
+                # Byte offsets, the only kind span verification reads
+                # (`verification.py`: raw[start:end] == text.encode) — a char
+                # offset diverges the moment the markdown carries one multi-byte
+                # character before the span, which a descriptor like "pupil's"
+                # (U+2019) is. The cursor stays in char space: `find` searches it.
+                start = len(markdown[:start_char].encode("utf-8"))
+                end = start + len(needle.encode("utf-8"))
+                cursor = start_char + len(needle)
                 self.spans_by_cell[(sid, cid)] = [
                     {"start": start, "end": end, "text": needle,
                      "region_kind": "transcribed_text"},
