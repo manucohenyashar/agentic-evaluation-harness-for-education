@@ -13,13 +13,15 @@ For how to *use* the system once it is running (the pages, the commands, grading
 > Everything below was **checked against the code** and, where it says "checked", **run** on a Linux machine with Python 3.11. Things that could not be checked are labelled **not checked**. Two facts decide what you can do today:
 >
 > 1. **Local computer mode is the only mode that can run the console and grade at the same time.** But the system has **not been tried against a real local model server**. The way it talks to the server may not match what common servers (Ollama, llama.cpp, vLLM) expect. See section 6.5.
-> 2. **OpenRouter mode grades through OpenRouter, with zero data retention enforced on every request** (section 7.6). Use `dev-ci`: the console refuses `cloud-hosted` on purpose. The class, the package and the papers go in with the shipped commands of sections 8.1 to 8.3; what is still open sits on the console side — the teacher's setup flow, the pages, recording a parked-paper decision — and is listed in [`02-live-readiness-and-blockers.md`](../live-tests/02-live-readiness-and-blockers.md).
+> 2. **OpenRouter mode grades through OpenRouter, with zero data retention enforced on every request** (section 7.6). Use `dev-ci`: the console refuses `cloud-hosted` on purpose. The teacher's console (a browser SPA at the printed address) now drafts the test package from the teacher's own documents, and drives the day — start the run, watch it, review, blind sample, finalize, amend and read the results. What still goes in with the shipped commands of sections 8.1 to 8.3 is class creation and scan reading; the remaining gaps (browser uploads of scans, recording a parked-paper decision) are listed in [`02-live-readiness-and-blockers.md`](../live-tests/02-live-readiness-and-blockers.md).
 >
 > So: you can follow every step here and get a correct setup. What still stands between this setup and a teacher running the live test alone is listed in the readiness document.
 
 ---
 
 ## 1. The big picture
+
+The console opens as a **single-page browser app (SPA)** at the loopback URL printed at startup. Its hash-routed screens are the teacher-facing surface; the older S1–S14 HTML pages remain available for operator/audit reads, but are not the SPA's navigation or the tutorial's primary workflow.
 
 ```
    Browser (same computer only: http://127.0.0.1:<port>)
@@ -71,7 +73,7 @@ All of the above was read from the code and checked with the configuration check
 |---|---|---|
 | Operating system | Windows, macOS or Linux | Linux checked |
 | Python | **3.11 or newer** | Checked on 3.11 |
-| A browser | Any current one, on the same computer | Not checked here (pages were fetched with `curl`) |
+| A browser | Any current one, on the same computer | Checked with Chromium; the console opens it by itself |
 | Disk space | Room for the PDFs you load, plus page pictures the system keeps. The practice folder for three students is about 1 MB. | Real sizes not measured |
 | **Local mode only:** model files and a model server | See section 6 | Not checked with a real server |
 | **OpenRouter mode only:** an OpenRouter account and key, and outbound HTTPS to `openrouter.ai` | See section 7 | Not checked (no network access to OpenRouter here) |
@@ -112,12 +114,12 @@ aeh --help
 You should see (checked):
 
 ```
-usage: aeh [-h] {run,recover,console,cohort,package,ingest,results} ...
+usage: aeh [-h] {run,recover,console,cohort,package,author,ingest,results} ...
 
 Run, recover and serve the agentic evaluation harness.
 
 positional arguments:
-  {run,recover,console,cohort,package,ingest,results}
+  {run,recover,console,cohort,package,author,ingest,results}
     run                 drive a cohort's run to completion
     recover             reclaim leases, resume and settle grades
     console             recover, then serve the operator console
@@ -125,6 +127,8 @@ positional arguments:
                         roster, or show one
     package             build and publish a package (a test's questions,
                         rubric and keys)
+    author              draft a package spec from teacher documents, then
+                        review it
     ingest              read the test paper and answer sheets (PDFs) through
                         the intake checks
     results             show a run's grades and rollup, or export the school-
@@ -322,13 +326,18 @@ python -m aeh console --data-dir ~/aeh-data --config ~/aeh-config/edge-local.tom
 
 Windows PowerShell: `python -m aeh console --data-dir $HOME\aeh-data --config $HOME\aeh-config\edge-local.toml`
 
-You will see one line (checked):
+You will see the banner (checked):
 
 ```
+provider for runs started here: edge-local (local models: http://127.0.0.1:9000/v1)
 console listening on port 8765 (pid 1016); Ctrl-C to stop
+  Grading console:  http://127.0.0.1:8765/
+  Next step:        create a class, then a test package — the home page walks you through it.
 ```
 
-The port is different every time unless you choose one. To choose, set `CONSOLE_PORT` first (`export CONSOLE_PORT=8765`, or in PowerShell `$env:CONSOLE_PORT = "8765"`). Then open `http://127.0.0.1:8765`. The command keeps running; press **Ctrl-C** to stop it.
+The `provider` line prints only when a profile is set, and it names the backend any run started from the console will call — the same line `aeh run` prints, so a stray `HARNESS_FIXTURE_DIR` shows up here. The port is different every time unless you choose one. To choose, set `CONSOLE_PORT` first (`export CONSOLE_PORT=8765`, or in PowerShell `$env:CONSOLE_PORT = "8765"`). The default browser then opens at `http://127.0.0.1:8765/` — the SPA. Disable the auto-open with `--no-open` or `HARNESS_CONSOLE_AUTO_OPEN=0` (for example when the console runs headless over SSH). The command keeps running; press **Ctrl-C** to stop it.
+
+On start the console runs recovery first: it reclaims expired leases, resumes runs that were running when interrupted and paused runs carrying an unapplied queued Resume request, and settles completed runs with ungraded or non-final scores. It does not start pending runs or override an operator pause, and it only resumes runs whose frozen profile is the one in use (section 8).
 
 Checked: with this file the console started and `/runs/run-dev-pipe/monitor` returned the page (HTTP 200) on the practice data from section 9.
 
@@ -469,7 +478,7 @@ provider: OpenRouter at http://127.0.0.1:9/api/v1 (zero data retention enforced)
 "status": "paused"
 ```
 
-The `provider:` line says what will really answer: OpenRouter, a local model server, or recordings. (Before, the command printed OpenRouter model names even when a replay was what ran.) A provider that does not answer pauses the run (exit code 3) rather than failing it; start it again once the cause is fixed.
+The `provider:` line says what will really answer: OpenRouter, a local model server, or recordings. (Before, the command printed OpenRouter model names even when a replay was what ran.) A provider that does not answer pauses the run (exit code 3) rather than failing it. Fix the cause, then resume through the console's Jobs screen or queue the appropriate Resume request. Rerunning `aeh run` does not resume a paused run; it starts pending runs. Startup recovery resumes work that was running when interrupted, or a paused run only if an unapplied Resume request is queued and the run's frozen profile matches the current one.
 
 **Privacy (zero data retention).** Every request to OpenRouter carries `"provider": {"zdr": true, "data_collection": "deny"}`. OpenRouter then sends the work only to a host that keeps no copy and does not train on it, or refuses the request (`HTTP 404 ... No endpoints found matching your data policy`), which pauses the run. Checked on 2026-10-03: both models in the shipped file have such hosts (`qwen/qwen3-30b-a3b` via DeepInfra, `qwen/qwen3-vl-8b-instruct` via Parasail). The `cloud-hosted` privacy check at run start is answered by this rule, so a `cloud-hosted` `aeh run` now starts. The consent rule (7.4) still decides first whether a class's work may leave the machine at all.
 
@@ -483,7 +492,7 @@ aeh console: ConsoleBindRefused: the console refuses to start under the cloud-ho
 
 Use `dev-ci` for the console.
 
-**What still blocks a full live test.** Nothing blocks a *supervised* one: the command-line path of section 8 creates the class, builds the package and reads the scans. What is still missing is the console side that would let a teacher operate alone — the teacher's setup flow (B5), the pages the guides promise (B7), and recording a parked-paper decision (B8). See the readiness document.
+**What still blocks a full live test.** Nothing blocks a *supervised* one: the command-line path of section 8 creates the class, builds the package and reads the scans. The teacher's package-setup flow (B5) has shipped in the SPA. What is still missing for a teacher operating alone is class creation/roster editing, browser scan intake (B4), a results-export download control, and recording a parked-paper decision (B8). See the readiness document.
 
 **The request format (blocker B2) was changed and then checked with real calls (2026-10-03).** The first real call had failed: the system sent the whole `openrouter/<vendor>/<model>@<date>` name and a non-standard body, and OpenRouter refused it. The system now sends the plain name OpenRouter knows (`qwen/qwen3-30b-a3b`) and the standard chat format from section 6.5, with `Authorization: Bearer <key>`. A real call through the changed system succeeded (checked, 2026-10-03): it answered `ready`, reported `qwen/qwen3-30b-a3b` as the model that served it, and OpenRouter's cost of $0.00011245. Two more real calls also succeeded (checked): a judge-style request with three parts answered `{"band": "met"}`, and a page picture sent to `qwen/qwen3-vl-8b-instruct` was read back exactly ("The answer is 42"). So both model names in the shipped `dev-ci` file exist at OpenRouter. The model spent 213 output tokens to say one word, because it reasons first: leave the output cap generous for such models. A refused request now says why, in OpenRouter's words. A bad key, no credit or an unknown model (`HTTP 401`, `402`, `404`) stops the run, for example `HTTP 401 from the provider: the credentials were refused (for OpenRouter, check OPENROUTER_API_KEY)`. A refusal of one paper only (too long, flagged) sets that paper aside and the run goes on.
 
@@ -493,9 +502,9 @@ Use `dev-ci` for the console.
 
 | Task | Command | Notes |
 |---|---|---|
-| Start the console | `python -m aeh console --data-dir ~/aeh-data --config <file>` | Prints the port. Runs until Ctrl-C. First it releases stuck work, then resumes running runs. |
+| Start the console | `python -m aeh console --data-dir ~/aeh-data --config <file>` | Prints the port. Runs until Ctrl-C. Runs recovery: reclaims expired leases, resumes runs that were running and paused runs with an unapplied queued Resume request, and settles completed runs with ungraded/non-final scores. Does not start pending runs or override an operator pause. |
 | Stop it | Ctrl-C | Closing the browser changes nothing. |
-| After a crash or power cut | Start the console again (with the same profile) | Or `python -m aeh recover --data-dir ~/aeh-data`, which releases stuck work only and prints a report. |
+| After a crash or power cut | Start the console again (with the same profile) | Or `python -m aeh recover --data-dir ~/aeh-data`: reclaims expired leases, resumes eligible running runs and paused runs with a queued resume, settles grades for completed runs with ungraded or non-final work, and prints `leases_reclaimed`, `runs_resumed` and `runs_regraded`. It does not start pending runs or override an operator pause; a run frozen under another profile stays paused with the refusal recorded. |
 | Run one class from the command line | `python -m aeh run --data-dir ~/aeh-data --cohort <cohort> --package-version <version> --config <file>` | Exit code **0** finished, **3** not finished (paused or stopped), **1** an error. |
 
 **About profiles when starting.**
@@ -601,7 +610,7 @@ Checked: this package and a class created with `aeh cohort create` carry the six
 
 ### 8.3 Read the papers in (`aeh ingest`)
 
-With the class created (8.1) and the package built (8.2), read the scans. You need the test paper once per class, and the answer sheets as **one PDF per student** (a folder of them is fine). Every sheet needs the test name and the student's ID written at the top, because the checks read both.
+With the class created (8.1) and the package built (8.2), read the scans. You need the test paper once per class, and the answer sheets as **one PDF per student** (a folder of them is fine). Each sheet needs the printed test name and student's rostered full name at the top, because the checks read both; a student ID is optional and is not required for identity matching.
 
 ```bash
 python -m aeh ingest --data-dir ~/aeh-data --cohort class-9a \
@@ -616,11 +625,11 @@ It prints the provider (`provider: OpenRouter at ... (zero data retention enforc
 * If **no** sheet could be read, the command exits 1 with `no answer sheet could be read`. That is almost always the model, not the scans: a wrong or revoked `OPENROUTER_API_KEY`, no credit left, or a model name OpenRouter does not know. The warnings above that line say which. Fix it, close the quarantined records in S8, and run the command again.
 * A `real` class is refused before any page is sent (the consent rule, 7.4).
 * These page-reading calls cost money but are not counted against a run's cost ceiling: no run exists yet. OpenRouter's own limit (7.2) is the stop.
-* The console's upload page still only stores files; it does not read them. Use this command.
+* The SPA's Papers screen does not yet upload files; its file inputs are not wired. A separate console upload API accepts files but only stores them — it does not create submissions or read scans. Use `aeh ingest` to read papers. See the operating tutorial's "What is not in the console yet" section.
 
 ### 8.4 A first live test, start to finish (Windows PowerShell)
 
-This grades the sample physics test's six typed answer sheets through OpenRouter, using the files the repository ships. It costs well under a dollar. Run it in a new, empty data folder. Steps 1 to 4 were checked here with a stand-in for OpenRouter; **steps 4 and 5 against real OpenRouter have not been run yet**: they are the live test.
+This is the repeatable command-line path for the sample physics test's six typed answer sheets through OpenRouter, using the files the repository ships. It was exercised against real OpenRouter on 2026-10-09 and 2026-10-10 (see [the live-readiness record](../live-tests/02-live-readiness-and-blockers.md)): the latest recorded run reached `complete`, but S9-003's Q4 mark was missing after citation verification, so it was not a clean pass. These six-sheet runs do not establish class-scale cost or runtime. A separate one-student integration record from 2026-10-12 reports $0.154447; no durable elapsed-time measure exists. Run this repeatable path in a new, empty data folder. For the teacher-facing package-authoring and grading journey after startup, use the SPA operating tutorial.
 
 ```powershell
 # 0. Once per terminal window (section 4 and 7.2)
@@ -661,9 +670,9 @@ python -m aeh console --data-dir $D --config docs\live-tests\config\live-test.de
 What to expect, and what to record:
 
 * **Step 4.** If the model writes the page markup the checks expect, the outcome is three `ok`, two `incomplete` (S9-004: a doubled mark; S9-006: no name) and one `unmatched_assessment` (S9-005: the wrong test), as the live-test guide says. If good papers are parked instead, that is the most important finding of the test: note each paper's status, and keep the folder.
-* **Step 5.** Exit code 0 means every paper was graded. Exit code 3 means the run paused: read `pause_reason` in what it printed (for example the cost ceiling, 7.3, or an OpenRouter refusal, 7.6), fix it, and run the same command again; it continues where it stopped.
+* **Step 5.** Exit code 0 means the run completed; inspect the result summary for ungraded or provisional work. Exit code 3 means it did not finish: read `status` and `pause_reason` in what it printed (for example the cost ceiling, 7.3, or an OpenRouter refusal, 7.6). Fix the cause, then resume through the console's Jobs screen or queue the appropriate Resume request; rerunning `aeh run` does not resume a paused run, and recovery resumes it only when a Resume request is queued.
 * **Extra judges.** When judges are unsure or disagree, the system adds two more judges to that answer, and one more if a judge call is lost. With one judge in the file and no extra models, it cannot: the answer keeps its score, marked provisional, and goes to teacher review (the run's output says `no real judge for seats 2-3`, and the score's state is `provisional_unreviewed`). To let it add judges, add `[[profiles.dev-ci.escalation_judge]]` tables to the configuration file, each a **different** model from the panel and from each other, checked on a zero-retention host first (7.6). For a one-judge panel, **two** are enough to leave the random sample on (drop the `HARNESS_ORCH_RANDOM_ARM_RATE` line); if the sample is on and there are fewer, `aeh run` refuses before starting and says how many to add. Each one more lets one more step happen instead of leaving the answer provisional; **five** cover every seat a one-judge run can ever need (a sampled answer starts with three judges, can widen to five, and can get one replacement).
-* **Step 6.** Open `/runs/<run id>/rollup` and `/quarantine` (the operating tutorial, section 4). The parked papers can be released or closed there (section 5); the no-name paper can only be closed.
+* **Step 6.** Open the console and walk the SPA (the operating tutorial): the Results screen shows each mark and its state, the Review screen lists the answers that need a teacher, and the Parked screen lists the parked papers — a parked paper can be released or closed there (section 5); the no-name paper can only be closed.
 
 **The second test: every rubric method.** The physics test has multiple-choice keys and band lines only. The sample English test uses one line of each scoring method (8.2): an evidence checklist (C1, the sum of items C1a and C1b), a band line (C2) and a line in the teacher's own words (C3). Run it in the same data folder and terminal, after the physics run:
 
@@ -722,6 +731,7 @@ All are optional. The default is the production value. They exist so a slower co
 |---|---|---|
 | `CONSOLE_PORT` | The console's port | A free port, chosen each start |
 | `CONSOLE_BIND` | The console's address. Only loopback is accepted. | `127.0.0.1` |
+| `HARNESS_CONSOLE_AUTO_OPEN` | Set `0`, `false` or `off` to stop the console opening the browser (or use `--no-open`) | browser opens |
 | `HARNESS_CONCURRENCY` | Calls at once (see 6.2 and 7.3) | Hardware limit (local); 8 (OpenRouter) |
 | `LOCAL_INFERENCE_BASE_URL` | Local model server address | `http://127.0.0.1:8080/v1` |
 | `OPENROUTER_API_KEY` | Your key (never in a file) | none |
@@ -740,7 +750,9 @@ All are optional. The default is the production value. They exist so a slower co
 | `HARNESS_INGEST_OCR_CONF_FLOOR` | Reading confidence below which a paper is flagged | 0.70 |
 | `HARNESS_INGEST_V4_SEMANTIC_FLOOR` | How much a paper's words must overlap the test's questions | 0.10 |
 | `HARNESS_INGEST_RETAIN_PAGE_RASTERS` | Keep the page pictures | on |
-| `HARNESS_CONSOLE_UPLOAD_CHUNK_BYTES` | Upload read size | 4 MiB |
+| `HARNESS_CONSOLE_UPLOAD_CHUNK_BYTES` | Console upload read size (not scan ingestion) | 4 MiB |
+| `HARNESS_AUTHOR_DOC_MAX_BYTES` | Largest teacher-authored document accepted for package drafting | 10 MiB |
+| `HARNESS_ROSTER_IMPORT_MAX_BYTES` | Largest roster import accepted | 2 MiB |
 
 A wrong value is refused with the variable's name in the message. Some are checked at the start; others only when first used. So a typo can show up late: watch the first minutes of a run.
 
@@ -790,7 +802,7 @@ Every message is the system's real wording (checked unless said).
 
 ## 14. A short check for the whole setup
 
-1. `aeh --help` shows `run`, `recover`, `console`, `cohort`, `package`, `ingest` and `results`.
+1. `aeh --help` shows the eight commands: `run`, `recover`, `console`, `cohort`, `package`, `author`, `ingest` and `results`.
 2. `check_config.py` says `ACCEPTED` for your file.
 3. The data folder is in your home folder.
 4. For OpenRouter mode: `OPENROUTER_API_KEY` is set in this terminal, a spending limit exists, and the two model names are on openrouter.ai/models.

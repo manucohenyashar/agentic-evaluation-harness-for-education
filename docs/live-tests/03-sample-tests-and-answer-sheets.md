@@ -68,15 +68,15 @@ The exact band wording (what *Full*, *Adequate*, *Limited*, *None* each require)
 | `S9-003-weak` | S9-003 | Thinks a moving object needs a constant push | **D ✗** | **A ✗** | C ✓ | Limited (gravity named, table "is strong") | **A ✗** | Limited (friction, no balance) | **3 / D** | admitted |
 | `S9-004-doubled-mark-and-blank` | S9-004 | Two ticks on Q1; Q4 left empty | **A and C** | B ✓ | C ✓ | **none (blank)** | B ✓ | Full | **6 or 7 / B** once Q1 is decided | **parked**: `incomplete`, structure check (V2) fails |
 | `S9-005-wrong-test` | S9-005 | Handed in the English answers against this test | n/a | n/a | n/a | n/a | n/a | n/a | n/a | **parked**: `unmatched_assessment`, right-test check (V4) mismatch: the page names `ENG7-READ-01` |
-| `S9-006-no-name` | *(forgot to write it)* | A good paper with no name on it | C ✓ | B ✓ | C ✓ | Full | B ✓ | Full | **10 / A** once matched | **parked**: `incomplete`, identity check (V3) unmatched |
+| `S9-006-no-name` | *(forgot to write it)* | A good paper with no name on it | C ✓ | B ✓ | C ✓ | Full | B ✓ | Full | **10 / A** if identity is established by a corrected rescan | **parked**: `incomplete`, identity check (V3) unmatched |
 
 What each parked sheet is there to prove:
 
 * **`S9-004`**: the system must not guess which tick the student meant, and must not treat a **blank answer** as a scanning error. The operator looks at the image crop on S8, if one was stored, and decides (B8 applies here too).
 * **`S9-005`**: the "confident zero" trap. A paper for the wrong test would otherwise be scored 0 by every judge in agreement. The system must stop it before any judge sees it.
-* **`S9-006`**: nobody is silently assigned a grade they did not earn. The operator decides. (Today the console can only *release* or *close* a parked paper; it cannot record *which student* it is. See blocker B8 in [02](02-live-readiness-and-blockers.md).)
+* **`S9-006`**: nobody is silently assigned a grade they did not earn. Because V3 did not match an identity, `matched` release is refused. Close it as unresolvable, or add the student's ID to the sheet, rescan and read it again with `aeh ingest`. (The console still cannot record a manual student assignment; see B8 in [02](02-live-readiness-and-blockers.md).)
 
-**What you should see in the class view** after the operator has resolved the three parked sheets: three clean grades (A, B, D) from the admitted sheets, and the three resolved sheets graded or marked INCOMPLETE according to what the operator chose. Q3 shows two of three admitted students correct; Q1 shows one wrong option chosen (D), the "needs a constant push" misconception.
+**What you should see in the class view** after the three parked sheets are handled: the three admitted sheets have grades (A, B, D). S9-004 may be released after an operator checks the mark, or closed as unresolvable; S9-005 should be closed or re-ingested under the correct package; S9-006 cannot be released as `matched` without an identity match, so close it or rescan after adding identity. Q3 shows two of the three initially admitted students correct; Q1 shows one wrong option chosen (D), the "needs a constant push" misconception.
 
 ## 3. Test 2: Grade 7 English, "The Lighthouse Keeper" (`ENG7-READ-01`): every rubric method
 
@@ -140,7 +140,7 @@ Each rule is there because a check in the code depends on it:
 3. **The package's ID is the test ID.** In the check script the package is created under that exact name.
 4. **Reprint each question above its answer space.** The right-test check compares the answer's words with the question's words (floor 0.10). With the question reprinted and transcribed, the admitted sheets scored 0.24 to 0.93. With only the handwriting transcribed, six of the seven good sheets scored 0.00 to 0.04 and were parked (`verify_sample_materials.py --answers-only` reproduces it). See the risk in [02](02-live-readiness-and-blockers.md).
 5. **Tick boxes for multiple choice, one per option, one tick per question.** Two ticks make the mark unreadable and the paper is parked, by design.
-6. **PDF only**, starting with the `%PDF-` marker. The console refuses anything else (checked: HTTP 400).
+6. **Paper intake accepts PDF only**, starting with the `%PDF-` marker; this applies to the scanned test and answer sheets sent through `aeh ingest` (checked). It does not constrain package authoring: the SPA's package-authoring screen accepts PDF, DOCX and TXT source documents.
 7. **Do not put instructions after `Student:`.** Whatever follows it on that line is read as the name.
 
 ## 6. Rebuilding and checking the files

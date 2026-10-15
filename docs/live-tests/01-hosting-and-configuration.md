@@ -2,7 +2,7 @@
 
 *For the person who sets up the machine. You need to be able to open a terminal and paste commands; you do not need to be a programmer.*
 
-**Before you start:** read [`02-live-readiness-and-blockers.md`](02-live-readiness-and-blockers.md). Setting the machine up exactly as below is correct and safe, but a live OpenRouter run needs the engineering work listed there. Everything in this document that was *checked* says so; everything that is advice or could not be checked says that too.
+**Before you start:** read [`02-live-readiness-and-blockers.md`](02-live-readiness-and-blockers.md). The supervised OpenRouter test can be run through the documented terminal-and-console path; the remaining gaps and evidence limits for teacher-independent operation are listed there. Everything in this document that was *checked* says so; everything that is advice or could not be checked says that too.
 
 ---
 
@@ -36,12 +36,10 @@ A **profile** tells the system where its models run. There are three.
 | Profile | Models run | Console allowed? | Sends student work off the machine? | Use for |
 |---|---|---|---|---|
 | `edge-local` | On a local model server on the same machine (default address `http://127.0.0.1:8080/v1`) | Yes | No | A school with no internet |
-| `dev-ci` | **Intended:** OpenRouter. **Today:** recordings only (see below) | Yes | Intended yes, consent rule applies | Development, and the first live test |
+| `dev-ci` | OpenRouter. With `HARNESS_FIXTURE_DIR` set, recorded replays instead (the test tier) | Yes | Yes, consent rule applies | Development, the first live test, and offline rehearsal |
 | `cloud-hosted` | OpenRouter | **No, refused** | Yes, consent rule and a privacy check apply | A hosted service with its own login (not built) |
 
-**For the first live test with OpenRouter and the console, the intended profile is `dev-ci`.** The project's design notes say so explicitly: the console is an `edge-local` and `dev-ci` artifact, and development and CI "run entirely on OpenRouter".
-
-**Checked, and important:** in the shipped launcher `dev-ci` replays recordings and never calls OpenRouter, and `cloud-hosted` is the only profile wired to OpenRouter but is refused by the console and by a privacy check at run start. This is blocker B1. Set the machine up for `dev-ci` as below; it is correct for when B1 is closed, and it already works for rehearsal.
+**For the first live test with OpenRouter and the console, use `dev-ci`.** The shipped launcher calls OpenRouter under `dev-ci` and enforces the zero-retention policy on every request. Setting `HARNESS_FIXTURE_DIR` selects recorded replays instead; that is the deterministic test/rehearsal path. The console refuses `cloud-hosted` because that profile is intended for a separately authenticated hosted service, which this console is not.
 
 ## 3. The machine
 
@@ -76,9 +74,18 @@ Check it worked:
 aeh --help
 ```
 
-You should see `usage: aeh [-h] {run,recover,console} ...` with the three commands *run*, *recover* and *console*. (`python -m aeh ...` does the same thing and always works, even if `aeh` is not on your PATH.) The install and this `aeh --help` output were checked in a clean environment; reading a PDF through it was checked with the sample-sheet script.
+You should see `usage: aeh [-h] {run,recover,console,cohort,package,author,ingest,results} ...` with these eight top-level commands:
 
-The Jev decision engine's library (a pinned `typesafe-sdk==0.7.2`) is already part of that install, and the engine is **on by default** on this profile: every rubric cell is pre-screened by the Jev decision model before the judge panel sees it. The config file pins the engine's build (`HARNESS_JEV_BUILD`); confirm the pinned model on openrouter.ai/models for your test day. For a one-off run with the engine off, set `HARNESS_DECISION_ENGINE=off` in the terminal — the terminal wins, and the file keeps the engine the live acceptance runs.
+- `run`, `recover`, `console`
+- `cohort` (create, show or extend a class roster)
+- `package` (build or export a package)
+- `author` (draft from teacher-authored documents, then review the draft)
+- `ingest` (read test papers and answer sheets)
+- `results` (show or export grades)
+
+(`python -m aeh ...` does the same thing and always works, even if `aeh` is not on your PATH.) The install and this `aeh --help` output were checked in a clean environment; reading a PDF through it was checked with the sample-sheet script.
+
+The Jev decision engine's library (a pinned `typesafe-sdk==0.7.2`) is already part of that install. The shipped configuration names a Jev build; the engine may be enabled or disabled by configuration. Before a live run, verify the setting and pinned model with the engineer. For a run with the engine off, set `HARNESS_DECISION_ENGINE=off` in the terminal — the terminal wins.
 
 > **For the person who will also run the test suite**, not the operator: `pip install -e . -r requirements-dev.txt` instead, on Python 3.13, and set the temporary folder away from `/tmp` (the tests use the same safe-folder rule): `TMPDIR=$HOME/tmp-aeh`.
 
@@ -185,14 +192,14 @@ A malformed value is refused with the variable's name in the message. Some are c
 
 | Task | Command | Notes |
 |---|---|---|
-| Start the console | `python -m aeh console --data-dir ~/aeh-data --config docs/live-tests/config/live-test.dev-ci.toml` | Prints the port. Runs until Ctrl-C. Releases stuck work, then resumes running runs. |
+| Start the console | `python -m aeh console --data-dir ~/aeh-data --config docs/live-tests/config/live-test.dev-ci.toml` | Prints the port. Runs until Ctrl-C. On start-up it reclaims expired leases, resumes runs that were running (or paused with an unapplied queued Resume request), and settles completed runs' ungraded or non-final grades. It does not start pending runs or override an operator pause — see "What `recover` does" below. |
 | Stop it | Ctrl-C | Closing the browser changes nothing |
-| After a crash or restart | Start the console again (it releases stuck work, then resumes running runs), or `python -m aeh recover --data-dir ~/aeh-data` (releases stuck work only) | `recover` prints `leases_reclaimed`, `runs_regraded`, `runs_resumed` |
+| After a crash or restart | Start the console again (its start-up recovery does the same work as `recover`), or `python -m aeh recover --data-dir ~/aeh-data` | `recover` reclaims leases, resumes runs that were running (or paused with an unapplied queued Resume request), and settles completed runs' ungraded or non-final grades; it prints `leases_reclaimed`, `runs_resumed`, `runs_regraded` |
 | Run one cohort from the command line | `python -m aeh run --data-dir ~/aeh-data --cohort <cohort> --package-version <version> --config <file>` | Exit code **0** finished, **3** not finished (paused or stopped; read what it printed), **1** error |
 
 **Profile.** `aeh run` needs a profile. The console needs one too if you want it to start runs or resume them: the `start-run` command answered *"HARNESS_PROFILE must be one of … got None"* without one (checked), and on start-up the console resumes only runs whose frozen profile equals the one in use. The shipped config file names its profile itself, so passing `--config` is enough; otherwise set `HARNESS_PROFILE` in the terminal first. To merely *look* at a data folder, no profile is needed (checked). Note the practice folder's run froze `edge-local`, so to resume or restart it you would set `HARNESS_PROFILE=edge-local`.
 
-**What `recover` does.** `aeh recover` releases work a crash left half-claimed and prints a report. It does **not** finish a run. To continue a run, start the console (with the profile above) or use `aeh run`. A `run` exit code of **3** means the run did not complete (it is paused, or stopped for another reason): read the `status` and `pause_reason` it prints.
+**What `recover` does.** `aeh recover` reclaims expired leases, resumes runs that were running when the process stopped (and paused runs with an unapplied resume request), and re-computes grades for completed runs that still have ungraded or non-final work. It does not start runs that are still pending or override an operator pause. A run whose frozen profile differs from the current process profile remains paused, with the refusal recorded. A `run` exit code of **3** means the run did not complete (for example, it is paused or stopped for another reason): read the `status` and `pause_reason` it prints.
 
 ## 11. Security and privacy checklist
 
@@ -204,7 +211,7 @@ Tick each before the test.
 - [ ] A spending limit is set in OpenRouter's dashboard.
 - [ ] Only `synthetic` cohorts will be graded. `HARNESS_ALLOW_REMOTE_REAL_WORK` is not set.
 - [ ] The cost ceiling is set in the config file.
-- [ ] Someone has read blocker B6: the system's "zero retention" privacy check is not yet answerable for OpenRouter.
+- [ ] The privacy owner has documented approval for sending the selected cohort and documents to an eligible zero-retention OpenRouter endpoint. The software requests zero retention on every call and refuses when no matching endpoint exists; this technical gate does not replace the school's approval.
 - [ ] A backup of the data folder will be taken after the test, before anything is purged.
 - [ ] Nobody will try to bind the console to a network address.
 
@@ -216,6 +223,7 @@ Tick each before the test.
 | Console on a network address | `ConsoleBindRefused: … refuses a non-loopback bind` | Do not set `CONSOLE_BIND` |
 | Console under `cloud-hosted` | `ConsoleBindRefused: … refuses to start under the cloud-hosted profile` | Use `dev-ci` or `edge-local` |
 | Run with no profile | `ConfigurationError: HARNESS_PROFILE must be one of ('edge-local', 'cloud-hosted', 'dev-ci'), got None` | Set it |
-| `cloud-hosted` run | `RetentionPolicyError: a cloud-hosted run cannot start …` | Blocker B1 / B6 |
-| (resolved) `dev-ci` run, no fixtures | Before the B1 fix: `ValueError: the dev-ci profile records and replays through a fixture directory; set HARNESS_FIXTURE_DIR`. Now `dev-ci` calls OpenRouter, with zero retention enforced | See the deployment tutorial, section 7.6 |
+| `cloud-hosted` console | `ConsoleBindRefused: … refuses to start under the cloud-hosted profile` | Use `dev-ci` or `edge-local` for this loopback-only, unauthenticated console |
+| `dev-ci` run, no eligible zero-retention endpoint | `HTTP 404 … No endpoints found matching your data policy` | Check the selected model's eligible providers and the zero-retention request policy; do not weaken the privacy controls |
+| `dev-ci` with `HARNESS_FIXTURE_DIR` set | Recorded request/reply fixtures are replayed; OpenRouter is not called | Use this for deterministic offline tests, not as evidence of a live model run |
 | Real cohort on a remote profile | `ConsentGateError: … may not be sent to a 'dev-ci' provider` | Use a synthetic cohort |
