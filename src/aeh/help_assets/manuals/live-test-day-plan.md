@@ -2,15 +2,15 @@
 
 *For the person running the day, and for the teacher taking part. Read [02](02-live-readiness-and-blockers.md) first.*
 
-The plan has three stages. **Stage 0 you can do today. Stage 1 is the gate: the live test does not start until it is passed. Stage 2 is the test day itself.**
+The plan has three stages. **Stage 0 is a local rehearsal. Stage 1 checks that the supervised test is safe and ready. Stage 2 is the test day itself.** The console now supports package authoring, run controls, review, blind sampling, finalization and amendment. The test still needs an engineer/operator to create the class and read scans with terminal commands; the SPA has no results-export download control, and parked decisions cannot store the selected student/mark/test. These are known limits, not claims that the test has passed.
 
 | Stage | When | Needs engineering work? |
 |---|---|---|
-| 0. Rehearsal | Now | No |
-| 1. Readiness gate | Before the test is scheduled | Yes: blockers B1 to B4, B6 and B8 |
-| 2. Test day | When Stage 1 is passed | Only for the engineer's seat beside you |
+| 0. Rehearsal | Before the live run | No, after the practice folder is built |
+| 1. Readiness gate | Before the test is scheduled | Yes: privacy approval, live configuration, budget guard, known workflow gaps and sample checks |
+| 2. Test day | When Stage 1 is passed | Engineer/operator handles terminal-only setup and intake; teacher uses the SPA for its shipped controls |
 
-Tags like **[B4]** mean "this step needs blocker B4 closed". Steps without a tag work today.
+Tags like **[B4]** and **[B8]** name known limitations. They do not mean the shipped controls are absent: B4 is the missing browser-to-intake path, and B8 is the missing decision record. A supervised test may proceed with the workarounds below; do not claim a terminal-free UAT pass.
 
 ---
 
@@ -32,8 +32,8 @@ Purpose: the operator and teacher learn the screens with nothing at stake.
 - [ ] `python docs/live-tests/sample-materials/verify_sample_materials.py` ends with `OK: every sample sheet behaved at intake as the live-test guide says it will.`
 - [ ] An engineer has built the practice folder (`build_rehearsal_data.py`, see the [tutorial](../tutorials/operating-tutorial.md), section 2).
 - [ ] The operator has done the **ten-minute rehearsal** (tutorial section 8) once without help.
-- [ ] The teacher has read pages S9, S12 and S13 on the practice data and can say, in their own words, what *Flagged / Shown / Left provisional* mean.
-- [ ] Both have practised: stop the console with Ctrl-C, start it again, and see that the pages and grades are still there. (Pausing and resuming a *live* run has not been tried; see the tutorial, Phase 3.)
+- [ ] The teacher has opened `/#/review`, `/#/results` and a student result on the practice data, and can explain provisional vs final grades. S9/S12/S13 are legacy operator/audit pages, not the SPA's teacher workflow.
+- [ ] Both have practised: stop the console with Ctrl-C, start it again under the same profile, and see that pages and grades remain. If practical, exercise Pause/Resume on a practice run; record that a real live pause/resume cycle remains unverified.
 
 **Stage 0 passed when** the operator can do all of the above from the tutorial alone.
 
@@ -41,17 +41,17 @@ Purpose: the operator and teacher learn the screens with nothing at stake.
 
 All must be true. Each line is a checkable goal, listed in 02.
 
-- [ ] **[B1/B6]** A written decision on how zero-retention is confirmed for OpenRouter, signed by whoever owns student-data privacy.
-- [ ] **[B2]** One real, throw-away call to OpenRouter was accepted (or the provider was changed until it was). The two model names are confirmed at openrouter.ai/models.
-- [ ] **[B3]** A cohort can be created, marked `synthetic`, and given a roster, with the change recorded.
-- [ ] **[B8]** Resolving a parked paper records the operator's decision (which student, which mark, which test). Until then the quarantine drill can only release or close a paper.
-- [ ] **[B4]** Uploading `S9-001-strong.pdf` leads, with no engineer typing, to a read paper that appears in the preflight page.
-- [ ] **[B1]** `aeh run` under `dev-ci` with a key really calls OpenRouter, and the printed summary says which provider ran.
-- [ ] An OpenRouter spending limit is set. `HARNESS_COST_CEILING` is set to a number you are comfortable losing. (No console page shows the run's spend, so OpenRouter's dashboard is where you watch it, or an engineer reads it from the data folder.)
+- [ ] A written privacy decision authorizes the selected synthetic or consented test materials for the configured OpenRouter zero-retention route; this technical setting does not replace school approval.
+- [ ] A real, throw-away call to OpenRouter succeeds for each configured model, and the exact model names are checked against the service.
+- [ ] The operator can create a `synthetic` cohort with `aeh cohort create` and verify its roster; no SPA class-creation/roster-edit form exists yet.
+- [ ] Parked-paper handling is understood: the SPA can show reasons and release or close eligible papers, but cannot record a hand-selected student, tick or test. The no-name sheet must be closed or re-scanned with identity, not released as `matched`.
+- [ ] Scans can be read using `aeh ingest` and the resulting intake statuses match the expected sample outcomes. The SPA's paper file inputs are not wired to intake.
+- [ ] `aeh run` under `dev-ci` with a key really calls OpenRouter, and the printed summary names the provider. The 2026-10-12 run was not a clean pass: citation refusals left grades provisional, and Jev faulted before dispatch.
+- [ ] An OpenRouter spending limit is set and `HARNESS_COST_CEILING` is configured. The Jobs screen shows job cost so far; use OpenRouter's dashboard for the actual account spend.
 - [ ] Both packages (`PS9-FORCES-01`, `ENG7-READ-01`) are published from `config/ps9-forces-01.package.toml` and `config/eng7-read-01.package.toml`, with keys C, B, C and B for Q1, Q2, Q3 and Q5a, and the English package carrying one line of each rubric method (C1 evidence checklist with items C1a/C1b, C2 bands, C3 the teacher's own words).
 - [ ] A backup of an empty data folder exists, so "start again" is one copy.
 
-**Stage 1 passed when** an engineer, **without help from the people who built the system**, takes the sample files to a finished run and a screen the teacher can read. Until then, do not schedule the test.
+**Stage 1 passed when** the privacy and spend safeguards are approved, the sample materials pass their current intake check, and the supervised command-line setup/intake path has been rehearsed. This gate does not certify grade accuracy, resolve the live citation/Jev findings, or mean a terminal-free teacher UAT has passed.
 
 ## Stage 2: Test day
 
@@ -59,15 +59,15 @@ All must be true. Each line is a checkable goal, listed in 02.
 
 | Seat | Person | Job |
 |---|---|---|
-| Teacher | one person | Reviews, finalizes, answers the questionnaire. Does **not** touch the terminal. |
-| Operator | one person | Runs the console, uploads, watches, sorts quarantine. |
-| Engineer | one person, beside the operator | Does nothing unless something stops. Writes down every time they had to step in. |
+| Teacher | one person | Uses the SPA to review, blind-score, finalize/amend, and answers the questionnaire. Does **not** touch the terminal. |
+| Operator | one person | Creates the class and reads scans with the documented CLI steps, runs the console, watches jobs, and handles parked papers. |
+| Engineer | one person, beside the operator | Helps with configuration or failure diagnosis; writes down every intervention and does not characterize the test as terminal-free. |
 | Observer | optional | Writes down what the teacher says and does, in their words. |
 
 ### Rules for the day
 
 1. **Only the synthetic sample sheets.** No real student paper goes in. `HARNESS_ALLOW_REMOTE_REAL_WORK` stays unset.
-2. **The ceiling is a stop.** Watch the spend on OpenRouter's dashboard (the console does not show it). If it reaches half the ceiling before the physics run finishes, pause and look. Do not raise the ceiling mid-run.
+2. **The ceiling is a stop.** The Jobs screen shows each job's estimated cost so far; watch the *actual* spend on OpenRouter's dashboard (the console's number is an estimate against the ceiling, not the bill). If it reaches half the ceiling before the physics run finishes, pause and look. Do not raise the ceiling mid-run.
 3. **Do not fix what you see.** Record it. A fix mid-test makes the result about the fix.
 4. **If something is surprising, stop and write it down before touching anything.**
 5. **No numbers typed anywhere.** Marks are bands. If the teacher asks "can I just type 7", the answer is no, and that question goes on the record sheet.
@@ -77,17 +77,17 @@ All must be true. Each line is a checkable goal, listed in 02.
 | When | What | Who | Tag |
 |---|---|---|---|
 | T-1 day | Machine checks (Stage 0 list). Confirm the key is in the terminal that will start the console. Fresh data folder. | Operator | |
-| T-0, 09:00 | Open the terminal. `check_config.py` says `ACCEPTED`. Start the console on a fixed port. Open `/packages`. | Operator | |
-| 09:15 | Packages published. The engineer reads the question list and the answer keys out of the package to the teacher (or prints them), and the teacher says whether they match their paper. (The S3 and S4 pages do not show them today; B7.) | Teacher + engineer | B5 |
-| 09:30 | Create the cohort and roster for physics. Upload the six physics sheets, one command each (tutorial §6, phase 2). Open S2 and confirm all six parts appear, in order. | Operator | B3, B4 |
-| 09:50 | Open **S6 preflight**. Read it out loud. Open **S8 quarantine**. Expect exactly three items (S9-004, S9-005, S9-006). | Operator | B4 |
-| 10:00 | **Quarantine drill.** Look at the three items on S8 (it lists each paper's ID and any crop, not the reason; the reasons are in the table in 03). Release S9-006 (`resolution=matched`) and close S9-005 as unresolvable. S9-004: look at the paper itself and decide Q1. **Today the command only releases or closes a paper; it cannot record which student, which tick or which test (B8).** Spell the word exactly: anything other than `matched` closes the paper as unresolvable. | Operator | B8 |
-| 10:20 | **Start the run** (`start-run`). Open S7, press F5 every few minutes. Note the start time. | Operator | B1 |
-| 10:25 | **Pull-the-plug drill.** Press Ctrl-C in the console's terminal. Start it again **with the same profile the run started under** (`HARNESS_PROFILE`, or the config file's own line). Confirm the run carries on and watch S7. Note how long it took to be back. (`aeh recover` alone only releases stuck work; it does not finish the run.) | Operator | |
-| ~10:45 | Run status `complete` on S7. Note the end time and, from OpenRouter's dashboard, the cost. | Operator | |
-| 11:00 | **Teacher's sitting**, 20 minutes, using only the tutorial's phase 4: read S9, act on at least three items, open S13 for two students. The observer writes. | Teacher | |
-| 11:25 | *Blind sample: **not possible from the console today** (S11 lists no papers; B7). Instead, have the teacher mark the physics papers by hand from the printed sheets before seeing any system mark, and fill in the "teacher" column of the record sheet. This is the reference that the comparison uses.* | Teacher | |
-| 11:40 | **Finalize** (S12). Then **amend** one band (use a real band name from the rubric PDF). Then **export** the package (S14). | Teacher | |
+| T-0, 09:00 | Operator runs `check_config.py` and confirms `ACCEPTED`, creates the physics class with `aeh cohort create`, starts the console with the approved config, and opens the printed SPA URL. | Operator | |
+| 09:15 | Teacher authors the package from the test, model answer and rubric in `/#/package/author`; reviews/edits the draft and approves it. Confirm the resulting published package version. For a prebuilt sample package, use the documented spec path instead. | Teacher + operator | |
+| 09:30 | Read the six physics sheets with `aeh ingest` (tutorial §8.3); the SPA's Papers file inputs are inert. Open `/#/papers` and `/#/parked` to inspect available intake records. | Operator | B4 remainder |
+| 09:50 | Confirm the expected three parked items (S9-004, S9-005, S9-006) and their reasons on the SPA Parked screen. | Operator | B4/B8 workaround |
+| 10:00 | **Parked-paper drill.** S9-004: inspect the source sheet, then release only if the stored reading is acceptable, otherwise close; the action does not store a hand-corrected tick. S9-005: close as unresolvable or re-ingest under its correct package. S9-006: `matched` release is refused because identity did not match; close it or add the identity to a corrected rescan and re-ingest. No parked resolution records the selected student/mark/test (B8). | Operator | B8 |
+| 10:20 | **Start the run** from `/#/run` and confirm the priced preview. Watch `/#/monitor` or `/#/jobs`; note the start time and job cost shown. | Operator | |
+| 10:25 | **Recovery drill (if the run can safely be interrupted).** To test interruption recovery, stop the console with Ctrl-C while a run is running, then restart under the same profile; confirm that interrupted run resumes without repeated or missing work. This does not test recovery of an intentional pause: queue Resume in Jobs before stopping, and recovery resumes that paused run only if the request is still unapplied. `aeh recover` also reclaims leases and settles completed runs' ungraded or non-final grades. Recovery does not start pending runs or override an operator pause. Record each pause/resume cycle separately. | Operator | |
+| ~10:45 | Record the run status, end time, Jobs-screen cost and OpenRouter dashboard spend. Do not treat `complete` as proof every grade is final; inspect `grades_final` and any refusal details. | Operator | |
+| 11:00 | **Teacher's sitting**, 20 minutes: use `/#/review`, open two students from `/#/results`, and record what the SPA showed. The observer writes. | Teacher | |
+| 11:25 | **Blind sample** at `/#/review/blind`: score the drawn submission/criterion seats without seeing system bands. The screen currently offers generic B1–B5 labels, not the package's own bands — record blind scoring as blocked for custom-band packages rather than inventing a mapping. Record the teacher's independent marks for comparison. | Teacher | |
+| 11:40 | **Finalize** from `/#/results`, then amend one final grade with a reason. The SPA has no export-download control; exercise results export with `aeh results export` or the exporter API as a separate operator step. | Teacher + operator | |
 | 11:55 | Repeat the quick path for the English test (steps from 09:30, no quarantine expected). | Operator | |
 | 12:30 | Questionnaire (below). Backup the data folder. Do **not** purge yet. | All | |
 
@@ -106,7 +106,7 @@ Copy this table and fill it in. One row per sheet. Leave a cell blank rather tha
 | Models used (page reader, judges), as the run summary printed them | |
 | Which provider actually answered (OpenRouter, or recordings)? Read it from the run, not the summary | |
 | Start time, end time | |
-| Cost on OpenRouter's own dashboard (the console shows none) | |
+| Jobs-screen cost (estimate) and the cost on OpenRouter's own dashboard | |
 | Number of times the engineer had to step in, and why | |
 | Pull-the-plug drill: time to resume, anything lost? | |
 
@@ -119,7 +119,7 @@ Copy this table and fill it in. One row per sheet. Leave a cell blank rather tha
 | S9-003 | ok | | 1 of 4 | C4: / C6: | | | |
 | S9-004 | parked, `incomplete` | | 3 of 4 + Q1 by operator | C4 (none) / C6: | | | |
 | S9-005 | parked, `unmatched_assessment` | | n/a | n/a | | | |
-| S9-006 | parked, `incomplete` | | 4 of 4 once matched | C4: / C6: | | | |
+| S9-006 | parked, `incomplete` | | 4 of 4 only after a corrected rescan with identity is re-ingested; otherwise unscored | C4: / C6: | | | |
 | E7-001 | ok | | n/a | C1a: C1b: (C1 = sum?) C2: C3: | | | |
 | E7-002 | ok | | n/a | C1a: C1b: (C1 = sum?) C2: C3: | | | |
 | E7-003 | ok | | n/a | C1a: C1b: (C1 = sum?) C2: C3: | | | |
@@ -138,7 +138,7 @@ These thresholds are **suggestions to agree before the day**, not rules of the s
 | 3. Deterministic exact? | Every multiple-choice mark equals the key, and every English C1 equals C1a + C1b (`show_criterion_marks.py` ends `OK`). No exceptions. | Any difference is a defect |
 | 3a. Every rubric method graded? | The English run graded C1a, C1b, C2 and C3 for every admitted sheet, and never sent C1 itself to a judge; C3 (the teacher's own words) got a band like any band line | A method with no grades, or a judged C1, is a defect |
 | 4. Judged part sensible? | At least 7 of 10 written bands within one band of the teacher's, and no gap of three bands | A pattern (all too high, all in the middle) matters more than the count |
-| Recovery | After Ctrl-C and restart the run finished, with no repeated or missing work | Record exactly what was missing |
+| Recovery | If a run was running when interrupted, after a same-profile restart it resumes with no repeated or missing work. An intentionally paused run resumes only if an unapplied Resume request was queued; a pending run must not start. | Record exactly what was missing or which state differed from expectation |
 | Audit | The finalize and amend succeeded (the replies said `dispatched: true`). No page shows the name the teacher gave, so ask an engineer to read it from the data folder, or record it as a gap | |
 | Cost | Within the ceiling, read from OpenRouter's dashboard | If the run stopped early on the ceiling, record how far it got |
 
@@ -159,7 +159,7 @@ Ask these in this order, and write the answers in their words.
 ## After the day
 
 - [ ] Backup the data folder (copy it whole, console stopped).
-- [ ] Export both packages (`export-import-package`), so the tuned test is saved.
+- [ ] Export both packages (`aeh package export --data-dir <folder> --package-version <version> --spec out.toml`), so the test package is saved.
 - [ ] File the record sheet and the observer's notes with the date.
 - [ ] Turn each finding into a line for the issue backlog. This repository creates issues only through `/plan-to-issues`; hand it the list.
 - [ ] **Do not purge the cohort until you are sure.** The system refuses a purge until the cohort's evidence is saved for validation, and a purge cannot be undone.
@@ -167,4 +167,4 @@ Ask these in this order, and write the answers in their words.
 
 ## If you have to stop
 
-Pause the run (`pause-resume` with `state=paused`), press Ctrl-C, and write down what you saw. By design nothing is lost: the work already done is stored, and the run continues when the console is started again under the same profile. A run from the command line that exits with **3** has not completed (paused, or stopped for another reason; read the status it printed), and **1** means an error.
+Pause the run — from the SPA's Jobs screen, or the `pause-resume` action with `state=paused` — then press Ctrl-C, and write down what you saw. By design nothing is lost: the work already done is stored, and the run continues when the console is started again under the same profile. Restarting under a different profile leaves the run paused, with the refusal recorded. A run from the command line that exits with **3** has not completed (paused, or stopped for another reason; read the status it printed), and **1** means an error.

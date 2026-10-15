@@ -202,7 +202,7 @@ overconfident claim we built all this to avoid.
         every accept/edit/override logged as a labeled datapoint
         │
   E  GRADING & CLASS ROLLUP
-        grade policy applied → every student has a final grade, no per-student action
+        grade policy applied → settle eligible work; unresolved work may remain ungraded or provisional
         per-criterion distributions, misconception clusters, honest statistics
         one-click finalization; unreviewed items stay labelled provisional
         │
@@ -214,17 +214,7 @@ research says makes the system trustworthy, *and* it is the only source of groun
 system has. Teacher acceptance and blind teacher scoring are stored as different label types,
 because acceptance drifts toward rubber-stamping as the system improves.
 
-**Every submission gets a complete final grade with no per-student teacher action.** That is
-a product requirement, not an efficiency target: a system that produces criterion-level
-judgments and leaves a human to compile 350 grades has moved the bottleneck up one level and
-delivered nothing. Teacher effort scales with the review budget they choose, never with class
-size — they calibrate on 10–15 papers once, then sample. How marks combine is a professional
-judgment, so the teacher declares a **grade policy** at setup — per-question rules, gates
-("no credit for Q4 unless c12 reaches *met*"), scaling, rounding, boundaries — stored as
-declarative data rather than a formula field, because a grade disputed three years later has
-to be reproducible and explainable in plain language. The consequence is accepted rather than
-hidden: grades will be issued that no human inspected. **An unreviewed grade, honestly
-labelled, is the product; a withheld grade is a failure to deliver it.**
+**Product requirement: every submission should get a complete final grade without per-student teacher action.** That is a requirement, not a claim about every run in the shipped version: a parked paper, unresolved scoring or citation problem, or open review window can leave work ungraded or provisional. Such work must be surfaced as unresolved, not presented as a final grade. A system that produces criterion-level judgments and leaves a human to compile 350 grades has moved the bottleneck up one level and delivered nothing. Teacher effort should scale with the review budget they choose, never with class size — they calibrate on 10–15 papers once, then sample. How marks combine is a professional judgment, so the teacher declares a **grade policy** at setup — per-question rules, gates ("no credit for Q4 unless c12 reaches *met*"), scaling, rounding, boundaries — stored as declarative data rather than a formula field, because a grade disputed three years later has to be reproducible and explainable in plain language. Where scoring succeeds, grades may be issued that no human inspected; those grades are labelled and backed by quoted evidence. **An unreviewed grade, honestly labelled, is valid; unresolved work remains visibly ungraded or provisional rather than receiving an invented settled grade.**
 
 Supporting all of it is a persistence layer whose governing rule is one-way: **the
 orchestrator reads memory and the judges never do.** A store a judge could query at inference
@@ -282,22 +272,25 @@ its own origin — the bundle ships as package data, so an install needs no tool
 render time makes no external request. A CDN reference is a console that renders blank at a
 school with no internet — the deployment this system exists for.
 
-**The console is the operator surface; the terminal is the debugging surface**
-(NFR-CONSOLE-09). Documentation and onboarding are written to that split: no operator or
-teacher workflow requires the terminal. The parity is an inventory, not a slogan — every
-`aeh` subcommand either has a console path (e.g. `aeh recover` is the terminal view of the
-console's recover control) or is listed in the console's debugging-only help
-(`GET /api/v1/cli-help`) with the reason it has none. A subcommand added later without such
+**The console is the teacher-facing SPA; terminal commands still handle class setup/roster changes and scan intake**
+(NFR-CONSOLE-09). Documentation and onboarding are written to that split, with the shipped
+state stated plainly: the SPA covers package authoring, run control, review, blind sampling,
+finalization and amendment, while class creation/roster editing, scan reading and result
+exports still use `aeh` commands (`aeh cohort create`, `aeh ingest`, `aeh results export`).
+These are known gaps in teacher-independent operation, not merely debugging tasks. The parity is
+an inventory: every `aeh` subcommand either has a console path or is listed in the console's
+debugging-only help (`GET /api/v1/cli-help`) with the reason it has none. Some generated
+inventory descriptions remain stale; see `TC-CONSOLE-58` and follow the controls described in
+the operator tutorial for the shipped authoring path. A subcommand added later without such
 a decision fails the parity census (`TC-CONSOLE-54`, FR-CONSOLE-41).
 
 Two scope statements the design insists on stating rather than letting a reader discover.
-**Ambiguity elicitation is a real touchpoint this version does not implement**; the wizard
-renders it present-and-unavailable with the version it arrives in, because an absent step
-reads as one the teacher skipped by accident. The honest one-line description of the MVP is
-that it grades faithfully against the rubric as written and never tells the teacher where that
-rubric is ambiguous. And the invariants above exist because each will be argued against by a
-reasonable person in week one — a progress bar will be requested, a numeric box will feel
-faster, an extra confirmation will feel safer.
+**Ambiguity elicitation is a real touchpoint this version does not implement**; it is retained
+on a legacy setup surface, but is not shown as a step in the teacher-facing SPA's package
+workflow. The honest one-line description of the MVP is that it grades faithfully against the
+rubric as written and never tells the teacher where that rubric is ambiguous. And the invariants
+above exist because each will be argued against by a reasonable person in week one — a progress
+bar will be requested, a numeric box will feel faster, an extra confirmation will feel safer.
 
 ## Deployment profiles
 
