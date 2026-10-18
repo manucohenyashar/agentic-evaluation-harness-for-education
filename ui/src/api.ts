@@ -37,10 +37,44 @@ export interface ClassRoster {
   cohorts: { cohort_id: string; students: Student[] }[];
 }
 
+/** The roster editor's fixed copy and choices (FR-CONSOLE-42) — the SPA renders the
+ * server's wording, so the consent classes and the paste rule are never restated here. */
+export interface RosterEditorDoc {
+  student_id_optional: string;
+  name_requirement: string;
+  consent_classes: { value: string; meaning: string }[];
+  consent_default: string | null;
+  paste: string;
+}
+
+/** The roster file's preview (FR-CONSOLE-63): the rows it holds and every problem row,
+ * before anything is written. */
+export interface RosterPreviewDoc {
+  name: string;
+  format_label: string | null;
+  rows: { line: number; full_name: string; student_ref: string | null }[];
+  problems: { line: number | null; reason: string }[];
+  counts: { students: number; problems: number };
+  ready: boolean;
+}
+
+/** One answer sheet the intake read, as the papers read reports it: the student it was
+ * matched to, its paper-check status, and whether it is parked for the operator. */
+export interface PaperSheet {
+  submission_id: string;
+  student_ref: string | null;
+  status: string;
+  parked: boolean;
+}
+
 export interface Papers {
   cohort_id: string;
   students: Student[];
   parts: string[];
+  /** Whether the class already holds its test paper (the right-test check's reference). */
+  test_paper_read?: boolean;
+  /** The answer sheets read into the class so far, oldest first. */
+  sheets?: PaperSheet[];
 }
 
 export interface RunStartState {
@@ -48,6 +82,8 @@ export interface RunStartState {
   cohort_id: string | null;
   package_version_id: string | null;
   status: string | null;
+  /** The settings profile a run started from this console runs under. */
+  profile: string | null;
 }
 
 export interface MonitorState {
@@ -78,6 +114,10 @@ export interface BlindSeat {
   submission_id: string;
   student_ref: string | null;
   criterion_id: string;
+  /** The grading point's teacher label (the question it grades). */
+  label?: string;
+  /** The grading point's own declared levels; null when the package could not be read. */
+  band_scale?: string[] | null;
   evaluation_mode: string;
 }
 
@@ -127,6 +167,16 @@ export interface CriterionScale {
 export interface ResultsScreen {
   run_id: string | null;
   cohort_id: string | null;
+  /** The test version the run graded against (absent when no run is shown). */
+  package_version_id?: string;
+  /** The run's multiple-choice grading points, their options and current key — what the
+   * key correction offers. */
+  answer_keys?: {
+    criterion_id: string;
+    label: string;
+    options: { option_id: string; label: string }[];
+    key: string[];
+  }[];
   score_levels: string[];
   scales: CriterionScale[];
   students: ResultStudent[];
@@ -398,6 +448,18 @@ export interface ParkedDoc {
     match_note: string;
     resolutions: string[];
     resolvable: boolean;
+    /** The paper's student was not matched, but its pages were read: it can be given to
+     * one of the class's students who has no paper yet. */
+    assignable?: boolean;
+    students_without_paper?: { student_ref: string; full_name: string | null }[];
+    /** The operator decisions recorded for this paper, oldest first. */
+    decisions?: {
+      resolution: string;
+      actor: string;
+      student_ref: string | null;
+      note: string | null;
+      decided_at: string;
+    }[];
   }[];
   counts: { total: number; by_reason: Record<string, number> };
 }
@@ -668,4 +730,18 @@ export async function fetchAuthoringDraft(
 ): Promise<AuthoringDraftDoc> {
   const params = packageId ? { package_id: packageId } : undefined;
   return fetchRead<AuthoringDraftDoc>("/api/v1/authoring/draft", signal, params);
+}
+
+/** A chosen file's bytes as base64, for an action body: file content never travels in a URL
+ * or a query string (`CT-CONSOLE-34`), only inside the request body. */
+export function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result ?? "");
+      resolve(result.slice(result.indexOf(",") + 1));
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("the file could not be read"));
+    reader.readAsDataURL(file);
+  });
 }

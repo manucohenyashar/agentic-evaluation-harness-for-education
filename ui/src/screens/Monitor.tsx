@@ -1,6 +1,7 @@
 import { fetchRead, type MonitorState as MonitorDoc } from "../api";
 import { ReadScreen } from "../components/ReadScreen";
 import { useScreenRead } from "../useScreenRead";
+import { useRunParams } from "../selection";
 
 /**
  * The monitor screen (FR-UI-03e): the run's status and pause reason beside M-ORCH's own
@@ -32,7 +33,7 @@ function progressLine(progress: Record<string, unknown>): string {
 }
 
 export function Monitor() {
-  const read = useScreenRead<MonitorDoc>("/api/v1/monitor", undefined, POLL_MS);
+  const read = useScreenRead<MonitorDoc>("/api/v1/monitor", useRunParams(), POLL_MS);
   return (
     <ReadScreen title="Monitor run" read={read}>
       {(data) => (

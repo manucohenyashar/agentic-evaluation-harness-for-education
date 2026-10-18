@@ -113,10 +113,13 @@ export function QaPanel({ context, compact = false }: {
   );
 }
 
-/** The manuals index (FR-UI-21): every packaged manual, as the manuals read lists it. */
-export function ManualsIndex() {
+/** The manuals index (FR-UI-21): every packaged manual, as the manuals read lists it. A
+ * failed read is named with its own retry, and the screen's retry (`attempt`) reads it again
+ * too, so a recovered console never keeps a stale error on screen (CT-UI-04). */
+export function ManualsIndex({ attempt = 0 }: { attempt?: number }) {
   const [manuals, setManuals] = useState<ManualsIndexDoc | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [ownAttempt, setOwnAttempt] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -134,14 +137,19 @@ export function ManualsIndex() {
       },
     );
     return () => controller.abort();
-  }, []);
+  }, [attempt, ownAttempt]);
 
   if (error !== null) {
     return (
-      <p role="alert" className="screen-alert">
-        The console could not read the manuals list ({error}). check that the console service
-        is running.
-      </p>
+      <>
+        <p role="alert" className="screen-alert">
+          The console could not read the manuals list ({error}). check that the console service
+          is running.
+        </p>
+        <button type="button" className="button" onClick={() => setOwnAttempt((n) => n + 1)}>
+          Try again
+        </button>
+      </>
     );
   }
   if (manuals === null) {
@@ -174,6 +182,11 @@ export function Help({ failed = false, onRetry }: {
   failed?: boolean;
   onRetry?: () => void;
 }) {
+  const [attempt, setAttempt] = useState(0);
+  const retryAll = (): void => {
+    onRetry?.();
+    setAttempt((n) => n + 1);
+  };
   return (
     <Screen title="Manuals & help">
       {failed && (
@@ -183,13 +196,13 @@ export function Help({ failed = false, onRetry }: {
             running.
           </p>
           {onRetry && (
-            <button type="button" className="button" onClick={onRetry}>
+            <button type="button" className="button" onClick={retryAll}>
               Try again
             </button>
           )}
         </>
       )}
-      <ManualsIndex />
+      <ManualsIndex attempt={attempt} />
       <QaPanel />
       <p className="qa-manuals-link">
         Or read the <a href="/manuals">manuals page</a> directly.

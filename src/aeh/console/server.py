@@ -23,6 +23,7 @@ from .queries import _SELECT_CROP_REF_KNOWN
 from .errors import ConsoleBindRefused
 from .html import _row_get, _stylesheet_bytes
 from .uploads import _record_upload_part, upload_scans
+from .paper_intake import check_paper_upload, queue_paper_intake, wants_read
 from .run_planning import build_console
 from .api import SPA_BUNDLE_DIR, API_ROUTES, action_slug as _action_slug
 from .api_handler import _READS, ApiRequestsMixin, outcome_json
@@ -66,6 +67,20 @@ class _BoundedReader:
         self._remaining -= len(chunk)
         self.consumed += len(chunk)
         return chunk
+
+
+#: The drain's read size: a refused upload's body is read in pieces this big and dropped.
+_DRAIN_CHUNK_BYTES = 1024 * 1024
+
+
+def _discard_body(stream: Any, length: int) -> None:
+    """Read `length` bytes off `stream` and keep none of them (a refused upload's body)."""
+    remaining = max(0, int(length))
+    while remaining > 0:
+        chunk = stream.read(min(_DRAIN_CHUNK_BYTES, remaining))
+        if not chunk:
+            break
+        remaining -= len(chunk)
 
 
 def _known_route(route: str) -> bool:
@@ -290,6 +305,21 @@ class _ConsoleRequestHandler(ApiRequestsMixin, BaseHTTPRequestHandler):
             return
         length = int(length_header)
         query = {k: v[-1] for k, v in parse_qs(urlsplit(self.path).query).items()}
+        read_it = wants_read(query)
+        if read_it:
+            # B4: an upload that asks to be read is checked before a byte is staged — an
+            # unknown class or test version, or a consent the page reader may not see, is
+            # refused here and the body is left unread (the connection closes).
+            refusal = check_paper_upload(self._console.app, query)
+            if refusal is not None:
+                # The body is read and dropped, chunk by chunk, never kept or staged: a
+                # client still sending a multi-megabyte scan when the socket closed would see
+                # a reset instead of the refusal, and the teacher would never learn why.
+                _discard_body(self.rfile, length)
+                body = json.dumps({"dispatched": False, "blob_refs": [],
+                                   "detail": refusal}).encode("utf-8")
+                self._respond(400, body, "application/json; charset=utf-8", close=True)
+                return
         reader = _BoundedReader(self.rfile, length)
         outcome = upload_scans(
             self._console.app,
@@ -312,11 +342,21 @@ class _ConsoleRequestHandler(ApiRequestsMixin, BaseHTTPRequestHandler):
             # The whole body arrived: only now is the part recorded (#531 review).
             _record_upload_part(self._console.app, str(query.get("cohort_id", "")),
                                 str(query.get("filename")), str(outcome.blob_refs[0]))
-        body = json.dumps({
+        answer: dict[str, Any] = {
             "dispatched": bool(outcome.dispatched),
             "blob_refs": [str(ref) for ref in outcome.blob_refs],
             "detail": str(outcome.detail),
-        }).encode("utf-8")
+        }
+        if read_it and outcome.dispatched and outcome.blob_refs:
+            # The whole file is staged: queue it for the class's papers reader, which runs
+            # on its own worker (no long work in the handler, FR-CONSOLE-04).
+            answer["job_id"] = queue_paper_intake(
+                self._console.app, cohort_id=str(query.get("cohort_id")),
+                package_version=str(query.get("package_version")),
+                kind=str(query.get("kind")), filename=str(query.get("filename")),
+                chunk_refs=tuple(str(ref) for ref in outcome.blob_refs))
+            answer["detail"] = "staged; the papers reader has it in its queue"
+        body = json.dumps(answer).encode("utf-8")
         self._respond(200 if outcome.dispatched else 400, body, "application/json; charset=utf-8")
 
 

@@ -202,3 +202,98 @@ def resume_runs_in_background(
             except Exception:  # noqa: BLE001 - a run that cannot record stays for recover
                 pass
     return started
+
+
+# --- reading uploaded papers (live-test blocker B4) -----------------------------------------
+
+
+def cohort_has_test_paper(store: Any, cohort_id: str) -> bool:
+    """Whether the cohort already holds its test paper — the right-test check's reference —
+    read through M-INGEST for the console, whose declared dependencies stop at M-PIPE
+    (TC-CONSOLE-36). No SQL here."""
+    from aeh.ingest import has_assessment_document
+
+    return has_assessment_document(store.cohort(cohort_id))
+
+
+def resolve_intake_config(store: Any, config: Mapping[str, Any], cohort_id: str) -> Any:
+    """The resolved configuration a cohort's papers are read under, exactly as `aeh ingest`
+    resolves it: the consent gate (`FR-CONF-08`) runs here, before a page is read, so a cohort
+    whose work may not leave the machine is refused on a remote profile with nothing sent."""
+    from aeh.conf import resolve_run_config
+
+    return resolve_run_config(dict(config), Orchestrator(store).cohort_ref(cohort_id))
+
+
+def read_uploaded_paper(
+    store: Any,
+    config: Mapping[str, Any],
+    cohort_id: str,
+    package_version: str,
+    *,
+    kind: str,
+    filename: str,
+    data: bytes,
+    provider: Any = None,
+) -> Any:
+    """Read one uploaded PDF into a cohort: the console's papers upload (B4), through the same
+    `ingest_files` door `aeh ingest` opens — the same page reader, the same five intake checks,
+    the same skip of a scan already read, the same parking of a paper a check refuses.
+
+    `kind` is `assessment` (the test paper, read once per cohort) or `sheet` (one student's
+    answer sheet). The bytes are written to a private temporary folder under their own file
+    name for the read and removed afterwards; the blob store keeps the scan, as it does for
+    the command line. Returns `ingest_files`' `IntakeResult`."""
+    import tempfile
+    from pathlib import Path
+
+    from .intake import ingest_files
+
+    if kind not in ("assessment", "sheet"):
+        raise ValueError(f"an uploaded paper is the test paper or an answer sheet, not {kind!r}")
+    run_config = resolve_intake_config(store, config, cohort_id)
+    if kind == "sheet" and not cohort_has_test_paper(store, cohort_id):
+        # `ingest_files`' own refusal names a command-line flag; the console's reader is a
+        # teacher, so the same gap is named in the screen's terms.
+        raise ValueError("this class has no test paper yet: upload the test paper first, "
+                         "then the answer sheets (each one is checked against it).")
+    with tempfile.TemporaryDirectory(prefix="aeh-papers-") as folder:
+        path = Path(folder, Path(filename).name or "paper.pdf")
+        path.write_bytes(data)
+        return ingest_files(
+            store, run_config, cohort_id, package_version,
+            assessment=path if kind == "assessment" else None,
+            sheets=() if kind == "assessment" else (path,),
+            provider=provider if provider is not None else _provider_for(run_config))
+
+
+# --- the operator's decision on a parked paper (live-test blocker B8) ---------------------------
+
+
+def record_parked_decision(handle: Any, submission_id: str, **decision: Any) -> str:
+    """Record the operator's decision on a parked paper through M-INGEST, for the console —
+    whose declared dependencies stop at M-PIPE (TC-CONSOLE-36). No SQL here."""
+    from aeh.ingest import record_quarantine_decision
+
+    return record_quarantine_decision(handle, submission_id, **decision)
+
+
+def check_parked_assignment(handle: Any, submission_id: str, student_ref: str) -> None:
+    """Refuse an assignment M-INGEST would refuse, before anything is written."""
+    from aeh.ingest import check_assignment
+
+    check_assignment(handle, submission_id, student_ref)
+
+
+def parked_decisions(handle: Any) -> list[dict[str, Any]]:
+    """The cohort's recorded parked-paper decisions, oldest first, read through M-INGEST."""
+    from aeh.ingest import quarantine_decisions
+
+    return quarantine_decisions(handle)
+
+
+def repeated_parked_decision(handle: Any, submission_id: str, **decision: Any) -> bool:
+    """Whether this exact decision is already the paper's last recorded one, through M-INGEST."""
+    from aeh.ingest import repeated_decision
+
+    return repeated_decision(handle, submission_id, **decision)

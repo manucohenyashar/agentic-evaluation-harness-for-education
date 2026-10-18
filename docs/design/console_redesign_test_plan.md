@@ -293,6 +293,52 @@ Negative and boundary cases are marked. Every case names its oracle.
   carry exactly the ids of the draft file's `[[question]]` tables — the grammar's singular
   key — and `projected.items` equals that count; the shipped `questions` spelling shrank
   every editor list to zero.
+- **TC-CONSOLE-77** (§3.2.3's student-submissions import / FR-CONSOLE-04 / FR-CONF-08) —
+  *inline regression, the papers upload reads the papers* (live-test blocker B4: the SPA's
+  file inputs were inert and the upload only staged chunks, so reading took `aeh ingest`).
+  World: `TC-PIPE-30`'s — the sample physics package, a class made through `import roster
+  file`, pages sent through `OpenRouterProvider.enforcing_zero_retention()` to a stand-in
+  OpenRouter, the console served on loopback (`loopback_census`). Arms: (a) the test paper and
+  the six sheets uploaded over `POST /api/v1/uploads?read=1`, one file per request, each
+  answered with a job id; every `paper_intake` job settles `succeeded`; the papers read
+  reports `test_paper_read` and six sheets whose statuses equal `EXPECTED_STATUS` (three
+  parked); the same sheet uploaded again is reported *1 already read* and sends no request.
+  (b) an unknown class, no test version, an unknown kind and a `real` class under `dev-ci` are
+  refused 400 before a byte is staged, with no job and no request; a sheet before any test
+  paper fails its job naming *upload the test paper first*, with no request sent.
+- **TC-CONSOLE-78** (FR-CONSOLE-32 / live-test blocker B8 / FR-CONSOLE-02) — *inline
+  regression, the parked-paper decision is recorded and a nameless paper can be assigned*.
+  World: the six sample physics sheets parked by the real intake checks
+  (`test_quarantine_resolution_b8.py`). Arms: (a) the parked read offers S9-006's paper as
+  assignable to exactly the roster students with no paper; `assigned` to `S9-006` releases it
+  (`quarantined` 0, `ingest_status` ok, `student_ref` S9-006, identity `pass`) and records one
+  `quarantine_decision` row with the actor, the note and the identity check's own prior
+  verdict; the same decision posted again records nothing new. (b) an assignment to a student
+  who already has a paper, to one not on the list, or to nobody is refused and writes nothing.
+  (c) a release and a close each record their decision with the operator's note. (d) an
+  `assigned` post for a matched paper — released, or parked for another reason — is refused
+  and writes nothing. (e) a student whose only other paper was closed can be given their real
+  paper, and the same assignment posted again writes nothing at all.
+- **TC-CONSOLE-80** (FR-STORE-07 / CT-STORE-10 / the classes screen's delete) — *inline
+  regression, a class made by mistake can be deleted; a class with work cannot*. Arms: (a) a
+  list-only class posted to `purge cohort` is removed (`aeh.store.discard_empty_cohort`): its
+  file is gone and the class read no longer lists it; (b) a class holding a paper is refused
+  with the purge's reason and keeps its file and its paper.
+- **TC-CONSOLE-79** (§3.2.3's package import / FR-PKG-10/13 / CT-CONSOLE-34) — *inline
+  regression, a test's backup file is imported from the console*. Arms: (a) the sample English
+  package's `.aehpkg` imports through `export/import package` into an empty data folder, landing
+  exactly that package file (nothing opened to find the folder), with the exported version's
+  criteria; importing it again is refused as already present. (b) bytes that are not an archive,
+  and an archive whose database byte was altered, are refused and write no package file.
+- **TC-UI-22** (FR-UI-03 / FR-CONSOLE-42/43 / B4 / B8) — *inline regression, the teacher's
+  lifecycle controls work in the browser with no terminal*. One E6 journey over a real console
+  and store, the page reader being `OpenRouterProvider` on a stand-in transport: the class
+  form makes `ps9-class` from a typed list; Load papers reads the test paper and the six sample
+  sheets (the progress line settles on three ready, three parked); Parked gives S9-006's
+  nameless paper to its student with a note (one recorded `assigned` decision); Start a run
+  starts a new run for the class and the published version behind a confirmation that names
+  both and shows no raw settings, and the console opens that run's monitor. No page error, no
+  foreign request.
 
 ### 3.3 Configuration write path (M-CONF) — E1 rung 0/1
 

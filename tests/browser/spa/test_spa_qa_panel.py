@@ -34,7 +34,18 @@ pytestmark = [pytest.mark.browser, pytest.mark.integration]
 
 #: The api traffic a recorded session may carry: the hub state read the shell makes on load
 #: (not an M-HELP call) and the ask itself (TC-REQ-129). Anything else fails.
-ALLOWED_API_PATHS = ("/api/v1/hub", hv.ASK_ROUTE[1])
+ALLOWED_API_PATHS = (
+    "/api/v1/hub", hv.ASK_ROUTE[1],
+    # The redesign's shell (FR-CONSOLE-47/48): the wizard polls its own state reads on every
+    # screen — the context feed and the stepper's supplements — whatever panel is open.
+    "/api/v1/context", "/api/v1/parked", "/api/v1/jobs", "/api/v1/impact", "/api/v1/papers",
+    # TC-UI-18 (FR-HELP-06): the panel names the screen's own manual section, read from the
+    # manuals index. Still forbidden: `cli-help`, and any M-HELP read beyond the manuals.
+    "/api/v1/manuals",
+)
+
+#: The manuals index's per-manual read, which the section link resolves through (TC-UI-18).
+_MANUAL_PREFIX = "/api/v1/manuals/"
 
 
 def _affordance_problems(scope, when: str) -> list[str]:
@@ -86,7 +97,8 @@ def _traffic_problems(log) -> list[str]:
     and the ask — no other M-HELP endpoint (no manuals read, no cli-help) is called."""
     api = log.api_requests()
     problems = [f"an api call the SPA must not make reached the server: {u}"
-                for u in api if urlsplit(u).path not in ALLOWED_API_PATHS]
+                for u in api if urlsplit(u).path not in ALLOWED_API_PATHS
+                and not urlsplit(u).path.startswith(_MANUAL_PREFIX)]
     if not any(urlsplit(u).path == hv.ASK_ROUTE[1] for u in api):
         problems.append(f"no ask reached the server (api traffic: {api!r})")
     problems += [f"a request left the console's origin: {u}" for u in log.foreign_requests()]

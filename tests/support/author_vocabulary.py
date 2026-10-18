@@ -94,7 +94,13 @@ AUTHOR_CORPUS = REPO_ROOT / "fixtures" / "F-AUTHOR"
 RECORDINGS = AUTHOR_CORPUS / "recordings"
 #: TC-AUTHOR-29's second recorded set for AF-01 (see module docstring).
 AF01_VARIANT_RECORDINGS = AUTHOR_CORPUS / "recordings-af01-variant"
-DEV_CI_CONFIG = REPO_ROOT / "docs" / "live-tests" / "config" / "live-test.dev-ci.toml"
+#: The dev-ci configuration the corpus was RECORDED through — a frozen, test-owned copy of the
+#: live-test file with the recorded transcriber and judge builds. Not the live file itself:
+#: `aea6eeb` re-pinned that to another model, and since the recordings are keyed on the build
+#: id, reading the live file made every recorded authoring case miss (the old ~35-red baseline).
+DEV_CI_CONFIG = REPO_ROOT / "tests" / "support" / "author-corpus.dev-ci.toml"
+#: The live-test file itself, for the cases that are about IT (its models, its comments).
+LIVE_DEV_CI_CONFIG = REPO_ROOT / "docs" / "live-tests" / "config" / "live-test.dev-ci.toml"
 
 
 def af(af_id: str) -> Path:

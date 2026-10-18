@@ -355,7 +355,11 @@ def context_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     for row in run_rows:
         runs_by_cohort.setdefault(str(row["cohort_id"]), []).append(row)
     ledger_keys = app._cohort_keys() if data_dir is not None else ()
+    from .screen_reads import _ledger_is_live
+
     for key in ledger_keys:
+        if not _ledger_is_live(app, key):
+            continue  # a deleted (purged) class: its emptied file is not a class
         population = _ledger_population(app, key)
         if population is None:
             continue
@@ -809,6 +813,34 @@ def logs_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
 # --- the parked read (FR-CONSOLE-47) ------------------------------------------------------------------------
 
 
+def _parked_class_facts(app: Any, cohort_id: str) -> dict[str, Any]:
+    """What the parked page needs of one class to resolve its papers (B8): the students on its
+    list who have no paper yet — the only students a paper may be assigned to — and the
+    operator decisions already recorded. An unreadable class answers empty lists."""
+    from aeh.pipeline import parked_decisions
+
+    try:
+        handle = app._store.cohort(cohort_id)
+        with_paper = {str(row["student_ref"]) for row in handle.query(
+            "SELECT student_ref FROM submission "
+            "WHERE NOT (ingest_status = 'incomplete' AND quarantined = 0)")}
+        roster = [
+            {"student_ref": str(row["student_ref"]),
+             "full_name": str(row["full_name"] or "") or None}
+            for row in handle.query(
+                "SELECT student_ref, full_name FROM roster ORDER BY full_name, student_ref")
+            if str(row["student_ref"]) not in with_paper
+        ]
+        decisions = [
+            {key: decision[key] for key in (
+                "submission_id", "resolution", "actor", "student_ref", "note", "decided_at")}
+            for decision in parked_decisions(handle)
+        ]
+    except Exception:  # noqa: BLE001 — a class the page cannot read offers no assignment
+        return {"students_without_paper": [], "decisions": []}
+    return {"students_without_paper": roster, "decisions": decisions}
+
+
 def parked_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     """The park, under its teacher name (FR-CONSOLE-47): every parked paper with its
     reason, the student it matched (or why it could not), and the resolutions available —
@@ -818,21 +850,30 @@ def parked_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     rows = app._read_cohort_files(Q._SELECT_PARKED_PAPERS, [])
     parked: list[dict[str, Any]] = []
     by_reason: dict[str, int] = {}
+    classes: dict[str, dict[str, Any]] = {}
     for row in rows:
         status = str(row["ingest_status"])
         by_reason[status] = by_reason.get(status, 0) + 1
-        student_ref = str(row["student_ref"] or "").strip() or None
+        identity = str(row["v3_identity"] or "").strip()
+        # A paper the identity check did not pass carries a placeholder ref ('unknown'), not
+        # a student: it matched nobody, whatever the column holds.
+        student_ref = (str(row["student_ref"] or "").strip() or None) \
+            if identity == "pass" else None
         if student_ref:
             match_note = f"The paper matched {student_ref}."
         else:
-            identity = str(row["v3_identity"] or "").strip()
             match_note = (
                 "No student could be matched to this paper"
                 + (f" (recorded as {identity!r})." if identity else ".")
             )
+        cohort_id = str(row["cohort_id"])
+        if cohort_id not in classes:
+            classes[cohort_id] = _parked_class_facts(app, cohort_id)
+        facts = classes[cohort_id]
+        submission_id = str(row["submission_id"])
         parked.append({
-            "submission_id": str(row["submission_id"]),
-            "cohort_id": str(row["cohort_id"]),
+            "submission_id": submission_id,
+            "cohort_id": cohort_id,
             "reason": status,
             "reason_label": _INGEST_STATUS_LABELS.get(status, status),
             "matched_student": student_ref,
@@ -840,6 +881,11 @@ def parked_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
             "resolutions": list(_PARKED_RESOLUTIONS.get(
                 status, ("Open the parked page to resolve this paper.",))),
             "resolvable": status in QUARANTINE_STATES,
+            # B8: a paper whose student was not matched (but whose pages were read) can be
+            # given to the student it belongs to — one of the class's students with no paper.
+            "assignable": status in QUARANTINE_STATES and identity not in ("pass", "not_reached"),
+            "students_without_paper": facts["students_without_paper"],
+            "decisions": [d for d in facts["decisions"] if d["submission_id"] == submission_id],
         })
     return {
         "parked": parked,

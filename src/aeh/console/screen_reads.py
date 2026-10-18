@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from aeh.grade import GRADE_STATEMENTS, run_grade_records
-from aeh.pkg import PKG_STATEMENTS
+from aeh.pkg import PKG_STATEMENTS, points_for_band
 from aeh.setup import setup_service_for_store
 
 
@@ -124,18 +124,21 @@ def _students_of(app: Any, cohort_id: str) -> list[dict[str, Any]]:
     handle = app._store.cohort(cohort_id)
     students: list[dict[str, Any]] = []
     seen: set[str] = set()
+    try:
+        roster = list(handle.query(
+            "SELECT student_ref, full_name FROM roster ORDER BY student_ref"))
+    except Exception:  # noqa: BLE001 — a cohort without a roster table answers its papers
+        roster = []
+    # A read paper keeps its student's listed name beside the ref, so the class screen
+    # still says who the paper belongs to once it is in.
+    names = {str(row["student_ref"]): str(row["full_name"] or "") or None for row in roster}
     for row in handle.query(
         "SELECT submission_id, student_ref FROM submission ORDER BY submission_id"
     ):
         ref = str(row["student_ref"])
         seen.add(ref)
         students.append({"student_ref": ref, "submission_id": str(row["submission_id"]),
-                         "full_name": None})
-    try:
-        roster = handle.query(
-            "SELECT student_ref, full_name FROM roster ORDER BY student_ref")
-    except Exception:  # noqa: BLE001 — a cohort without a roster table answers its papers
-        roster = ()
+                         "full_name": names.get(ref)})
     for row in roster:
         ref = str(row["student_ref"])
         if ref in seen:
@@ -153,8 +156,19 @@ def class_roster_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     cohorts = [
         {"cohort_id": key, "students": _students_of(app, key)}
         for key in app._cohort_keys()
+        if _ledger_is_live(app, key)
     ]
     return {"cohorts": cohorts}
+
+
+def _ledger_is_live(app: Any, key: str) -> bool:
+    """Whether a cohort file still holds its cohort: a purge empties every table but leaves
+    the compacted file, so a deleted class must not be listed again under its old name. An
+    unreadable file is listed (its own read reports the trouble)."""
+    try:
+        return bool(app._store.cohort(key).query("SELECT COUNT(*) AS n FROM cohort")[0]["n"])
+    except Exception:  # noqa: BLE001 — listed, and its own read names the problem
+        return True
 
 
 def papers_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
@@ -164,7 +178,7 @@ def papers_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     # Through `aeh.pipeline`'s re-export, the spelling the server-rendered screens already
     # use — `aeh.pipeline.background` at symbol level would add an undeclared edge to the
     # frozen set (`TC-CONSOLE-36`) for the same door.
-    from aeh.pipeline import uploaded_parts
+    from aeh.pipeline import cohort_has_test_paper, uploaded_parts
 
     run_row = _run_row_of(console, app, query)
     cohort_id = str(query.get("cohort_id") or "")
@@ -174,12 +188,40 @@ def papers_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
         keys = app._cohort_keys()
         cohort_id = keys[0] if keys else ""
     if not cohort_id:
-        raise ValueError("papers names no stored cohort")
+        raise ValueError("no class exists yet: set up a class first, then load its papers")
     return {
         "cohort_id": cohort_id,
         "students": _students_of(app, cohort_id),
         "parts": list(uploaded_parts(app._store, cohort_id)),
+        # B4: what the papers screen needs to read papers here — whether the class holds
+        # its test paper yet (the sheets are checked against it), and every sheet read so
+        # far with what the paper check said.
+        "test_paper_read": bool(cohort_has_test_paper(app._store, cohort_id)),
+        "sheets": _sheets_of(app, cohort_id),
     }
+
+
+def _sheets_of(app: Any, cohort_id: str) -> list[dict[str, Any]]:
+    """The answer sheets read into one cohort, oldest first: each with the student it was
+    matched to, its paper-check status and whether it is parked (`FR-INGEST-30`'s flag)."""
+    from .vocabulary import QUARANTINE_STATES
+
+    sheets: list[dict[str, Any]] = []
+    try:
+        rows = list(app._store.cohort(cohort_id).query(
+            "SELECT submission_id, student_ref, ingest_status, quarantined FROM submission "
+            "ORDER BY rowid"))
+    except Exception:  # noqa: BLE001 — an unreadable ledger lists no sheets, not a 500
+        return sheets
+    for row in rows:
+        status = str(row["ingest_status"] or "")
+        sheets.append({
+            "submission_id": str(row["submission_id"]),
+            "student_ref": None if row["student_ref"] is None else str(row["student_ref"]),
+            "status": status or "reading",
+            "parked": bool(row["quarantined"]) or status in QUARANTINE_STATES,
+        })
+    return sheets
 
 
 # --- the run-bound screens ------------------------------------------------------------------------
@@ -191,14 +233,20 @@ def run_start_state_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     profile and refuses on its own. The context answers even when the preview cannot be
     composed: the teacher still sees what would start."""
     run_row = _run_row_of(console, app, query)
+    # The profile a run started here runs under: the console's own, which the screen names
+    # when it asks for a new run's priced preview (FR-CONSOLE-43 names the profile per
+    # request; the console's is the one a teacher can start under).
+    config = app.run_config if isinstance(getattr(app, "run_config", None), dict) else {}
+    profile = str(config.get("HARNESS_PROFILE") or "") or None
     if run_row is None:
         return {"run_id": None, "cohort_id": None, "package_version_id": None,
-                "status": None}
+                "status": None, "profile": profile}
     return {
         "run_id": str(run_row["run_id"]),
         "cohort_id": str(run_row["cohort_id"]),
         "package_version_id": str(run_row["package_version_id"]),
         "status": str(run_row["status"]),
+        "profile": profile,
     }
 
 
@@ -283,6 +331,13 @@ def blind_seats_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
             }
         except Exception:  # noqa: BLE001 — a seat renders its submission id alone
             refs = {}
+    # Each seat's own scale: the package's declared levels for that grading point, the names
+    # M-REVIEW maps a submitted label through — the rubric, not system output, so the blind
+    # stays blind. A generic label the criterion does not declare is refused by the review
+    # service, so offering only `REVIEW_DEFAULT_BANDS` blocked every custom-band package;
+    # the generic scale remains the fallback for a seat whose package cannot be read.
+    scales = _declared_scales(app, run_row) if run_row is not None else {}
+    labels = _grading_point_labels(app, run_row) if run_row is not None else {}
     return {
         "run_id": run_id,
         "band_scale": [str(band["band"]) for band in REVIEW_DEFAULT_BANDS],
@@ -291,6 +346,9 @@ def blind_seats_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
                 "submission_id": str(item.submission_id),
                 "student_ref": refs.get(str(item.submission_id)),
                 "criterion_id": str(item.criterion_id),
+                "label": labels.get(str(item.criterion_id), str(item.criterion_id)),
+                "band_scale": [name for name, _points in
+                               scales.get(str(item.criterion_id), ())] or None,
                 "evaluation_mode": str(getattr(item, "evaluation_mode", "") or ""),
             }
             for item in session.items
@@ -344,14 +402,58 @@ def _declared_scales(app: Any, run_row: Any) -> dict[str, list[tuple[str, Any]]]
             PKG_STATEMENTS["select_bands"], v=str(run_row["package_version_id"]))
     except Exception:  # noqa: BLE001 — an unreadable catalog is not the grades'
         return {}
-    scales: dict[str, list[tuple[int, str, Any]]] = {}
+    by_criterion: dict[str, list[Any]] = {}
     for row in rows:
-        scales.setdefault(str(row["criterion_id"]), []).append(
-            (int(row["ordinal"]), str(row["band"]), row["points"]))
+        by_criterion.setdefault(str(row["criterion_id"]), []).append(dict(row))
+    # Each level's points through M-PKG's one band-to-points reader (CT-PKG-05), never the
+    # column itself: the console maps an amended figure back to its level with them.
     return {
-        criterion: [(name, points) for _ordinal, name, points in sorted(entries)]
-        for criterion, entries in scales.items()
+        criterion: [(str(row["band"]), points_for_band(entries, str(row["band"])))
+                    for row in sorted(entries, key=lambda row: int(row["ordinal"]))]
+        for criterion, entries in by_criterion.items()
     }
+
+
+def _answer_keys(app: Any, run_row: Any, labels: dict[str, str]) -> list[dict[str, Any]]:
+    """The run's multiple-choice grading points with their options and current key — what
+    the results screen's key correction offers (FR-CONSOLE-30: a key found wrong after a run
+    is corrected and the marks re-derived). Read through M-PKG's own catalog; an unreadable
+    package offers no correction rather than an invented one."""
+    from aeh.pkg import PackageCatalog
+
+    package_id = str(run_row["package_id"])
+    version = str(run_row["package_version_id"])
+    try:
+        catalog = PackageCatalog(app._store.package(package_id), package_id=package_id)
+        keys = []
+        for criterion in catalog.criteria(version):
+            criterion_id = str(criterion["criterion_id"])
+            options = catalog.mcq_options(version, criterion_id)
+            if not options:
+                continue
+            keys.append({
+                "criterion_id": criterion_id,
+                "label": labels.get(criterion_id, criterion_id),
+                "options": [{"option_id": str(option_id), "label": str(label or "")}
+                            for option_id, label in options],
+                # The run's OWN version's key — what the correction compares against — not
+                # the newest in the lineage (another class's correction moves that one).
+                "key": _key_ids(criterion["answer_key"]),
+            })
+        return keys
+    except Exception:  # noqa: BLE001 — no correction offered over an unreadable catalog
+        return []
+
+
+def _key_ids(raw: Any) -> list[str]:
+    """A stored answer key (`criterion.answer_key`, a JSON list of option ids) as a list."""
+    if raw is None:
+        return []
+    try:
+        value = json.loads(raw) if isinstance(raw, str) else raw
+    except ValueError:
+        return []
+    return [str(option) for option in value] if isinstance(value, (list, tuple)) else [str(value)]
 
 
 def _grading_point_labels(app: Any, run_row: Any) -> dict[str, str]:
@@ -546,6 +648,10 @@ def results_screen_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     return {
         "run_id": run_id,
         "cohort_id": cohort_id,
+        # The test version the run graded against: the screen's download of the test
+        # itself (FR-CONSOLE-59's readable export) names it.
+        "package_version_id": str(run_row["package_version_id"]),
+        "answer_keys": _answer_keys(app, run_row, labels),
         "score_levels": score_levels,
         "scales": [
             {"criterion_id": criterion, "label": labels.get(criterion, criterion),

@@ -90,7 +90,8 @@ export function newestRunFirst(runs: ContextDoc["runs"]): ContextDoc["runs"] {
  * The context selection behind one rendered screen: the hash's explicit refs win when they
  * still name something; anything absent or stale falls back to the server data's defaults —
  * a lone class or package selects itself, a selected run names its own package, and the
- * selected class's newest run is the run in focus (CT-UI-07: the hash carries only these
+ * selected class's newest run is the run in focus; a lone class selects itself too, so a class
+ * made outside the browser is the wizard's subject without a click (CT-UI-07: the hash carries only these
  * opaque refs; nothing else about the selection is stored).
  */
 export function resolveSelection(
@@ -108,6 +109,9 @@ export function resolveSelection(
   let run = findRun(asked.run);
   let cls = findClass(asked.class);
   if (cls === null && run !== null) cls = classes.find((c) => c.cohort_id === run?.cohort_id) ?? null;
+  if (cls === null && run === null && asked.class === undefined && classes.length === 1) {
+    cls = classes[0] ?? null;
+  }
   if (run === null && cls !== null) {
     run = newestRunFirst(context.runs.filter((r) => r.cohort_id === cls?.cohort_id))[0] ?? null;
   }
@@ -181,6 +185,10 @@ export function deriveWizard(
     let state: StageState = "not_started";
     let detail = "";
     let action: string | null = "Create the class";
+    if (cls === null && ledgerEntries(context).length > 0) {
+      detail = "Choose one of your classes at the top of the page, or make a new one.";
+      action = "Choose the class";
+    }
     if (cls !== null) {
       if (cls.students >= 2) {
         state = "done";

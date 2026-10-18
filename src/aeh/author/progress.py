@@ -193,12 +193,27 @@ def commit_artifacts(output: Path, pairs: Sequence[tuple[Path, str]],
             temporaries.append((temporary, path))
         for temporary, path in temporaries:
             _replace_with_retry(temporary, path)
+        written = [path for _temporary, path in temporaries]
         for prior in priors:
+            # On a case-insensitive file system (Windows, macOS by default) a prior spelled
+            # `HIST7-ROME-01.…` and the new `hist7-rome-01.…` are ONE file: the rename above
+            # already replaced it, and unlinking the "prior" would delete the draft just
+            # written.
+            if any(_same_file(prior, path) for path in written):
+                continue
             prior.unlink()
     except BaseException:
         for temporary, _path in temporaries:
             temporary.unlink(missing_ok=True)
         raise
+
+
+def _same_file(one: Path, other: Path) -> bool:
+    """Whether two paths name the same file on disk (False when either is missing)."""
+    try:
+        return os.path.samefile(one, other)
+    except OSError:
+        return False
 
 
 def _cancelled() -> AuthoringCancelled:

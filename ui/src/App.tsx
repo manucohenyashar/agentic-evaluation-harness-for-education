@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type ComponentType, type ReactElement } from "react";
 import type { ContextDoc } from "./api";
 import { HelpPanel } from "./components/HelpPanel";
-import { Navigate } from "./navigate";
+import { Navigate, type SelectionPatch } from "./navigate";
+import { SelectionContext } from "./selection";
 import { BlindSample } from "./screens/BlindSample";
 import { ClassSetup } from "./screens/ClassSetup";
 import { DraftEditor } from "./screens/DraftEditor";
@@ -47,10 +48,6 @@ import { ToastHost } from "./state/StateDisplay";
 
 /** The lifecycle screens the redesign keeps; later stories fill the remaining routes. */
 const ROUTES: Record<string, ComponentType> = {
-  "/class": ClassSetup,
-  "/package": PackageSetup,
-  "/papers": Papers,
-  "/run": RunStart,
   "/monitor": Monitor,
   "/review": Review,
   "/results": Results,
@@ -62,8 +59,6 @@ const STUDENT_ROUTE = /^\/results\/students\/([^/]+)$/;
 
 /** The selection keys the address carries (`CT-UI-07`: opaque refs, nothing else). */
 const SELECTION_KEYS = ["class", "package", "run"] as const;
-
-type SelectionPatch = Partial<Record<(typeof SELECTION_KEYS)[number], string | null>>;
 
 interface Address {
   path: string;
@@ -215,6 +210,14 @@ export function App() {
         retry={retryAll}
       />
     );
+  } else if (address.path === "/package") {
+    screen = <PackageSetup context={context} />;
+  } else if (address.path === "/class") {
+    screen = <ClassSetup classId={selection.classId} />;
+  } else if (address.path === "/papers") {
+    screen = <Papers context={context} selection={selection} />;
+  } else if (address.path === "/run") {
+    screen = <RunStart context={context} selection={selection} />;
   } else if (address.path === "/issues") {
     screen = <Issues runId={selection.runId} />;
   } else if (address.path === "/logs") {
@@ -248,6 +251,7 @@ export function App() {
 
   return (
     <Navigate.Provider value={goTo}>
+      <SelectionContext.Provider value={selection}>
       <ToastHost>
         <div className="shell">
           <ContextHeader
@@ -278,6 +282,7 @@ export function App() {
           )}
         </div>
       </ToastHost>
+      </SelectionContext.Provider>
     </Navigate.Provider>
   );
 }

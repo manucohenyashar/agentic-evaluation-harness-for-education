@@ -140,6 +140,18 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
     "resolve quarantine item": (
         "submission.ingest_status",
         "submission.quarantined",
+        # B8: an `assigned` decision gives the paper to the student the operator names, and
+        # every decision is recorded in M-INGEST's append-only trail.
+        "submission.student_ref",
+        "submission.v3_identity",
+        "quarantine_decision.decision_id",
+        "quarantine_decision.submission_id",
+        "quarantine_decision.resolution",
+        "quarantine_decision.actor",
+        "quarantine_decision.student_ref",
+        "quarantine_decision.prior_identity",
+        "quarantine_decision.note",
+        "quarantine_decision.decided_at",
     ),
     "review action": (
         "review_queue.action",

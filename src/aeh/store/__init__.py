@@ -20,6 +20,7 @@ Files:
     interfaces.py    `Statement`, `Tier`, `TierHandle`, `BlobStore` and `Store`
     migrations.py    the base schemas, `Migration`, `TIER_MIGRATIONS` and the version pins
     purge.py         purging a cohort file once its results are promoted
+    discard.py       removing a cohort that never held a paper or a run
     connection.py    opening a database, migrating it, and the single execute site `_run`
     limits.py        `StoreLimits`, the numbers resolved once when the store opens
     blobs.py         the content-addressed blob store
@@ -108,6 +109,7 @@ from .migrations import (
     TIER_MIGRATIONS,
 )
 from .purge import PurgeReport
+from .discard import discard_empty_cohort
 from .connection import READ_VERBS, _run, TierOpened
 from .limits import StoreLimits
 from .blobs import BLOB_HASH_PATTERN, blob_store_stats, ContentAddressedBlobStore, INCOMING_DIR
@@ -131,6 +133,7 @@ __all__ = [
     "MigrationPrecondition",
     "PurgePreconditionError",
     "PurgeReport",
+    "discard_empty_cohort",
     "Row",
     "SchemaTooNewError",
     "Statement",

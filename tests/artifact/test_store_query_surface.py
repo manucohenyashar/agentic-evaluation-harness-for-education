@@ -426,6 +426,11 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.ingest.assessment_match:394",
     "aeh.ingest.assessment_match:417",
     "aeh.ingest.uploads:19",
+    # B8: the operator's parked-paper decision (aeh.ingest.decisions) — the assignment of a
+    # nameless paper to a roster student and the append-only decision row, both declared
+    # INGEST_STATEMENTS with keyword parameters, in the caller's transaction.
+    "aeh.ingest.decisions:185",
+    "aeh.ingest.decisions:187",
     # The pkg sites are #230's line numbers (the verbatim revision copy and the
     # copied-counts statement shifted the module; the tripwire diff being the
     # line move plus one net-new site). Lines moved again with #91's module-level
@@ -454,9 +459,9 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # versions.py and catalog.py (line moves only); `aeh.pkg.rubric_methods` is
     # net-new — the derivation upsert, confirm and reads, each a declared
     # PKG_STATEMENTS entry with keyword parameters.
-    "aeh.pkg.catalog:184",
-    "aeh.pkg.catalog:193",
-    "aeh.pkg.catalog:60",
+    "aeh.pkg.catalog:194",
+    "aeh.pkg.catalog:203",
+    "aeh.pkg.catalog:70",
     "aeh.pkg.criteria:124",
     "aeh.pkg.criteria:140",
     "aeh.pkg.criteria:142",
@@ -511,10 +516,10 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.pkg.setup_records:29",
     "aeh.pkg.policy_and_keys:223",
     "aeh.pkg.exchange:143",
-    "aeh.pkg.exchange:309",
-    "aeh.pkg.exchange:315",
+    "aeh.pkg.exchange:317",
+    "aeh.pkg.exchange:331",
     "aeh.pkg.exchange:323",
-    "aeh.pkg.exchange:330",
+    "aeh.pkg.exchange:338",
     "aeh.pkg.versions:40",
     "aeh.pkg.setup_records:54",
     "aeh.pkg.setup_records:109",
@@ -781,7 +786,7 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # and its docstring reflow shifted the pause/resume site down again; same
     # statement. Re-read from the walker, never hand-unioned.)
     "aeh.console.controls:242",
-    "aeh.console.effects:138",
+    "aeh.console.effects:815",
     "aeh.console.key_correction:140",
     "aeh.console.driver:120",
     "aeh.console.driver:159",

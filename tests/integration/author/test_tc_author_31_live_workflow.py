@@ -73,7 +73,7 @@ from aeh.conf import parse_config_document
 from aeh.conf.panel_profile import panel_for_profile
 from aeh.pipeline import cli
 
-from tests.support.author_vocabulary import DEV_CI_CONFIG, af
+from tests.support.author_vocabulary import LIVE_DEV_CI_CONFIG as DEV_CI_CONFIG, af
 from tests.support.impl import require_path
 
 pytestmark = [

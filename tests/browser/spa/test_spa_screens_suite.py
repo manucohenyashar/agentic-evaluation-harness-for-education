@@ -160,12 +160,12 @@ ROUTE_TITLES: dict[str, str] = {
 #: headings. `/help` is walked separately: it is the manuals page itself and carries no
 #: per-screen section.
 _HELP_PLAN: tuple[tuple[str, str], ...] = (
-    ("/", "the page map"),
+    ("/", "the screen map"),
     ("/issues", "when something goes wrong"),
     ("/logs", "when something goes wrong"),
-    ("/parked", "load the student papers"),
-    ("/jobs", "start the run, and watch it"),
-    ("/settings", "changing something"),
+    ("/parked", "parked papers"),
+    ("/jobs", "the rest of the sidebar"),
+    ("/settings", "the rest of the sidebar"),
 )
 
 

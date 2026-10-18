@@ -378,9 +378,12 @@ def test_tc_ingest_58_c_a_cohort_32_store_migrates_to_33_and_still_resolves_by_r
     assert COMPLETE_SCHEMA_VERSIONS[Tier.COHORT] == head, (
         "(c): the Cohort pin must equal the chain's head — at least 33 in #620's own "
         "change (RISK-119)")
-    claude_md = (REPO_ROOT / "CLAUDE.md").read_text(encoding="utf-8")
-    assert MIGRATION_NAME in claude_md, (
-        "(c): CLAUDE.md's migration-chain paragraph must name `ingest_roster_names`")
+    # CLAUDE.md now keeps only the authoring rules and points here for "chain contents,
+    # per-migration ownership, and history": the pin's history comment is where the name
+    # must be recorded.
+    history = (REPO_ROOT / "src" / "aeh" / "store" / "migrations.py").read_text(encoding="utf-8")
+    assert MIGRATION_NAME in history, (
+        "(c): store/migrations.py's pin history must name `ingest_roster_names`")
 
     _build_cohort_at_32(tmp_data_dir, "c-old", ("S9-001", "S9-002"))
     store = open_store(tmp_data_dir)

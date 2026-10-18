@@ -6,11 +6,11 @@
 
 **A supervised OpenRouter test can be run with the shipped commands, with an engineer beside the operator.** The code paths exist for `aeh cohort create`, package publication, `aeh ingest` (the V0–V4 intake checks), `aeh run`, and `aeh results show` / `export`. Real OpenRouter calls have verified the request formats, and the 2026-10-12 authoring walk drafted and published a teacher's package, ingested a generated sheet, and completed a one-student run. That is not an end-to-end live pass of both sample classes: the run exposed citation refusals that left grades provisional and a decision-engine failure before dispatch. Record those outcomes; do not describe the live test as passed.
 
-The console is now the teacher-facing SPA for package authoring, run control, review, blind sampling, finalization and amendments. Remaining operator-facing gaps are precise: class creation/roster editing and scan reading still need terminal commands; SPA scan inputs are not wired; result export has no SPA download control; and parked-paper resolution does not record a selected student, mark or test. The older S1–S14 pages remain separate operator/audit reads, with their own limitations.
+The console is now the teacher-facing SPA for the whole day: class setup, package authoring, reading the papers, run control, review, blind sampling, finalization, amendments and the results downloads ([05](05-console-teacher-walk.md)). The one remaining operator-facing step is starting the console from a terminal with the key and settings. The browser path was checked offline on 2026-10-18, not yet against real OpenRouter. The older S1–S14 pages remain separate operator/audit reads, with their own limitations.
 
 What is still open falls into three groups:
 
-* **Teacher-independent operation:** class creation and scan reading still use `aeh cohort create` and `aeh ingest`; the SPA does not download exports or record the operator's full parked-paper decision.
+* **Teacher-independent operation:** the console's start needs the operator's terminal once; everything after it is in the browser.
 * **What further live runs can settle:** handwriting, class-scale cost and speed, the Jev decision engine, judge citation reliability, and the observed behavior of pause/resume during a live run.
 * **Other recorded gaps:** the creator of a cohort, the local model name, and whether the model uses each field's `name`.
 
@@ -18,29 +18,28 @@ What is still open falls into three groups:
 
 * **B1 — no shipped path both called OpenRouter and allowed the console. Closed 2026-10-03.** `aeh run` and the console's start-run grade through OpenRouter under `dev-ci` (`HARNESS_FIXTURE_DIR` set selects recordings, the test tier), the command prints a `provider:` line naming what will answer, and the console still refuses `cloud-hosted` on purpose. Cases `TC-PIPE-24` to `TC-PIPE-26` (`tests/unit/pipe/test_openrouter_launch.py`).
 * **B2 — the request was not the usual chat format. Closed 2026-10-03.** The provider sends the standard chat shape, the plain slug, names refusals in OpenRouter's own words, and explains an empty answer from a reasoning model; checked with the real calls above. Cases `TC-PROV-60` to `TC-PROV-63`. Its leftovers are open gaps below.
-* **B3 — nothing created a cohort, its consent class or its roster. Closed 2026-10-03.** `aeh cohort create`, `add-students` and `show`; cases `TC-ORCH-59`, `TC-ORCH-60`. The SPA still has no class-creation or roster-editing form, so creating or changing a class remains a terminal step.
+* **B3 — nothing created a cohort, its consent class or its roster. Closed 2026-10-03.** `aeh cohort create`, `add-students` and `show`; cases `TC-ORCH-59`, `TC-ORCH-60`. Since 2026-10-18 the SPA's Classes screen creates a class (typed or from a class list file, previewed before it is written) and adds late students, through the same door.
 * **B5 — the teacher's package-setup path did not exist. Closed by the console authoring flow.** The SPA now accepts PDF, DOCX and TXT source documents, drafts a package, presents unresolved items for review/editing, and publishes through the package build gate. `aeh package build --spec` remains the developer/system-emitted TOML-spec route; the legacy S3/S4 read-back limitations below apply only to those older pages, not to the SPA's authoring flow.
 * **B6 — the privacy check had no known answer format. Closed 2026-10-03.** Every request carries `"provider": {"zdr": true, "data_collection": "deny"}`, so OpenRouter routes it only to a host that keeps no copy and does not train on it, or refuses it (`HTTP 404 ... No endpoints found matching your data policy`, which pauses the run). Case `TC-PROV-64`.
 
 ## The open gaps
 
-### B4 (remaining). SPA scan upload is not wired to intake
+### B4. SPA scan upload reaches intake — closed 2026-10-18, live use unverified
 
 `aeh ingest` remains the operator's paper-reading path: the test paper once per class, and answer sheets through the intake checks, parking every paper that fails (`src/aeh/pipeline/intake.py`). Under `dev-ci`, page-reading requests go to OpenRouter with zero data retention enforced, and the consent gate refuses a `real` cohort before sending work. Re-running skips scans already read into the cohort. A read cut off by Ctrl-C is handled by the next `aeh ingest` (`TC-PIPE-32`). The 2026-10-12 live authoring pass cleared a generated typed sheet through intake; real handwritten pages and class-scale reading remain unverified.
 
-What is still missing is browser intake:
+Browser intake now exists. The SPA's Papers inbox uploads the test paper and the answer sheets; each upload asks to be read (`POST /api/v1/uploads?read=1`), is refused before a byte is stored when the class, the test version or the class's consent does not allow it, and is otherwise queued for a per-class reading job on the console's own worker. The job reassembles the staged chunks (so an upload over 4 MiB is read whole) and calls `ingest_files` — the `aeh ingest` door — so the page reader, the five checks, the skip of a sheet already read and the parking are the command's own. Progress is on the Papers inbox and the Jobs screen. Case `TC-CONSOLE-77` (`tests/unit/console/test_tc_console_77_papers_upload_reads.py`) drives it over the sample physics sheets through the real `OpenRouterProvider` to a stand-in OpenRouter.
 
-* **The SPA Papers screen's file inputs are inert.** The separate upload API stores files but does not call intake or create submissions; reading still requires `aeh ingest`.
-* **An upload over 4 MiB cannot be reassembled by the current upload path.** The chunks are stored separately and only the first chunk is recorded.
+Still true:
+
 * Page-reading calls happen before a run exists, so they are not counted against a run's cost ceiling. OpenRouter's own spending limit remains the spending stop.
-
-**Needed:** a paper uploaded through the SPA reaches the same intake checks and appears in the cohort without an engineer or terminal.
+* The browser path has not been used against real OpenRouter yet; the first live use is a finding to record.
 
 ### Package setup: teacher flow shipped; legacy S3/S4 remain limited
 
 The teacher's package path is the SPA authoring flow: upload the source documents as PDF, DOCX or TXT, preview the extracted content, start the draft job, resolve or edit open items, then approve and publish. Authoring requires a configured profile. The console's package screens do not use the old S3/S4 confirmation route. The terminal `aeh author draft` / `aeh author review` and `aeh package build --spec` paths remain available for operator, developer and system-emitted use.
 
-The older server-rendered pages are a separate operator/audit surface. S3 can render a package's question inventory when addressed to that package; S4 is count-only for answer keys. Those limitations do not imply the teacher's SPA authoring path is missing. The readiness gap here is instead that class creation and roster editing still have no teacher-facing form, and the browser scan inputs do not reach intake (B4).
+The older server-rendered pages are a separate operator/audit surface. S3 can render a package's question inventory when addressed to that package; S4 is count-only for answer keys. Those limitations do not imply the teacher's SPA authoring path is missing. Class creation and browser intake, the gaps once listed here, shipped on 2026-10-18.
 
 ### B7. Distinguish the teacher SPA from the legacy S1–S14 pages
 
@@ -49,19 +48,23 @@ The console now has two different surfaces. The SPA is the teacher workflow, wit
 Known limitations of the legacy pages include:
 
 * **S1** needs a package-version address and shows a limited package card, not a teacher authoring flow. **S3** can list questions when addressed to the package. **S4** remains count-only for answer keys.
-* **S10 and S11** are fixed explanatory text and do not show drawn submissions. The blind sample screen exists in the SPA at `/#/review/blind` and shows the drawn seats, but offers generic B1–B5 labels rather than the package's own band labels; submissions outside the draw are refused.
-* **S8** shows parked IDs and stored crops but not the reason; the SPA Parked screen shows the reason, match note and available release/close choices. Neither surface stores the selected student, mark or test (B8).
+* **S10 and S11** are fixed explanatory text and do not show drawn submissions. The blind sample screen exists in the SPA at `/#/review/blind`, shows the drawn seats and offers each seat's own declared levels from the package; submissions outside the draw are refused.
+* **S8** shows parked IDs and stored crops but not the reason; the SPA Parked screen shows the reason, match note and available release/close choices. The SPA records every decision with its note and can give a nameless paper to its student (B8, closed 2026-10-18).
 * **S13** remains limited compared with the SPA student-results view, which shows narrative feedback and band information.
 * **S12 and S7** are not the cost view; the SPA Jobs screen displays each draft/run job's progress and cost so far. The SPA finalize and amend flows write through the enumerated controls; they are not the legacy pages' audit rendering.
-* Legacy band selectors remain generic/inert; the SPA grade-amendment form uses the package's rubric bands, while the SPA blind-sample screen offers generic B1–B5 labels that are not valid for custom-band criteria unless the package uses those exact labels.
+* Legacy band selectors remain generic/inert; the SPA grade-amendment form and the SPA blind-sample screen both use the package's rubric levels.
 
-**Still needed for teacher-independent operation:** a class-creation/roster-editing form, browser scan intake wired to the real intake checks, an export download control in the SPA, and a full parked-decision record (B4/B8). The SPA supports most of the grading day, but those gaps still require an operator/terminal or another supported route.
+**Teacher-independent operation:** the SPA supports the grading day end to end; the operator starts the console once.
 
-### B8 (remaining). Resolving a parked paper still does not record the decision
+### B8. Resolving a parked paper records the decision — closed 2026-10-18
 
 `resolve-quarantine-item` now refuses any word other than `matched` or `unresolvable` (a typo no longer closes a paper by accident), and `matched` is refused for a paper whose student the identity check (V3) did not match — such a paper is closed, or rescanned with the ID written on it and read in again with `aeh ingest` (`TC-CONSOLE-51`, `TC-CONSOLE-52`, over the sample sheets parked by the real intake checks).
 
-What is still missing is the record itself. Nothing stores **which student** a nameless paper belongs to, **which tick** a doubled mark was, or **which test** a wrong-test paper is for: the operator can release or close the three awkward sample sheets, but cannot tell the system the answer. The console's writable surface for this action is exactly `submission.ingest_status` and `submission.quarantined` (FR-CONSOLE-32); a corrected mark would change an immutable document, and an audit record needs a migration — so this is a design decision for `/detailed-design-generator`, not a quick fix.
+The record now exists. Cohort migration 35 (`ingest_quarantine_decision`, owned by M-INGEST) adds an append-only `quarantine_decision` trail: every release, close and assignment is one row with the operator's name as the console supplied it, the time, the student (for an assignment), the identity check's own verdict before the decision, and the operator's note — the tick they read on a doubled mark, the test a wrong-test paper belongs to. A repeated identical decision records nothing new (FR-CONSOLE-02), and a purge removes the trail with the class.
+
+A third resolution, **`assigned`**, gives a nameless or unmatched paper to the student on the class list it belongs to: the paper's `student_ref` becomes that student and its identity check is recorded as passed by the operator, so it is graded instead of only closed. It is refused for a student not on the list, one who already has a paper in the class, or no student — never grading a paper under nobody or a student twice. A doubled mark is still scored on the page reader's reading (the document is immutable); the note records the operator's reading, and the mark is corrected on the student's result if needed. Cases `TC-CONSOLE-78` (`tests/integration/console/test_quarantine_resolution_b8.py`).
+
+Design note for `/detailed-design-generator`: this widens `resolve quarantine item`'s declared write fields (FR-CONSOLE-32) to the submission's `student_ref`/`v3_identity` and the decision trail; fold that into the next design delta.
 
 ## The small gaps, and what only a live run can settle
 
@@ -120,10 +123,7 @@ The right-test gate (V4) compares the words in a student's answers with the word
 
 These are checkable goals for future backlog planning; issues are created only through `/plan-to-issues`.
 
-1. **Browser scan intake (B4).** *Goal:* a scan uploaded from the SPA is reassembled, read through the existing intake checks and shown in the cohort's papers/preflight/parked views without a terminal.
-2. **Class setup.** *Goal:* a teacher can create a class, set its consent class and create/update its roster from a supported interface without using `aeh cohort create` or editing files.
-3. **Export download in the SPA.** *Goal:* a teacher can download the supported results exports from the browser without a CLI or manually calling an API.
-4. **Record the operator's decision (B8).** *Goal:* resolving a parked paper stores the selected student, corrected mark or correct test in the audit trail where applicable.
-5. **Live-operation evidence.** *Goal:* record a supervised live pause/resume cycle, class-scale cost and duration, handwriting intake, and Jev behavior; investigate the citation-verification refusals before treating the authoring walk as a successful live grading demonstration.
+1. **Live use of the console path.** *Goal:* run [05](05-console-teacher-walk.md) against real OpenRouter and record each step's outcome; browser scan intake, class setup and the downloads shipped on 2026-10-18 and were checked offline only.
+2. **Live-operation evidence.** *Goal:* record a supervised live pause/resume cycle, class-scale cost and duration, handwriting intake, and Jev behavior; investigate the citation-verification refusals before treating the authoring walk as a successful live grading demonstration.
 
-Items 1 to 4 are the main workflow gaps for teacher-independent operation. Package authoring, run controls, review, blind sampling and finalization have shipped; do not re-list them as future console work.
+No workflow gap remains for teacher-independent operation beyond starting the console; item 1 is what proves it live. Package authoring, run controls, review, blind sampling and finalization have shipped; do not re-list them as future console work.

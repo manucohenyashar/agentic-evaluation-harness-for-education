@@ -20,7 +20,7 @@ from typing import Any
 
 from aeh.grade import GradeError, grade_workbook_bytes
 from aeh.grade.pdf import text_pdf_bytes
-from aeh.pkg import ExportBlockedError, PackageCatalog, PackageError
+from aeh.pkg import ExportBlockedError, PackageCatalog, PackageError, points_for_band
 
 from .results_reads import _run_id_of
 from .settings import pdf_page_lines
@@ -178,8 +178,10 @@ def _readable_lines(
             justification = str(criterion["band_justification"] or "").strip()
             if justification:
                 lines.append(f"  Why the bands sit where they do: {justification}")
-            for band in catalog.bands(str(criterion["criterion_id"])):
-                points = float(band["points"])
+            criterion_bands = [dict(band) for band in catalog.bands(str(criterion["criterion_id"]))]
+            for band in criterion_bands:
+                # Through M-PKG's one band-to-points reader (CT-PKG-05), never the column.
+                points = float(points_for_band(criterion_bands, str(band["band"])))
                 figure = f"{points:g}"
                 descriptor = str(band["descriptor"] or "").strip()
                 lines.append(f"  {band['band']} ({figure} points): {descriptor}")

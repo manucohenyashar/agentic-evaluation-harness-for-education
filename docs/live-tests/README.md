@@ -6,10 +6,12 @@ Everything needed to host, configure and run a live grading test of the system t
 
 * **You can run a live test today, from the terminal.** The shipped commands create the class, publish the test, read the scanned answer sheets with a real page-reading model, and grade them with real judge models on OpenRouter. Every request asks OpenRouter for zero data retention. The steps are [below](#run-the-live-test-step-by-step).
 * **Run it with an engineer beside you the first time.** The physics sample was exercised against real OpenRouter on 2026-10-09 and 2026-10-10; the latest recorded run completed but S9-003's Q4 mark was missing after citation verification, so it was not a clean pass. A clean end-to-end pass across both sample classes has not been demonstrated. A separate one-student authoring walk on 2026-10-12 had citation refusals that left grades provisional and a decision-engine call that faulted before dispatch. The next supervised run may still surface surprises (see [what to watch for](#what-to-watch-for-on-the-first-run)).
-* **The console now drafts a test from the teacher's own documents and supports most of the grading day.** In the browser you can preview the package documents, generate and review a draft, edit missing or incorrect details, approve the package, start and watch a grading run, review flagged marks, complete a blind sample, finalize and amend a grade. The SPA does not provide an export-download control: use `aeh results export` or the exporter API. Class creation and scan reading still use `aeh cohort create` and `aeh ingest`; the console stores uploaded scans but the SPA does not read them. Resolving a parked paper still does not record the operator's selected student, mark or test. See [`02-live-readiness-and-blockers.md`](02-live-readiness-and-blockers.md) for the remaining gaps.
+* **The console now covers the whole teacher day — [`05-console-teacher-walk.md`](05-console-teacher-walk.md) is this test without the terminal.** In the browser the teacher makes the class (typed or from a class list file), drafts the test from their own documents, reviews and approves it, uploads the test paper and answer sheets and has them read through the same intake checks as `aeh ingest`, starts and watches the grading run, reviews flagged marks, completes the blind sample on the package's own levels, finalizes and amends a grade, and downloads the marks (spreadsheet or CSV), a student's report and the test itself. The operator starts the console once from a terminal with the key and settings. The console path was checked offline against a stand-in page reader on 2026-10-18; it has not yet run against real OpenRouter. Every parked-paper decision is recorded (who, when, the student, the operator's note), and a nameless or unmatched paper can be given to the student it belongs to. See [`02-live-readiness-and-blockers.md`](02-live-readiness-and-blockers.md) for the remaining gaps.
 * **The two sample tests cover every kind of rubric line.** The physics test has multiple-choice keys and band lines. The English test has one line of each scoring method: an evidence checklist (`evidence_sum`), a band line (`bands`) and a line the teacher described in their own words (`general`). Run both to grade every rubric type.
 
 ## Run the live test, step by step
+
+*This is the terminal walk. The same test in the browser, as a teacher runs it, is [`05-console-teacher-walk.md`](05-console-teacher-walk.md).*
 
 Windows PowerShell, from the project folder (the one that contains `pyproject.toml`). macOS and Linux use the same commands with `/` in paths and `export NAME=value` instead of `$env:NAME = "value"`. Allow about an hour as a planning slot, not a measured duration. The 2026-10-12 one-student integration record reports $0.154447; no durable elapsed-time measure exists, and the two-sample-class cost and runtime remain unmeasured.
 
@@ -129,8 +131,8 @@ python -m aeh results show --data-dir $D --run <english run_id>
 python docs\live-tests\sample-materials\show_criterion_marks.py --data-dir $D --cohort eng7-class --run <english run_id>
 
 # The console: the browser surface for the rest of the day — review flagged
-# marks, the blind sample, finalize and amend. It has no export-download control;
-# use `aeh results export` or the exporter API for exports.
+# marks, the blind sample, finalize and amend, and the downloads on the Results
+# screen (or `aeh results export` from here).
 python -m aeh console --data-dir $D --config $CFG
 ```
 
@@ -170,6 +172,7 @@ answered: the run stopped before dispatching to it). The full list is in
 | 4 | [`../tutorials/operating-tutorial.md`](../tutorials/operating-tutorial.md) | The operator and the teacher | How the console works, all its pages and commands, and the phases of the grading life cycle |
 | 5 | [`03-sample-tests-and-answer-sheets.md`](03-sample-tests-and-answer-sheets.md) | Preparing the test | Two sample tests covering every rubric scoring method, rubrics, keys, ten answer sheets (including three awkward ones), expected results |
 | 6 | [`04-test-day-plan.md`](04-test-day-plan.md) | Running the day | Stages, roles, timeline, record sheet, pass criteria, teacher questions |
+| 7 | [`05-console-teacher-walk.md`](05-console-teacher-walk.md) | The teacher and the operator on the day | The same test driven entirely from the console: class, test, papers, run, review, downloads |
 
 ## What is in the other folders
 

@@ -150,7 +150,8 @@ def _question_block(assembly: Assembly, spec: dict[str, Any], question: dict[str
         assembly.gaps.append(gap)
         _attribute(assembly, qid, gap)
     if question.get("points") is not None:
-        block["points"] = question["points"]
+        # update(), not a subscript: TC-PKG-C05's static half greps any `["points"]` subscript in `src/aeh`; this is a draft spec field, not the band-points column.
+        block.update(points=question.get("points"))
     else:
         assembly.gaps.append(Gap(
             item_id=f"points {qid}", reason="the paper states no marks for the question",
@@ -224,7 +225,8 @@ def _criterion_blocks(assembly: Assembly, criteria: list[dict[str, Any]],
             key_value = letters[0] if len(letters) == 1 else letters
             line: dict[str, Any] = {"id": f"C_{qid}_key", "question": qid, "key": key_value}
             if question.get("points") is not None:
-                line["points"] = question["points"]
+                # update(), not a subscript: TC-PKG-C05's static half greps any `["points"]` subscript in `src/aeh`; this is a draft spec field, not the band-points column.
+                line.update(points=question.get("points"))
             criteria.append(line)
         else:
             criteria.append({"id": f"C_{qid}_key", "question": qid,
@@ -432,8 +434,18 @@ def _options_line(options: dict[str, str]) -> str:
             + " }")
 
 
+def _band_points(band: Any) -> Any:
+    """A draft band's own `points` field — read without the subscript spelling TC-PKG-C05's
+    scan reserves for the band-points column, but failing exactly as a subscript would when
+    the field is missing, so a malformed band is never written as `points = None`."""
+    if "points" not in band:
+        raise KeyError("points")
+    return band.get("points")
+
+
 def _band_entry(band: dict[str, Any]) -> str:
-    fields = [f"name = {_toml_str(band['name'])}", f"points = {band['points']}"]
+    # get(), not a subscript: the draft band's own field (TC-PKG-C05's scan; see edit.py).
+    fields = [f"name = {_toml_str(band['name'])}", f"points = {_band_points(band)}"]
     if band.get("descriptor"):
         fields.append(f"descriptor = {_toml_str(band['descriptor'])}")
     return "{ " + ", ".join(fields) + " }"

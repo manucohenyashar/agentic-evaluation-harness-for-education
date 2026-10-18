@@ -6,6 +6,7 @@ import { OverrideForm, type OverrideChange } from "../components/Override";
 import { useToast } from "../state/StateDisplay";
 import { flagLabel, flagTone, scoreStateLabel } from "../state/model";
 import { useScreenRead } from "../useScreenRead";
+import { useRunParams } from "../selection";
 
 /**
  * One student's drill-down (FR-UI-16, FR-UI-17): the paper's grade per grading point, each
@@ -20,7 +21,7 @@ import { useScreenRead } from "../useScreenRead";
 export function StudentDetail({ submissionId }: { submissionId: string }) {
   const read = useScreenRead<DetailDoc>(
     "/api/v1/results/student-detail",
-    { submission_id: submissionId },
+    { submission_id: submissionId, ...useRunParams() },
   );
   const raiseToast = useToast();
   const [showDetails, setShowDetails] = useState(false);

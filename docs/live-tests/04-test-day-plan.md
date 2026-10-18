@@ -2,15 +2,15 @@
 
 *For the person running the day, and for the teacher taking part. Read [02](02-live-readiness-and-blockers.md) first.*
 
-The plan has three stages. **Stage 0 is a local rehearsal. Stage 1 checks that the supervised test is safe and ready. Stage 2 is the test day itself.** The console now supports package authoring, run controls, review, blind sampling, finalization and amendment. The test still needs an engineer/operator to create the class and read scans with terminal commands; the SPA has no results-export download control, and parked decisions cannot store the selected student/mark/test. These are known limits, not claims that the test has passed.
+The plan has three stages. **Stage 0 is a local rehearsal. Stage 1 checks that the supervised test is safe and ready. Stage 2 is the test day itself.** The console now supports the whole teacher day: class setup, package authoring, reading the papers, run controls, review, blind sampling, finalization, amendment and the results downloads ([05](05-console-teacher-walk.md) walks it screen by screen). The operator still starts the console from a terminal with the key and settings, and that is the one terminal step. These are known limits, not claims that the test has passed.
 
 | Stage | When | Needs engineering work? |
 |---|---|---|
 | 0. Rehearsal | Before the live run | No, after the practice folder is built |
 | 1. Readiness gate | Before the test is scheduled | Yes: privacy approval, live configuration, budget guard, known workflow gaps and sample checks |
-| 2. Test day | When Stage 1 is passed | Engineer/operator handles terminal-only setup and intake; teacher uses the SPA for its shipped controls |
+| 2. Test day | When Stage 1 is passed | Operator starts the console; teacher and operator work in the SPA ([05](05-console-teacher-walk.md)) |
 
-Tags like **[B4]** and **[B8]** name known limitations. They do not mean the shipped controls are absent: B4 is the missing browser-to-intake path, and B8 is the missing decision record. A supervised test may proceed with the workarounds below; do not claim a terminal-free UAT pass.
+The browser intake path (B4) and the recorded parked-paper decision (B8) shipped on 2026-10-18 and have been checked offline only, so a first live use of either is a finding to record, not a claim.
 
 ---
 
@@ -43,15 +43,15 @@ All must be true. Each line is a checkable goal, listed in 02.
 
 - [ ] A written privacy decision authorizes the selected synthetic or consented test materials for the configured OpenRouter zero-retention route; this technical setting does not replace school approval.
 - [ ] A real, throw-away call to OpenRouter succeeds for each configured model, and the exact model names are checked against the service.
-- [ ] The operator can create a `synthetic` cohort with `aeh cohort create` and verify its roster; no SPA class-creation/roster-edit form exists yet.
-- [ ] Parked-paper handling is understood: the SPA can show reasons and release or close eligible papers, but cannot record a hand-selected student, tick or test. The no-name sheet must be closed or re-scanned with identity, not released as `matched`.
-- [ ] Scans can be read using `aeh ingest` and the resulting intake statuses match the expected sample outcomes. The SPA's paper file inputs are not wired to intake.
+- [ ] The teacher can make a class marked *made-up practice work* on the Classes screen (typed or from `config/eng7-roster.txt`) and sees its students listed.
+- [ ] Parked-paper handling is understood: the SPA shows each reason, gives a nameless paper to its student, releases or closes the others, and records every decision with its note.
+- [ ] Scans uploaded on the Papers inbox are read, and the intake statuses match the expected sample outcomes (`aeh ingest` reads the same way from a terminal).
 - [ ] `aeh run` under `dev-ci` with a key really calls OpenRouter, and the printed summary names the provider. The 2026-10-12 run was not a clean pass: citation refusals left grades provisional, and Jev faulted before dispatch.
 - [ ] An OpenRouter spending limit is set and `HARNESS_COST_CEILING` is configured. The Jobs screen shows job cost so far; use OpenRouter's dashboard for the actual account spend.
 - [ ] Both packages (`PS9-FORCES-01`, `ENG7-READ-01`) are published from `config/ps9-forces-01.package.toml` and `config/eng7-read-01.package.toml`, with keys C, B, C and B for Q1, Q2, Q3 and Q5a, and the English package carrying one line of each rubric method (C1 evidence checklist with items C1a/C1b, C2 bands, C3 the teacher's own words).
 - [ ] A backup of an empty data folder exists, so "start again" is one copy.
 
-**Stage 1 passed when** the privacy and spend safeguards are approved, the sample materials pass their current intake check, and the supervised command-line setup/intake path has been rehearsed. This gate does not certify grade accuracy, resolve the live citation/Jev findings, or mean a terminal-free teacher UAT has passed.
+**Stage 1 passed when** the privacy and spend safeguards are approved, the sample materials pass their current intake check, and the console path (class, papers, run) has been rehearsed. This gate does not certify grade accuracy, resolve the live citation/Jev findings, or mean a terminal-free teacher UAT has passed.
 
 ## Stage 2: Test day
 
@@ -59,7 +59,7 @@ All must be true. Each line is a checkable goal, listed in 02.
 
 | Seat | Person | Job |
 |---|---|---|
-| Teacher | one person | Uses the SPA to review, blind-score, finalize/amend, and answers the questionnaire. Does **not** touch the terminal. |
+| Teacher | one person | Uses the SPA to make the class and the test, review, blind-score, finalize/amend and download, and answers the questionnaire. Does **not** touch the terminal. |
 | Operator | one person | Creates the class and reads scans with the documented CLI steps, runs the console, watches jobs, and handles parked papers. |
 | Engineer | one person, beside the operator | Helps with configuration or failure diagnosis; writes down every intervention and does not characterize the test as terminal-free. |
 | Observer | optional | Writes down what the teacher says and does, in their words. |
@@ -77,17 +77,17 @@ All must be true. Each line is a checkable goal, listed in 02.
 | When | What | Who | Tag |
 |---|---|---|---|
 | T-1 day | Machine checks (Stage 0 list). Confirm the key is in the terminal that will start the console. Fresh data folder. | Operator | |
-| T-0, 09:00 | Operator runs `check_config.py` and confirms `ACCEPTED`, creates the physics class with `aeh cohort create`, starts the console with the approved config, and opens the printed SPA URL. | Operator | |
+| T-0, 09:00 | Operator runs `check_config.py` and confirms `ACCEPTED`, starts the console with the approved config and settings ([05, step 0](05-console-teacher-walk.md#step-0-start-the-console-operator-the-one-terminal-step)), and opens the printed SPA URL. The teacher makes the physics class on the Classes screen ([05, step 1](05-console-teacher-walk.md#step-1-the-class-teacher)). | Operator + teacher | |
 | 09:15 | Teacher authors the package from the test, model answer and rubric in `/#/package/author`; reviews/edits the draft and approves it. Confirm the resulting published package version. For a prebuilt sample package, use the documented spec path instead. | Teacher + operator | |
-| 09:30 | Read the six physics sheets with `aeh ingest` (tutorial §8.3); the SPA's Papers file inputs are inert. Open `/#/papers` and `/#/parked` to inspect available intake records. | Operator | B4 remainder |
-| 09:50 | Confirm the expected three parked items (S9-004, S9-005, S9-006) and their reasons on the SPA Parked screen. | Operator | B4/B8 workaround |
-| 10:00 | **Parked-paper drill.** S9-004: inspect the source sheet, then release only if the stored reading is acceptable, otherwise close; the action does not store a hand-corrected tick. S9-005: close as unresolvable or re-ingest under its correct package. S9-006: `matched` release is refused because identity did not match; close it or add the identity to a corrected rescan and re-ingest. No parked resolution records the selected student/mark/test (B8). | Operator | B8 |
+| 09:30 | Read the test paper and the six physics sheets on `/#/papers` ([05, step 3](05-console-teacher-walk.md#step-3-reading-the-papers-teacher-or-operator)); watch the reading job's progress there or on `/#/jobs`. | Operator | |
+| 09:50 | Confirm the expected three parked items (S9-004, S9-005, S9-006) and their reasons on the SPA Parked screen. | Operator | |
+| 10:00 | **Parked-paper drill** ([05, step 3](05-console-teacher-walk.md#the-physics-class-the-parking-drill)). S9-004: write the tick you read in the note and release it; correct the mark on the student's result if needed. S9-005: close it, noting which test it is, and upload it on the right class. S9-006: *This paper belongs to* → S9-006 → **Give it to this student**. Each decision is recorded with your note. | Operator | |
 | 10:20 | **Start the run** from `/#/run` and confirm the priced preview. Watch `/#/monitor` or `/#/jobs`; note the start time and job cost shown. | Operator | |
 | 10:25 | **Recovery drill (if the run can safely be interrupted).** To test interruption recovery, stop the console with Ctrl-C while a run is running, then restart under the same profile; confirm that interrupted run resumes without repeated or missing work. This does not test recovery of an intentional pause: queue Resume in Jobs before stopping, and recovery resumes that paused run only if the request is still unapplied. `aeh recover` also reclaims leases and settles completed runs' ungraded or non-final grades. Recovery does not start pending runs or override an operator pause. Record each pause/resume cycle separately. | Operator | |
 | ~10:45 | Record the run status, end time, Jobs-screen cost and OpenRouter dashboard spend. Do not treat `complete` as proof every grade is final; inspect `grades_final` and any refusal details. | Operator | |
 | 11:00 | **Teacher's sitting**, 20 minutes: use `/#/review`, open two students from `/#/results`, and record what the SPA showed. The observer writes. | Teacher | |
-| 11:25 | **Blind sample** at `/#/review/blind`: score the drawn submission/criterion seats without seeing system bands. The screen currently offers generic B1–B5 labels, not the package's own bands — record blind scoring as blocked for custom-band packages rather than inventing a mapping. Record the teacher's independent marks for comparison. | Teacher | |
-| 11:40 | **Finalize** from `/#/results`, then amend one final grade with a reason. The SPA has no export-download control; exercise results export with `aeh results export` or the exporter API as a separate operator step. | Teacher + operator | |
+| 11:25 | **Blind sample** at `/#/review/blind`: score the drawn submission/criterion seats without seeing system bands; each seat offers that question's own levels from the package. Record the teacher's independent marks for comparison. | Teacher | |
+| 11:40 | **Finalize** from `/#/results`, then amend one final grade with a reason, and download the marks spreadsheet, the CSV and one student's report from the **Download the results** panel ([05, step 6](05-console-teacher-walk.md#step-6-download-the-results-teacher)). | Teacher | |
 | 11:55 | Repeat the quick path for the English test (steps from 09:30, no quarantine expected). | Operator | |
 | 12:30 | Questionnaire (below). Backup the data folder. Do **not** purge yet. | All | |
 

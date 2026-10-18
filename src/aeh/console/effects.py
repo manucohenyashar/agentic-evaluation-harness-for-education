@@ -21,8 +21,9 @@ from .queries import (
     _UPDATE_QUARANTINE_RESOLUTION,
 )
 
-#: The two decisions an operator can make about a parked paper (live-test blocker B8).
-QUARANTINE_RESOLUTIONS: tuple[str, ...] = ("matched", "unresolvable")
+#: The decisions an operator can make about a parked paper (live-test blocker B8): release it,
+#: close it, or assign it to the student on the class list it belongs to.
+QUARANTINE_RESOLUTIONS: tuple[str, ...] = ("matched", "unresolvable", "assigned")
 from .errors import _RefreshRequired
 from .html import _row_get
 
@@ -46,11 +47,25 @@ class DomainEffectsMixin:
                 try:
                     self._store.purge_cohort(cohort_id)
                 except Exception as exc:  # noqa: BLE001 — a refusal is the honest outcome
-                    return (
-                        f"M-STORE refused the purge of {cohort_id}: {exc} — nothing was "
-                        "purged, and the console does not report a refused purge as done",
-                        False,
-                    )
+                    # A class that never held a paper or a run has no evidence to promote, so
+                    # the purge's precondition can never pass for it: it is removed outright
+                    # instead (M-STORE's `discard_empty_cohort`, which refuses anything else).
+                    from aeh.store import discard_empty_cohort
+
+                    try:
+                        if not hasattr(self._store, "cohort_path"):
+                            raise exc
+                        discard_empty_cohort(self._store, cohort_id)
+                    except Exception:  # noqa: BLE001 — the purge's own refusal is the answer
+                        return (
+                            f"M-STORE refused the purge of {cohort_id}: {exc} — nothing was "
+                            "purged, and the console does not report a refused purge as done. "
+                            "A class whose papers were graded is deleted only after its "
+                            "results are saved for validation.",
+                            False,
+                        )
+                    return (f"class {cohort_id} removed: it held no papers and no grading "
+                            "runs, only its list of students", True)
                 return f"cohort {cohort_id} purged through M-STORE's purge_cohort", True
             return "purge cohort names no cohort; nothing was purged", False
         if action == "finalize batch":
@@ -99,71 +114,7 @@ class DomainEffectsMixin:
                 )
             return "finalize batch names no run or actor; nothing was finalized", False
         if action == "resolve quarantine item":
-            submission_id = params.get("submission_id")
-            resolution = str(params.get("resolution") or "")
-            status = "ok" if resolution == "matched" else "incomplete"
-            if submission_id and getattr(self._store, "data_dir", None) is not None:
-                # Live-test blocker B8: the decision is one of two words, said out loud. Any
-                # other value — a typo, or none — used to close the paper as unresolvable and
-                # still answer `dispatched: true`, so a misspelt release silently failed a
-                # student's paper.
-                if resolution not in QUARANTINE_RESOLUTIONS:
-                    return (
-                        f"submission {submission_id}: resolution {resolution!r} is not one of "
-                        f"{', '.join(QUARANTINE_RESOLUTIONS)}: 'matched' releases the paper "
-                        "to scoring, 'unresolvable' closes it (criteria MISSING, grade "
-                        "INCOMPLETE, never zero). Nothing was written.",
-                        False,
-                    )
-                refusal = self._release_refusal(submission_id) if resolution == "matched" else None
-                if refusal is not None:
-                    return refusal, False
-                found = False
-                for key in self._cohort_keys():
-                    handle = self._store.cohort(key)
-                    try:
-                        # The existence read comes first: an UPDATE against a
-                        # submission no ledger holds would match nothing and the
-                        # success claim under it would be the false kind.
-                        if not list(
-                            handle.query(
-                                _SELECT_SUBMISSION_EXISTS, submission_id=submission_id
-                            )
-                        ):
-                            continue
-                        found = True
-                        with handle.transaction() as tx:
-                            if getattr(tx, "execute", None) is None:
-                                continue
-                            tx.execute(
-                                _UPDATE_QUARANTINE_RESOLUTION,
-                                submission_id=submission_id,
-                                status=status,
-                            )
-                    except Exception:  # noqa: BLE001 — one unreadable ledger is skipped
-                        continue
-                if not found:
-                    return (
-                        f"no submission named {submission_id!r} exists in any cohort "
-                        "ledger; nothing was written",
-                        False,
-                    )
-                if resolution == "matched":
-                    return (
-                        f"submission {submission_id} released by the operator's match; "
-                        "the console wrote the operator's decision, never an automatic one",
-                        True,
-                    )
-                return (
-                    f"submission {submission_id} closed as unresolvable: criteria MISSING, "
-                    "grade INCOMPLETE — never zero (M-GRADE computes the missing-criteria "
-                    "rule over criteria that were never scored)",
-                    True,
-                )
-            return (
-                "resolve quarantine item names no submission; nothing was written",
-                False,
-            )
+            return self._resolve_parked_effect(params)
         if action == "correct an answer key after a run":
             run_id = str(params.get("run_id") or "")
             criterion_id = str(params.get("criterion_id") or "")
@@ -552,6 +503,8 @@ class DomainEffectsMixin:
         )
 
     def _export_effect(self, params: dict[str, Any]) -> tuple[str, bool]:
+        if params.get("content_base64") is not None:
+            return self._import_package_effect(params)
         package_version = str(params.get("package_version") or "")
         package_id = str(params.get("package_id") or "") or self._package_of(package_version)
         if not package_version or not self._known_package(package_id):
@@ -756,12 +709,143 @@ class DomainEffectsMixin:
         return detail, True
 
 
-    def _release_refusal(self, submission_id: str) -> str | None:
+    def _import_package_effect(self, params: dict[str, Any]) -> tuple[str, bool]:
+        """The import half of `export/import package` (§3.2.3: a test's import path is its
+        `.aehpkg` backup): the archive arrives base64 in the body — file bytes never travel
+        in a URL (`CT-CONSOLE-34`) — and goes through M-PKG's own all-or-nothing import
+        (FR-PKG-10/13): a corrupt, altered, too-new or already-present package is refused
+        with M-PKG's reason and nothing is written."""
+        import base64
+        import binascii
+        import tempfile
+
+        from .settings import author_doc_max_bytes
+
+        data_dir = getattr(self._store, "data_dir", None)
+        if data_dir is None:
+            return "no data folder is attached; nothing was imported", False
+        name = str(params.get("name") or "the backup file")
+        try:
+            data = base64.b64decode(str(params.get("content_base64") or ""), validate=True)
+        except (binascii.Error, ValueError):
+            return (f"{name} could not be read: it is not the file the upload sent. Choose it "
+                    "again. Nothing was imported.", False)
+        if not data:
+            return f"{name} is empty. Nothing was imported.", False
+        if len(data) > author_doc_max_bytes():
+            return (f"{name} is larger than the {author_doc_max_bytes() // (1024 * 1024)} MB "
+                    "limit for one file. Nothing was imported.", False)
+        with tempfile.TemporaryDirectory(prefix="aeh-import-") as folder:
+            archive = Path(folder, "package.aehpkg")
+            archive.write_bytes(data)
+            try:
+                report = PackageCatalog.for_import(
+                    Path(data_dir, "packages"), blobs=self._store.blobs()).import_file(archive)
+            except Exception as refusal:  # noqa: BLE001 — M-PKG's refusal is the outcome
+                # M-PKG names the file it read — here the console's temporary copy; the
+                # teacher knows it by their own file name.
+                return f"{name} was not imported: {str(refusal).replace(str(archive), name)}", False
+        signature = {"verified": "its signature checked out",
+                     "unsigned": "it carries no signature"}.get(
+            str(report.signature_status), f"its signature is {report.signature_status}")
+        return (f"test {report.package_id} imported as version {report.package_version_id} "
+                f"({signature})", True)
+
+    def _resolve_parked_effect(self, params: dict[str, Any]) -> tuple[str, bool]:
+        """`resolve quarantine item` (live-test blocker B8): release, close or assign a parked
+        paper, and record the operator's decision — who, when, what, the student a paper was
+        assigned to and the operator's note — in M-INGEST's `quarantine_decision` trail, in
+        the same transaction as the paper's status. `assigned` gives a paper whose student the
+        identity check could not match to the student the operator names from the class list,
+        so the paper is graded instead of only closed."""
+        from aeh.pipeline import (
+            check_parked_assignment,
+            repeated_parked_decision,
+            record_parked_decision,
+        )
+
+        submission_id = str(params.get("submission_id") or "")
+        resolution = str(params.get("resolution") or "")
+        student_ref = str(params.get("student_ref") or "").strip() or None
+        note = str(params.get("note") or "").strip() or None
+        actor = str(params.get("actor") or "operator")
+        if not submission_id or getattr(self._store, "data_dir", None) is None:
+            return "resolve quarantine item names no submission; nothing was written", False
+        # A decision is one of the declared words, said out loud: a typo, or none, used to
+        # close the paper as unresolvable and still answer `dispatched: true`.
+        if resolution not in QUARANTINE_RESOLUTIONS:
+            return (
+                f"submission {submission_id}: resolution {resolution!r} is not one of "
+                f"{', '.join(QUARANTINE_RESOLUTIONS)}: 'matched' releases the paper to "
+                "scoring, 'assigned' gives it to the student you name from the class list, "
+                "'unresolvable' closes it (criteria MISSING, grade INCOMPLETE, never zero). "
+                "Nothing was written.",
+                False,
+            )
+        refusal = self._release_refusal(submission_id, assigning=resolution == "assigned") \
+            if resolution in ("matched", "assigned") else None
+        if refusal is not None:
+            return refusal, False
+        status = "incomplete" if resolution == "unresolvable" else "ok"
+        for key in self._cohort_keys():
+            handle = self._store.cohort(key)
+            try:
+                # The existence read comes first: an UPDATE against a submission no ledger
+                # holds would match nothing, and the success claim under it would be false.
+                if not list(handle.query(_SELECT_SUBMISSION_EXISTS, submission_id=submission_id)):
+                    continue
+            except Exception:  # noqa: BLE001 — one unreadable ledger is skipped
+                continue
+            decided_ref = student_ref if resolution == "assigned" else None
+            try:
+                # The same decision posted again (a double-click, a retried request, a back
+                # navigation) writes nothing at all — not the status, not a decision row
+                # (FR-CONSOLE-02) — and answers as the first post did.
+                if not repeated_parked_decision(handle, submission_id, resolution=resolution,
+                                                student_ref=decided_ref, note=note):
+                    if resolution == "assigned":
+                        check_parked_assignment(handle, submission_id, student_ref or "")
+                    with handle.transaction() as tx:
+                        # The decision first: its own checks read the paper as it stood
+                        # before this decision, then the status follows in the same
+                        # transaction.
+                        record_parked_decision(
+                            handle, submission_id, resolution=resolution, actor=actor,
+                            student_ref=decided_ref, note=note, tx=tx)
+                        tx.execute(_UPDATE_QUARANTINE_RESOLUTION, submission_id=submission_id,
+                                   status=status)
+            except ValueError as refused:
+                return f"submission {submission_id}: {refused}", False
+            if resolution == "assigned":
+                return (
+                    f"submission {submission_id} assigned to {student_ref} and released to "
+                    "scoring by the operator's decision, which is recorded",
+                    True,
+                )
+            if resolution == "matched":
+                return (
+                    f"submission {submission_id} released by the operator's match; "
+                    "the console wrote the operator's decision, never an automatic one",
+                    True,
+                )
+            return (
+                f"submission {submission_id} closed as unresolvable: criteria MISSING, "
+                "grade INCOMPLETE — never zero (M-GRADE computes the missing-criteria "
+                "rule over criteria that were never scored)",
+                True,
+            )
+        return (
+            f"no submission named {submission_id!r} exists in any cohort ledger; nothing was "
+            "written",
+            False,
+        )
+
+    def _release_refusal(self, submission_id: str, *, assigning: bool = False) -> str | None:
         """Why `matched` may not release this paper, or None. A paper whose student V3 did not
         match carries `student_ref = 'unknown'`: released, it would be scored and graded under
-        nobody. The console records no student (its write surface is the two status columns,
-        FR-CONSOLE-32), so such a paper is closed, or rescanned with the student's name written
-        clearly and read in again with `aeh ingest`."""
+        nobody, so `matched` is refused for it: it is given to its student (`assigned`, which
+        names one — `assigning` lifts only the identity half of this check), closed, or
+        rescanned with the student's name written clearly and read in again."""
         for key in self._cohort_keys():
             try:
                 rows = list(self._store.cohort(key).query(
@@ -776,13 +860,14 @@ class DomainEffectsMixin:
                     "looked for), so there is nothing to grade. Close it as 'unresolvable', or "
                     "rescan it and read it in again with 'aeh ingest'. Nothing was written."
                 )
-            if identity != "pass":
+            if identity != "pass" and not assigning:
                 return (
                     f"submission {submission_id} cannot be released: its student was not "
                     f"matched to the class list (identity check {rows[0]['v3_identity']!r}), "
-                    "so it would be graded under nobody. Close it as 'unresolvable', or rescan "
-                    "it with the student's full name written on the Student line and read it "
-                    "in again with 'aeh ingest'. Nothing was written."
+                    "so it would be graded under nobody. Give it to the student it belongs to "
+                    "('assigned'), close it as 'unresolvable', or rescan it with the "
+                    "student's full name written on the Student line and read it in again "
+                    "(Load papers, or 'aeh ingest'). Nothing was written."
                 )
         return None
 

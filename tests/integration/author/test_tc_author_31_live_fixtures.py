@@ -59,7 +59,8 @@ import pytest
 
 from aeh.conf import parse_config_document
 from aeh.conf.panel_profile import panel_for_profile
-from tests.support.author_vocabulary import AUTHOR_MODULE, DEV_CI_CONFIG, af, make_service
+from tests.support.author_vocabulary import AUTHOR_MODULE, af, make_service
+from tests.support.author_vocabulary import LIVE_DEV_CI_CONFIG as DEV_CI_CONFIG
 from tests.support.impl import require, require_path
 from tests.support.live_test_config import configured_models, openrouter_slug
 

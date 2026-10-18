@@ -114,9 +114,10 @@ def _gates() -> None:
     require_path(
         SPA_BUNDLE_DIR / "index.html",
         "the committed SPA bundle the hub serves (M-UI foundation)", issue="#634")
-    text = (SPA_BUNDLE_DIR / "index.html").read_text(encoding="utf-8")
+    # The whole bundle, not index.html alone: the SPA's copy lives in its hashed JS asset, so a
+    # phrase looked for in the HTML shell is never found however much of the SPA ships.
     for phrase, issue in ((_RECOVERY_PHRASE, "#635"), (_QA_PHRASE, "#638")):
-        if phrase not in text:
+        if not spa.text_in_bundle(SPA_BUNDLE_DIR, phrase):
             raise NotImplementedYet(
                 f"the SPA bundle does not carry {phrase!r} yet — the lifecycle screens "
                 f"or the Q&A panel (issue {issue}) are not here yet")
@@ -424,12 +425,11 @@ def _serve_and_drive(store, console_dir: Path, cfg: dict, version: str,
             assert version in spa.main_text(page), (
                 "TC-E2E-06: the package screen does not show the published version — "
                 "the live-state read (#634) is not on the setup screen")
-            # the setup read-back the teacher confirms against (#624)
-            from aeh.setup import setup_service_for_store
-            service = setup_service_for_store(store, _PACKAGE_ID)
-            assert service.current_proposal() is not None, (
-                "TC-E2E-06: SetupService's read-back does not see the published "
-                "version's proposal — the setup screen would show nothing")
+            # The setup screen shows the published test (asserted just above, from the
+            # context feed's published versions). `SetupService.current_proposal()` is the
+            # DRAFT version's proposal by its own contract — a published package has none,
+            # so asking it here could only ever answer None; the journey's package is built
+            # published (`rubric_methods.build`), never drafted through setup.
             # -- class ----------------------------------------------------------
             _go(page, origin, "class")
             roster_text = spa.main_text(page)
@@ -496,7 +496,7 @@ def _serve_and_drive(store, console_dir: Path, cfg: dict, version: str,
             assert spa.main_text(page), "TC-E2E-06: the review screen renders nothing"
             # the queue's band decisions, through the same M-REVIEW library the review
             # screen's controls call (both twins — module docstring)
-            _work_review_queue(console_store, run_id)
+            _work_review_queue(store, run_id)
             # finalize through the console's own control door, over the same origin
             # the SPA posts to — the same GradingService call the CLI twin makes below
             from tests.support.console_api_vocabulary import (
@@ -523,10 +523,17 @@ def _serve_and_drive(store, console_dir: Path, cfg: dict, version: str,
                 f"{len(csv_bytes) if csv_bytes else 0} bytes of CSV")
             export_seen["csv"] = len(csv_bytes)
             first = jw.STUDENTS[0]
+            # The export names a student by the reference the class STORED — the one the
+            # results screen's picker offers. The console twin's class was made from names, so
+            # its references are generated; the world's own id is the student's name.
+            stored = list(store.cohort(jw.COHORT_ID).query(
+                "SELECT student_ref FROM roster WHERE full_name = :n OR student_ref = :n",
+                n=first.student_ref))
+            stored_ref = str(stored[0]["student_ref"]) if stored else first.student_ref
             status, _headers, pdf_bytes = get_bytes(
                 port, "/api/v1/results/export",
                 {"run_id": run_id, "format": "pdf", "revision": "1",
-                 "student_ref": first.student_ref})
+                 "student_ref": stored_ref})
             assert status == 200 and pdf_bytes[:5] == b"%PDF-", (
                 f"TC-E2E-06: the per-student PDF export read returned {status}, "
                 f"{pdf_bytes[:16]!r}")
@@ -617,7 +624,16 @@ def _work_review_queue(store, run_id: str) -> None:
     carry the same review actions (module docstring)."""
     from aeh.review import open_review
 
-    review = open_review(store.data_dir, run_id=run_id, actor="teacher")
+    # The run's own catalog, bound to its version — what the console's review service holds
+    # (`ConsoleApp._run_catalog`): without one, open_review maps bands through the generic
+    # default scale, and this package's bands are its own.
+    from aeh.orch import Orchestrator
+    from aeh.pkg import PackageCatalog
+
+    handle = Orchestrator(store).run_handle(run_id)
+    catalog = PackageCatalog(store.package(handle.package_id), package_id=handle.package_id)
+    catalog.criteria(handle.package_version_id)
+    review = open_review(store.data_dir, run_id=run_id, actor="teacher", catalog=catalog)
     try:
         review.build_queue(run_id, 30)
         for item in review.queue(run_id):

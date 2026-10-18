@@ -91,7 +91,8 @@ NOT_STATUSES = ("scored", "quarantined", "transcribed", "uploaded", "validated")
 INGEST_OWNED_TABLES = {"submission", "document", "document_region",
                        "token_cluster", "unresolved_token",
                        "assessment_match_proposal", "v4_cohort_breaker",
-                       "upload_part"}  # #531: the upload record (FR-CONSOLE-27)
+                       "upload_part",  # #531: the upload record (FR-CONSOLE-27)
+                       "quarantine_decision"}  # B8: the parked-paper decision trail
 FORBIDDEN_TABLE_PATTERN = re.compile(r"review|label|queue|grade|score|band")
 
 
