@@ -322,6 +322,15 @@ Negative and boundary cases are marked. Every case names its oracle.
   exactly that package file (nothing opened to find the folder), with the exported version's
   criteria; importing it again is refused as already present. (b) bytes that are not an archive,
   and an archive whose database byte was altered, are refused and write no package file.
+- **TC-UI-22** (FR-UI-03 / FR-CONSOLE-42/43 / B4 / B8) — *inline regression, the teacher's
+  lifecycle controls work in the browser with no terminal*. One E6 journey over a real console
+  and store, the page reader being `OpenRouterProvider` on a stand-in transport: the class
+  form makes `ps9-class` from a typed list; Load papers reads the test paper and the six sample
+  sheets (the progress line settles on three ready, three parked); Parked gives S9-006's
+  nameless paper to its student with a note (one recorded `assigned` decision); Start a run
+  starts a new run for the class and the published version behind a confirmation that names
+  both and shows no raw settings, and the console opens that run's monitor. No page error, no
+  foreign request.
 
 ### 3.3 Configuration write path (M-CONF) — E1 rung 0/1
 
