@@ -30,8 +30,18 @@ class PackageCatalog(DependencyGraphMixin, CriterionEditsMixin, PolicyAndKeysMix
     file), so `catalog = PackageCatalog(store.package(package_id), package_id=package_id)`.
     """
 
+    @classmethod
+    def for_import(cls, packages_dir: Any, *, blobs: Any | None = None) -> "PackageCatalog":
+        """A catalog that only imports archives into `packages_dir` (FR-PKG-10): it holds no
+        package of its own, so importing into an installation with no package yet opens no
+        stray tier file to find the directory."""
+        catalog = cls(None, package_id="", blobs=blobs)
+        catalog._packages_dir = packages_dir
+        return catalog
+
     def __init__(self, handle, *, package_id: str, blobs: Any | None = None) -> None:
         self._handle = handle
+        self._packages_dir: Any = None
         self._package_id = package_id
         # The content-addressed blob store (`store.blobs()`), needed only to carry
         # exemplar-referenced blobs in an export (CT-STORE-07). Optional: a catalog

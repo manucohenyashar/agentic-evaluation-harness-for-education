@@ -1,4 +1,5 @@
-import { fetchRead, type PackageSetup as PackageSetupDoc } from "../api";
+import { useState } from "react";
+import { fetchRead, fileToBase64, type PackageSetup as PackageSetupDoc } from "../api";
 import { ActionOutcome, ConfirmDialog, useActionState } from "../components/Confirm";
 import { ReadScreen } from "../components/ReadScreen";
 import { useScreenRead } from "../useScreenRead";
@@ -95,8 +96,65 @@ export function PackageSetup() {
               empty one there and write every question yourself in the editor.
             </p>
           </section>
+          <ImportBackup onDone={read.retry} />
         </>
       )}
     </ReadScreen>
+  );
+}
+
+/**
+ * The test's import path (design delta §3.2.3): a backup file (`.aehpkg`) another console
+ * exported — the Results screen's "Backup of the test" — is imported through M-PKG's own
+ * all-or-nothing import, behind the "export/import package" control's confirmation. A corrupt,
+ * altered or already-present test is refused with the reason, and nothing is written.
+ */
+function ImportBackup({ onDone }: { onDone: () => void }) {
+  const [file, setFile] = useState<File | null>(null);
+  const action = useActionState(onDone);
+  const open = async (): Promise<void> => {
+    if (file === null) return;
+    const content = await fileToBase64(file);
+    action.open({
+      title: "Import this test",
+      description:
+        `The test in ${file.name} is added to this console as a published test, exactly as ` +
+        "it was exported. A test that is already here is never overwritten.",
+      confirm: "Import",
+      action: "export/import package",
+      body: { content_base64: content, name: file.name },
+    });
+  };
+  return (
+    <section className="panel" aria-label="Import a test from its backup file">
+      <h2>Import a test from its backup file</h2>
+      <div className="settings-form">
+        <div className="settings-row">
+          <label htmlFor="import-backup">Backup file (.aehpkg)</label>
+          <input
+            id="import-backup"
+            type="file"
+            accept=".aehpkg"
+            onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+          />
+        </div>
+        <div className="settings-actions">
+          <button
+            type="button"
+            className="button"
+            disabled={file === null}
+            onClick={() => {
+              void open();
+            }}
+          >
+            Import the test
+          </button>
+        </div>
+      </div>
+      <ActionOutcome outcome={action.outcome} />
+      {action.pending !== null && (
+        <ConfirmDialog pending={action.pending} onClose={action.close} onDone={action.finish} />
+      )}
+    </section>
   );
 }

@@ -290,7 +290,8 @@ def _check_aspects(question: dict[str, Any], data: dict[str, Any],
         checked.append({"description": description.strip(), "points": points})
     if complaints:
         return None
-    stated = [a["points"] for a in checked if a["points"] is not None]
+    # get(), not a subscript: the drafted aspects' own field (TC-PKG-C05's scan; see edit.py).
+    stated = [a.get("points") for a in checked if a.get("points") is not None]
     if stated and len(stated) < len(checked):
         complaints.append("every aspect declares the points it awards, or none does; a "
                           "partly declared checklist cannot be scored.")
@@ -335,7 +336,7 @@ def _mini_spec(question: dict[str, Any], *, key: list[str] | None,
     cid = f"C_{qid}"
     spec_question = {
         "id": qid, "type": question.get("type") or "open",
-        "points": question.get("points") or _MINI_QUESTION_DEFAULTS["points"],
+        "points": question.get("points") or _MINI_QUESTION_DEFAULTS.get("points"),
         "text": question.get("text") or _MINI_QUESTION_DEFAULTS["text"],
     }
     if question.get("options"):

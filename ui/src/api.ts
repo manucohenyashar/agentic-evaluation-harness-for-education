@@ -169,6 +169,14 @@ export interface ResultsScreen {
   cohort_id: string | null;
   /** The test version the run graded against (absent when no run is shown). */
   package_version_id?: string;
+  /** The run's multiple-choice grading points, their options and current key — what the
+   * key correction offers. */
+  answer_keys?: {
+    criterion_id: string;
+    label: string;
+    options: { option_id: string; label: string }[];
+    key: string[];
+  }[];
   score_levels: string[];
   scales: CriterionScale[];
   students: ResultStudent[];
@@ -440,6 +448,18 @@ export interface ParkedDoc {
     match_note: string;
     resolutions: string[];
     resolvable: boolean;
+    /** The paper's student was not matched, but its pages were read: it can be given to
+     * one of the class's students who has no paper yet. */
+    assignable?: boolean;
+    students_without_paper?: { student_ref: string; full_name: string | null }[];
+    /** The operator decisions recorded for this paper, oldest first. */
+    decisions?: {
+      resolution: string;
+      actor: string;
+      student_ref: string | null;
+      note: string | null;
+      decided_at: string;
+    }[];
   }[];
   counts: { total: number; by_reason: Record<string, number> };
 }
@@ -710,4 +730,18 @@ export async function fetchAuthoringDraft(
 ): Promise<AuthoringDraftDoc> {
   const params = packageId ? { package_id: packageId } : undefined;
   return fetchRead<AuthoringDraftDoc>("/api/v1/authoring/draft", signal, params);
+}
+
+/** A chosen file's bytes as base64, for an action body: file content never travels in a URL
+ * or a query string (`CT-CONSOLE-34`), only inside the request body. */
+export function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result ?? "");
+      resolve(result.slice(result.indexOf(",") + 1));
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("the file could not be read"));
+    reader.readAsDataURL(file);
+  });
 }

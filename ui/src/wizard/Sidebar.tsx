@@ -8,15 +8,27 @@
 import { STAGE_ROUTES, type StageRow } from "./derivation";
 import { StageBadge } from "./StateBadge";
 
+/** Every lifecycle screen by name, so a teacher never needs the address bar to reach one
+ * (FR-UI-02's destinations): the stage strip shows where the journey stands, these go
+ * straight to a screen. */
+const SCREEN_LINKS: { label: string; path: string }[] = [
+  { label: "Set up a class", path: "/class" },
+  { label: "Set up a test package", path: "/package" },
+  { label: "Load papers", path: "/papers" },
+  { label: "Start a run", path: "/run" },
+  { label: "Monitor run", path: "/monitor" },
+  { label: "Review", path: "/review" },
+  { label: "Results", path: "/results" },
+];
+
 const SECONDARY_LINKS: { label: string; path: string }[] = [
-  { label: "Classes", path: "/class" },
-  { label: "Papers inbox", path: "/papers" },
   { label: "Parked", path: "/parked" },
   { label: "Jobs", path: "/jobs" },
   { label: "Issues", path: "/issues" },
   { label: "Logs", path: "/logs" },
   { label: "Settings", path: "/settings" },
-  { label: "Help", path: "/help" },
+  { label: "System status", path: "/status" },
+  { label: "Manuals & help", path: "/help" },
 ];
 
 export interface SidebarProps {
@@ -52,7 +64,16 @@ export function Sidebar({ rows, route, stageHref }: SidebarProps) {
           })}
         </ol>
       )}
-      <ul className="side-links">
+      <ul className="side-links" aria-label="Screens">
+        {SCREEN_LINKS.map((link) => (
+          <li key={link.path}>
+            <a href={stageHref(link.path)} aria-current={route === link.path ? "page" : undefined}>
+              {link.label}
+            </a>
+          </li>
+        ))}
+      </ul>
+      <ul className="side-links" aria-label="More">
         {SECONDARY_LINKS.map((link) => (
           <li key={link.path}>
             <a href={stageHref(link.path)} aria-current={route === link.path ? "page" : undefined}>

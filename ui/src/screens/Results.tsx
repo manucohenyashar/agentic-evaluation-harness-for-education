@@ -377,6 +377,8 @@ export function Results() {
               />
             )}
             {doc.run_id !== null && doc.students.length > 0 && <Downloads key={doc.run_id} doc={doc} />}
+            {doc.run_id !== null && <KeyCorrection key={`key-${doc.run_id}`} doc={doc} onDone={read.retry} />}
+            {doc.run_id !== null && <ReviewWindow key={`window-${doc.run_id}`} runId={doc.run_id} onDone={read.retry} />}
           </>
         );
       }}
@@ -495,6 +497,136 @@ function Downloads({ doc }: { doc: ResultsDoc }) {
           </>
         )}
       </ul>
+    </section>
+  );
+}
+
+/**
+ * The answer-key correction (FR-CONSOLE-30): a multiple-choice key found wrong after the run
+ * is corrected here, and M-PKG, M-DET and M-GRADE re-derive that question's marks for the
+ * class — the console's "correct an answer key after a run" control, behind its confirmation.
+ */
+function KeyCorrection({ doc, onDone }: { doc: ResultsDoc; onDone: () => void }) {
+  const keys = doc.answer_keys ?? [];
+  const [criterion, setCriterion] = useState(keys[0]?.criterion_id ?? "");
+  const chosen = keys.find((k) => k.criterion_id === criterion) ?? null;
+  const [letter, setLetter] = useState("");
+  const action = useActionState(onDone);
+  if (keys.length === 0 || doc.run_id === null) return null;
+  return (
+    <section className="panel" aria-label="Correct an answer key">
+      <h2>Correct an answer key</h2>
+      <p className="step-note">
+        If a multiple-choice answer key was wrong, choose the question and the right answer.
+        That question's marks are worked out again for the whole class.
+      </p>
+      <div className="settings-form">
+        <div className="settings-row">
+          <label htmlFor="key-question">Question</label>
+          <select
+            id="key-question"
+            value={criterion}
+            onChange={(event) => {
+              setCriterion(event.target.value);
+              setLetter("");
+            }}
+          >
+            {keys.map((k) => (
+              <option key={k.criterion_id} value={k.criterion_id}>
+                {k.label} (key now: {k.key.join(", ") || "none"})
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="settings-row">
+          <label htmlFor="key-answer">Right answer</label>
+          <select id="key-answer" value={letter} onChange={(event) => setLetter(event.target.value)}>
+            <option value="">Choose…</option>
+            {(chosen?.options ?? []).map((option) => (
+              <option key={option.option_id} value={option.option_id}>
+                {option.option_id}
+                {option.label !== "" ? ` — ${option.label}` : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="settings-actions">
+          <button
+            type="button"
+            className="button"
+            disabled={letter === "" || chosen === null || chosen.key.join(",") === letter}
+            onClick={() =>
+              action.open({
+                title: "Correct this answer key",
+                description:
+                  `The key for ${chosen?.label ?? criterion} becomes ${letter}. Every ` +
+                  "student's mark on it is worked out again, and the change is recorded.",
+                confirm: "Correct the key",
+                action: "correct an answer key after a run",
+                body: { run_id: doc.run_id, criterion_id: criterion, answer_key: [letter] },
+              })
+            }
+          >
+            Correct the key
+          </button>
+        </div>
+      </div>
+      <ActionOutcome outcome={action.outcome} />
+      {action.pending !== null && (
+        <ConfirmDialog pending={action.pending} onClose={action.close} onDone={action.finish} />
+      )}
+    </section>
+  );
+}
+
+/**
+ * The review window (FR-CONSOLE-22): how many hours the grades stay open for review before
+ * finalizing settles them — the "set review window" control, behind its confirmation.
+ */
+function ReviewWindow({ runId, onDone }: { runId: string; onDone: () => void }) {
+  const [hours, setHours] = useState("");
+  const action = useActionState(onDone);
+  const valid = /^[0-9]{1,4}$/.test(hours);
+  return (
+    <section className="panel" aria-label="Review window">
+      <h2>Review window</h2>
+      <p className="step-note">
+        Keep the grades open for review for a number of hours before they become final (0
+        means finalizing settles them at once).
+      </p>
+      <div className="settings-form">
+        <div className="settings-row">
+          <label htmlFor="review-hours">Hours</label>
+          <input
+            id="review-hours"
+            inputMode="numeric"
+            value={hours}
+            onChange={(event) => setHours(event.target.value)}
+          />
+        </div>
+        <div className="settings-actions">
+          <button
+            type="button"
+            className="button"
+            disabled={!valid}
+            onClick={() =>
+              action.open({
+                title: "Set the review window",
+                description: `The grades stay open for review for ${hours} hour(s) before finalizing settles them.`,
+                confirm: "Set it",
+                action: "set review window",
+                body: { run_id: runId, review_window_hours: Number(hours) },
+              })
+            }
+          >
+            Set the review window
+          </button>
+        </div>
+      </div>
+      <ActionOutcome outcome={action.outcome} />
+      {action.pending !== null && (
+        <ConfirmDialog pending={action.pending} onClose={action.close} onDone={action.finish} />
+      )}
     </section>
   );
 }

@@ -19,18 +19,20 @@ const OPERATING_MANUAL = "console-operating-tutorial";
 /** Which section of the operating manual names each screen. A screen the manual does not
  * name shows no section link — nothing is fabricated to fill the slot. */
 const SCREEN_SECTIONS: Array<[route: string, keyword: string]> = [
-  ["/", "the page map"],
-  ["/class", "set up the test"],
-  ["/package", "set up the test"],
-  ["/package/review", "set up the test"],
-  ["/papers", "load the student papers"],
-  ["/parked", "load the student papers"],
-  ["/run", "start the run, and watch it"],
-  ["/jobs", "start the run, and watch it"],
+  ["/", "the screen map"],
+  ["/class", "make the class"],
+  ["/package", "make the test package"],
+  ["/package/review", "make the test package"],
+  ["/papers", "load the papers and start the run"],
+  ["/parked", "parked papers"],
+  ["/run", "load the papers and start the run"],
+  ["/monitor", "load the papers and start the run"],
+  ["/jobs", "the rest of the sidebar"],
   ["/issues", "when something goes wrong"],
   ["/logs", "when something goes wrong"],
-  ["/results", "morning review"],
-  ["/settings", "changing something"],
+  ["/review", "review, finalize, amend"],
+  ["/results", "review, finalize, amend"],
+  ["/settings", "the rest of the sidebar"],
 ];
 
 /** The screen id the ask's context carries: the route as a slug, with the parameterized

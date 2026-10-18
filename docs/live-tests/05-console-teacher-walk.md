@@ -7,9 +7,9 @@
 | Step | Terminal walk (README) | Console walk (this page) |
 |---|---|---|
 | Start | (no console needed until step 4) | **One terminal step:** the operator starts the console with the key and the settings |
-| Class | `aeh cohort create … --roster` | **Classes** screen: name, whose work, the class list typed or imported from a file |
+| Class | `aeh cohort create … --roster` | **Set up a class**: name, whose work, the class list typed or imported from a file |
 | Test package | `aeh package build --spec …` | **Set up a test package → From your documents**: the test paper, model answer and rubric drafted, reviewed and approved |
-| Reading the papers | `aeh ingest …` | **Papers inbox**: choose the test paper and the answer sheets, confirm, watch them read |
+| Reading the papers | `aeh ingest …` | **Load papers**: choose the test paper and the answer sheets, confirm, watch them read |
 | Grading | `aeh run …` | **Start a run**: choose the test version, confirm the priced start, watch it on **Monitor run** / **Jobs** |
 | Results | `aeh results show`, `aeh results export` | **Results**: marks, each student, change a grade, finalize, and download the spreadsheet, CSV, a student's report or the test itself |
 
@@ -38,7 +38,7 @@ It prints `provider for runs started here: OpenRouter …` and the console's add
 
 ## Step 1: the class (teacher)
 
-Open **Classes** in the left sidebar (`/#/class`).
+Open **Set up a class** in the left sidebar (`/#/class`).
 
 1. **Class name:** `eng7-class` (lower-case letters, digits, `-`, `_` or `.`).
 2. **Whose work is this?** choose **made-up practice work**. This is the consent class; it can never be changed afterwards, and only made-up work may go to OpenRouter without consent ([01, the consent rule](01-hosting-and-configuration.md)).
@@ -80,7 +80,7 @@ Record it as an operator step. The teacher then sees the package as *Published* 
 
 ## Step 3: reading the papers (teacher or operator)
 
-Open **Papers inbox** (`/#/papers`).
+Open **Load papers** (`/#/papers`).
 
 1. **Test these papers answer:** the published version (`ENG7-READ-01@…`).
 2. **The test paper (PDF):** `docs\live-tests\sample-materials\pdf\ENG7-READ-01\01-test-paper.pdf`. Needed once per class: every sheet is checked against it. (Afterwards the screen says *Already in for this class.*)
@@ -97,14 +97,18 @@ Sending a sheet again is harmless: it is reported *already read* and never grade
 
 Repeat steps 1–3 for physics: class `ps9-class` from `docs\live-tests\config\ps9-roster.txt`, package `PS9-FORCES-01` (route A from `…\PS9-FORCES-01\`'s three documents, or route B with `ps9-forces-01.package.toml`), and the test paper plus the six sheets in `…\PS9-FORCES-01\answer-sheets\`.
 
-**Expect:** *3 paper(s) ready to grade, 3 parked* — S9-004 (`incomplete`, a doubled tick), S9-005 (`unmatched assessment`, the wrong test), S9-006 (`incomplete`, no name). The screen links to **Parked**; do the parked-paper drill exactly as [04's 10:00 row](04-test-day-plan.md#timeline) describes. Releasing or closing still records no chosen student, mark or test (B8).
+**Expect:** *3 paper(s) ready to grade, 3 parked* — S9-004 (`incomplete`, a doubled tick), S9-005 (`unmatched assessment`, the wrong test), S9-006 (`incomplete`, no name). The screen links to **Parked**, where each paper is resolved with a note that is recorded with your name and the time:
+
+* **S9-006 (no name):** *This paper belongs to* → choose the student (only students with no paper yet are offered; with the shipped roster that is `S9-006`) → **Give it to this student**. It is graded as theirs.
+* **S9-004 (doubled tick):** write which tick you read in the note (for example *Q1 is C — the second tick was crossed out*) and **Release to scoring**; correct that mark later on the student's result if it needs it.
+* **S9-005 (wrong test):** **Close as unresolvable**, note which test it is, and upload it on the right class's **Load papers**.
 
 ## Step 4: the grading run (teacher or operator)
 
 Choose the class in the top bar if it is not already chosen, then open **Start a run** (`/#/run`).
 
 1. **Test version:** the published version.
-2. **Start a new grading run.** The confirmation says what will be graded, under which settings profile (`dev-ci`), and the **estimated cost**; *Technical details* holds the full settings banner for the engineer.
+2. **Start a new grading run.** The confirmation says what will be graded, under which settings profile (`dev-ci`), and the **estimated cost**.
 3. **Start.** The console opens **Monitor run**, which refreshes itself; **Jobs** shows the run's progress and cost so far.
 
 **Expect:** the run moves to *complete* (the jobs page says *Done*). Watch OpenRouter's own dashboard for the real spend. If it pauses, the monitor names the reason — the [README's table](README.md#if-something-goes-wrong) explains each one; resume from **Jobs**.
@@ -127,7 +131,9 @@ Still on **Results**, the **Download the results** panel:
 | Marks file (CSV) | The same marks as a CSV file |
 | The chosen student's report (PDF) | The report of the student picked in *Student for the report* |
 | The test and its grading guide (PDF) | The test package as a readable document |
-| Backup of the test | The package's `.aehpkg` backup file (the console has no screen to import it yet) |
+| Backup of the test | The package's `.aehpkg` backup file, which **Set up a test package → Import a test from its backup file** imports on another console |
+
+The same screen also has **Correct an answer key** (a multiple-choice key found wrong after the run: choose the question and the right answer, and that question's marks are worked out again for the class) and **Review window** (how many hours grades stay open before finalizing settles them).
 
 **Marks version** 1 is every student's marks as first given. Version 2 lists only the students whose final mark was changed (the change from step 5), with the changed mark.
 
@@ -139,8 +145,6 @@ Still on **Results**, the **Download the results** panel:
 |---|---|---|
 | Starting the console, with the key and the two `HARNESS_ORCH_…` settings | Environment settings are read when the console starts | Step 0, once |
 | The exact sample package (route B) | Building from a spec file is a developer route | Route A, or the one `aeh package build` line |
-| Recording which student / mark / test a parked paper really is (B8) | Needs a design decision and a store change | Write it on the record sheet |
-| Importing a test's backup file, correcting an answer key after a run, setting a review window, purging a class | Enumerated console actions with no SPA screen yet | An engineer, through the console's API or the CLI |
 | `show_criterion_marks.py` (C1 = C1a + C1b) | It is an engineer's check script | Run it after the session, as the README's step 4 says |
 
 ## If something goes wrong in the console

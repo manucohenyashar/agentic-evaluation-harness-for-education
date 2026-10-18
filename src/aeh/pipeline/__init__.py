@@ -52,8 +52,11 @@ from . import finishing  # noqa: F401  (imported for its registrations)
 from .driver import recover, run_to_completion
 from .runtime import _provider_for
 from .background import (
+    check_parked_assignment,
     cohort_has_test_paper,
+    parked_decisions,
     read_uploaded_paper,
+    record_parked_decision,
     record_upload,
     resolve_intake_config,
     resume_runs_in_background,

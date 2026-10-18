@@ -265,3 +265,28 @@ def read_uploaded_paper(
             assessment=path if kind == "assessment" else None,
             sheets=() if kind == "assessment" else (path,),
             provider=provider if provider is not None else _provider_for(run_config))
+
+
+# --- the operator's decision on a parked paper (live-test blocker B8) ---------------------------
+
+
+def record_parked_decision(handle: Any, submission_id: str, **decision: Any) -> str:
+    """Record the operator's decision on a parked paper through M-INGEST, for the console —
+    whose declared dependencies stop at M-PIPE (TC-CONSOLE-36). No SQL here."""
+    from aeh.ingest import record_quarantine_decision
+
+    return record_quarantine_decision(handle, submission_id, **decision)
+
+
+def check_parked_assignment(handle: Any, submission_id: str, student_ref: str) -> None:
+    """Refuse an assignment M-INGEST would refuse, before anything is written."""
+    from aeh.ingest import check_assignment
+
+    check_assignment(handle, submission_id, student_ref)
+
+
+def parked_decisions(handle: Any) -> list[dict[str, Any]]:
+    """The cohort's recorded parked-paper decisions, oldest first, read through M-INGEST."""
+    from aeh.ingest import quarantine_decisions
+
+    return quarantine_decisions(handle)

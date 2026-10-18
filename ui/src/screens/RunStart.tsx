@@ -72,7 +72,6 @@ export function RunStart({
       action.open({
         title,
         description: `${summary} ${estimateSentence(preview.estimate)}`,
-        details: preview.banner,
         confirm: "Start",
         action: "start run",
         body,

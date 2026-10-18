@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from aeh.grade import GRADE_STATEMENTS, run_grade_records
-from aeh.pkg import PKG_STATEMENTS
+from aeh.pkg import PKG_STATEMENTS, points_for_band
 from aeh.setup import setup_service_for_store
 
 
@@ -391,14 +391,45 @@ def _declared_scales(app: Any, run_row: Any) -> dict[str, list[tuple[str, Any]]]
             PKG_STATEMENTS["select_bands"], v=str(run_row["package_version_id"]))
     except Exception:  # noqa: BLE001 — an unreadable catalog is not the grades'
         return {}
-    scales: dict[str, list[tuple[int, str, Any]]] = {}
+    by_criterion: dict[str, list[Any]] = {}
     for row in rows:
-        scales.setdefault(str(row["criterion_id"]), []).append(
-            (int(row["ordinal"]), str(row["band"]), row["points"]))
+        by_criterion.setdefault(str(row["criterion_id"]), []).append(row)
+    # Each level's points through M-PKG's one band-to-points reader (CT-PKG-05), never the
+    # column itself: the console maps an amended figure back to its level with them.
     return {
-        criterion: [(name, points) for _ordinal, name, points in sorted(entries)]
-        for criterion, entries in scales.items()
+        criterion: [(str(row["band"]), points_for_band(entries, str(row["band"])))
+                    for row in sorted(entries, key=lambda row: int(row["ordinal"]))]
+        for criterion, entries in by_criterion.items()
     }
+
+
+def _answer_keys(app: Any, run_row: Any, labels: dict[str, str]) -> list[dict[str, Any]]:
+    """The run's multiple-choice grading points with their options and current key — what
+    the results screen's key correction offers (FR-CONSOLE-30: a key found wrong after a run
+    is corrected and the marks re-derived). Read through M-PKG's own catalog; an unreadable
+    package offers no correction rather than an invented one."""
+    from aeh.pkg import PackageCatalog
+
+    package_id = str(run_row["package_id"])
+    version = str(run_row["package_version_id"])
+    try:
+        catalog = PackageCatalog(app._store.package(package_id), package_id=package_id)
+        keys = []
+        for criterion in catalog.criteria(version):
+            criterion_id = str(criterion["criterion_id"])
+            options = catalog.mcq_options(version, criterion_id)
+            if not options:
+                continue
+            keys.append({
+                "criterion_id": criterion_id,
+                "label": labels.get(criterion_id, criterion_id),
+                "options": [{"option_id": str(option_id), "label": str(label or "")}
+                            for option_id, label in options],
+                "key": list(catalog.answer_key(criterion_id)),
+            })
+        return keys
+    except Exception:  # noqa: BLE001 — no correction offered over an unreadable catalog
+        return []
 
 
 def _grading_point_labels(app: Any, run_row: Any) -> dict[str, str]:
@@ -596,6 +627,7 @@ def results_screen_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
         # The test version the run graded against: the screen's download of the test
         # itself (FR-CONSOLE-59's readable export) names it.
         "package_version_id": str(run_row["package_version_id"]),
+        "answer_keys": _answer_keys(app, run_row, labels),
         "score_levels": score_levels,
         "scales": [
             {"criterion_id": criterion, "label": labels.get(criterion, criterion),

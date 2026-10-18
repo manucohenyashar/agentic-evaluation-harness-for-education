@@ -118,6 +118,17 @@ def _boundary_hits(dotted: str, roots: frozenset[str]) -> list[str]:
             if segments[: len(root.split("."))] == root.split(".")]
 
 
+#: The one declared second PDF reader: M-AUTHOR's teacher-document intake. CT-INGEST-01 fences
+#: the grading pipeline — a student's scan reaches text only through the gateway — and it was
+#: written before M-AUTHOR existed. The console-redesign delta (1.13, ADR-46, FR-AUTHOR-27)
+#: then declared that the teacher's own documents (test paper, model answer, rubric) are read
+#: by M-AUTHOR's intake tier, `.pdf` through "the existing pypdf text-layer extraction and
+#: profile-transcriber path", from files the teacher names (`aeh author draft --docs`). Those
+#: are never student work and never reach a scoring stage as a document; the fence stays
+#: exactly as tight for every other module.
+DECLARED_TEACHER_DOCUMENT_READERS = frozenset({"aeh.author"})
+
+
 def test_tc_ingest_c01_pdf_decoding_imports_live_only_in_m_ingest():
     """`TC-INGEST-C01` step 1 — the import graph over the WHOLE tree: the set of
     modules holding a PDF/image-decoder import is exactly {aeh.ingest}. The lazy
@@ -132,6 +143,8 @@ def test_tc_ingest_c01_pdf_decoding_imports_live_only_in_m_ingest():
             if hits:
                 # A file of a package counts for its top-level module: aeh.ingest.x is aeh.ingest.
                 holders.setdefault(".".join(module.split(".")[:2]), []).extend(hits)
+    for declared in DECLARED_TEACHER_DOCUMENT_READERS:
+        holders.pop(declared, None)
     assert set(holders) == {"aeh.ingest"}, (
         f"TC-INGEST-C01: PDF/image decoding exists outside M-INGEST: {holders}. "
         "The gateway is the sole route from PDF to text (CT-INGEST-01) — a second "
@@ -158,7 +171,8 @@ def test_tc_ingest_c01_no_entry_point_takes_a_path_and_intake_is_content_address
     modules = [pkg_module, store_module, ingest_module]
     for name in dir(aeh):
         submodule = getattr(aeh, name)
-        if inspect.ismodule(submodule) and submodule.__name__.startswith("aeh."):
+        if (inspect.ismodule(submodule) and submodule.__name__.startswith("aeh.")
+                and submodule.__name__ not in DECLARED_TEACHER_DOCUMENT_READERS):
             modules.append(submodule)
     forbidden_names = {"path", "pdf", "image", "filepath", "pdf_path",
                        "image_path", "file_path"}

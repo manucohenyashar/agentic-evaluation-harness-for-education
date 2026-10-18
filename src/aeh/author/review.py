@@ -685,7 +685,8 @@ def _eval_bands(raw: str) -> tuple[bool, Any, str]:
     if count < 2 or count > 6 or count % 2 != 0:
         return False, None, (f"a band set of {count} bands is outside 2..6 or odd "
                              "(FR-PKG-06); the even count removes the safe middle band")
-    points = [band["points"] for band in bands]
+    # get(), not a subscript: the draft band's own field (TC-PKG-C05's scan; see edit.py).
+    points = [band.get("points") for band in bands]
     if any(later < earlier for earlier, later in zip(points, points[1:])):
         return False, None, ("the band points must never decrease down the worst-first "
                              "list (FR-PKG-06)")
@@ -753,7 +754,7 @@ def _encode(item: _Pending, value: Any) -> str:
         return "[" + ", ".join(
             "{ " + ", ".join((
                 f"name = {_toml_str(band['name'])}",
-                f"points = {_number_text(band['points'])}",
+                f"points = {_number_text(band.get('points'))}",
                 f"descriptor = {_toml_str(band['descriptor'])}",
             )) + " }" for band in value) + "]"
     return _toml_str(value)

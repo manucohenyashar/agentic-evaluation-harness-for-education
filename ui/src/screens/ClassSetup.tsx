@@ -70,6 +70,7 @@ export function ClassSetup({ classId }: { classId: string | null }) {
                   </button>
                 )}
                 <AddStudents classId={cohort.cohort_id} onDone={read.retry} />
+                <DeleteClass classId={cohort.cohort_id} onDone={read.retry} />
               </section>
             ))
           )}
@@ -365,6 +366,77 @@ function AddStudents({ classId, onDone }: { classId: string; onDone: () => void 
           onClick={add}
         >
           Add them
+        </button>
+        <button type="button" className="button" onClick={() => setOpen(false)} disabled={busy}>
+          Cancel
+        </button>
+      </div>
+      {outcome !== null && (
+        <p role="status" className="action-outcome">
+          {outcome}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Deleting a class (`purge cohort`): its students, papers and marks are removed for good.
+ * The store refuses while the class's evidence has not been saved for validation, and the
+ * refusal is shown as refused. The teacher types the class name to confirm — a purge cannot
+ * be undone, so one click is not enough. */
+function DeleteClass({ classId, onDone }: { classId: string; onDone: () => void }) {
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [outcome, setOutcome] = useState<string | null>(null);
+  if (!open) {
+    return (
+      <button type="button" className="button" onClick={() => setOpen(true)}>
+        Delete this class…
+      </button>
+    );
+  }
+  const purge = (): void => {
+    setBusy(true);
+    performAction("purge cohort", { cohort_id: classId }).then(
+      (result) => {
+        setBusy(false);
+        if (result.dispatched === true && result.refused !== true && result.error === undefined) {
+          toast({ kind: "success", text: `Class ${classId} was deleted.` });
+          setOpen(false);
+          onDone();
+        } else {
+          setOutcome(outcomeText({ ...result, refused: true }));
+        }
+      },
+      (failure: unknown) => {
+        setBusy(false);
+        setOutcome(`Refused: ${failure instanceof Error ? failure.message : String(failure)}`);
+      },
+    );
+  };
+  return (
+    <div className="settings-row" role="group" aria-label={`Delete class ${classId}`}>
+      <p className="settings-error">
+        Deleting removes this class's students, papers and marks for good. It cannot be undone.
+        Type the class name to confirm.
+      </p>
+      <label htmlFor={`purge-${classId}`}>Class name</label>
+      <input
+        id={`purge-${classId}`}
+        value={typed}
+        autoComplete="off"
+        onChange={(event) => setTyped(event.target.value)}
+      />
+      <div className="settings-actions">
+        <button
+          type="button"
+          className="button"
+          disabled={busy || typed !== classId}
+          onClick={purge}
+        >
+          Delete the class
         </button>
         <button type="button" className="button" onClick={() => setOpen(false)} disabled={busy}>
           Cancel

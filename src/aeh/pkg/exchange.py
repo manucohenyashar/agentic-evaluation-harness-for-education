@@ -188,6 +188,14 @@ class ExchangeMixin:
             bytes_written=dest.stat().st_size,
         )
 
+    def _import_dir(self) -> Path:
+        """Where an imported package file lands: the packages directory this catalog's own
+        file lives in, or the one `for_import` was built for."""
+        explicit = getattr(self, "_packages_dir", None)
+        if explicit is not None:
+            return Path(explicit)
+        return Path(self._handle._open_report.path).parent
+
     def import_file(self, src: Path) -> ImportReport:
         """Import one export archive, all or nothing (FR-PKG-10, FR-PKG-13, NFR-PKG-02,
         NFR-PKG-04).
@@ -282,7 +290,7 @@ class ExchangeMixin:
                     "safe package name; refusing it rather than writing outside the "
                     "packages directory."
                 )
-            target = self._handle._open_report.path.parent / f"{package_id}.pkg.sqlite"
+            target = self._import_dir() / f"{package_id}.pkg.sqlite"
             if target.exists():
                 raise PackageError(
                     f"package {package_id!r} already exists in this installation; "

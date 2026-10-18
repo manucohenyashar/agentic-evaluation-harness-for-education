@@ -126,13 +126,13 @@ The nine stages, in the words the console uses:
 | 2 | Create the test package | The package screens (section 5.1) |
 | 3 | Review the draft | The draft review screen (section 5.1) |
 | 4 | Approve the package | The draft review screen's approve control (section 5.1) |
-| 5 | Upload the papers | The Papers inbox (section 5.2) |
-| 6 | Reading the papers | The Papers inbox reads what you upload (section 5.2) |
+| 5 | Upload the papers | The Load papers screen (section 5.2) |
+| 6 | Reading the papers | Load papers reads what you upload (section 5.2) |
 | 7 | Start the grading run | The run screens (section 5.2) |
 | 8 | Review the results | The review and results screens (section 5.3) |
 | 9 | Export the results | The Results screen's downloads (section 5.3) |
 
-Beneath the stage strip, a fixed sidebar carries the secondary screens: **Classes, Papers inbox, Parked, Jobs, Issues, Logs, Settings, Help**. One of them, **Parked**, is also stage 5's neighbourhood: papers the system could not place wait there.
+Beneath the stage strip, a fixed sidebar links every screen by name — **Set up a class, Set up a test package, Load papers, Start a run, Monitor run, Review, Results** — and the secondary screens: **Parked, Jobs, Issues, Logs, Settings, System status, Manuals & help**. **Parked** is stage 5's neighbourhood: papers the system could not place wait there.
 
 ### 4.1 The screen map
 
@@ -141,19 +141,19 @@ The SPA's addresses carry a `#`. Replace `{...}` with your own IDs. The current 
 | Screen | Address | Who | What it does |
 |---|---|---|---|
 | Wizard home | `/#/` | Teacher | The nine stages, each with its state, and the next action for each |
-| Classes | `/#/class` | Teacher | Every class and its students; make a class (typed list or a class list file) and add late students |
-| Package setup | `/#/package` | Teacher | The setup draft's steps, which ones block publishing, and the **Publish** control |
+| Set up a class | `/#/class` | Teacher | Every class and its students; make a class (typed list or a class list file), add late students, delete a class |
+| Set up a test package | `/#/package` | Teacher | The setup draft's steps, which ones block publishing, and the **Publish** control |
 | Author a package | `/#/package/author` | Teacher | Upload your documents, preview what was understood, start the draft job |
 | Review the draft | `/#/package/review` | Teacher | The draft's open questions to answer; approve it when none remain |
 | Edit the draft | `/#/package/edit` | Teacher | Add, edit, reorder and delete questions and grading points |
-| Papers inbox | `/#/papers` | Teacher/Operator | Upload the test paper and the answer sheets, read them through the five checks, and see each student's paper |
+| Load papers | `/#/papers` | Teacher/Operator | Upload the test paper and the answer sheets, read them through the five checks, and see each student's paper |
 | Start a run | `/#/run` | Teacher/Operator | Start a new grading run for the selected class and test version, priced, behind a confirmation |
 | Run monitor | `/#/monitor` | Operator | The run's status and pause reason beside the orchestrator's own progress counts; it refreshes itself |
 | Review queue | `/#/review` | Teacher | The flagged answers that await review, and how many provisional answers remain outside the queue |
 | Blind sample | `/#/review/blind` | Teacher | The papers drawn for the blind sample, each offering that question's own levels from the package |
-| Results | `/#/results` | Teacher | Every student's grade; the finalize control; the amend form; the downloads (marks spreadsheet and CSV, a student's report, the test as a PDF and its backup) |
+| Results | `/#/results` | Teacher | Every student's grade; the finalize control; the amend form; the downloads (marks spreadsheet and CSV, a student's report, the test as a PDF and its backup); correcting an answer key; the review window |
 | One student | `/#/results/students/{submission-id}` | Teacher | The narrative feedback, each line's band, and the amend form |
-| Parked | `/#/parked` | Operator | Each parked paper with its reason and the release/close decision |
+| Parked | `/#/parked` | Operator | Each parked paper with its reason; give it to a student, release or close it, with a recorded note |
 | Jobs | `/#/jobs` | Operator | Every job — drafts and runs — with progress, elapsed time and cost so far; a run offers Pause and Resume |
 | Issues | `/#/issues` | Teacher | The run's findings that need a person, by severity |
 | Logs | `/#/logs` | Engineer | The run's stage records, paged |
@@ -171,9 +171,9 @@ The whole day, class to download, as one walk over the sample tests: [`docs/live
 
 ### 5.0 Make the class (teacher, once)
 
-Open **Classes** (`/#/class`). Give the class a name (lower-case letters, digits, `-`, `_` or `.` — it becomes a file name), choose **whose work this is** — made-up practice work, work the students or their guardians agreed to, or real work without that agreement — and add the students: type or paste one per line (a spreadsheet's *first name, last name, optional ID* columns paste as they are), or **import a class list file**, which lists every student it found and every problem line, with its line number, before anything is written. **Make the class.**
+Open **Set up a class** (`/#/class`). Give the class a name (lower-case letters, digits, `-`, `_` or `.` — it becomes a file name), choose **whose work this is** — made-up practice work, work the students or their guardians agreed to, or real work without that agreement — and add the students: type or paste one per line (a spreadsheet's *first name, last name, optional ID* columns paste as they are), or **import a class list file**, which lists every student it found and every problem line, with its line number, before anything is written. **Make the class.**
 
-The consent choice has no default and can never be changed afterwards: it decides whether the class's papers may go to a remote model at all. A late student is added with **Add students** under the class. With one class stored, the console selects it everywhere; with several, choose one in the top bar's *Class* switcher.
+The consent choice has no default and can never be changed afterwards: it decides whether the class's papers may go to a remote model at all. A late student is added with **Add students** under the class. **Delete this class…** removes a class for good after you type its name; it is refused while the class's evidence has not been saved for validation. With one class stored, the console selects it everywhere; with several, choose one in the top bar's *Class* switcher.
 
 ### 5.1 Make the test package (teacher, once, 30 to 60 minutes)
 
@@ -193,7 +193,7 @@ A second route to a published package also exists: `/#/package` shows the setup 
 
 ### 5.2 Load the papers and start the run (teacher or operator)
 
-**Reading the scans in.** Open the **Papers inbox** (`/#/papers`) with the class selected. Choose the published test version the papers answer, the **test paper** (once per class — every answer sheet is checked against it) and the **answer sheets**, one PDF per student, each carrying the test name and the student's name or ID. The files you chose are listed; **Read the papers** asks for a confirmation (the pages go to the page reader in the console's settings) and then sends them. The console reads them on its own worker — you can leave the page — and a progress bar shows each file's outcome; the same work is on **Jobs** as *Reading the papers*. Every sheet goes through the five intake checks; a sheet that fails one waits on the Parked screen. Sending a sheet again skips it, so a paper is never graded twice. This is the same reading `aeh ingest` does from the terminal (deployment tutorial, section 8.3).
+**Reading the scans in.** Open **Load papers** (`/#/papers`) with the class selected. Choose the published test version the papers answer, the **test paper** (once per class — every answer sheet is checked against it) and the **answer sheets**, one PDF per student, each carrying the test name and the student's name or ID. The files you chose are listed; **Read the papers** asks for a confirmation (the pages go to the page reader in the console's settings) and then sends them. The console reads them on its own worker — you can leave the page — and a progress bar shows each file's outcome; the same work is on **Jobs** as *Reading the papers*. Every sheet goes through the five intake checks; a sheet that fails one waits on the Parked screen. Sending a sheet again skips it, so a paper is never graded twice. This is the same reading `aeh ingest` does from the terminal (deployment tutorial, section 8.3).
 
 **The five intake checks, in plain words:**
 
@@ -207,7 +207,7 @@ A second route to a published package also exists: `/#/package` shows the setup 
 
 Papers with problems do **not** hold the run back: they wait on the Parked screen while the rest are graded.
 
-**Start the run.** Open `/#/run` with the class selected, choose the test version and press **Start a new grading run**. The confirmation says what will be graded, under which settings profile, and the estimated cost (*Technical details* holds the full settings banner). A run that is still waiting to start shows its own **Start the run** control. Confirm, and the console opens the run monitor. Confirm, and the run starts on a worker the console owns. Recovery resumes eligible interrupted work at console startup; an intentionally paused run is resumed only when it has an unapplied queued Resume request.
+**Start the run.** Open `/#/run` with the class selected, choose the test version and press **Start a new grading run**. The confirmation says what will be graded, under which settings profile, and the estimated cost. A run that is still waiting to start shows its own **Start the run** control. Confirm, and the run starts on a worker the console owns and the console opens the run monitor. Recovery resumes eligible interrupted work at console startup; an intentionally paused run is resumed only when it has an unapplied queued Resume request.
 
 **Watch it.** `/#/monitor` shows the run ID, status, any pause reason, and progress values supplied by the orchestrator (such as done, in-flight, pending and quarantined work). There is deliberately no per-student progress figure, because the work is done by criterion, not by student. The screen refreshes itself every two seconds.
 
@@ -225,7 +225,7 @@ Reviewing the results is optional; the review screen is not an action queue, and
 2. **Blind-sample screen** at `/#/review/blind`. The sampled submission/criterion seats are listed, each offering **that question's own levels** from the package (the generic B1–B5 scale only when the package cannot be read), with nothing preselected and no system mark shown. Choose the level you would give. A submission not drawn for the sample is refused: *"is not in run … blind draw"*.
 3. **Finalize.** On `/#/results`, the **Finalize the batch** control stamps the run as delivered behind its confirmation, naming you (the console has no accounts, so the recorded name is the console's operator label). If the package declared a review window, finalizing inside the window leaves the grades *provisional*; the system settles them when the window ends.
 4. **Change a grade.** From the results screen or the student's own screen, use the grade control. For a grade not yet final, the console records a review action; changing a finalized grade requires **a reason**, creates a new revision and keeps the original. The student's screen shows the amendment history, including the reason and actor when recorded.
-5. **Download.** The **Download the results** panel on `/#/results` saves the marks as a spreadsheet (`.xlsx`) or a CSV file, one student's report as a PDF, and the test itself as a readable PDF and as its backup file. *Marks version* 1 is every student's marks as first given; version 2 lists only the students whose final mark was changed.
+5. **Download.** The **Download the results** panel on `/#/results` saves the marks as a spreadsheet (`.xlsx`) or a CSV file, one student's report as a PDF, and the test itself as a readable PDF and as its backup file. *Marks version* 1 is every student's marks as first given; version 2 lists only the students whose final mark was changed. The same screen corrects a multiple-choice **answer key** found wrong after the run (the question's marks are worked out again for the class) and sets the **review window** (hours the grades stay open before finalizing settles them).
 6. **Read the results.** `/#/results` shows each student's grade, class distribution, per-criterion statistics and the lines most students missed; it does not show a grade range or multiple-choice distractor breakdown. `/#/results/students/{submission-id}` opens one student — use the submission ID the results screen shows (it looks like `sub-22a56dc63714`), **not** the student's own ID.
 
 ### 5.4 Parked papers (operator)
@@ -257,7 +257,6 @@ Named plainly, so nobody meets them by surprise. Each is a known, tracked gap.
 | Gap | What you do instead |
 |---|---|
 | **Starting the console** reads its environment once: the OpenRouter key and settings such as `HARNESS_ORCH_RANDOM_ARM_RATE` cannot be changed from the browser. | The operator sets them before `aeh console` (section 3.1; the live-test walk's step 0). |
-| **Four declared console actions have no SPA screen yet:** importing a test's `.aehpkg` backup, correcting an answer key after a run, setting a review window, and purging a class. | An engineer, through the console's API (`/api/v1/actions/…`) or the CLI where one exists. |
 | **A parked decision records no student, mark or test.** Release and close are the only outcomes, and neither stores which student the paper belongs to or the mark you decided by hand (blocker B8). | Write the decision on the record sheet; rescan a paper and upload it again in the Papers inbox when the fix is on the paper itself. |
 | **The ambiguity questions are not in the SPA flow.** The SPA does not show this step. On the legacy `/setup/optional` page, its card is present but marked unavailable/arriving in version 2 (Phase 4); it is not a teacher-facing SPA control. | Nothing to do; the drafts' own review questions cover what blocks approval. |
 
