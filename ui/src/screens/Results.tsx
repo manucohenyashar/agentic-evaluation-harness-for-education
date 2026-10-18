@@ -15,6 +15,7 @@ import {
   scoreStateLabel,
 } from "../state/model";
 import { useScreenRead } from "../useScreenRead";
+import { useRunParams } from "../selection";
 
 /**
  * The results overview (FR-UI-15): the run's distribution as hand-rolled SVG bars — the
@@ -102,7 +103,7 @@ function DistributionBars({ levels, counts }: { levels: string[]; counts: number
 }
 
 export function Results() {
-  const read = useScreenRead<ResultsDoc>("/api/v1/results/screen");
+  const read = useScreenRead<ResultsDoc>("/api/v1/results/screen", useRunParams());
   const navigate = useNavigate();
   const finalize = useActionState(read.retry);
   const raiseToast = useToast();
@@ -375,9 +376,125 @@ export function Results() {
                 onDone={finalize.finish}
               />
             )}
+            {doc.run_id !== null && doc.students.length > 0 && <Downloads key={doc.run_id} doc={doc} />}
           </>
         );
       }}
     </ReadScreen>
+  );
+}
+
+/** A same-origin download link for one export read (FR-CONSOLE-44/58/59): the console
+ * answers the file's bytes, and the browser saves them under the name given here. */
+function exportHref(path: string, params: Record<string, string>): string {
+  return `${path}?${new URLSearchParams(params).toString()}`;
+}
+
+/**
+ * The exports (design delta §3.2: CSV/PDF existing, workbook and readable test new): the
+ * marks as a spreadsheet or a CSV file, one student's report as a PDF, and the test itself
+ * as a readable PDF and as a backup file. "Version 1" is every student's marks as first
+ * given; a later version holds only the students whose final mark was changed that many
+ * times (the export reads one revision, `export_grade_artifacts`).
+ */
+function Downloads({ doc }: { doc: ResultsDoc }) {
+  const runId = doc.run_id ?? "";
+  const [revision, setRevision] = useState("1");
+  const firstRef = doc.students.find((s) => s.student_ref !== null)?.student_ref ?? "";
+  const [student, setStudent] = useState(firstRef);
+  const rev = /^[1-9][0-9]*$/.test(revision) ? revision : "1";
+  const version = doc.package_version_id ?? "";
+  return (
+    <section className="panel" aria-label="Download the results">
+      <h2>Download the results</h2>
+      <div className="settings-form">
+        <div className="settings-row">
+          <label htmlFor="export-revision">Marks version</label>
+          <input
+            id="export-revision"
+            inputMode="numeric"
+            value={revision}
+            onChange={(event) => setRevision(event.target.value)}
+          />
+          <p className="step-note">
+            1 is every student's marks as first given. 2 lists only the students whose final
+            mark was changed, with the changed mark (3 the next change, and so on).
+          </p>
+        </div>
+        <div className="settings-row">
+          <label htmlFor="export-student">Student for the report</label>
+          <select
+            id="export-student"
+            value={student}
+            onChange={(event) => setStudent(event.target.value)}
+          >
+            {doc.students
+              .filter((s) => s.student_ref !== null)
+              .map((s) => (
+                <option key={s.submission_id} value={s.student_ref ?? ""}>
+                  {s.student_ref}
+                </option>
+              ))}
+          </select>
+        </div>
+      </div>
+      <ul className="rows-list">
+        <li>
+          <a
+            className="button"
+            href={exportHref("/api/v1/results/workbook", { run_id: runId, revision: rev })}
+            download={`marks-${runId}-v${rev}.xlsx`}
+          >
+            Marks spreadsheet (Excel)
+          </a>
+        </li>
+        <li>
+          <a
+            className="button"
+            href={exportHref("/api/v1/results/export", {
+              run_id: runId, revision: rev, format: "csv",
+            })}
+            download={`marks-${runId}-v${rev}.csv`}
+          >
+            Marks file (CSV)
+          </a>
+        </li>
+        <li>
+          <a
+            className="button"
+            href={exportHref("/api/v1/results/export", {
+              run_id: runId, revision: rev, format: "pdf", student_ref: student,
+            })}
+            download={`report-${student}-v${rev}.pdf`}
+          >
+            The chosen student&apos;s report (PDF)
+          </a>
+        </li>
+        {version !== "" && (
+          <>
+            <li>
+              <a
+                className="button"
+                href={exportHref("/api/v1/packages/readable", { package_version: version })}
+                download={`test-${version}.pdf`}
+              >
+                The test and its grading guide (PDF)
+              </a>
+            </li>
+            <li>
+              <a
+                className="button"
+                href={exportHref("/api/v1/packages/readable", {
+                  package_version: version, format: "aehpkg",
+                })}
+                download={`test-${version}.aehpkg`}
+              >
+                Backup of the test
+              </a>
+            </li>
+          </>
+        )}
+      </ul>
+    </section>
   );
 }

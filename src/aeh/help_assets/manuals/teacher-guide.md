@@ -174,8 +174,9 @@ version in this shape and ask you to approve it.
 
 ### What happens without you
 
-1. The papers are read in and the run is started (in this version: `aeh ingest` reads the scans
-   and the console's Start-the-run control or `aeh run` starts it — see the operating tutorial).
+1. The papers are read in and the run is started (in this version: the console's Papers inbox
+   reads the uploaded scans and its Start a run screen starts the run — see the operating
+   tutorial; `aeh ingest` and `aeh run` do the same from a terminal).
 2. Every page is read and turned into text. Diagrams, graphs, crossings-out and corrections written
    above a line are described, not thrown away.
 3. Every paper is checked before marking: is it readable, are all the pages there, whose paper is

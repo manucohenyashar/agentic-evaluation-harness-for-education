@@ -124,18 +124,21 @@ def _students_of(app: Any, cohort_id: str) -> list[dict[str, Any]]:
     handle = app._store.cohort(cohort_id)
     students: list[dict[str, Any]] = []
     seen: set[str] = set()
+    try:
+        roster = list(handle.query(
+            "SELECT student_ref, full_name FROM roster ORDER BY student_ref"))
+    except Exception:  # noqa: BLE001 — a cohort without a roster table answers its papers
+        roster = []
+    # A read paper keeps its student's listed name beside the ref, so the class screen
+    # still says who the paper belongs to once it is in.
+    names = {str(row["student_ref"]): str(row["full_name"] or "") or None for row in roster}
     for row in handle.query(
         "SELECT submission_id, student_ref FROM submission ORDER BY submission_id"
     ):
         ref = str(row["student_ref"])
         seen.add(ref)
         students.append({"student_ref": ref, "submission_id": str(row["submission_id"]),
-                         "full_name": None})
-    try:
-        roster = handle.query(
-            "SELECT student_ref, full_name FROM roster ORDER BY student_ref")
-    except Exception:  # noqa: BLE001 — a cohort without a roster table answers its papers
-        roster = ()
+                         "full_name": names.get(ref)})
     for row in roster:
         ref = str(row["student_ref"])
         if ref in seen:
@@ -164,7 +167,7 @@ def papers_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     # Through `aeh.pipeline`'s re-export, the spelling the server-rendered screens already
     # use — `aeh.pipeline.background` at symbol level would add an undeclared edge to the
     # frozen set (`TC-CONSOLE-36`) for the same door.
-    from aeh.pipeline import uploaded_parts
+    from aeh.pipeline import cohort_has_test_paper, uploaded_parts
 
     run_row = _run_row_of(console, app, query)
     cohort_id = str(query.get("cohort_id") or "")
@@ -179,7 +182,35 @@ def papers_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
         "cohort_id": cohort_id,
         "students": _students_of(app, cohort_id),
         "parts": list(uploaded_parts(app._store, cohort_id)),
+        # B4: what the papers screen needs to read papers here — whether the class holds
+        # its test paper yet (the sheets are checked against it), and every sheet read so
+        # far with what the paper check said.
+        "test_paper_read": bool(cohort_has_test_paper(app._store, cohort_id)),
+        "sheets": _sheets_of(app, cohort_id),
     }
+
+
+def _sheets_of(app: Any, cohort_id: str) -> list[dict[str, Any]]:
+    """The answer sheets read into one cohort, oldest first: each with the student it was
+    matched to, its paper-check status and whether it is parked (`FR-INGEST-30`'s flag)."""
+    from .vocabulary import QUARANTINE_STATES
+
+    sheets: list[dict[str, Any]] = []
+    try:
+        rows = list(app._store.cohort(cohort_id).query(
+            "SELECT submission_id, student_ref, ingest_status, quarantined FROM submission "
+            "ORDER BY rowid"))
+    except Exception:  # noqa: BLE001 — an unreadable ledger lists no sheets, not a 500
+        return sheets
+    for row in rows:
+        status = str(row["ingest_status"] or "")
+        sheets.append({
+            "submission_id": str(row["submission_id"]),
+            "student_ref": None if row["student_ref"] is None else str(row["student_ref"]),
+            "status": status or "reading",
+            "parked": bool(row["quarantined"]) or status in QUARANTINE_STATES,
+        })
+    return sheets
 
 
 # --- the run-bound screens ------------------------------------------------------------------------
@@ -191,14 +222,20 @@ def run_start_state_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     profile and refuses on its own. The context answers even when the preview cannot be
     composed: the teacher still sees what would start."""
     run_row = _run_row_of(console, app, query)
+    # The profile a run started here runs under: the console's own, which the screen names
+    # when it asks for a new run's priced preview (FR-CONSOLE-43 names the profile per
+    # request; the console's is the one a teacher can start under).
+    config = app.run_config if isinstance(getattr(app, "run_config", None), dict) else {}
+    profile = str(config.get("HARNESS_PROFILE") or "") or None
     if run_row is None:
         return {"run_id": None, "cohort_id": None, "package_version_id": None,
-                "status": None}
+                "status": None, "profile": profile}
     return {
         "run_id": str(run_row["run_id"]),
         "cohort_id": str(run_row["cohort_id"]),
         "package_version_id": str(run_row["package_version_id"]),
         "status": str(run_row["status"]),
+        "profile": profile,
     }
 
 
@@ -283,6 +320,13 @@ def blind_seats_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
             }
         except Exception:  # noqa: BLE001 — a seat renders its submission id alone
             refs = {}
+    # Each seat's own scale: the package's declared levels for that grading point, the names
+    # M-REVIEW maps a submitted label through — the rubric, not system output, so the blind
+    # stays blind. A generic label the criterion does not declare is refused by the review
+    # service, so offering only `REVIEW_DEFAULT_BANDS` blocked every custom-band package;
+    # the generic scale remains the fallback for a seat whose package cannot be read.
+    scales = _declared_scales(app, run_row) if run_row is not None else {}
+    labels = _grading_point_labels(app, run_row) if run_row is not None else {}
     return {
         "run_id": run_id,
         "band_scale": [str(band["band"]) for band in REVIEW_DEFAULT_BANDS],
@@ -291,6 +335,9 @@ def blind_seats_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
                 "submission_id": str(item.submission_id),
                 "student_ref": refs.get(str(item.submission_id)),
                 "criterion_id": str(item.criterion_id),
+                "label": labels.get(str(item.criterion_id), str(item.criterion_id)),
+                "band_scale": [name for name, _points in
+                               scales.get(str(item.criterion_id), ())] or None,
                 "evaluation_mode": str(getattr(item, "evaluation_mode", "") or ""),
             }
             for item in session.items
@@ -546,6 +593,9 @@ def results_screen_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     return {
         "run_id": run_id,
         "cohort_id": cohort_id,
+        # The test version the run graded against: the screen's download of the test
+        # itself (FR-CONSOLE-59's readable export) names it.
+        "package_version_id": str(run_row["package_version_id"]),
         "score_levels": score_levels,
         "scales": [
             {"criterion_id": criterion, "label": labels.get(criterion, criterion),

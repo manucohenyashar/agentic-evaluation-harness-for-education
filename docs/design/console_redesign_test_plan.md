@@ -293,6 +293,19 @@ Negative and boundary cases are marked. Every case names its oracle.
   carry exactly the ids of the draft file's `[[question]]` tables — the grammar's singular
   key — and `projected.items` equals that count; the shipped `questions` spelling shrank
   every editor list to zero.
+- **TC-CONSOLE-77** (§3.2.3's student-submissions import / FR-CONSOLE-04 / FR-CONF-08) —
+  *inline regression, the papers upload reads the papers* (live-test blocker B4: the SPA's
+  file inputs were inert and the upload only staged chunks, so reading took `aeh ingest`).
+  World: `TC-PIPE-30`'s — the sample physics package, a class made through `import roster
+  file`, pages sent through `OpenRouterProvider.enforcing_zero_retention()` to a stand-in
+  OpenRouter, the console served on loopback (`loopback_census`). Arms: (a) the test paper and
+  the six sheets uploaded over `POST /api/v1/uploads?read=1`, one file per request, each
+  answered with a job id; every `paper_intake` job settles `succeeded`; the papers read
+  reports `test_paper_read` and six sheets whose statuses equal `EXPECTED_STATUS` (three
+  parked); the same sheet uploaded again is reported *1 already read* and sends no request.
+  (b) an unknown class, no test version, an unknown kind and a `real` class under `dev-ci` are
+  refused 400 before a byte is staged, with no job and no request; a sheet before any test
+  paper fails its job naming *upload the test paper first*, with no request sent.
 
 ### 3.3 Configuration write path (M-CONF) — E1 rung 0/1
 

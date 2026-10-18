@@ -26,6 +26,9 @@ export interface PendingAction {
   title: string;
   /** What the action does, in the console's words, as the dialog's first paragraph. */
   description: string;
+  /** Technical detail behind the description (a run's settings banner), shown folded so
+   * the dialog's first words stay the teacher's. */
+  details?: string;
   /** The button's label for confirming: the action's verb, never a bare "OK". */
   confirm: string;
   /** The enumerated control action, verbatim (`CONTROL_SURFACE_ACTIONS`). */
@@ -70,6 +73,12 @@ export function ConfirmDialog({
     <div role="dialog" aria-modal="true" aria-label={pending.title} className="dialog">
       <h2>{pending.title}</h2>
       <p>{pending.description}</p>
+      {pending.details !== undefined && pending.details !== "" && (
+        <details className="detail-expander">
+          <summary>Technical details</summary>
+          <p className="detail-body">{pending.details}</p>
+        </details>
+      )}
       <div className="dialog-actions">
         <button type="button" className="button" onClick={onClose} disabled={busy}>
           Cancel

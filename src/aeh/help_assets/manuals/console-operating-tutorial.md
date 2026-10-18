@@ -5,7 +5,7 @@
 This tutorial walks through the whole life of one test in the grading system: create the class, make the test package from your own documents, upload the papers, let the system grade them, review the result, finalize the grades, and tidy up. It is written for the first live teacher test, so every step says **who** does it, **what you will see**, and **what to type**.
 
 > ### Read this box first
-> Everything in this tutorial describes the console **as it is shipped today**. The console's main surface is a **single-page web app (the SPA)** that opens at the address the console prints. In it you can: draft a test package from your own documents (PDF, DOCX or TXT), preview what the system understood, watch the draft being made, answer the draft's open questions, edit it, and approve it into a published package; start, pause and resume grading runs; read the review screen's flagged counts; open the blind-sample screen (it currently offers generic B1–B5 labels, not the package rubric's own bands, and cannot reliably score packages with custom band names; see section 6); finalize the batch.; amend a finalized grade with a recorded reason; and read every result. **What still needs the terminal:** creating the class, and reading scanned papers in. Those are `aeh cohort create` and `aeh ingest` (see the [deployment tutorial](deployment-tutorial.md), sections 8.1 and 8.3). The **SPA's papers screen does not yet upload files** — its file inputs are not wired — so papers reach the system only through `aeh ingest`. Every remaining gap, with proof, is in [`docs/live-tests/02-live-readiness-and-blockers.md`](../live-tests/02-live-readiness-and-blockers.md), and this tutorial's section 6 lists them in one place.
+> Everything in this tutorial describes the console **as it is shipped today**. The console's main surface is a **single-page web app (the SPA)** that opens at the address the console prints. In it you can: make a class from a typed list or a class list file; draft a test package from your own documents (PDF, DOCX or TXT), preview what the system understood, watch the draft being made, answer the draft's open questions, edit it, and approve it into a published package; upload the test paper and the answer sheets and have them read through the five intake checks; start, pause and resume grading runs; read the review screen's flagged counts; score the blind sample on each question's own levels; finalize the batch; amend a finalized grade with a recorded reason; read every result; and download the marks, a student's report and the test itself. **What still needs the terminal:** starting the console itself, with its key and settings (section 3.1). The terminal commands (`aeh cohort create`, `aeh ingest`, `aeh run`, `aeh results export`) remain for scripting and debugging. Every remaining gap, with proof, is in [`docs/live-tests/02-live-readiness-and-blockers.md`](../live-tests/02-live-readiness-and-blockers.md), and this tutorial's section 6 lists them in one place.
 >
 > Runs grade through OpenRouter under the `dev-ci` profile, with zero data retention requested on every call; setting `HARNESS_FIXTURE_DIR` switches to recorded replays instead (offline rehearsal). The console refuses the `cloud-hosted` profile on purpose. The **practice data** in section 2 lets you rehearse everything the console can do, spending no money and sending nothing anywhere.
 
@@ -122,15 +122,15 @@ The nine stages, in the words the console uses:
 
 | # | Stage | Where it happens |
 |---|---|---|
-| 1 | Create the class | Terminal today (section 6); the Classes screen shows the result |
+| 1 | Create the class | The Classes screen (section 5.0) |
 | 2 | Create the test package | The package screens (section 5.1) |
 | 3 | Review the draft | The draft review screen (section 5.1) |
 | 4 | Approve the package | The draft review screen's approve control (section 5.1) |
-| 5 | Upload the papers | Terminal today (section 6); the Papers screen shows what was read |
-| 6 | Reading the papers | `aeh ingest` (section 6) |
+| 5 | Upload the papers | The Papers inbox (section 5.2) |
+| 6 | Reading the papers | The Papers inbox reads what you upload (section 5.2) |
 | 7 | Start the grading run | The run screens (section 5.2) |
 | 8 | Review the results | The review and results screens (section 5.3) |
-| 9 | Export the results | Terminal / API today (section 6) |
+| 9 | Export the results | The Results screen's downloads (section 5.3) |
 
 Beneath the stage strip, a fixed sidebar carries the secondary screens: **Classes, Papers inbox, Parked, Jobs, Issues, Logs, Settings, Help**. One of them, **Parked**, is also stage 5's neighbourhood: papers the system could not place wait there.
 
@@ -141,17 +141,17 @@ The SPA's addresses carry a `#`. Replace `{...}` with your own IDs. The current 
 | Screen | Address | Who | What it does |
 |---|---|---|---|
 | Wizard home | `/#/` | Teacher | The nine stages, each with its state, and the next action for each |
-| Classes | `/#/class` | Teacher | The class and its roster, as stored (read-only today; see section 6) |
+| Classes | `/#/class` | Teacher | Every class and its students; make a class (typed list or a class list file) and add late students |
 | Package setup | `/#/package` | Teacher | The setup draft's steps, which ones block publishing, and the **Publish** control |
 | Author a package | `/#/package/author` | Teacher | Upload your documents, preview what was understood, start the draft job |
 | Review the draft | `/#/package/review` | Teacher | The draft's open questions to answer; approve it when none remain |
 | Edit the draft | `/#/package/edit` | Teacher | Add, edit, reorder and delete questions and grading points |
-| Papers inbox | `/#/papers` | Operator | The papers read into the cohort so far (its file inputs are not wired yet; section 6) |
-| Start a run | `/#/run` | Operator | The run-start preview, priced, behind a confirmation |
+| Papers inbox | `/#/papers` | Teacher/Operator | Upload the test paper and the answer sheets, read them through the five checks, and see each student's paper |
+| Start a run | `/#/run` | Teacher/Operator | Start a new grading run for the selected class and test version, priced, behind a confirmation |
 | Run monitor | `/#/monitor` | Operator | The run's status and pause reason beside the orchestrator's own progress counts; it refreshes itself |
 | Review queue | `/#/review` | Teacher | The flagged answers that await review, and how many provisional answers remain outside the queue |
-| Blind sample | `/#/review/blind` | Teacher | The papers drawn for the blind sample; the screen offers generic B1–B5 labels, not the package's own bands, so custom-band scoring is blocked (section 6) |
-| Results | `/#/results` | Teacher | Every student's grade; the finalize control; the amend form |
+| Blind sample | `/#/review/blind` | Teacher | The papers drawn for the blind sample, each offering that question's own levels from the package |
+| Results | `/#/results` | Teacher | Every student's grade; the finalize control; the amend form; the downloads (marks spreadsheet and CSV, a student's report, the test as a PDF and its backup) |
 | One student | `/#/results/students/{submission-id}` | Teacher | The narrative feedback, each line's band, and the amend form |
 | Parked | `/#/parked` | Operator | Each parked paper with its reason and the release/close decision |
 | Jobs | `/#/jobs` | Operator | Every job — drafts and runs — with progress, elapsed time and cost so far; a run offers Pause and Resume |
@@ -166,6 +166,14 @@ The SPA's addresses carry a `#`. Replace `{...}` with your own IDs. The current 
 ---
 
 ## 5. The test day, screen by screen
+
+The whole day, class to download, as one walk over the sample tests: [`docs/live-tests/05-console-teacher-walk.md`](../live-tests/05-console-teacher-walk.md).
+
+### 5.0 Make the class (teacher, once)
+
+Open **Classes** (`/#/class`). Give the class a name (lower-case letters, digits, `-`, `_` or `.` — it becomes a file name), choose **whose work this is** — made-up practice work, work the students or their guardians agreed to, or real work without that agreement — and add the students: type or paste one per line (a spreadsheet's *first name, last name, optional ID* columns paste as they are), or **import a class list file**, which lists every student it found and every problem line, with its line number, before anything is written. **Make the class.**
+
+The consent choice has no default and can never be changed afterwards: it decides whether the class's papers may go to a remote model at all. A late student is added with **Add students** under the class. With one class stored, the console selects it everywhere; with several, choose one in the top bar's *Class* switcher.
 
 ### 5.1 Make the test package (teacher, once, 30 to 60 minutes)
 
@@ -183,9 +191,9 @@ A second route to a published package also exists: `/#/package` shows the setup 
 
 *The terminal's `aeh package build --spec` remains a developer and system-emitted route (the deployment tutorial, section 8.2): a published version's spec file is an export the system writes, not something a teacher authors.*
 
-### 5.2 Load the papers and start the run (operator) — ⚠ Engineer step for the reading
+### 5.2 Load the papers and start the run (teacher or operator)
 
-**Reading the scans in.** The scans reach the system through `aeh ingest` (⚠ Engineer step; deployment tutorial, section 8.3): the test paper once per class, the answer sheets as one PDF per student, each sheet carrying the test name and the student's ID. Every sheet goes through the five intake checks; a sheet that fails one waits on the Parked screen. Running it again skips sheets already read, so a paper is never graded twice. **The SPA's papers screen cannot upload files yet** (section 6).
+**Reading the scans in.** Open the **Papers inbox** (`/#/papers`) with the class selected. Choose the published test version the papers answer, the **test paper** (once per class — every answer sheet is checked against it) and the **answer sheets**, one PDF per student, each carrying the test name and the student's name or ID. The files you chose are listed; **Read the papers** asks for a confirmation (the pages go to the page reader in the console's settings) and then sends them. The console reads them on its own worker — you can leave the page — and a progress bar shows each file's outcome; the same work is on **Jobs** as *Reading the papers*. Every sheet goes through the five intake checks; a sheet that fails one waits on the Parked screen. Sending a sheet again skips it, so a paper is never graded twice. This is the same reading `aeh ingest` does from the terminal (deployment tutorial, section 8.3).
 
 **The five intake checks, in plain words:**
 
@@ -199,7 +207,7 @@ A second route to a published package also exists: `/#/package` shows the setup 
 
 Papers with problems do **not** hold the run back: they wait on the Parked screen while the rest are graded.
 
-**Start the run.** Open `/#/run`. The screen shows what would start — the cohort, the package version and the run's state — and the **Start the run** control opens a confirmation carrying the priced preview: the banner the run would print and the estimate behind it. Confirm, and the run starts on a worker the console owns. Recovery resumes eligible interrupted work at console startup; an intentionally paused run is resumed only when it has an unapplied queued Resume request.
+**Start the run.** Open `/#/run` with the class selected, choose the test version and press **Start a new grading run**. The confirmation says what will be graded, under which settings profile, and the estimated cost (*Technical details* holds the full settings banner). A run that is still waiting to start shows its own **Start the run** control. Confirm, and the console opens the run monitor. Confirm, and the run starts on a worker the console owns. Recovery resumes eligible interrupted work at console startup; an intentionally paused run is resumed only when it has an unapplied queued Resume request.
 
 **Watch it.** `/#/monitor` shows the run ID, status, any pause reason, and progress values supplied by the orchestrator (such as done, in-flight, pending and quarantined work). There is deliberately no per-student progress figure, because the work is done by criterion, not by student. The screen refreshes itself every two seconds.
 
@@ -214,10 +222,11 @@ Papers with problems do **not** hold the run back: they wait on the Parked scree
 Reviewing the results is optional; the review screen is not an action queue, and a grade can remain provisional if the review window is still open.
 
 1. **Read the review summary** at `/#/review`. It shows counts of flagged marks and grades that remain provisional, and lists item identifiers and kinds with a link to the blind sample. It does not show evidence narratives or proposed bands, and it has no accept/edit or group-action control. To read a student's feedback or change a grade, open that student from Results.
-2. **Blind-sample screen** at `/#/review/blind`. The sampled submission/criterion seats are listed, but each line offers only the **generic B1–B5 scale** (0, 25, 50, 75, 100), not the package rubric's own band labels. The review service maps a submitted label through the package's criterion bands and rejects a label that is absent, so do not invent a mapping or claim a valid blind comparison for custom-band packages. Record this as a blocked gap; the teacher may note an independent score on the paper record sheet, but that is not a completed in-console blind sample. A submission not drawn for the sample is refused: *"is not in run … blind draw"*.
+2. **Blind-sample screen** at `/#/review/blind`. The sampled submission/criterion seats are listed, each offering **that question's own levels** from the package (the generic B1–B5 scale only when the package cannot be read), with nothing preselected and no system mark shown. Choose the level you would give. A submission not drawn for the sample is refused: *"is not in run … blind draw"*.
 3. **Finalize.** On `/#/results`, the **Finalize the batch** control stamps the run as delivered behind its confirmation, naming you (the console has no accounts, so the recorded name is the console's operator label). If the package declared a review window, finalizing inside the window leaves the grades *provisional*; the system settles them when the window ends.
 4. **Change a grade.** From the results screen or the student's own screen, use the grade control. For a grade not yet final, the console records a review action; changing a finalized grade requires **a reason**, creates a new revision and keeps the original. The student's screen shows the amendment history, including the reason and actor when recorded.
-5. **Read the results.** `/#/results` shows each student's grade, class distribution, per-criterion statistics and the lines most students missed; it does not show a grade range or multiple-choice distractor breakdown. `/#/results/students/{submission-id}` opens one student — use the submission ID the results screen shows (it looks like `sub-22a56dc63714`), **not** the student's own ID.
+5. **Download.** The **Download the results** panel on `/#/results` saves the marks as a spreadsheet (`.xlsx`) or a CSV file, one student's report as a PDF, and the test itself as a readable PDF and as its backup file. *Marks version* 1 is every student's marks as first given; version 2 lists only the students whose final mark was changed.
+6. **Read the results.** `/#/results` shows each student's grade, class distribution, per-criterion statistics and the lines most students missed; it does not show a grade range or multiple-choice distractor breakdown. `/#/results/students/{submission-id}` opens one student — use the submission ID the results screen shows (it looks like `sub-22a56dc63714`), **not** the student's own ID.
 
 ### 5.4 Parked papers (operator)
 
@@ -247,12 +256,9 @@ Named plainly, so nobody meets them by surprise. Each is a known, tracked gap.
 
 | Gap | What you do instead |
 |---|---|
-| **Creating a class has no screen.** The Classes screen shows what is stored, but no surface — SPA or server-rendered — creates a class or edits a roster today. | `aeh cohort create --cohort class-9a --consent synthetic --roster roster.txt` (⚠ Engineer step; deployment tutorial, section 8.1). Late students: `aeh cohort add-students`. |
-| **The SPA's papers screen cannot upload scans.** Its file inputs are not wired. A separate console upload API accepts PDFs but **only stores** them — nothing reads an uploaded scan, and an upload larger than 4 MB is not reassembled. | `aeh ingest --cohort <cohort> --package-version <version> --assessment <paper.pdf> <answer-sheets-folder>` (⚠ Engineer step; deployment tutorial, section 8.3). |
-| **Exporting results has no download control in the SPA.** The export reads exist on the console's API and the CLI. | `aeh results export --data-dir <folder> --run <run> --out <folder>` writes the marks CSV and one PDF per student. From the API: `GET /api/v1/results/export` and `GET /api/v1/results/workbook` (the workbook is the .xlsx). The older S14 page is a different thing: it is the *package*-export approval gate (the exemplar-paraphrase decision), not a results download. |
-| **Exporting the readable package** (the teacher-facing PDF of the package) has no SPA control. | `GET /api/v1/packages/readable` from the console's API — add `format=aehpkg` for the backup archive the console's package import accepts. `aeh package export` writes the spec TOML a developer diffs instead. |
-| **A parked decision records no student, mark or test.** Release and close are the only outcomes, and neither stores which student the paper belongs to or the mark you decided by hand (blocker B8). | Write the decision on the record sheet; rescan and re-read a paper through `aeh ingest` when the fix is on the paper itself. |
-| **The blind-sample screen does not offer the package's own band labels.** Each `/#/review/blind` seat offers only the generic B1–B5 scale (0–100). Submitted labels are mapped through the package's criterion bands, so a generic label absent from that criterion is rejected; no manual mapping makes the in-console score valid. Grade amendment does list the rubric's real bands. | Record the blind sample as blocked for custom-band packages; if the teacher independently scores on paper, keep that as separate evidence and do not report it as a completed in-console sample. |
+| **Starting the console** reads its environment once: the OpenRouter key and settings such as `HARNESS_ORCH_RANDOM_ARM_RATE` cannot be changed from the browser. | The operator sets them before `aeh console` (section 3.1; the live-test walk's step 0). |
+| **Four declared console actions have no SPA screen yet:** importing a test's `.aehpkg` backup, correcting an answer key after a run, setting a review window, and purging a class. | An engineer, through the console's API (`/api/v1/actions/…`) or the CLI where one exists. |
+| **A parked decision records no student, mark or test.** Release and close are the only outcomes, and neither stores which student the paper belongs to or the mark you decided by hand (blocker B8). | Write the decision on the record sheet; rescan a paper and upload it again in the Papers inbox when the fix is on the paper itself. |
 | **The ambiguity questions are not in the SPA flow.** The SPA does not show this step. On the legacy `/setup/optional` page, its card is present but marked unavailable/arriving in version 2 (Phase 4); it is not a teacher-facing SPA control. | Nothing to do; the drafts' own review questions cover what blocks approval. |
 
 Nothing here hides a failure: every screen that would need a missing capability either does not offer the control or says so in its own words.
@@ -268,16 +274,16 @@ The console keeps a parity inventory (`NFR-CONSOLE-09`): every `aeh` command is 
 | `aeh run` | Drive a cohort's run to completion from the terminal | The console's **Start the run** control (section 5.2) |
 | `aeh recover` | Reclaim expired leases, resume eligible interrupted runs, and settle completed runs with ungraded or non-final scores | The console runs recovery on start; the **Recover** control on Issues runs it while the console is open |
 | `aeh console` | Start the console server itself | The console is already running |
-| `aeh cohort create` | Create a class/cohort and load its roster from a file | **No console surface yet** (section 6) — this is the way |
-| `aeh cohort add-students` | Add late students to a cohort's roster | **No console surface yet** (section 6) — this is the way |
+| `aeh cohort create` | Create a class/cohort and load its roster from a file | The Classes screen (section 5.0): a typed list or a class list file |
+| `aeh cohort add-students` | Add late students to a cohort's roster | **Add students** under the class on the Classes screen |
 | `aeh cohort show` | Print a cohort's consent class and roster size | The Classes screen shows the same read |
 | `aeh package build` | Build and publish a package from a spec file | The console's **Approve** (section 5.1) goes through the same build gate; the spec path is a developer/export route |
-| `aeh package export` | Write a published version's spec TOML for rebuilding or diffing | The console's package readable-export read serves a PDF or `.aehpkg` backup; neither has a teacher-facing download/import screen yet (section 6) |
+| `aeh package export` | Write a published version's spec TOML for rebuilding or diffing | The Results screen downloads the test as a readable PDF and as its `.aehpkg` backup; the spec TOML stays a developer file |
 | `aeh author draft` | Turn teacher-authored documents into a draft package spec + report | The console's author screen does the same through a job, with progress (section 5.1) |
 | `aeh author review` | Walk a draft's unresolved items to resolution in the terminal | The console's draft review screen answers the same items (section 5.1) |
-| `aeh ingest` | Read scanned papers through the intake checks | **No console reading path yet** (section 6) — this is the way |
+| `aeh ingest` | Read scanned papers through the intake checks | The Papers inbox (section 5.2) reads uploads through the same intake |
 | `aeh results show` | Print per-student records and the class rollup as JSON | The Results screens answer the same reads (section 5.3) |
-| `aeh results export` | Write the marks CSV and one PDF per student | The API's export reads carry the same files; the SPA has no download control yet (section 6) |
+| `aeh results export` | Write the marks CSV and one PDF per student | The Results screen's downloads (section 5.3) |
 
 The SPA also has a structured draft **editor** and a guided **configuration write** on the Settings screen. The console's control inventory also includes actions not exposed as ordinary standalone buttons on these screens; use each screen's documented controls rather than treating every API action as a teacher-facing control.
 
@@ -308,7 +314,7 @@ The SPA is the working surface; these older pages remain for operator reads and 
 
 Two facts about these pages:
 
-* **The legacy pages are not the SPA controls.** Their generic band selectors do not offer the SPA's teacher workflow. Use the SPA's Results and student-detail screens to read results and change grades; the amendment form lists the package's rubric band names. The blind-sample screen offers generic B1–B5 labels, which are not valid for custom-band criteria unless the package happens to use those exact labels (section 6).
+* **The legacy pages are not the SPA controls.** Their generic band selectors do not offer the SPA's teacher workflow. Use the SPA's Results and student-detail screens to read results and change grades; the amendment form lists the package's rubric band names. The SPA's blind-sample screen offers each question's own levels from the package.
 * **S13 takes the system's submission ID** (looks like `sub-22a56dc63714`), **not** the student's own ID. Using the student's ID (for example `P-0001`) opens a page that says *"No scores are settled for this submission."* The SPA's student screen is reached from the results screen, which hands over the right ID.
 
 **S8's sample problems, as the checks decide them** (verified for the sample files):
@@ -316,8 +322,8 @@ Two facts about these pages:
 | Sample sheet | Status the system gives | Which check | What you do |
 |---|---|---|---|
 | Two ticks on Q1 | `incomplete` | v2 structure | Look at the paper and decide the tick yourself, then release it on the SPA's Parked screen, or close it |
-| Wrong test (names another test) | `unmatched_assessment` | v4 match | Find which test it really belongs to. Release it **only** if it really is this test (for example the name was miswritten): a released paper is graded against *this* package. If it belongs to another test, close it and read it in under the right package with `aeh ingest` |
-| No name written | `incomplete` | v3 identity | Work out whose it is. It **cannot be released** (it would be graded under nobody): close it, or have the student's ID written on it, rescan it, and read it in again with `aeh ingest` |
+| Wrong test (names another test) | `unmatched_assessment` | v4 match | Find which test it really belongs to. Release it **only** if it really is this test (for example the name was miswritten): a released paper is graded against *this* package. If it belongs to another test, close it and read it in under the right package from that class's Papers inbox |
+| No name written | `incomplete` | v3 identity | Work out whose it is. It **cannot be released** (it would be graded under nobody): close it, or have the student's ID written on it, rescan it, and read it in again from the Papers inbox |
 
 ---
 
@@ -354,7 +360,7 @@ With the practice folder from section 2 and the console running:
 4. Open `/#/results`. Find a student, open their screen, and read the narrative and bands.
 5. Finalize the batch from the results screen. Read the outcome the screen shows.
 6. Amend one final grade with a real band name and a reason, then open the student's screen again and read the revision back.
-7. Open `/#/review/blind`. Confirm the screen offers only generic B1–B5 labels. For a custom-band package, record blind scoring as blocked: do not invent a mapping or call an external paper score a completed in-console sample (section 6).
+7. Open `/#/review/blind`. Confirm each drawn answer offers that question's own levels, with nothing preselected and no system mark shown.
 8. Open `/#/parked` (the practice folder has none — the screen says so) and `/#/jobs` (it has the run, with its cost and run controls).
 9. Press Ctrl-C. Start the console again under the same profile. Everything is still there, and the finalized run remains settled.
 

@@ -84,6 +84,14 @@ class ConsoleApp(StoreReadsMixin, ScreenRenderingMixin, SetupScreensMixin, RunSc
         self._authoring_threads: dict[str, Any] = {}
         self._authoring_attempts: dict[str, int] = {}
         self._authoring_lock_guard = threading.Lock()
+        #: The papers' reading (B4): uploaded scans waiting to be read, one queue per class,
+        #: each drained by one worker thread whose progress is a `paper_intake` job in the
+        #: registry above. Console memory, guarded by its own lock — the papers' real state
+        #: is the submission rows the intake writes, never this table.
+        self._intake_queues: dict[str, Any] = {}
+        self._intake_jobs: dict[str, str] = {}
+        self._intake_attempts: dict[str, int] = {}
+        self._intake_guard = threading.Lock()
         #: The run configuration "start run" resolves from, set by the serving layer from
         #: its cfg (`ConsoleServer`); `None` resolves from the environment alone.
         self.run_config: dict[str, Any] | None = None

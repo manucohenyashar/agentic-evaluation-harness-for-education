@@ -2,6 +2,7 @@ import { fetchRead, type ReviewQueue as ReviewQueueDoc } from "../api";
 import { ReadScreen } from "../components/ReadScreen";
 import { useNavigate } from "../navigate";
 import { useScreenRead } from "../useScreenRead";
+import { useRunParams } from "../selection";
 
 /**
  * The review queue screen (FR-UI-03f): the teacher's flagged answers before grades are
@@ -10,7 +11,7 @@ import { useScreenRead } from "../useScreenRead";
  * what the flow posed (ADV-15's SPA arm re-checks it).
  */
 export function Review() {
-  const read = useScreenRead<ReviewQueueDoc>("/api/v1/review-queue");
+  const read = useScreenRead<ReviewQueueDoc>("/api/v1/review-queue", useRunParams());
   const navigate = useNavigate();
   return (
     <ReadScreen title="Review queue" read={read}>

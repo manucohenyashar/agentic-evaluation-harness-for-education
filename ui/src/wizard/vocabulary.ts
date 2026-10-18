@@ -191,6 +191,9 @@ export function jobKindLabel(kind: string): string {
   if (kind === "run") {
     return "Grading run";
   }
+  if (kind === "paper_intake") {
+    return "Reading the papers";
+  }
   const spaced = kind.replace(/_/g, " ").trim();
   return spaced === "" ? "Job" : spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
