@@ -282,6 +282,8 @@ def open_review(
             raise UnknownRunError(
                 f"no stored run is named {run_id!r}: open_review takes a run id, and none of "
                 "this data directory's cohorts holds it (FR-REVIEW-24)") from None
+        if catalog is None:
+            catalog = _run_catalog(store, handle)
         return _service_from_store(
             store,
             cohort_ids=[handle.cohort_id],
@@ -301,3 +303,21 @@ def open_review(
     except Exception:
         store.close()
         raise
+
+
+def _run_catalog(store: Any, handle: Any) -> Any:
+    """The run's own package catalog, bound to the run's version, for a caller that passed
+    none. Without it every band maps through the generic default scale (`REVIEW_DEFAULT_BANDS`),
+    so a package whose bands are its own (`present`, `secure`, …) could not be reviewed: the
+    first decision raised `PackageError` naming a band the generic scale lacks. `None` when the
+    run's package file is not in this data directory (the default scale then stands, as it
+    always did)."""
+    from aeh.pkg import PackageCatalog  # lazy: pkg's import graph must not pull review in
+
+    package_id = str(getattr(handle, "package_id", "") or "")
+    version = str(getattr(handle, "package_version_id", "") or "")
+    if not package_id or not version or not Path(store.package_path(package_id)).exists():
+        return None
+    catalog = PackageCatalog(store.package(package_id), package_id=package_id)
+    catalog.criteria(version)  # binds the catalog's per-run cache to the run's version
+    return catalog

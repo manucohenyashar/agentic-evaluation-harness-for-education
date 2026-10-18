@@ -48,7 +48,6 @@ import { ToastHost } from "./state/StateDisplay";
 
 /** The lifecycle screens the redesign keeps; later stories fill the remaining routes. */
 const ROUTES: Record<string, ComponentType> = {
-  "/package": PackageSetup,
   "/monitor": Monitor,
   "/review": Review,
   "/results": Results,
@@ -211,6 +210,8 @@ export function App() {
         retry={retryAll}
       />
     );
+  } else if (address.path === "/package") {
+    screen = <PackageSetup context={context} />;
   } else if (address.path === "/class") {
     screen = <ClassSetup classId={selection.classId} />;
   } else if (address.path === "/papers") {

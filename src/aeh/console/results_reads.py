@@ -73,7 +73,12 @@ def results_export_read(app: Any, query: Any) -> Any:
         if fmt == "csv":
             path = artifacts.csv_path
         else:
-            path = next((p for p in artifacts.pdf_paths if p.stem == student_ref), None)
+            # The export names each PDF by the student ref made file-safe; match on the
+            # same spelling, so a ref with a space or a slash still finds its report.
+            from aeh.grade.pdf import _safe_filename_part
+
+            wanted = _safe_filename_part(student_ref)
+            path = next((p for p in artifacts.pdf_paths if p.stem == wanted), None)
             if path is None:
                 raise ValueError(
                     f"the export produced no PDF for student {student_ref!r} of run "

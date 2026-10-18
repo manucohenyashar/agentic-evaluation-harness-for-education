@@ -462,12 +462,17 @@ class TeachersDayWorld(SynthWorld):
 
     def _ingestor(self) -> Ingestor:
         """The twins' transcription identity: the dev-ci config's transcriber, not the
-        reference world's local one — the ingest keys must be the keys the twins mint."""
+        reference world's local one — the ingest keys must be the keys the twins mint,
+        and that includes the declared-questions clause TC-INGEST-56 folds into every page
+        request once a package is bound, so the catalog rides on the constructor the way
+        `ingest_files` binds it (the reconcile `console_journeys`' world makes)."""
         return Ingestor(
             self.handle, self.blobs, self.provider, HOSTED_TRANSCRIBER,
             SamplingParams(temperature=0.0), PdfiumRasterizer(),
             residency=ResidencySlot.for_policy(("transcriber",)),
             sanitizer=PypdfSanitizer(),
+            package_catalog=getattr(self, "catalog", None),
+            package_version=getattr(self, "version", None),
         )
 
     def _assessment_transcript(self) -> str:
@@ -565,6 +570,19 @@ class TeachersDayWorld(SynthWorld):
         self._build_cohort()
         self._ingest_assessment()
         self._ingest_submissions()
+
+    def _ingest_assessment(self) -> None:
+        """The assessment through the gateway's own call shape: the package version rides
+        along, so its page request names the package's declared questions (TC-INGEST-56) —
+        exactly the key the twins' `ingest_files` mints. The base's call omits the package,
+        so a capture recorded under it misses the twins' replay by exactly that field (the
+        same reconcile `console_journeys`' world makes)."""
+        text = self._assessment_transcript()
+        blob = self.blobs.put(_pdf_of([text]))
+        self.provider.stage_transcript(blob, {1: text})
+        self.assessment_doc_id = self.ingestor.ingest_document(
+            [blob], kind="assessment", order_hint=[blob],
+            package_version=self.version, filenames={blob: "assessment.pdf"})
 
     def build_run(self) -> str:
         """Create and enumerate the run through the real orchestrator, the dev-ci
@@ -781,9 +799,12 @@ def canonical_tier_rows(data_dir: Path, *, mask: dict[str, str] | None = None,
     * `run_metrics` (wall clock, peak concurrency) and `store_lease_clock` (the
       persisted tick and wall-clock head) are timing records no independent drive
       can match, and are skipped entirely.
+    * `qa_exchange` is the help assistant's own Q&A log (CT-HELP-04: its only write) —
+      the console twin asks the help panel and the CLI has no panel to ask, so the row
+      records which surface was used, not a grading difference; it is skipped.
     """
     rows = tier_rows(data_dir, mask=mask, skip_tables=skip_tables + (
-        "run_metrics", "store_lease_clock"))
+        "run_metrics", "store_lease_clock", "qa_exchange"))
     for key, lines in rows.items():
         if key.endswith(":cell_phase"):
             rows[key] = [

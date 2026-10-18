@@ -344,13 +344,18 @@ class ReviewService(ActionsMixin, BlindSamplingMixin, ObservabilityMixin):
         """Map a band to points through the one pinned mapping (FR-REVIEW-10, NFR-AGG-02). With a
         catalog attached, the criterion's own table is used (`PackageCatalog.points_for_band`);
         without one, the default scale (`REVIEW_DEFAULT_BANDS`). A band missing from the table
-        raises `PackageError` rather than defaulting. `package_version_id` is accepted for a
-        matching interface and ignored."""
+        raises `PackageError` rather than defaulting. `package_version_id`, when the item
+        names one, binds the catalog's per-run cache to THAT version first: the catalog's
+        band table is the current version's, which is the file's newest until a version is
+        read — and a package with several versions (a key correction, a re-publish) would
+        otherwise map the item's band against another version's table."""
         if band is None:
             raise ReviewError(
                 "a score edit is a band selection; there is no band here to map"
             )
         if self._catalog is not None:
+            if package_version_id:
+                self._catalog.criteria(package_version_id)  # binds the per-run cache to v
             return self._catalog.points_for_band(criterion_id, band)
         from aeh import pkg as _pkg  # lazy: pkg's import graph must not pull review in
 

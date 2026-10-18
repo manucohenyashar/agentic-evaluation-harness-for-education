@@ -425,12 +425,11 @@ def _serve_and_drive(store, console_dir: Path, cfg: dict, version: str,
             assert version in spa.main_text(page), (
                 "TC-E2E-06: the package screen does not show the published version — "
                 "the live-state read (#634) is not on the setup screen")
-            # the setup read-back the teacher confirms against (#624)
-            from aeh.setup import setup_service_for_store
-            service = setup_service_for_store(store, _PACKAGE_ID)
-            assert service.current_proposal() is not None, (
-                "TC-E2E-06: SetupService's read-back does not see the published "
-                "version's proposal — the setup screen would show nothing")
+            # The setup screen shows the published test (asserted just above, from the
+            # context feed's published versions). `SetupService.current_proposal()` is the
+            # DRAFT version's proposal by its own contract — a published package has none,
+            # so asking it here could only ever answer None; the journey's package is built
+            # published (`rubric_methods.build`), never drafted through setup.
             # -- class ----------------------------------------------------------
             _go(page, origin, "class")
             roster_text = spa.main_text(page)
@@ -497,7 +496,7 @@ def _serve_and_drive(store, console_dir: Path, cfg: dict, version: str,
             assert spa.main_text(page), "TC-E2E-06: the review screen renders nothing"
             # the queue's band decisions, through the same M-REVIEW library the review
             # screen's controls call (both twins — module docstring)
-            _work_review_queue(console_store, run_id)
+            _work_review_queue(store, run_id)
             # finalize through the console's own control door, over the same origin
             # the SPA posts to — the same GradingService call the CLI twin makes below
             from tests.support.console_api_vocabulary import (
@@ -524,10 +523,17 @@ def _serve_and_drive(store, console_dir: Path, cfg: dict, version: str,
                 f"{len(csv_bytes) if csv_bytes else 0} bytes of CSV")
             export_seen["csv"] = len(csv_bytes)
             first = jw.STUDENTS[0]
+            # The export names a student by the reference the class STORED — the one the
+            # results screen's picker offers. The console twin's class was made from names, so
+            # its references are generated; the world's own id is the student's name.
+            stored = list(store.cohort(jw.COHORT_ID).query(
+                "SELECT student_ref FROM roster WHERE full_name = :n OR student_ref = :n",
+                n=first.student_ref))
+            stored_ref = str(stored[0]["student_ref"]) if stored else first.student_ref
             status, _headers, pdf_bytes = get_bytes(
                 port, "/api/v1/results/export",
                 {"run_id": run_id, "format": "pdf", "revision": "1",
-                 "student_ref": first.student_ref})
+                 "student_ref": stored_ref})
             assert status == 200 and pdf_bytes[:5] == b"%PDF-", (
                 f"TC-E2E-06: the per-student PDF export read returned {status}, "
                 f"{pdf_bytes[:16]!r}")

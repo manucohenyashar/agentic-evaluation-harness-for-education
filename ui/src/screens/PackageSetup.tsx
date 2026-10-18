@@ -1,5 +1,10 @@
 import { useState } from "react";
-import { fetchRead, fileToBase64, type PackageSetup as PackageSetupDoc } from "../api";
+import {
+  fetchRead,
+  fileToBase64,
+  type ContextDoc,
+  type PackageSetup as PackageSetupDoc,
+} from "../api";
 import { ActionOutcome, ConfirmDialog, useActionState } from "../components/Confirm";
 import { ReadScreen } from "../components/ReadScreen";
 import { useScreenRead } from "../useScreenRead";
@@ -12,7 +17,10 @@ import { useNavigate } from "../navigate";
  * when the draft is ready: over a blocked gate it is present but disabled, so the screen
  * never offers a publish the gates refuse (TC-UI-03's blocked world).
  */
-export function PackageSetup() {
+export function PackageSetup({ context }: { context: ContextDoc | null }) {
+  // Every published test, as the shell's context feed lists them: what a run can grade
+  // against, shown whether or not a run exists yet.
+  const published = (context?.packages ?? []).filter((p) => p.published_version !== null);
   const navigate = useNavigate();
   const read = useScreenRead<PackageSetupDoc>("/api/v1/package-setup");
   const action = useActionState(read.retry);
@@ -46,6 +54,19 @@ export function PackageSetup() {
               ? `The run grades against package version ${data.current_version_id}.`
               : "No run names a package version yet."}
           </p>
+          {published.length > 0 && (
+            <section className="panel" aria-label="Published tests">
+              <h2>Published tests</h2>
+              <ul className="rows-list">
+                {published.map((p) => (
+                  <li key={p.package_id}>
+                    <span className="step-name">{p.package_id}</span>
+                    <span className="step-note">version {p.published_version}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           <ActionOutcome outcome={action.outcome} />
           {data.draft === null ? (
             <p className="panel">

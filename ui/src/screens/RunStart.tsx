@@ -172,6 +172,12 @@ export function RunStart({
                     <span className="step-name">Class</span>
                     <span>{selection.classId}</span>
                   </div>
+                  {data.profile !== null && (
+                    <div className="settings-row">
+                      <span className="step-name">Settings profile</span>
+                      <span>{data.profile}</span>
+                    </div>
+                  )}
                   <div className="settings-row">
                     <label htmlFor="run-version">Test version</label>
                     <select
