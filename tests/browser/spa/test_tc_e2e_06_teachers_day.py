@@ -624,7 +624,16 @@ def _work_review_queue(store, run_id: str) -> None:
     carry the same review actions (module docstring)."""
     from aeh.review import open_review
 
-    review = open_review(store.data_dir, run_id=run_id, actor="teacher")
+    # The run's own catalog, bound to its version — what the console's review service holds
+    # (`ConsoleApp._run_catalog`): without one, open_review maps bands through the generic
+    # default scale, and this package's bands are its own.
+    from aeh.orch import Orchestrator
+    from aeh.pkg import PackageCatalog
+
+    handle = Orchestrator(store).run_handle(run_id)
+    catalog = PackageCatalog(store.package(handle.package_id), package_id=handle.package_id)
+    catalog.criteria(handle.package_version_id)
+    review = open_review(store.data_dir, run_id=run_id, actor="teacher", catalog=catalog)
     try:
         review.build_queue(run_id, 30)
         for item in review.queue(run_id):
