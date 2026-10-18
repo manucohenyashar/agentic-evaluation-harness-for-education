@@ -2,7 +2,7 @@
 
 `openpyxl` writes the workbook (ADR-49, the supply-chain suite's fifth runtime entry),
 and it is lazy-imported HERE, inside the call path that needs it — the fast tier never
-loads it, exactly like `pypdf`, `pypdfium2` and `Pillow` (`NFR-SYS-06`, `TC-INGEST-01`).
+loads it, exactly like the PDF and image libraries (`NFR-SYS-06`, `TC-INGEST-01`).
 
 The workbook is the marks CSV's rows in workbook form — the same statement, the same
 columns, the same mark formatting as `export_grade_artifacts` — so the two exports

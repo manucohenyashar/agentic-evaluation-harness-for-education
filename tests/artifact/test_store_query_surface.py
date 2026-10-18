@@ -429,8 +429,8 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # B8: the operator's parked-paper decision (aeh.ingest.decisions) — the assignment of a
     # nameless paper to a roster student and the append-only decision row, both declared
     # INGEST_STATEMENTS with keyword parameters, in the caller's transaction.
-    "aeh.ingest.decisions:156",
-    "aeh.ingest.decisions:158",
+    "aeh.ingest.decisions:185",
+    "aeh.ingest.decisions:187",
     # The pkg sites are #230's line numbers (the verbatim revision copy and the
     # copied-counts statement shifted the module; the tripwire diff being the
     # line move plus one net-new site). Lines moved again with #91's module-level
@@ -786,7 +786,7 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # and its docstring reflow shifted the pause/resume site down again; same
     # statement. Re-read from the walker, never hand-unioned.)
     "aeh.console.controls:242",
-    "aeh.console.effects:786",
+    "aeh.console.effects:815",
     "aeh.console.key_correction:140",
     "aeh.console.driver:120",
     "aeh.console.driver:159",

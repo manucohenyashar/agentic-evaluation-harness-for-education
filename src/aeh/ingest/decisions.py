@@ -75,15 +75,19 @@ _DECISION_STATEMENTS = {
         "note, decided_at FROM quarantine_decision ORDER BY decided_at, decision_id"
     ),
     "select_submission_for_decision": Statement(
-        "SELECT submission_id, student_ref, v3_identity FROM submission "
+        "SELECT submission_id, student_ref, v3_identity, quarantined FROM submission "
         "WHERE submission_id = :submission_id"
     ),
     "select_roster_ref": Statement(
         "SELECT student_ref FROM roster WHERE student_ref = :student_ref"
     ),
+    # A student "has a paper" unless theirs was CLOSED as unresolvable (status `incomplete`,
+    # the parked flag cleared): a closed paper is never graded, so it does not block the real
+    # one being given to them; a matched paper still parked could yet be released, so it does.
     "select_other_paper_of_student": Statement(
         "SELECT submission_id FROM submission WHERE student_ref = :student_ref "
-        "AND submission_id != :submission_id"
+        "AND submission_id != :submission_id "
+        "AND NOT (ingest_status = 'incomplete' AND quarantined = 0)"
     ),
     "update_submission_assignment": Statement(
         "UPDATE submission SET student_ref = :student_ref, v3_identity = 'pass' "
@@ -98,9 +102,36 @@ class QuarantineDecisionError(ValueError):
     """A decision the record refuses, in the operator's words; nothing was written."""
 
 
+def repeated_decision(handle: Any, submission_id: str, *, resolution: str,
+                      student_ref: str | None, note: str | None) -> bool:
+    """Whether this exact decision is already the paper's last recorded one — a double-click,
+    a retried request or a back navigation, which must change nothing (FR-CONSOLE-02)."""
+    clean_note = (str(note).strip() or None) if note is not None else None
+    recorded = [d for d in quarantine_decisions(handle) if d["submission_id"] == submission_id]
+    return bool(recorded) and (
+        recorded[-1]["resolution"], recorded[-1]["student_ref"], recorded[-1]["note"]
+    ) == (resolution, student_ref, clean_note)
+
+
 def check_assignment(handle: Any, submission_id: str, student_ref: str) -> None:
-    """Refuse an assignment that would grade a paper under nobody or give a student two
-    papers. A look only: nothing is written."""
+    """Refuse an assignment that would grade a paper under nobody, give a student two papers,
+    or move a paper that is not waiting for one: only a parked paper whose student the
+    identity check could not match (and whose pages were read) is assignable. A look only:
+    nothing is written."""
+    rows = list(handle.query(INGEST_STATEMENTS["select_submission_for_decision"],
+                             submission_id=submission_id))
+    if not rows:
+        raise QuarantineDecisionError(
+            f"no paper {submission_id!r} is in this class. Nothing was written.")
+    identity = str(rows[0]["v3_identity"] or "")
+    if not rows[0]["quarantined"] or identity == "pass":
+        raise QuarantineDecisionError(
+            "only a parked paper whose student was not matched can be given to a student; "
+            "this one is not. Nothing was written.")
+    if identity == "not_reached":
+        raise QuarantineDecisionError(
+            "this paper's pages were never read, so there is nothing to grade: close it, or "
+            "rescan it and upload it again. Nothing was written.")
     if not student_ref:
         raise QuarantineDecisionError(
             "choose the student this paper belongs to. Nothing was written.")
@@ -114,7 +145,7 @@ def check_assignment(handle: Any, submission_id: str, student_ref: str) -> None:
         raise QuarantineDecisionError(
             f"{student_ref!r} already has a paper in this class "
             f"({others[0]['submission_id']}); one student cannot be graded on two papers. "
-            "Close one of them instead. Nothing was written.")
+            "Nothing was written.")
 
 
 def record_quarantine_decision(
@@ -141,12 +172,10 @@ def record_quarantine_decision(
             f"no paper {submission_id!r} is in this class. Nothing was written.")
     prior_identity = rows[0]["v3_identity"]
     clean_note = (str(note).strip() or None) if note is not None else None
-    recorded = [d for d in quarantine_decisions(handle) if d["submission_id"] == submission_id]
-    if recorded and (recorded[-1]["resolution"], recorded[-1]["student_ref"],
-                     recorded[-1]["note"]) == (resolution, student_ref, clean_note):
-        # The same decision posted again (a double-click, a retried request, a back
-        # navigation) records nothing new: FR-CONSOLE-02, every action is idempotent.
-        return str(recorded[-1]["decision_id"])
+    if repeated_decision(handle, submission_id, resolution=resolution,
+                         student_ref=student_ref, note=note):
+        # The same decision posted again records nothing new: FR-CONSOLE-02.
+        return str(quarantine_decisions(handle)[-1]["decision_id"])
     if resolution == "assigned":
         check_assignment(handle, submission_id, str(student_ref or ""))
     decision_id = f"qd-{uuid.uuid4().hex[:12]}"
@@ -183,4 +212,5 @@ __all__ = [
     "check_assignment",
     "quarantine_decisions",
     "record_quarantine_decision",
+    "repeated_decision",
 ]

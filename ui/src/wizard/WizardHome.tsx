@@ -6,6 +6,7 @@
  * touch, sourced from the impact read — never a client-side guess).
  */
 
+import { useScreenRead } from "../useScreenRead";
 import type { StageRow } from "./derivation";
 import { STAGE_ROUTES } from "./derivation";
 import { StageBadge } from "./StateBadge";
@@ -22,9 +23,64 @@ export interface WizardHomeProps {
   retry: () => void;
 }
 
+/** The hub read (FR-UI-02): the console's package version, its run's status and the decision
+ * engine in force — the live facts the destinations carry. */
+interface HubDoc {
+  package_version_id: string | null;
+  run_status: string | null;
+  engine: string;
+  poll_interval_ms: number;
+}
+
+/** Every destination, once, with the live fact that belongs to it (FR-UI-02): the links work
+ * whatever the reads answer; a fact shows only once the hub read has supplied it. */
+function Destinations({ stageHref }: { stageHref: (route: string) => string }) {
+  const hub = useScreenRead<HubDoc>("/api/v1/hub", undefined, 5000).data;
+  const fact = (text: string | null): string => (text === null ? "" : ` — ${text}`);
+  const links: { label: string; route: string; fact: string }[] = [
+    { label: "Set up a class", route: "/class", fact: "" },
+    {
+      label: "Set up a test package",
+      route: "/package",
+      fact: fact(hub === null ? null : `version ${hub.package_version_id ?? "none yet"}`),
+    },
+    { label: "Load papers", route: "/papers", fact: "" },
+    {
+      label: "Start a run",
+      route: "/run",
+      fact: fact(hub === null ? null : `last run: ${hub.run_status ?? "none yet"}`),
+    },
+    { label: "Monitor run", route: "/monitor", fact: "" },
+    { label: "Review", route: "/review", fact: "" },
+    { label: "Results", route: "/results", fact: "" },
+    {
+      label: "System status",
+      route: "/status",
+      fact: fact(hub === null ? null : `decision engine: ${hub.engine}`),
+    },
+    { label: "Manuals & help", route: "/help", fact: "" },
+  ];
+  return (
+    <nav className="panel" aria-label="Destinations">
+      <h2>Go to</h2>
+      <ul className="rows-list">
+        {links.map((link) => (
+          <li key={link.route}>
+            <a href={stageHref(link.route)}>
+              {link.label}
+              {link.fact}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  );
+}
+
 export function WizardHome({ rows, next, impact, stageHref, failed, retry }: WizardHomeProps) {
   return (
     <section className="wizard">
+      <h1>Your grading day</h1>
       {failed && (
         <p role="alert" className="hub-alert">
           The console could not read its state. It will keep trying.{" "}
@@ -70,6 +126,7 @@ export function WizardHome({ rows, next, impact, stageHref, failed, retry }: Wiz
           );
         })}
       </ol>
+      <Destinations stageHref={stageHref} />
     </section>
   );
 }

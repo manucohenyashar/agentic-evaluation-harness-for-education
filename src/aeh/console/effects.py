@@ -47,11 +47,25 @@ class DomainEffectsMixin:
                 try:
                     self._store.purge_cohort(cohort_id)
                 except Exception as exc:  # noqa: BLE001 — a refusal is the honest outcome
-                    return (
-                        f"M-STORE refused the purge of {cohort_id}: {exc} — nothing was "
-                        "purged, and the console does not report a refused purge as done",
-                        False,
-                    )
+                    # A class that never held a paper or a run has no evidence to promote, so
+                    # the purge's precondition can never pass for it: it is removed outright
+                    # instead (M-STORE's `discard_empty_cohort`, which refuses anything else).
+                    from aeh.store import discard_empty_cohort
+
+                    try:
+                        if not hasattr(self._store, "cohort_path"):
+                            raise exc
+                        discard_empty_cohort(self._store, cohort_id)
+                    except Exception:  # noqa: BLE001 — the purge's own refusal is the answer
+                        return (
+                            f"M-STORE refused the purge of {cohort_id}: {exc} — nothing was "
+                            "purged, and the console does not report a refused purge as done. "
+                            "A class whose papers were graded is deleted only after its "
+                            "results are saved for validation.",
+                            False,
+                        )
+                    return (f"class {cohort_id} removed: it held no papers and no grading "
+                            "runs, only its list of students", True)
                 return f"cohort {cohort_id} purged through M-STORE's purge_cohort", True
             return "purge cohort names no cohort; nothing was purged", False
         if action == "finalize batch":
@@ -728,7 +742,9 @@ class DomainEffectsMixin:
                 report = PackageCatalog.for_import(
                     Path(data_dir, "packages"), blobs=self._store.blobs()).import_file(archive)
             except Exception as refusal:  # noqa: BLE001 — M-PKG's refusal is the outcome
-                return f"{name} was not imported: {refusal}", False
+                # M-PKG names the file it read — here the console's temporary copy; the
+                # teacher knows it by their own file name.
+                return f"{name} was not imported: {str(refusal).replace(str(archive), name)}", False
         signature = {"verified": "its signature checked out",
                      "unsigned": "it carries no signature"}.get(
             str(report.signature_status), f"its signature is {report.signature_status}")
@@ -744,6 +760,7 @@ class DomainEffectsMixin:
         so the paper is graded instead of only closed."""
         from aeh.pipeline import (
             check_parked_assignment,
+            repeated_parked_decision,
             record_parked_decision,
         )
 
@@ -779,16 +796,24 @@ class DomainEffectsMixin:
                     continue
             except Exception:  # noqa: BLE001 — one unreadable ledger is skipped
                 continue
+            decided_ref = student_ref if resolution == "assigned" else None
             try:
-                if resolution == "assigned":
-                    check_parked_assignment(handle, submission_id, student_ref or "")
-                with handle.transaction() as tx:
-                    tx.execute(_UPDATE_QUARANTINE_RESOLUTION, submission_id=submission_id,
-                               status=status)
-                    record_parked_decision(
-                        handle, submission_id, resolution=resolution, actor=actor,
-                        student_ref=student_ref if resolution == "assigned" else None,
-                        note=note, tx=tx)
+                # The same decision posted again (a double-click, a retried request, a back
+                # navigation) writes nothing at all — not the status, not a decision row
+                # (FR-CONSOLE-02) — and answers as the first post did.
+                if not repeated_parked_decision(handle, submission_id, resolution=resolution,
+                                                student_ref=decided_ref, note=note):
+                    if resolution == "assigned":
+                        check_parked_assignment(handle, submission_id, student_ref or "")
+                    with handle.transaction() as tx:
+                        # The decision first: its own checks read the paper as it stood
+                        # before this decision, then the status follows in the same
+                        # transaction.
+                        record_parked_decision(
+                            handle, submission_id, resolution=resolution, actor=actor,
+                            student_ref=decided_ref, note=note, tx=tx)
+                        tx.execute(_UPDATE_QUARANTINE_RESOLUTION, submission_id=submission_id,
+                                   status=status)
             except ValueError as refused:
                 return f"submission {submission_id}: {refused}", False
             if resolution == "assigned":
@@ -818,9 +843,9 @@ class DomainEffectsMixin:
     def _release_refusal(self, submission_id: str, *, assigning: bool = False) -> str | None:
         """Why `matched` may not release this paper, or None. A paper whose student V3 did not
         match carries `student_ref = 'unknown'`: released, it would be scored and graded under
-        nobody. The console records no student (its write surface is the two status columns,
-        FR-CONSOLE-32), so such a paper is closed, or rescanned with the student's name written
-        clearly and read in again with `aeh ingest`."""
+        nobody, so `matched` is refused for it: it is given to its student (`assigned`, which
+        names one — `assigning` lifts only the identity half of this check), closed, or
+        rescanned with the student's name written clearly and read in again."""
         for key in self._cohort_keys():
             try:
                 rows = list(self._store.cohort(key).query(

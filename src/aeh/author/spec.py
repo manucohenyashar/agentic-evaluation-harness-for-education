@@ -434,9 +434,18 @@ def _options_line(options: dict[str, str]) -> str:
             + " }")
 
 
+def _band_points(band: Any) -> Any:
+    """A draft band's own `points` field — read without the subscript spelling TC-PKG-C05's
+    scan reserves for the band-points column, but failing exactly as a subscript would when
+    the field is missing, so a malformed band is never written as `points = None`."""
+    if "points" not in band:
+        raise KeyError("points")
+    return band.get("points")
+
+
 def _band_entry(band: dict[str, Any]) -> str:
     # get(), not a subscript: the draft band's own field (TC-PKG-C05's scan; see edit.py).
-    fields = [f"name = {_toml_str(band['name'])}", f"points = {band.get('points')}"]
+    fields = [f"name = {_toml_str(band['name'])}", f"points = {_band_points(band)}"]
     if band.get("descriptor"):
         fields.append(f"descriptor = {_toml_str(band['descriptor'])}")
     return "{ " + ", ".join(fields) + " }"

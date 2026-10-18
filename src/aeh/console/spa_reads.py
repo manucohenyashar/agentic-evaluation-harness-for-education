@@ -355,7 +355,11 @@ def context_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     for row in run_rows:
         runs_by_cohort.setdefault(str(row["cohort_id"]), []).append(row)
     ledger_keys = app._cohort_keys() if data_dir is not None else ()
+    from .screen_reads import _ledger_is_live
+
     for key in ledger_keys:
+        if not _ledger_is_live(app, key):
+            continue  # a deleted (purged) class: its emptied file is not a class
         population = _ledger_population(app, key)
         if population is None:
             continue
@@ -818,7 +822,8 @@ def _parked_class_facts(app: Any, cohort_id: str) -> dict[str, Any]:
     try:
         handle = app._store.cohort(cohort_id)
         with_paper = {str(row["student_ref"]) for row in handle.query(
-            "SELECT student_ref FROM submission WHERE v3_identity = 'pass'")}
+            "SELECT student_ref FROM submission "
+            "WHERE NOT (ingest_status = 'incomplete' AND quarantined = 0)")}
         roster = [
             {"student_ref": str(row["student_ref"]),
              "full_name": str(row["full_name"] or "") or None}

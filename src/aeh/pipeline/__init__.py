@@ -57,6 +57,7 @@ from .background import (
     parked_decisions,
     read_uploaded_paper,
     record_parked_decision,
+    repeated_parked_decision,
     record_upload,
     resolve_intake_config,
     resume_runs_in_background,

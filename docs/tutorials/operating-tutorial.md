@@ -173,7 +173,7 @@ The whole day, class to download, as one walk over the sample tests: [`docs/live
 
 Open **Set up a class** (`/#/class`). Give the class a name (lower-case letters, digits, `-`, `_` or `.` — it becomes a file name), choose **whose work this is** — made-up practice work, work the students or their guardians agreed to, or real work without that agreement — and add the students: type or paste one per line (a spreadsheet's *first name, last name, optional ID* columns paste as they are), or **import a class list file**, which lists every student it found and every problem line, with its line number, before anything is written. **Make the class.**
 
-The consent choice has no default and can never be changed afterwards: it decides whether the class's papers may go to a remote model at all. A late student is added with **Add students** under the class. **Delete this class…** removes a class for good after you type its name; it is refused while the class's evidence has not been saved for validation. With one class stored, the console selects it everywhere; with several, choose one in the top bar's *Class* switcher.
+The consent choice has no default and can never be changed afterwards: it decides whether the class's papers may go to a remote model at all. A late student is added with **Add students** under the class. **Delete this class…** removes a class for good after you type its name: a class with no papers is removed at once, and a class whose papers were graded only after its results are saved for validation. With one class stored, the console selects it everywhere; with several, choose one in the top bar's *Class* switcher.
 
 ### 5.1 Make the test package (teacher, once, 30 to 60 minutes)
 

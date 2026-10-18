@@ -134,6 +134,7 @@ from .decisions import (
     check_assignment,
     quarantine_decisions,
     record_quarantine_decision,
+    repeated_decision,
 )
 from .sources import has_assessment_document, park_interrupted_submissions, submitted_sources
 from .assembly import assemble_canonical_markdown, AssembledDocument
@@ -164,6 +165,7 @@ __all__ = [
     "check_assignment",
     "quarantine_decisions",
     "record_quarantine_decision",
+    "repeated_decision",
     "AssembledDocument",
     "DOCUMENT_KINDS",
     "EVALUATIVE_TERMS",

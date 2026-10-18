@@ -114,9 +114,10 @@ def _gates() -> None:
     require_path(
         SPA_BUNDLE_DIR / "index.html",
         "the committed SPA bundle the hub serves (M-UI foundation)", issue="#634")
-    text = (SPA_BUNDLE_DIR / "index.html").read_text(encoding="utf-8")
+    # The whole bundle, not index.html alone: the SPA's copy lives in its hashed JS asset, so a
+    # phrase looked for in the HTML shell is never found however much of the SPA ships.
     for phrase, issue in ((_RECOVERY_PHRASE, "#635"), (_QA_PHRASE, "#638")):
-        if phrase not in text:
+        if not spa.text_in_bundle(SPA_BUNDLE_DIR, phrase):
             raise NotImplementedYet(
                 f"the SPA bundle does not carry {phrase!r} yet — the lifecycle screens "
                 f"or the Q&A panel (issue {issue}) are not here yet")

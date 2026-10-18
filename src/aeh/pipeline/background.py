@@ -290,3 +290,10 @@ def parked_decisions(handle: Any) -> list[dict[str, Any]]:
     from aeh.ingest import quarantine_decisions
 
     return quarantine_decisions(handle)
+
+
+def repeated_parked_decision(handle: Any, submission_id: str, **decision: Any) -> bool:
+    """Whether this exact decision is already the paper's last recorded one, through M-INGEST."""
+    from aeh.ingest import repeated_decision
+
+    return repeated_decision(handle, submission_id, **decision)

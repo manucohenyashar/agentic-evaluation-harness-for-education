@@ -660,9 +660,8 @@ def test_tc_ui_07_with_the_server_stopped_every_destination_names_the_recovery(t
 
 
 def urlsplit_path(url: str) -> str:
-    from urllib.parse import urlsplit
-
-    return urlsplit(url).path
+    """The screen the URL shows — its hash route, since every SPA screen sits at path `/`."""
+    return spa.screen_route(url)
 
 
 # --- TC-UI-C01 — one origin -------------------------------------------------------------------------

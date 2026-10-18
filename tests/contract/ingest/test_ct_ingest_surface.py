@@ -120,8 +120,10 @@ def _boundary_hits(dotted: str, roots: frozenset[str]) -> list[str]:
 
 #: The one declared second PDF reader: M-AUTHOR's teacher-document intake. CT-INGEST-01 fences
 #: the grading pipeline — a student's scan reaches text only through the gateway — and it was
-#: written before M-AUTHOR existed. The console-redesign delta (1.13, ADR-46, FR-AUTHOR-27)
-#: then declared that the teacher's own documents (test paper, model answer, rubric) are read
+#: written before M-AUTHOR existed. ADR-44 (package_authoring_design_delta.md §4.4) carves
+#: M-AUTHOR out of the gateway monopoly — the same reconcile `TC-INGEST-01`'s integration case
+#: discloses — and the console-redesign delta (1.13, ADR-46, FR-AUTHOR-27) keeps it: the
+#: teacher's own documents (test paper, model answer, rubric) are read
 #: by M-AUTHOR's intake tier, `.pdf` through "the existing pypdf text-layer extraction and
 #: profile-transcriber path", from files the teacher names (`aeh author draft --docs`). Those
 #: are never student work and never reach a scoring stage as a document; the fence stays

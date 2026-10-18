@@ -113,6 +113,15 @@ _PURGE_TABLE_INFO: Mapping[str, Statement] = {
 }
 
 
+#: What makes a cohort hold student WORK (`SqliteStore.discard_empty_cohort`): a paper or a
+#: run. A cohort with neither — a class list and nothing else — has no evidence to promote, so
+#: it may be removed outright; anything else goes through the purge and its preconditions.
+_DISCARD_WORK_COUNTS: Mapping[str, Statement] = {
+    "papers": Statement("SELECT COUNT(*) FROM submission"),
+    "grading runs": Statement("SELECT COUNT(*) FROM run"),
+}
+
+
 _PURGE_PROMOTED_ROWS: Mapping[str, Statement] = {
     "audit_record": Statement("SELECT COUNT(*) FROM audit_record WHERE cohort_id = :cohort_id"),
     "label": Statement("SELECT COUNT(*) FROM label WHERE cohort_id = :cohort_id"),

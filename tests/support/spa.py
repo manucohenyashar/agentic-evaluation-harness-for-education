@@ -324,7 +324,11 @@ def open_hub(page: Any, origin: str) -> Any:
 
 
 def hub_card(page: Any, destination: str) -> Any:
-    return page.get_by_role("link", name=HUB_DESTINATIONS[destination])
+    """The hub's card for one destination. Since the console redesign the hub is the wizard
+    home, and its destinations are its "Destinations" panel — the stage rows and the sidebar
+    beside it link onward too, but they are the wizard's, not FR-UI-02's one-card-each."""
+    return page.get_by_role("navigation", name="Destinations").get_by_role(
+        "link", name=HUB_DESTINATIONS[destination])
 
 
 def screen_heading(page: Any) -> Any:
@@ -339,9 +343,17 @@ def wait_for_screen(page: Any) -> str:
     return heading.inner_text()
 
 
+def screen_route(url: str) -> str:
+    """The screen a console URL shows: the SPA routes in the fragment (`/#/class?class=…`), so
+    the URL's path is `/` on every screen and only the fragment tells them apart."""
+    parts = urlsplit(url)
+    route = parts.fragment.split("?", 1)[0] if parts.fragment else parts.path
+    return route or "/"
+
+
 def go_to(page: Any, origin: str, destination: str) -> str:
     """Hub -> one click on the destination's card -> the screen's heading text."""
-    if urlsplit(page.url).path not in ("", "/") or not page.url.startswith(origin):
+    if screen_route(page.url) not in ("", "/") or not page.url.startswith(origin):
         open_hub(page, origin)
     hub_card(page, destination).first.click()
     return wait_for_screen(page)

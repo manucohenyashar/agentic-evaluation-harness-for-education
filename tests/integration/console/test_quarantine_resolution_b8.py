@@ -201,3 +201,45 @@ def test_tc_console_78_release_and_close_record_the_decision_with_its_note(parke
         == [("matched", "Q1 is C")]
     assert [(d["resolution"], d["note"]) for d in _decisions(store, wrong)] \
         == [("unresolvable", "this is ENG7-READ-01")]
+
+
+def test_tc_console_78_only_a_parked_unmatched_paper_can_be_assigned(parked):
+    """A matched paper (released, or still parked for another reason) is never moved to
+    another student by an `assigned` post: the server refuses it, whatever the screen offered."""
+    store, ids = parked
+    console = build_console(store=store)
+    for stem in ("S9-001-strong", "S9-004-doubled-mark-and-blank"):
+        target = ids[stem]
+        before = _row(store, target)
+        outcome = console.perform("resolve quarantine item", submission_id=target,
+                                  resolution="assigned", student_ref="S9-006")
+        assert not outcome.dispatched, (stem, outcome.detail)
+        assert "only a parked paper whose student was not matched" in outcome.detail
+        assert _row(store, target) == before
+        assert _decisions(store, target) == []
+
+
+def test_tc_console_78_a_closed_paper_does_not_block_its_student_and_a_replay_writes_nothing(
+        parked):
+    """The real paper of a student whose other paper was CLOSED (the wrong test, here) can be
+    given to them — a closed paper is never graded, so it does not count as theirs — and the
+    same assignment posted again writes nothing, not even the status."""
+    store, ids = parked
+    console = build_console(store=store)
+    wrong = ids["S9-005-wrong-test"]
+    closed_ref = _row(store, wrong)["student_ref"]
+    assert closed_ref not in (None, "unknown")
+    assert console.perform("resolve quarantine item", submission_id=wrong,
+                           resolution="unresolvable").dispatched
+    target = ids["S9-006-no-name"]
+    first = console.perform("resolve quarantine item", submission_id=target,
+                            resolution="assigned", student_ref=closed_ref)
+    assert first.dispatched, first.detail
+    assert _row(store, target)["student_ref"] == closed_ref
+    mark = dict(store.cohort("class-ps9").query(
+        "SELECT COUNT(*) AS n FROM quarantine_decision")[0])["n"]
+    again = console.perform("resolve quarantine item", submission_id=target,
+                            resolution="assigned", student_ref=closed_ref)
+    assert again.dispatched, again.detail
+    assert dict(store.cohort("class-ps9").query(
+        "SELECT COUNT(*) AS n FROM quarantine_decision")[0])["n"] == mark

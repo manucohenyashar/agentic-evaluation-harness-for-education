@@ -315,7 +315,15 @@ Negative and boundary cases are marked. Every case names its oracle.
   `quarantine_decision` row with the actor, the note and the identity check's own prior
   verdict; the same decision posted again records nothing new. (b) an assignment to a student
   who already has a paper, to one not on the list, or to nobody is refused and writes nothing.
-  (c) a release and a close each record their decision with the operator's note.
+  (c) a release and a close each record their decision with the operator's note. (d) an
+  `assigned` post for a matched paper — released, or parked for another reason — is refused
+  and writes nothing. (e) a student whose only other paper was closed can be given their real
+  paper, and the same assignment posted again writes nothing at all.
+- **TC-CONSOLE-80** (FR-STORE-07 / CT-STORE-10 / the classes screen's delete) — *inline
+  regression, a class made by mistake can be deleted; a class with work cannot*. Arms: (a) a
+  list-only class posted to `purge cohort` is removed (`aeh.store.discard_empty_cohort`): its
+  file is gone and the class read no longer lists it; (b) a class holding a paper is refused
+  with the purge's reason and keeps its file and its paper.
 - **TC-CONSOLE-79** (§3.2.3's package import / FR-PKG-10/13 / CT-CONSOLE-34) — *inline
   regression, a test's backup file is imported from the console*. Arms: (a) the sample English
   package's `.aehpkg` imports through `export/import package` into an empty data folder, landing

@@ -156,8 +156,19 @@ def class_roster_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     cohorts = [
         {"cohort_id": key, "students": _students_of(app, key)}
         for key in app._cohort_keys()
+        if _ledger_is_live(app, key)
     ]
     return {"cohorts": cohorts}
+
+
+def _ledger_is_live(app: Any, key: str) -> bool:
+    """Whether a cohort file still holds its cohort: a purge empties every table but leaves
+    the compacted file, so a deleted class must not be listed again under its old name. An
+    unreadable file is listed (its own read reports the trouble)."""
+    try:
+        return bool(app._store.cohort(key).query("SELECT COUNT(*) AS n FROM cohort")[0]["n"])
+    except Exception:  # noqa: BLE001 — listed, and its own read names the problem
+        return True
 
 
 def papers_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
@@ -425,11 +436,24 @@ def _answer_keys(app: Any, run_row: Any, labels: dict[str, str]) -> list[dict[st
                 "label": labels.get(criterion_id, criterion_id),
                 "options": [{"option_id": str(option_id), "label": str(label or "")}
                             for option_id, label in options],
-                "key": list(catalog.answer_key(criterion_id)),
+                # The run's OWN version's key — what the correction compares against — not
+                # the newest in the lineage (another class's correction moves that one).
+                "key": _key_ids(criterion["answer_key"]),
             })
         return keys
     except Exception:  # noqa: BLE001 — no correction offered over an unreadable catalog
         return []
+
+
+def _key_ids(raw: Any) -> list[str]:
+    """A stored answer key (`criterion.answer_key`, a JSON list of option ids) as a list."""
+    if raw is None:
+        return []
+    try:
+        value = json.loads(raw) if isinstance(raw, str) else raw
+    except ValueError:
+        return []
+    return [str(option) for option in value] if isinstance(value, (list, tuple)) else [str(value)]
 
 
 def _grading_point_labels(app: Any, run_row: Any) -> dict[str, str]:
