@@ -177,7 +177,7 @@ def papers_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
         keys = app._cohort_keys()
         cohort_id = keys[0] if keys else ""
     if not cohort_id:
-        raise ValueError("papers names no stored cohort")
+        raise ValueError("no class exists yet: set up a class first, then load its papers")
     return {
         "cohort_id": cohort_id,
         "students": _students_of(app, cohort_id),
@@ -393,7 +393,7 @@ def _declared_scales(app: Any, run_row: Any) -> dict[str, list[tuple[str, Any]]]
         return {}
     by_criterion: dict[str, list[Any]] = {}
     for row in rows:
-        by_criterion.setdefault(str(row["criterion_id"]), []).append(row)
+        by_criterion.setdefault(str(row["criterion_id"]), []).append(dict(row))
     # Each level's points through M-PKG's one band-to-points reader (CT-PKG-05), never the
     # column itself: the console maps an amended figure back to its level with them.
     return {

@@ -107,7 +107,8 @@ def test_tc_ui_22_class_papers_parked_and_run_start_from_the_browser(
             page.locator("#papers-sheets").set_input_files(sheets)
             page.get_by_role("button", name="Read the papers").click()
             page.get_by_role("dialog").get_by_role("button", name="Read them").click()
-            _wait(lambda: "7 file(s) done" in spa.main_text(page), "the reading job to settle")
+            _wait(lambda: "7 file(s) done" in spa.main_text(page), "the reading job to settle",
+                  detail=lambda: spa.main_text(page))
             assert "3 paper(s) ready to grade, 3 parked" in spa.main_text(page)
 
             # 3. the nameless paper, given to its student

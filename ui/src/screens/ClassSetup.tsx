@@ -26,8 +26,18 @@ export function ClassSetup({ classId }: { classId: string | null }) {
   const read = useScreenRead<ClassRosterDoc>("/api/v1/class-roster");
   const editor = useScreenRead<RosterEditorDoc>("/api/v1/roster-editor");
   const navigate = useNavigate();
+  // One read as far as the screen is concerned: either read's failure is the screen's named
+  // failure, and its retry retries both (CT-UI-04's recovery).
+  const both = {
+    data: read.data,
+    error: read.error ?? editor.error,
+    retry: () => {
+      read.retry();
+      editor.retry();
+    },
+  };
   return (
-    <ReadScreen title="Set up a class" read={read}>
+    <ReadScreen title="Set up a class" read={both}>
       {(data) => (
         <>
           {data.cohorts.length === 0 ? (
@@ -74,13 +84,7 @@ export function ClassSetup({ classId }: { classId: string | null }) {
               </section>
             ))
           )}
-          {editor.data === null ? (
-            editor.error !== null && (
-              <p role="alert" className="screen-alert">
-                The class form could not load: {editor.error}
-              </p>
-            )
-          ) : (
+          {editor.data !== null && (
             <CreateClass
               editor={editor.data}
               onCreated={(id) => {

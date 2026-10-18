@@ -85,6 +85,8 @@ INGEST_OWNED_TABLES = frozenset({
     "token_cluster", "assessment_match_proposal", "v4_cohort_breaker",
     # #531 (FR-CONSOLE-27): the upload record, intake data M-INGEST owns.
     "upload_part",
+    # B8: the operator's parked-paper decision trail, recorded through M-INGEST.
+    "quarantine_decision",
 })
 
 #: The score-bearing tables the module must never touch (CT-INGEST-09/17): the

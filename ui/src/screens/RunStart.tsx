@@ -27,6 +27,13 @@ function estimateSentence(estimate: string | null): string {
     : `Estimated cost: about $${value.toFixed(2)}.`;
 }
 
+/** The settings profile the preview priced the run under, read from the preview's own banner
+ * (a restart's frozen profile, or the console's for a new run) — named, never the raw banner. */
+function profileSentence(banner: string): string {
+  const profile = /HARNESS_PROFILE:\s*(\S+)/.exec(banner)?.[1];
+  return profile === undefined ? "" : `Settings profile: ${profile}. `;
+}
+
 export function RunStart({
   context,
   selection,
@@ -71,7 +78,7 @@ export function RunStart({
         "/api/v1/run-start-preview", undefined, previewQuery);
       action.open({
         title,
-        description: `${summary} ${estimateSentence(preview.estimate)}`,
+        description: `${summary} ${profileSentence(preview.banner)}${estimateSentence(preview.estimate)}`,
         confirm: "Start",
         action: "start run",
         body,
@@ -146,9 +153,8 @@ export function RunStart({
                     void openStart(
                       `Grade class ${selection.classId}`,
                       `Every paper read for class ${selection.classId} is graded against ` +
-                        `test ${version}, with the models in this console's settings ` +
-                        `(${data.profile ?? "none"}). The run keeps going if you close the ` +
-                        "browser.",
+                        `test ${version}, with the models in this console's settings. The run ` +
+                        "keeps going if you close the browser.",
                       {
                         cohort_id: selection.classId,
                         package_version: version,

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchJob, type ContextDoc, type JobRecord, type Papers as PapersDoc } from "../api";
 import { ReadScreen } from "../components/ReadScreen";
-import { Screen } from "../components/Screen";
 import { useNavigate } from "../navigate";
 import { ProgressBar, useToast } from "../state/StateDisplay";
 import { useScreenRead } from "../useScreenRead";
@@ -51,7 +50,7 @@ export function Papers({
   const navigate = useNavigate();
   const toast = useToast();
   const read = useScreenRead<PapersDoc>(
-    selection.classId === null ? null : "/api/v1/papers",
+    "/api/v1/papers",
     selection.classId === null ? undefined : { cohort_id: selection.classId },
   );
 
@@ -80,6 +79,21 @@ export function Papers({
   const [jobId, setJobId] = useState<string | null>(null);
   const [job, setJob] = useState<JobRecord | null>(null);
   const sheetInput = useRef<HTMLInputElement | null>(null);
+
+  // A switch from one class to ANOTHER drops what was chosen and followed for the first, so
+  // nothing is sent to the wrong class. The selection resolving for the first time (none ->
+  // the class the screen already shows) is not a switch and keeps the work in hand.
+  const shownClass = useRef<string | null>(selection.classId);
+  useEffect(() => {
+    const previous = shownClass.current;
+    shownClass.current = selection.classId;
+    if (previous === null || previous === selection.classId) return;
+    setTestPaper(null);
+    setSheets([]);
+    setJobId(null);
+    setJob(null);
+    setProblem(null);
+  }, [selection.classId]);
   const paperInput = useRef<HTMLInputElement | null>(null);
 
   // Follow the reading job until it settles, re-reading the class as each file lands.
@@ -116,22 +130,9 @@ export function Papers({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
-  if (selection.classId === null) {
-    return (
-      <Screen title="Load papers">
-        <p className="panel">
-          Choose a class first —{" "}
-          <a href="#/class" onClick={() => navigate("/class")}>
-            set up a class
-          </a>
-          .
-        </p>
-      </Screen>
-    );
-  }
-  const classId = selection.classId;
-
-  const send = async (needsTestPaper: boolean): Promise<void> => {
+  // With no class chosen the server's own default class answers (the run's, else the first);
+  // the uploads always go to the class the screen actually shows.
+  const send = async (classId: string, needsTestPaper: boolean): Promise<void> => {
     setConfirming(false);
     setProblem(null);
     const queue: { file: File; kind: "assessment" | "sheet" }[] = [];
@@ -185,7 +186,7 @@ export function Papers({
           <>
             <section className="panel" aria-label="Read papers">
               <h2>Class {data.cohort_id}</h2>
-              {versions.length === 0 ? (
+              {versions.length === 0 && (
                 <p>
                   No test is published yet —{" "}
                   <a href="#/package" onClick={() => navigate("/package")}>
@@ -193,7 +194,8 @@ export function Papers({
                   </a>{" "}
                   before reading papers.
                 </p>
-              ) : (
+              )}
+              {(
                 <form
                   className="settings-form"
                   onSubmit={(event) => {
@@ -361,7 +363,7 @@ export function Papers({
                     type="button"
                     className="button button-primary"
                     onClick={() => {
-                      void send(needsTestPaper);
+                      void send(data.cohort_id, needsTestPaper);
                     }}
                   >
                     Read them

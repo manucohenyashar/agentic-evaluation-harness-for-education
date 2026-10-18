@@ -214,7 +214,7 @@ export function App() {
   } else if (address.path === "/class") {
     screen = <ClassSetup classId={selection.classId} />;
   } else if (address.path === "/papers") {
-    screen = <Papers key={selection.classId ?? ""} context={context} selection={selection} />;
+    screen = <Papers context={context} selection={selection} />;
   } else if (address.path === "/run") {
     screen = <RunStart context={context} selection={selection} />;
   } else if (address.path === "/issues") {

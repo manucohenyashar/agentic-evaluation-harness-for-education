@@ -100,15 +100,13 @@ function ParkedCard({
                 Give it to this student
               </button>
             )}
-            {entry.assignable !== true && (
-              <button
-                type="button"
-                className="button"
-                onClick={() => onResolve(entry, "matched", "", note)}
-              >
-                Release to scoring
-              </button>
-            )}
+            <button
+              type="button"
+              className="button"
+              onClick={() => onResolve(entry, "matched", "", note)}
+            >
+              Release to scoring
+            </button>
             <button
               type="button"
               className="button"

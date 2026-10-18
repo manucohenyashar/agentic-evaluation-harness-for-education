@@ -178,7 +178,7 @@ def _readable_lines(
             justification = str(criterion["band_justification"] or "").strip()
             if justification:
                 lines.append(f"  Why the bands sit where they do: {justification}")
-            criterion_bands = catalog.bands(str(criterion["criterion_id"]))
+            criterion_bands = [dict(band) for band in catalog.bands(str(criterion["criterion_id"]))]
             for band in criterion_bands:
                 # Through M-PKG's one band-to-points reader (CT-PKG-05), never the column.
                 points = float(points_for_band(criterion_bands, str(band["band"])))
