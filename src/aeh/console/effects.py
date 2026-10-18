@@ -799,13 +799,14 @@ class DomainEffectsMixin:
                 )
             if resolution == "matched":
                 return (
-                    f"submission {submission_id} released by the operator's match; the "
-                    "decision is recorded, never an automatic one",
+                    f"submission {submission_id} released by the operator's match; "
+                    "the console wrote the operator's decision, never an automatic one",
                     True,
                 )
             return (
-                f"submission {submission_id} closed as unresolvable: criteria MISSING, grade "
-                "INCOMPLETE — never zero; the decision is recorded",
+                f"submission {submission_id} closed as unresolvable: criteria MISSING, "
+                "grade INCOMPLETE — never zero (M-GRADE computes the missing-criteria "
+                "rule over criteria that were never scored)",
                 True,
             )
         return (
@@ -838,9 +839,10 @@ class DomainEffectsMixin:
                 return (
                     f"submission {submission_id} cannot be released: its student was not "
                     f"matched to the class list (identity check {rows[0]['v3_identity']!r}), "
-                    "so it would be graded under nobody. Assign it to the student it belongs to, "
-                    "close it as 'unresolvable', or rescan it with the student's full name "
-                    "written on the Student line and upload it again. Nothing was written."
+                    "so it would be graded under nobody. Give it to the student it belongs to "
+                    "('assigned'), close it as 'unresolvable', or rescan it with the "
+                    "student's full name written on the Student line and read it in again "
+                    "(Load papers, or 'aeh ingest'). Nothing was written."
                 )
         return None
 

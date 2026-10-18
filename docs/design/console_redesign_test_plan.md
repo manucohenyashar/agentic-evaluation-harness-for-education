@@ -306,6 +306,22 @@ Negative and boundary cases are marked. Every case names its oracle.
   (b) an unknown class, no test version, an unknown kind and a `real` class under `dev-ci` are
   refused 400 before a byte is staged, with no job and no request; a sheet before any test
   paper fails its job naming *upload the test paper first*, with no request sent.
+- **TC-CONSOLE-78** (FR-CONSOLE-32 / live-test blocker B8 / FR-CONSOLE-02) — *inline
+  regression, the parked-paper decision is recorded and a nameless paper can be assigned*.
+  World: the six sample physics sheets parked by the real intake checks
+  (`test_quarantine_resolution_b8.py`). Arms: (a) the parked read offers S9-006's paper as
+  assignable to exactly the roster students with no paper; `assigned` to `S9-006` releases it
+  (`quarantined` 0, `ingest_status` ok, `student_ref` S9-006, identity `pass`) and records one
+  `quarantine_decision` row with the actor, the note and the identity check's own prior
+  verdict; the same decision posted again records nothing new. (b) an assignment to a student
+  who already has a paper, to one not on the list, or to nobody is refused and writes nothing.
+  (c) a release and a close each record their decision with the operator's note.
+- **TC-CONSOLE-79** (§3.2.3's package import / FR-PKG-10/13 / CT-CONSOLE-34) — *inline
+  regression, a test's backup file is imported from the console*. Arms: (a) the sample English
+  package's `.aehpkg` imports through `export/import package` into an empty data folder, landing
+  exactly that package file (nothing opened to find the folder), with the exported version's
+  criteria; importing it again is refused as already present. (b) bytes that are not an archive,
+  and an archive whose database byte was altered, are refused and write no package file.
 
 ### 3.3 Configuration write path (M-CONF) — E1 rung 0/1
 

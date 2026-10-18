@@ -6,11 +6,11 @@
 
 **A supervised OpenRouter test can be run with the shipped commands, with an engineer beside the operator.** The code paths exist for `aeh cohort create`, package publication, `aeh ingest` (the V0–V4 intake checks), `aeh run`, and `aeh results show` / `export`. Real OpenRouter calls have verified the request formats, and the 2026-10-12 authoring walk drafted and published a teacher's package, ingested a generated sheet, and completed a one-student run. That is not an end-to-end live pass of both sample classes: the run exposed citation refusals that left grades provisional and a decision-engine failure before dispatch. Record those outcomes; do not describe the live test as passed.
 
-The console is now the teacher-facing SPA for the whole day: class setup, package authoring, reading the papers, run control, review, blind sampling, finalization, amendments and the results downloads ([05](05-console-teacher-walk.md)). The remaining operator-facing gaps are precise: the console is started from a terminal with the key and settings, and parked-paper resolution does not record a selected student, mark or test. The browser path was checked offline on 2026-10-18, not yet against real OpenRouter. The older S1–S14 pages remain separate operator/audit reads, with their own limitations.
+The console is now the teacher-facing SPA for the whole day: class setup, package authoring, reading the papers, run control, review, blind sampling, finalization, amendments and the results downloads ([05](05-console-teacher-walk.md)). The one remaining operator-facing step is starting the console from a terminal with the key and settings. The browser path was checked offline on 2026-10-18, not yet against real OpenRouter. The older S1–S14 pages remain separate operator/audit reads, with their own limitations.
 
 What is still open falls into three groups:
 
-* **Teacher-independent operation:** the SPA does not record the operator's full parked-paper decision (B8), and the console's start needs the operator's terminal once.
+* **Teacher-independent operation:** the console's start needs the operator's terminal once; everything after it is in the browser.
 * **What further live runs can settle:** handwriting, class-scale cost and speed, the Jev decision engine, judge citation reliability, and the observed behavior of pause/resume during a live run.
 * **Other recorded gaps:** the creator of a cohort, the local model name, and whether the model uses each field's `name`.
 
@@ -49,18 +49,22 @@ Known limitations of the legacy pages include:
 
 * **S1** needs a package-version address and shows a limited package card, not a teacher authoring flow. **S3** can list questions when addressed to the package. **S4** remains count-only for answer keys.
 * **S10 and S11** are fixed explanatory text and do not show drawn submissions. The blind sample screen exists in the SPA at `/#/review/blind`, shows the drawn seats and offers each seat's own declared levels from the package; submissions outside the draw are refused.
-* **S8** shows parked IDs and stored crops but not the reason; the SPA Parked screen shows the reason, match note and available release/close choices. Neither surface stores the selected student, mark or test (B8).
+* **S8** shows parked IDs and stored crops but not the reason; the SPA Parked screen shows the reason, match note and available release/close choices. The SPA records every decision with its note and can give a nameless paper to its student (B8, closed 2026-10-18).
 * **S13** remains limited compared with the SPA student-results view, which shows narrative feedback and band information.
 * **S12 and S7** are not the cost view; the SPA Jobs screen displays each draft/run job's progress and cost so far. The SPA finalize and amend flows write through the enumerated controls; they are not the legacy pages' audit rendering.
 * Legacy band selectors remain generic/inert; the SPA grade-amendment form and the SPA blind-sample screen both use the package's rubric levels.
 
-**Still needed for teacher-independent operation:** a full parked-decision record (B8). The SPA supports the grading day end to end; the operator starts the console once.
+**Teacher-independent operation:** the SPA supports the grading day end to end; the operator starts the console once.
 
-### B8 (remaining). Resolving a parked paper still does not record the decision
+### B8. Resolving a parked paper records the decision — closed 2026-10-18
 
 `resolve-quarantine-item` now refuses any word other than `matched` or `unresolvable` (a typo no longer closes a paper by accident), and `matched` is refused for a paper whose student the identity check (V3) did not match — such a paper is closed, or rescanned with the ID written on it and read in again with `aeh ingest` (`TC-CONSOLE-51`, `TC-CONSOLE-52`, over the sample sheets parked by the real intake checks).
 
-What is still missing is the record itself. Nothing stores **which student** a nameless paper belongs to, **which tick** a doubled mark was, or **which test** a wrong-test paper is for: the operator can release or close the three awkward sample sheets, but cannot tell the system the answer. The console's writable surface for this action is exactly `submission.ingest_status` and `submission.quarantined` (FR-CONSOLE-32); a corrected mark would change an immutable document, and an audit record needs a migration — so this is a design decision for `/detailed-design-generator`, not a quick fix.
+The record now exists. Cohort migration 35 (`ingest_quarantine_decision`, owned by M-INGEST) adds an append-only `quarantine_decision` trail: every release, close and assignment is one row with the operator's name as the console supplied it, the time, the student (for an assignment), the identity check's own verdict before the decision, and the operator's note — the tick they read on a doubled mark, the test a wrong-test paper belongs to. A repeated identical decision records nothing new (FR-CONSOLE-02), and a purge removes the trail with the class.
+
+A third resolution, **`assigned`**, gives a nameless or unmatched paper to the student on the class list it belongs to: the paper's `student_ref` becomes that student and its identity check is recorded as passed by the operator, so it is graded instead of only closed. It is refused for a student not on the list, one who already has a paper in the class, or no student — never grading a paper under nobody or a student twice. A doubled mark is still scored on the page reader's reading (the document is immutable); the note records the operator's reading, and the mark is corrected on the student's result if needed. Cases `TC-CONSOLE-78` (`tests/integration/console/test_quarantine_resolution_b8.py`).
+
+Design note for `/detailed-design-generator`: this widens `resolve quarantine item`'s declared write fields (FR-CONSOLE-32) to the submission's `student_ref`/`v3_identity` and the decision trail; fold that into the next design delta.
 
 ## The small gaps, and what only a live run can settle
 
@@ -119,8 +123,7 @@ The right-test gate (V4) compares the words in a student's answers with the word
 
 These are checkable goals for future backlog planning; issues are created only through `/plan-to-issues`.
 
-1. **Record the operator's decision (B8).** *Goal:* resolving a parked paper stores the selected student, corrected mark or correct test in the audit trail where applicable.
-2. **Live use of the console path.** *Goal:* run [05](05-console-teacher-walk.md) against real OpenRouter and record each step's outcome; browser scan intake, class setup and the downloads shipped on 2026-10-18 and were checked offline only.
-3. **Live-operation evidence.** *Goal:* record a supervised live pause/resume cycle, class-scale cost and duration, handwriting intake, and Jev behavior; investigate the citation-verification refusals before treating the authoring walk as a successful live grading demonstration.
+1. **Live use of the console path.** *Goal:* run [05](05-console-teacher-walk.md) against real OpenRouter and record each step's outcome; browser scan intake, class setup and the downloads shipped on 2026-10-18 and were checked offline only.
+2. **Live-operation evidence.** *Goal:* record a supervised live pause/resume cycle, class-scale cost and duration, handwriting intake, and Jev behavior; investigate the citation-verification refusals before treating the authoring walk as a successful live grading demonstration.
 
-Item 1 is the remaining workflow gap for teacher-independent operation. Package authoring, run controls, review, blind sampling and finalization have shipped; do not re-list them as future console work.
+No workflow gap remains for teacher-independent operation beyond starting the console; item 1 is what proves it live. Package authoring, run controls, review, blind sampling and finalization have shipped; do not re-list them as future console work.

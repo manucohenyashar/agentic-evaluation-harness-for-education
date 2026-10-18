@@ -120,3 +120,84 @@ def test_tc_console_52_a_paper_with_its_student_is_released_and_the_other_closed
     assert closed.dispatched, closed.detail
     row = _row(store, ids["S9-006-no-name"])
     assert (row["ingest_status"], row["quarantined"]) == ("incomplete", 0)
+
+
+# --- TC-CONSOLE-78: the operator's decision is recorded, and a nameless paper can be assigned --
+
+
+def _decisions(store, submission_id):
+    return [dict(row) for row in store.cohort("class-ps9").query(
+        "SELECT resolution, actor, student_ref, prior_identity, note FROM quarantine_decision "
+        "WHERE submission_id = :s ORDER BY decided_at", s=submission_id)]
+
+
+def test_tc_console_78_a_nameless_paper_is_assigned_to_its_student_and_recorded(parked):
+    """B8: the operator names the student a nameless paper belongs to. The paper is released
+    under that student, the decision is recorded with its note and the identity check's own
+    verdict, and the same decision posted again records nothing new (FR-CONSOLE-02)."""
+    store, ids = parked
+    target = ids["S9-006-no-name"]
+    console = build_console(store=store)
+
+    from aeh.console.spa_reads import parked_read
+
+    entry = next(e for e in parked_read(None, console, {})["parked"]
+                 if e["submission_id"] == target)
+    assert entry["assignable"] is True
+    assert [s["student_ref"] for s in entry["students_without_paper"]] == ["S9-006"]
+
+    outcome = console.perform("resolve quarantine item", submission_id=target,
+                              resolution="assigned", student_ref="S9-006",
+                              note="the hand matches S9-006's other work", actor="Ms Rivera")
+    assert outcome.dispatched, outcome.detail
+    row = _row(store, target)
+    assert (row["quarantined"], row["ingest_status"], row["student_ref"], row["v3_identity"]) \
+        == (0, "ok", "S9-006", "pass")
+    decisions = _decisions(store, target)
+    assert len(decisions) == 1
+    assert decisions[0]["resolution"] == "assigned" and decisions[0]["actor"] == "Ms Rivera"
+    assert decisions[0]["student_ref"] == "S9-006"
+    assert decisions[0]["prior_identity"] not in (None, "pass")
+    assert decisions[0]["note"] == "the hand matches S9-006's other work"
+
+    again = console.perform("resolve quarantine item", submission_id=target,
+                            resolution="assigned", student_ref="S9-006",
+                            note="the hand matches S9-006's other work", actor="Ms Rivera")
+    assert len(_decisions(store, target)) == 1, again.detail
+
+
+@pytest.mark.parametrize("student_ref, words", [
+    ("S9-001", "already has a paper"),
+    ("S9-999", "not on this class's list"),
+    ("", "choose the student"),
+])
+def test_tc_console_78_an_assignment_that_would_misgrade_is_refused(parked, student_ref, words):
+    """An assignment never grades a paper under nobody or gives a student two papers: a
+    student who already has a paper, one not on the list, or none, is refused and nothing —
+    status, identity or decision row — is written."""
+    store, ids = parked
+    target = ids["S9-006-no-name"]
+    before = _row(store, target)
+    outcome = build_console(store=store).perform(
+        "resolve quarantine item", submission_id=target, resolution="assigned",
+        student_ref=student_ref)
+    assert not outcome.dispatched
+    assert words in outcome.detail, outcome.detail
+    assert _row(store, target) == before
+    assert _decisions(store, target) == []
+
+
+def test_tc_console_78_release_and_close_record_the_decision_with_its_note(parked):
+    """Every resolution is recorded, not only an assignment: the doubled-tick paper released
+    with the operator's reading, the wrong-test paper closed with the test it belongs to."""
+    store, ids = parked
+    console = build_console(store=store)
+    doubled, wrong = ids["S9-004-doubled-mark-and-blank"], ids["S9-005-wrong-test"]
+    assert console.perform("resolve quarantine item", submission_id=doubled,
+                           resolution="matched", note="Q1 is C").dispatched
+    assert console.perform("resolve quarantine item", submission_id=wrong,
+                           resolution="unresolvable", note="this is ENG7-READ-01").dispatched
+    assert [(d["resolution"], d["note"]) for d in _decisions(store, doubled)] \
+        == [("matched", "Q1 is C")]
+    assert [(d["resolution"], d["note"]) for d in _decisions(store, wrong)] \
+        == [("unresolvable", "this is ENG7-READ-01")]

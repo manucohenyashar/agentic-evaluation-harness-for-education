@@ -148,6 +148,9 @@ _COHORT_PURGE_ORDER: tuple[str, ...] = (
     "cell_phase",
     "run",
     "assessment_match_proposal", "v4_cohort_breaker",
+    # B8: the operator's parked-paper decisions reference `submission` (and carry the
+    # operator's note), so they go before it.
+    "quarantine_decision",
     "unresolved_token", "token_cluster", "document_region", "document", "submission",
     # #531 (FR-CONSOLE-27): what an upload delivered — file names and blob addresses of a
     # cohort's scans, purged with the cohort.
@@ -203,6 +206,7 @@ _PURGE_DELETES: Mapping[str, Statement] = {
     "v4_cohort_breaker": Statement("DELETE FROM v4_cohort_breaker"),
     # #531: the upload record names the cohort's scan files and their blobs.
     "upload_part": Statement("DELETE FROM upload_part"),
+    "quarantine_decision": Statement("DELETE FROM quarantine_decision"),
     "cohort": Statement("DELETE FROM cohort"),
 }
 
@@ -262,6 +266,8 @@ _PURGE_BLOB_HASH_SCANS: Mapping[str, Statement] = {
     "v4_cohort_breaker": Statement("SELECT * FROM v4_cohort_breaker"),
     # #531: `blob_ref` is a content address, so the blob sweep reads it.
     "upload_part": Statement("SELECT * FROM upload_part"),
+    # B8: decision rows hold the operator's note and a student ref, no blob address.
+    "quarantine_decision": Statement("SELECT * FROM quarantine_decision"),
     "unresolved_token": Statement("SELECT * FROM unresolved_token"),
     "token_cluster": Statement("SELECT * FROM token_cluster"),
     "document_region": Statement("SELECT * FROM document_region"),

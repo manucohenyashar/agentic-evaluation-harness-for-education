@@ -230,14 +230,13 @@ Reviewing the results is optional; the review screen is not an action queue, and
 
 ### 5.4 Parked papers (operator)
 
-Open `/#/parked`. Each waiting paper shows **why it was parked** — the check that stopped it and the note the check left — and the decisions available (checked: the practice data's parked read carries the reason and the resolutions). Two decisions exist:
+Open `/#/parked`. Each waiting paper shows **why it was parked** — the check that stopped it and the note the check left — and the decisions available. Three decisions exist, each with an optional note:
 
-* **Release** the paper to scoring. This is right when you have looked at the paper and the system's reading stands.
-* **Close** the paper as unresolvable. Closing never gives zero: the unscored lines are marked MISSING and the grade INCOMPLETE. A no-name paper can only be closed — releasing it is refused, because it would be graded under nobody (the refusal says to close it or rescan it).
+* **Give it to a student.** For a paper with no name, or a name the class list does not match: choose the student it belongs to under *This paper belongs to* (only students with no paper yet are offered) and press **Give it to this student**. It is graded as theirs. A student who already has a paper cannot be given a second one.
+* **Release** the paper to scoring. This is right when you have looked at the paper and the system's reading stands. For a doubled mark, the paper is scored on what the page reader read — write the tick you read in the note, and correct the mark on the student's result if it needs it.
+* **Close** the paper as unresolvable. Closing never gives zero: the unscored lines are marked MISSING and the grade INCOMPLETE. For a wrong-test paper, note which test it is and upload it on the right class.
 
-Every decision asks for a confirmation before it is sent.
-
-**What a decision does not record.** A release or a close records only that: it does not record which student you decided the paper belongs to, or the mark you decided by hand (blocker B8). For a doubled mark, the released paper is scored on what the page reader read, not on your decision — write your decision on the record sheet. The system will **not** reassign a paper by itself.
+Every decision asks for a confirmation before it is sent, and is recorded with your name, the time, the student and your note; the card shows the decisions already recorded. The system will **not** reassign a paper by itself.
 
 ### 5.5 The rest of the sidebar
 
@@ -257,7 +256,6 @@ Named plainly, so nobody meets them by surprise. Each is a known, tracked gap.
 | Gap | What you do instead |
 |---|---|
 | **Starting the console** reads its environment once: the OpenRouter key and settings such as `HARNESS_ORCH_RANDOM_ARM_RATE` cannot be changed from the browser. | The operator sets them before `aeh console` (section 3.1; the live-test walk's step 0). |
-| **A parked decision records no student, mark or test.** Release and close are the only outcomes, and neither stores which student the paper belongs to or the mark you decided by hand (blocker B8). | Write the decision on the record sheet; rescan a paper and upload it again in the Papers inbox when the fix is on the paper itself. |
 | **The ambiguity questions are not in the SPA flow.** The SPA does not show this step. On the legacy `/setup/optional` page, its card is present but marked unavailable/arriving in version 2 (Phase 4); it is not a teacher-facing SPA control. | Nothing to do; the drafts' own review questions cover what blocks approval. |
 
 Nothing here hides a failure: every screen that would need a missing capability either does not offer the control or says so in its own words.

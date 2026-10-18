@@ -140,6 +140,13 @@ def record_quarantine_decision(
         raise QuarantineDecisionError(
             f"no paper {submission_id!r} is in this class. Nothing was written.")
     prior_identity = rows[0]["v3_identity"]
+    clean_note = (str(note).strip() or None) if note is not None else None
+    recorded = [d for d in quarantine_decisions(handle) if d["submission_id"] == submission_id]
+    if recorded and (recorded[-1]["resolution"], recorded[-1]["student_ref"],
+                     recorded[-1]["note"]) == (resolution, student_ref, clean_note):
+        # The same decision posted again (a double-click, a retried request, a back
+        # navigation) records nothing new: FR-CONSOLE-02, every action is idempotent.
+        return str(recorded[-1]["decision_id"])
     if resolution == "assigned":
         check_assignment(handle, submission_id, str(student_ref or ""))
     decision_id = f"qd-{uuid.uuid4().hex[:12]}"
@@ -153,7 +160,7 @@ def record_quarantine_decision(
             decision_id=decision_id, submission_id=submission_id, resolution=resolution,
             actor=str(actor or "operator"), student_ref=student_ref,
             prior_identity=None if prior_identity is None else str(prior_identity),
-            note=(str(note).strip() or None) if note is not None else None,
+            note=clean_note,
             decided_at=datetime.now(timezone.utc).isoformat())
 
     if tx is not None:
