@@ -277,3 +277,42 @@ def test_tc_pipe_32_a_read_cut_off_after_its_document_is_parked_and_read_again(
     stems = {p.stem for p in physics["sheets"].iterdir()}
     graded = [r for r in rows.values() if not r["quarantined"]]
     assert len(graded) == sum(1 for stem in stems if physics["expected"][stem] == "ok")
+
+
+# --- TC-PIPE-38 -------------------------------------------------------------------------------
+
+
+def test_tc_pipe_38_a_rescan_of_a_read_sheet_is_parked_not_graded_twice(tmp_data_dir, physics,
+                                                                       capsys):
+    """`TC-PIPE-38` (FR-INGEST-41) — *inline regression.* A rescan is a new file: the skip of
+    a scan already read misses it, the identity check matches the same student, and the paper
+    used to be read in beside the first, so the run graded that student twice. The intake now
+    parks it under the student, naming the earlier paper; the first stays the student's."""
+    assert cli.main(["cohort", "create", "--data-dir", str(tmp_data_dir), "--cohort", "class-ps9",
+                     "--consent", "synthetic", "--roster", str(physics["roster"])]) == 0
+    assert _ingest(tmp_data_dir, physics, capsys)[0] == 0
+    before = {r["submission_id"]: r for r in _submissions(tmp_data_dir)}
+    ok_stem = next(stem for stem in sorted(p.stem for p in physics["sheets"].iterdir())
+                   if physics["expected"][stem] == "ok")
+    original = (physics["sheets"] / f"{ok_stem}.pdf").read_bytes()
+    rescan = original + b"\n% rescanned\n"
+    store = open_store(tmp_data_dir)
+    try:
+        page = physics["fake"].pages[(store.blobs().put(original), 1)]
+        physics["fake"].pages[(store.blobs().put(rescan), 1)] = page
+    finally:
+        store.close()
+    for sheet in physics["sheets"].iterdir():
+        sheet.unlink()
+    (physics["sheets"] / f"{ok_stem}-rescan.pdf").write_bytes(rescan)
+    code, result, err = _ingest(tmp_data_dir, physics, capsys, with_paper=False)
+    assert code == 0, err
+    (outcome,) = result["sheets"]
+    assert outcome["status"] == "already_has_paper", outcome
+    assert "already has a paper" in outcome["detail"], outcome
+    rows = {r["submission_id"]: r for r in _submissions(tmp_data_dir)}
+    (new_id,) = set(rows) - set(before)
+    # Parked by the flag; the diagnosis stays the ladder's own (TC-INGEST-29).
+    assert (rows[new_id]["ingest_status"], rows[new_id]["quarantined"]) == ("ok", 1)
+    # The papers read before are exactly as they were: the first stays the student's.
+    assert {sid: rows[sid] for sid in before} == before

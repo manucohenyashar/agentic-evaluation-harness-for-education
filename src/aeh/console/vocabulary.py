@@ -79,6 +79,15 @@ CONTROL_SURFACE_ACTIONS: tuple[str, ...] = (
     "edit draft package",            # FR-CONSOLE-56
     "approve draft package",         # FR-CONSOLE-62
     "cancel job",                    # FR-CONSOLE-57
+    # The teacher-corrections delta (`docs/design/console_teacher_corrections_delta.md`): every
+    # mistake a teacher can make with a class list or the papers read into it has a way back
+    # in the browser. Each delegates to the door that owns the rows — M-ORCH for the class
+    # list, M-INGEST (through M-PIPE) for the papers — and enters this tuple with its effect.
+    "rename student",                # FR-CONSOLE-64
+    "remove student",                # FR-CONSOLE-65
+    "move paper to student",         # FR-CONSOLE-66
+    "remove paper",                  # FR-CONSOLE-67
+    "replace test paper",            # FR-CONSOLE-68
 )
 
 
@@ -148,6 +157,9 @@ AUTHORING_DRAFT_READ = "authoring draft"
 #: string (`CT-CONSOLE-34`). It parses the rows and lists the malformed ones, and writes
 #: nothing anywhere; the commit is the enumerated `import roster file` action above.
 ROSTER_PREVIEW_READ = "roster preview"
+#: Past tests (FR-CONSOLE-70): every grading run with its class, test version, dates and
+#: graded students — what a teacher looks up weeks after a test. A pure store projection.
+PAST_TESTS_READ = "past tests"
 
 
 #: The export reads (FR-CONSOLE-58, FR-CONSOLE-59, #762): the run's results workbook and
@@ -303,6 +315,26 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
         "package_version.published_by",
     ),
     "cancel job": ("run.status",),
+    # The teacher-corrections delta (FR-CONSOLE-64..68). A rename corrects one roster name; a
+    # removal deletes a roster row (refused while the student has a paper); a paper's move
+    # rewrites its student and records the decision in M-INGEST's trail; a paper's removal and
+    # the test paper's replacement delete intake's own rows (refused once graded). None of
+    # these fields is read by a scoring prompt (NFR-PROV-04 — the roster name is replaced by
+    # the ref before any request is built, NFR-PROV-08).
+    "rename student": ("roster.full_name",),
+    "remove student": ("roster.cohort_id", "roster.student_ref"),
+    "move paper to student": (
+        "submission.student_ref",
+        "quarantine_decision.decision_id",
+        "quarantine_decision.submission_id",
+        "quarantine_decision.resolution",
+        "quarantine_decision.actor",
+        "quarantine_decision.student_ref",
+        "quarantine_decision.note",
+        "quarantine_decision.decided_at",
+    ),
+    "remove paper": ("submission.submission_id", "document.document_id"),
+    "replace test paper": ("document.document_id", "submission.submission_id"),
 }
 
 

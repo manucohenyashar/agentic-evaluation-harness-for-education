@@ -216,6 +216,33 @@ CONSOLE_CAPABILITY_PARITY: dict[str, str] = {
         "a run's cancel is the existing `pause/resume` control row — the terminal has no job "
         "registry to cancel into"
     ),
+    # The teacher-corrections delta (FR-CONSOLE-64..70): the console is where a teacher fixes
+    # a class list or the papers read into it, and where past tests are looked up.
+    "rename student": (
+        "console-only: M-ORCH's `rename_on_roster` corrects one listed name in place; "
+        "`aeh cohort show` prints the list a developer checks it against"
+    ),
+    "remove student": (
+        "console-only: M-ORCH's `remove_from_roster` takes a student listed by mistake off "
+        "the class list, refused while a paper is theirs"
+    ),
+    "move paper to student": (
+        "console-only: M-INGEST's `reassign_paper` (through M-PIPE) moves a matched paper to "
+        "the right student and records it in the decision trail the Parked screen shows"
+    ),
+    "remove paper": (
+        "console-only: M-INGEST's `remove_paper` (through M-PIPE) takes an ungraded paper out "
+        "so `aeh ingest` or the papers screen can read the scan again"
+    ),
+    "replace test paper": (
+        "console-only: M-INGEST's `remove_test_paper` (through M-PIPE) removes the class's "
+        "test paper while nothing is graded; `aeh ingest --assessment` then reads the right one"
+    ),
+    "past tests": (
+        "console-only: the past tests read lists every grading run with its class, test and "
+        "dates, and finds a student's results across them; `aeh results class/student` "
+        "answer one run at a time"
+    ),
 }
 
 

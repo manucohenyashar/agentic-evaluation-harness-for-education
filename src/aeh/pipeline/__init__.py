@@ -54,6 +54,7 @@ from .runtime import _provider_for
 from .background import (
     check_parked_assignment,
     cohort_has_test_paper,
+    move_paper_to_student,
     parked_decisions,
     read_uploaded_paper,
     record_parked_decision,

@@ -150,6 +150,11 @@ class DomainEffectsMixin:
             from .cohort_editor import add_students_effect
 
             return add_students_effect(self._store, params)
+        if action in ("rename student", "remove student", "move paper to student",
+                      "remove paper", "replace test paper"):
+            from .corrections import CORRECTION_EFFECTS
+
+            return CORRECTION_EFFECTS[action](self._store, params)
         if action == "recover runs":
             return self._recover_effect(params)
         if action == "set review window":
@@ -783,7 +788,7 @@ class DomainEffectsMixin:
                 False,
             )
         refusal = self._release_refusal(submission_id, assigning=resolution == "assigned") \
-            if resolution in ("matched", "assigned") else None
+            if resolution in ("matched", "assigned") else self._close_refusal(submission_id)
         if refusal is not None:
             return refusal, False
         status = "incomplete" if resolution == "unresolvable" else "ok"
@@ -815,11 +820,11 @@ class DomainEffectsMixin:
                         tx.execute(_UPDATE_QUARANTINE_RESOLUTION, submission_id=submission_id,
                                    status=status)
             except ValueError as refused:
-                return f"submission {submission_id}: {refused}", False
+                return f"{refused}", False
             if resolution == "assigned":
                 return (
-                    f"submission {submission_id} assigned to {student_ref} and released to "
-                    "scoring by the operator's decision, which is recorded",
+                    f"the paper was given to {self._listed_name_of(key, student_ref)} and goes "
+                    "forward to be graded as theirs; the decision is recorded",
                     True,
                 )
             if resolution == "matched":
@@ -839,6 +844,35 @@ class DomainEffectsMixin:
             "written",
             False,
         )
+
+    def _listed_name_of(self, cohort_key: str, student_ref: Any) -> str:
+        """The student as the teacher knows them (FR-UI-22): the listed name, the ref only
+        when the list holds none."""
+        try:
+            rows = self._store.cohort(cohort_key).query(
+                "SELECT full_name FROM roster WHERE student_ref = :ref", ref=str(student_ref))
+        except Exception:  # noqa: BLE001 — the ref stands in for an unreadable name
+            rows = []
+        return (str(rows[0]["full_name"] or "") if rows else "") or str(student_ref)
+
+    def _close_refusal(self, submission_id: str) -> str | None:
+        """Why `unresolvable` may not close this paper, or None. A second copy of a student's
+        paper (FR-INGEST-41) is filed under that student: closed, it would be graded
+        INCOMPLETE beside their real paper, so it is removed (or used instead) rather than
+        closed."""
+        for key in self._cohort_keys():
+            try:
+                rows = list(self._store.cohort(key).query(
+                    _SELECT_SUBMISSION_IDENTITY, submission_id=submission_id))
+            except Exception:  # noqa: BLE001 — one unreadable ledger is skipped
+                continue
+            if rows and str(rows[0]["v3_identity"] or "") == "already_has_paper":
+                return (
+                    f"this is a second paper for {self._listed_name_of(key, rows[0]['student_ref'])}"
+                    ", who already has one: closing it would grade it INCOMPLETE beside their "
+                    "real paper. Remove this scan, or remove the earlier paper and give this one "
+                    "to the student. Nothing was written.")
+        return None
 
     def _release_refusal(self, submission_id: str, *, assigning: bool = False) -> str | None:
         """Why `matched` may not release this paper, or None. A paper whose student V3 did not

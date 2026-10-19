@@ -30,6 +30,7 @@ from tests.support.console_vocabulary import (
     BLOCKING_TOUCHPOINTS,
     CONSOLE_KNOBS,
     CONTROL_SURFACE_ACTIONS,
+    CORRECTIONS_CONTROL_ACTIONS,
     DELTA_CONTROL_ACTIONS,
     HLD_CONTROL_ACTIONS,
     MOJIBAKE_MARKERS,
@@ -187,6 +188,7 @@ def test_the_control_surface_transcribes_hld_11_8(repo_root):
     )
     assert CONTROL_SURFACE_ACTIONS == (
         HLD_CONTROL_ACTIONS + tuple(DELTA_CONTROL_ACTIONS) + tuple(REDESIGN_CONTROL_ACTIONS)
+        + tuple(CORRECTIONS_CONTROL_ACTIONS)
     )
 
 
@@ -744,3 +746,20 @@ def test_element_text_slices_to_one_element_rather_than_the_page():
         "longer demonstrates why the slice is needed"
     )
     assert not forbidden_narrative_claims(element_text(page, "narrative"))
+
+
+def test_the_corrections_control_actions_are_the_requirements_that_add_them(repo_root):
+    """The teacher-corrections delta's five actions, each from the requirement that adds it —
+    the same rule the other deltas' actions meet: an entry naming no requirement is an
+    undeclared write path wearing a vocabulary entry."""
+    delta = _normalized(repo_root, "docs/design/console_teacher_corrections_delta.md")
+    assert CORRECTIONS_CONTROL_ACTIONS == {
+        "rename student": "FR-CONSOLE-64",
+        "remove student": "FR-CONSOLE-65",
+        "move paper to student": "FR-CONSOLE-66",
+        "remove paper": "FR-CONSOLE-67",
+        "replace test paper": "FR-CONSOLE-68",
+    }, "a corrections control action was added or removed: that is a design decision, cite it"
+    for action, requirement in CORRECTIONS_CONTROL_ACTIONS.items():
+        assert f"| {requirement.lower()} |" in delta, f"{requirement} is not defined in the delta"
+        assert f"(`{action}`)" in delta, f"the delta's {requirement} does not name `{action}`"

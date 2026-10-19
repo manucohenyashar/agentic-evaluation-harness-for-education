@@ -96,6 +96,7 @@ def ingest_files(store: Any, run_config: Any, cohort_id: str, package_version: s
         ResidencySlot,
         has_assessment_document,
         park_interrupted_submissions,
+        park_second_paper,
         submitted_sources,
     )
     from aeh.orch import default_package_id_for
@@ -167,7 +168,17 @@ def ingest_files(store: Any, run_config: Any, cohort_id: str, package_version: s
         findings = "; ".join(
             str(f.get("finding")) for f in (report.detail or {}).get("findings", ())
             if isinstance(f, dict) and f.get("finding"))
-        record(SheetOutcome(file=path.name, status=report.ingest_status,
+        status = report.ingest_status
+        # FR-INGEST-41: a rescan is a new file, so the skip above misses it and the identity
+        # check matches the same student again. Graded beside the first paper it would grade
+        # the student twice, so it is parked for the teacher to keep one of the two.
+        earlier = park_second_paper(handle, report.submission_id)
+        if earlier is not None:
+            status = "already_has_paper"
+            findings = "; ".join(filter(None, (findings, (
+                f"this student already has a paper in this class ({earlier}); parked so "
+                "one student is never graded on two papers"))))
+        record(SheetOutcome(file=path.name, status=status,
                             submission_id=report.submission_id, gates=dict(report.gates),
                             detail=findings))
     read = sum(1 for o in outcomes if o.submission_id)

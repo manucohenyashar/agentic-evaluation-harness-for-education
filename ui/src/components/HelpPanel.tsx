@@ -33,6 +33,7 @@ const SCREEN_SECTIONS: Array<[route: string, keyword: string]> = [
   ["/review", "review, finalize, amend"],
   ["/results", "review, finalize, amend"],
   ["/settings", "the rest of the sidebar"],
+  ["/past", "review, finalize, amend"],
 ];
 
 /** The screen id the ask's context carries: the route as a slug, with the parameterized

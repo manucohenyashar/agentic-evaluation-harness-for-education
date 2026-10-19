@@ -6,6 +6,7 @@ import { OverrideForm, type OverrideChange } from "../components/Override";
 import { useToast } from "../state/StateDisplay";
 import { flagLabel, flagTone, scoreStateLabel } from "../state/model";
 import { useScreenRead } from "../useScreenRead";
+import { studentName } from "../studentNames";
 import { useRunParams } from "../selection";
 
 /**
@@ -54,7 +55,7 @@ export function StudentDetail({ submissionId }: { submissionId: string }) {
       {(doc) => (
         <>
           <p className="hub-state">
-            {doc.student_ref ?? doc.submission_id} — total {doc.total ?? "—"}
+            {studentName(doc)} — total {doc.total ?? "—"}
             {doc.state !== null && doc.state !== ""
               ? `, ${scoreStateLabel(doc.state).toLowerCase()}`
               : ""}

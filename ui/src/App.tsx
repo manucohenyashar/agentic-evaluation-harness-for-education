@@ -14,6 +14,7 @@ import { Monitor } from "./screens/Monitor";
 import { PackageSetup } from "./screens/PackageSetup";
 import { PackageAuthor } from "./screens/PackageAuthor";
 import { Parked } from "./screens/Parked";
+import { PastTests } from "./screens/PastTests";
 import { Papers } from "./screens/Papers";
 import { Results } from "./screens/Results";
 import { Review } from "./screens/Review";
@@ -224,6 +225,8 @@ export function App() {
     screen = <Logs runId={selection.runId} />;
   } else if (address.path === "/parked") {
     screen = <Parked />;
+  } else if (address.path === "/past") {
+    screen = <PastTests classId={selection.classId} />;
   } else if (address.path === "/jobs") {
     screen = <Jobs pausedRunIds={pausedRunIds} />;
   } else if (address.path === "/settings") {

@@ -3,6 +3,7 @@ import { fetchRead, performAction, type BlindSeats as BlindSeatsDoc } from "../a
 import { ActionOutcome, outcomeText } from "../components/Confirm";
 import { ReadScreen } from "../components/ReadScreen";
 import { useScreenRead } from "../useScreenRead";
+import { studentName } from "../studentNames";
 import { useRunParams } from "../selection";
 
 /**
@@ -30,7 +31,7 @@ export function BlindSample() {
           <ul className="rows-list">
             {data.seats.map((seat) => (
               <li key={`${seat.submission_id}-${seat.criterion_id}`}>
-                <span className="step-name">{seat.student_ref ?? seat.submission_id}</span>
+                <span className="step-name">{studentName(seat)}</span>
                 <span className="step-note">{seat.label ?? seat.criterion_id}</span>
                 {seat.evaluation_mode !== "" && (
                   <span className="step-state">{seat.evaluation_mode}</span>

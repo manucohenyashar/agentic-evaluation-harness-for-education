@@ -109,7 +109,7 @@ from .migrations import (
     TIER_MIGRATIONS,
 )
 from .purge import PurgeReport
-from .discard import discard_empty_cohort
+from .discard import discard_empty_cohort, discard_test_paper, discard_ungraded_paper
 from .connection import READ_VERBS, _run, TierOpened
 from .limits import StoreLimits
 from .blobs import BLOB_HASH_PATTERN, blob_store_stats, ContentAddressedBlobStore, INCOMING_DIR
@@ -134,6 +134,8 @@ __all__ = [
     "PurgePreconditionError",
     "PurgeReport",
     "discard_empty_cohort",
+    "discard_test_paper",
+    "discard_ungraded_paper",
     "Row",
     "SchemaTooNewError",
     "Statement",

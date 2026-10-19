@@ -193,6 +193,8 @@ from .cohorts import (
     check_student_refs,
     cohort_summary,
     create_cohort,
+    remove_from_roster,
+    rename_on_roster,
 )
 from .roster_entries import NAME_REQUIREMENT, RosterEntry
 

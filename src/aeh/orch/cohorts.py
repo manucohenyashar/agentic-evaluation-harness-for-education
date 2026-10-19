@@ -35,7 +35,7 @@ from .statements import ORCH_STATEMENTS
 
 __all__ = ["CONSENT_CLASSES", "CohortSetupError", "CohortSummary", "RosterEntry",
            "add_to_roster", "check_cohort_id", "check_student_refs", "cohort_summary",
-           "create_cohort"]
+           "create_cohort", "remove_from_roster", "rename_on_roster"]
 
 #: The cohort table's own CHECK set (`store/migrations.py`), named here so a refusal can list it.
 CONSENT_CLASSES: tuple[str, ...] = ("synthetic", "consented", "real")
@@ -183,3 +183,65 @@ def add_to_roster(store: Any, cohort_id: str, roster: Iterable[Any]) -> CohortSu
     return CohortSummary(cohort_id=cohort_id, consent_class=current.consent_class,
                          created_at=current.created_at,
                          roster_size=current.roster_size + len(checked))
+
+
+def _roster_entry(store: Any, cohort_id: str, student_ref: Any) -> tuple[Any, dict[str, Any]]:
+    """The cohort's handle and the listed student's row, or `CohortSetupError` naming what is
+    missing. Opens no file that is not already there."""
+    if cohort_summary(store, cohort_id) is None:
+        raise CohortSetupError(f"no class {cohort_id!r} exists. Nothing was written.")
+    ref = str(student_ref or "").strip()
+    if not ref:
+        raise CohortSetupError("no student was named. Nothing was written.")
+    handle = store.cohort(cohort_id)
+    rows = handle.query(ORCH_STATEMENTS["select_roster_entry"], cohort_id=cohort_id,
+                        student_ref=ref)
+    if not rows:
+        raise CohortSetupError(
+            f"that student is not on the list of class {cohort_id!r}. Nothing was written.")
+    return handle, dict(rows[0])
+
+
+def rename_on_roster(store: Any, cohort_id: str, student_ref: str,
+                     full_name: Any) -> CohortSummary:
+    """Correct a listed student's name (FR-CONSOLE-64): a name typed wrong is fixed in place,
+    under the same rule a new name meets (`check_roster`). The reference does not change, so
+    every paper already matched to the student stays theirs; papers read *after* the
+    correction are matched against the corrected name (V3). Renaming to the current name
+    writes nothing."""
+    handle, row = _roster_entry(store, cohort_id, student_ref)
+    (checked,) = check_roster([RosterEntry(full_name=full_name, student_ref=row["student_ref"])],
+                              cohort_id)
+    if checked.full_name != row["full_name"]:
+        with handle.transaction() as tx:
+            tx.execute(ORCH_STATEMENTS["update_roster_name"], cohort_id=cohort_id,
+                       student_ref=row["student_ref"], full_name=checked.full_name)
+    summary = cohort_summary(store, cohort_id)
+    assert summary is not None
+    return summary
+
+
+def remove_from_roster(store: Any, cohort_id: str, student_ref: str) -> CohortSummary:
+    """Take a student listed by mistake off the class list (FR-CONSOLE-65). Refused while any
+    paper in the class is theirs, naming it: a paper is graded under its student, so the
+    paper is moved to its rightful student or removed first. The class keeps at least one
+    student, as at creation."""
+    handle, row = _roster_entry(store, cohort_id, student_ref)
+    papers = [paper["submission_id"] for paper in handle.query(
+        ORCH_STATEMENTS["select_papers_of_student"], cohort_id=cohort_id,
+        student_ref=row["student_ref"])]
+    if papers:
+        raise CohortSetupError(
+            f"{row['full_name'] or row['student_ref']} has a paper in this class; give the "
+            f"paper to the right student or remove it first. Nothing was written.")
+    current = cohort_summary(store, cohort_id)
+    if current is not None and current.roster_size <= 1:
+        raise CohortSetupError(
+            "this is the class's only student: a class needs at least one, so add the right "
+            "student first (or delete the class). Nothing was written.")
+    with handle.transaction() as tx:
+        tx.execute(ORCH_STATEMENTS["delete_roster_entry"], cohort_id=cohort_id,
+                   student_ref=row["student_ref"])
+    summary = cohort_summary(store, cohort_id)
+    assert summary is not None
+    return summary

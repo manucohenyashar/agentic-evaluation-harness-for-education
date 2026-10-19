@@ -33,8 +33,28 @@ export interface Student {
   full_name: string | null;
 }
 
+/** A class's check against the teacher's own list (FR-CONSOLE-69): how many are listed, how
+ * many papers are in, and who has none yet — by name. */
+export interface ClassSummary {
+  listed: number;
+  with_paper: number;
+  without_paper: string[];
+}
+
+export interface ClassRosterEntry {
+  cohort_id: string;
+  students: Student[];
+  summary?: ClassSummary;
+  consent_class?: string | null;
+  runs?: number;
+  papers?: number;
+  graded_papers?: number;
+  /** A class that never held a paper or a run is deleted outright; any other is kept. */
+  deletable?: boolean;
+}
+
 export interface ClassRoster {
-  cohorts: { cohort_id: string; students: Student[] }[];
+  cohorts: ClassRosterEntry[];
 }
 
 /** The roster editor's fixed copy and choices (FR-CONSOLE-42) — the SPA renders the
@@ -63,6 +83,12 @@ export interface RosterPreviewDoc {
 export interface PaperSheet {
   submission_id: string;
   student_ref: string | null;
+  /** The listed name of the student the paper is filed under (FR-CONSOLE-66). */
+  full_name?: string | null;
+  /** A matched paper, which the teacher may move to another student. */
+  matched?: boolean;
+  /** A run has graded it: it can be moved, never removed (FR-CONSOLE-67). */
+  graded?: boolean;
   status: string;
   parked: boolean;
 }
@@ -75,6 +101,9 @@ export interface Papers {
   test_paper_read?: boolean;
   /** The answer sheets read into the class so far, oldest first. */
   sheets?: PaperSheet[];
+  summary?: ClassSummary;
+  /** How many of the class's papers a run has graded — the test paper is replaceable at 0. */
+  graded_papers?: number;
 }
 
 export interface RunStartState {
@@ -97,6 +126,10 @@ export interface ReviewItem {
   submission_id: string;
   criterion_id: string;
   kind: string;
+  /** The student by name (FR-UI-22) and the grading point by its label. */
+  student_ref?: string | null;
+  full_name?: string | null;
+  label?: string;
 }
 
 export interface ReviewQueue {
@@ -113,6 +146,7 @@ export interface ReviewQueue {
 export interface BlindSeat {
   submission_id: string;
   student_ref: string | null;
+  full_name?: string | null;
   criterion_id: string;
   /** The grading point's teacher label (the question it grades). */
   label?: string;
@@ -152,6 +186,8 @@ export interface ResultCriterion {
 export interface ResultStudent {
   submission_id: string;
   student_ref: string | null;
+  /** The student's listed name — what the teacher knows them by (FR-CONSOLE-70). */
+  full_name?: string | null;
   total: number | null;
   state: string;
   criteria: ResultCriterion[];
@@ -226,6 +262,7 @@ export interface StudentDetail {
   run_id: string;
   submission_id: string;
   student_ref: string | null;
+  full_name?: string | null;
   total: number | null;
   state: string | null;
   narrative: NarrativeRow[];
@@ -445,6 +482,8 @@ export interface ParkedDoc {
     reason: string;
     reason_label: string;
     matched_student: string | null;
+    /** The matched student's listed name. */
+    matched_name?: string | null;
     match_note: string;
     resolutions: string[];
     resolvable: boolean;
@@ -452,11 +491,20 @@ export interface ParkedDoc {
      * one of the class's students who has no paper yet. */
     assignable?: boolean;
     students_without_paper?: { student_ref: string; full_name: string | null }[];
+    /** A second paper for a student who already has one (FR-INGEST-41): the student, and
+     * their earlier paper — whether a run graded it (then it stays). */
+    duplicate_of?: {
+      student_ref: string;
+      full_name: string | null;
+      submission_id: string | null;
+      graded: boolean;
+    } | null;
     /** The operator decisions recorded for this paper, oldest first. */
     decisions?: {
       resolution: string;
       actor: string;
       student_ref: string | null;
+      full_name?: string | null;
       note: string | null;
       decided_at: string;
     }[];
@@ -744,4 +792,30 @@ export function fileToBase64(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error ?? new Error("the file could not be read"));
     reader.readAsDataURL(file);
   });
+}
+
+/** Past tests (FR-CONSOLE-70): every grading run, newest first, with its class, test version,
+ * dates and graded students by name. */
+export interface PastTestStudent {
+  submission_id: string;
+  student_ref: string | null;
+  full_name: string | null;
+  total: number | null;
+  state: string;
+}
+
+export interface PastTestRun {
+  run_id: string;
+  cohort_id: string;
+  package_id: string;
+  package_version_id: string;
+  status: string;
+  started_at: string | null;
+  completed_at: string | null;
+  students: PastTestStudent[];
+}
+
+export interface PastTestsDoc {
+  runs: PastTestRun[];
+  unreadable_runs: number;
 }

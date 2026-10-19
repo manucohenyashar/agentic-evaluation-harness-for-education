@@ -119,7 +119,9 @@ def test_tc_ui_22_class_papers_parked_and_run_start_from_the_browser(
             card.first.get_by_label("Your note (optional)").fill("the hand matches S9-006")
             card.first.get_by_role("button", name="Give it to this student").click()
             page.get_by_role("dialog").get_by_role("button", name="Give it").click()
-            page.get_by_role("status").filter(has_text="assigned to").wait_for()
+            # FR-UI-22: the outcome names the student by name (the roster's name is the
+            # ref here — the sample class lists S9-006 under that name).
+            page.get_by_role("status").filter(has_text="was given to S9-006").wait_for()
 
             # 4. a new grading run, from the run screen
             page.goto(origin + "/#/run?class=ps9-class")

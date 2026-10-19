@@ -52,7 +52,10 @@ SWEEP1_ADMITTED_INGEST_STATUSES: frozenset[str] = frozenset(
 #: included — because its score would land under no student, or the wrong one. Keyed on the
 #: identity column, not on `quarantined`: a paper refused before V3 (unreadable at V0/V1) keeps
 #: its deterministic unit (TC-ORCH-25 pins re-ingest adding exactly two units).
-IDENTITY_TRIAGE_V3_OUTCOMES: frozenset[str] = frozenset({"ambiguous", "unmatched"})
+IDENTITY_TRIAGE_V3_OUTCOMES: frozenset[str] = frozenset(
+    # `already_has_paper` (FR-INGEST-41): a second paper for a student who has one is held
+    # out of every stage until the teacher keeps one of the two.
+    {"ambiguous", "unmatched", "already_has_paper"})
 
 
 #: The `provider_config` key under which a run's frozen extractor/synthesizer pins are

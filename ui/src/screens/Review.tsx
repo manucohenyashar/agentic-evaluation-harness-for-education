@@ -2,6 +2,7 @@ import { fetchRead, type ReviewQueue as ReviewQueueDoc } from "../api";
 import { ReadScreen } from "../components/ReadScreen";
 import { useNavigate } from "../navigate";
 import { useScreenRead } from "../useScreenRead";
+import { sharedNames, studentLabel } from "../studentNames";
 import { useRunParams } from "../selection";
 
 /**
@@ -28,9 +29,15 @@ export function Review() {
           <ul className="rows-list">
             {data.shown.map((item) => (
               <li key={`${item.submission_id}-${item.criterion_id}`}>
-                <span className="step-name">{item.submission_id}</span>
-                <span className="step-note">{item.criterion_id}</span>
-                <span className="step-state">{item.kind}</span>
+                <a
+                  className="step-name"
+                  href={`#/results/students/${item.submission_id}`}
+                  onClick={() => navigate(`/results/students/${item.submission_id}`)}
+                >
+                  {studentLabel(item, sharedNames(data.shown))}
+                </a>
+                <span className="step-note">{item.label ?? item.criterion_id}</span>
+                <span className="step-state">{item.kind.replace(/_/g, " ")}</span>
               </li>
             ))}
           </ul>

@@ -118,6 +118,13 @@ _PARKED_RESOLUTIONS: dict[str, tuple[str, ...]] = {
 }
 
 
+#: The ways out for a second paper of one student (FR-INGEST-41): keep one of the two.
+_DUPLICATE_RESOLUTIONS: tuple[str, ...] = (
+    "Keep the earlier paper: remove this scan.",
+    "Use this scan instead: remove the earlier paper, then give this one to the student.",
+)
+
+
 # --- shared helpers ----------------------------------------------------------------------------------
 
 
@@ -823,7 +830,10 @@ def _parked_class_facts(app: Any, cohort_id: str) -> dict[str, Any]:
         handle = app._store.cohort(cohort_id)
         with_paper = {str(row["student_ref"]) for row in handle.query(
             "SELECT student_ref FROM submission "
-            "WHERE NOT (ingest_status = 'incomplete' AND quarantined = 0)")}
+            "WHERE NOT (ingest_status = 'incomplete' AND quarantined = 0) "
+            # A parked second copy is not the student's paper (FR-INGEST-41): once the
+            # earlier one is removed, the student is offered for this copy.
+            "AND COALESCE(v3_identity, '') != 'already_has_paper'")}
         roster = [
             {"student_ref": str(row["student_ref"]),
              "full_name": str(row["full_name"] or "") or None}
@@ -831,14 +841,58 @@ def _parked_class_facts(app: Any, cohort_id: str) -> dict[str, Any]:
                 "SELECT student_ref, full_name FROM roster ORDER BY full_name, student_ref")
             if str(row["student_ref"]) not in with_paper
         ]
+        names = {str(row["student_ref"]): (str(row["full_name"] or "") or None)
+                 for row in handle.query("SELECT student_ref, full_name FROM roster")}
         decisions = [
-            {key: decision[key] for key in (
-                "submission_id", "resolution", "actor", "student_ref", "note", "decided_at")}
+            {**{key: decision[key] for key in (
+                "submission_id", "resolution", "actor", "student_ref", "note", "decided_at")},
+             "full_name": names.get(str(decision["student_ref"] or ""))}
             for decision in parked_decisions(handle)
         ]
     except Exception:  # noqa: BLE001 — a class the page cannot read offers no assignment
         return {"students_without_paper": [], "decisions": []}
     return {"students_without_paper": roster, "decisions": decisions}
+
+
+def cohort_id_of(row: Any) -> str:
+    return str(row["cohort_id"])
+
+
+def _name_of(app: Any, cohort_id: str, student_ref: str) -> str:
+    """The student's listed name, the way the teacher knows them; the ref only when the list
+    holds no name for it."""
+    try:
+        rows = app._store.cohort(cohort_id).query(
+            "SELECT full_name FROM roster WHERE student_ref = :ref", ref=student_ref)
+    except Exception:  # noqa: BLE001 — the ref stands in for an unreadable name
+        rows = []
+    return (str(rows[0]["full_name"] or "") if rows else "") or student_ref
+
+
+def _earlier_paper(app: Any, cohort_id: str, student_ref: str,
+                   submission_id: str) -> dict[str, Any]:
+    """The student a second-copy paper matched, and their paper already in the class: its id
+    and whether a run has graded it (a graded paper stays; the copy is then removed)."""
+    facts: dict[str, Any] = {"student_ref": student_ref, "full_name": None,
+                             "submission_id": None, "graded": False}
+    try:
+        handle = app._store.cohort(cohort_id)
+        names = handle.query("SELECT full_name FROM roster WHERE student_ref = :ref",
+                             ref=student_ref)
+        if names:
+            facts["full_name"] = str(names[0]["full_name"] or "") or None
+        earlier = handle.query(
+            "SELECT submission_id FROM submission WHERE student_ref = :ref "
+            "AND submission_id != :sid AND NOT (ingest_status = 'incomplete' "
+            "AND quarantined = 0) ORDER BY rowid", ref=student_ref, sid=submission_id)
+        if earlier:
+            facts["submission_id"] = str(earlier[0]["submission_id"])
+            facts["graded"] = bool(handle.query(
+                "SELECT 1 FROM work_unit WHERE submission_id = :sid LIMIT 1",
+                sid=facts["submission_id"]))
+    except Exception:  # noqa: BLE001 — what could be read is named; the rest stays empty
+        pass
+    return facts
 
 
 def parked_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
@@ -859,8 +913,20 @@ def parked_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
         # a student: it matched nobody, whatever the column holds.
         student_ref = (str(row["student_ref"] or "").strip() or None) \
             if identity == "pass" else None
-        if student_ref:
-            match_note = f"The paper matched {student_ref}."
+        duplicate_of = None
+        if identity == "already_has_paper":
+            # FR-INGEST-41: a second paper for a student who already has one. Named with
+            # the student it matched and the earlier paper, so the teacher keeps one.
+            duplicate_of = _earlier_paper(app, str(row["cohort_id"]),
+                                          str(row["student_ref"] or ""),
+                                          str(row["submission_id"]))
+            student_ref = duplicate_of["student_ref"]
+            match_note = (
+                f"This paper matched {duplicate_of['full_name'] or student_ref}, who already "
+                "has a paper in this class. Keep one of the two: remove this scan, or use it "
+                "instead of the earlier one.")
+        elif student_ref:
+            match_note = f"The paper matched {_name_of(app, cohort_id_of(row), student_ref)}."
         else:
             match_note = (
                 "No student could be matched to this paper"
@@ -874,16 +940,27 @@ def parked_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
         parked.append({
             "submission_id": submission_id,
             "cohort_id": cohort_id,
-            "reason": status,
-            "reason_label": _INGEST_STATUS_LABELS.get(status, status),
+            "reason": "already_has_paper" if duplicate_of is not None else status,
+            "reason_label": ("A second paper for a student who already has one"
+                             if duplicate_of is not None
+                             else _INGEST_STATUS_LABELS.get(status, status)),
             "matched_student": student_ref,
+            "matched_name": (_name_of(app, cohort_id, student_ref) if student_ref else None),
             "match_note": match_note,
-            "resolutions": list(_PARKED_RESOLUTIONS.get(
-                status, ("Open the parked page to resolve this paper.",))),
-            "resolvable": status in QUARANTINE_STATES,
+            "resolutions": list(_DUPLICATE_RESOLUTIONS if duplicate_of is not None
+                                else _PARKED_RESOLUTIONS.get(
+                                    status, ("Open the parked page to resolve this paper.",))),
+            "resolvable": status in QUARANTINE_STATES or duplicate_of is not None,
             # B8: a paper whose student was not matched (but whose pages were read) can be
             # given to the student it belongs to — one of the class's students with no paper.
-            "assignable": status in QUARANTINE_STATES and identity not in ("pass", "not_reached"),
+            # A second copy becomes assignable once the student's earlier paper is gone.
+            "assignable": (status in QUARANTINE_STATES or duplicate_of is not None)
+            and identity not in (
+                "pass", "not_reached") and not (
+                duplicate_of is not None and duplicate_of["submission_id"] is not None),
+            # A second copy can only be removed or used instead of the first; closing it
+            # would grade it INCOMPLETE beside the student's real paper.
+            "duplicate_of": duplicate_of,
             "students_without_paper": facts["students_without_paper"],
             "decisions": [d for d in facts["decisions"] if d["submission_id"] == submission_id],
         })

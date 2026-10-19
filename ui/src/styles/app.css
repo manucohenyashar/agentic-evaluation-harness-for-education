@@ -1700,3 +1700,18 @@ textarea:focus-visible {
 .editor-footer {
   margin: var(--space-md) 0;
 }
+
+/* The teacher's corrections beside a row (FR-CONSOLE-64..67): small, secondary to the name. */
+.button-small {
+  padding: 2px 8px;
+  font-size: 0.85em;
+  margin-left: 6px;
+}
+
+.sheet-fixes {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  margin-left: 6px;
+}

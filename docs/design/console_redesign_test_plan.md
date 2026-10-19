@@ -340,6 +340,43 @@ Negative and boundary cases are marked. Every case names its oracle.
   both and shows no raw settings, and the console opens that run's monitor. No page error, no
   foreign request.
 
+#### Teacher corrections (`console_teacher_corrections_delta.md`, 1.14-delta)
+
+Inline regressions for the teacher-corrections delta: every mistake a teacher can make with a
+class list or the papers read into it has a way back in the browser, and students are named by
+name (FR-UI-22). Unit cases in `tests/unit/console/test_tc_console_81_teacher_corrections.py`
+drive each control action through `ConsoleApp.perform` over a real store and read the result
+back through the screen reads; the intake cases ride `TC-PIPE-30`'s world.
+
+- **TC-CONSOLE-81** (FR-CONSOLE-64/65) — a misspelt name is corrected in place and the
+  student's paper stays theirs; a blank name is refused; a student listed by mistake is taken
+  off; a student who has a paper cannot be, and the refusal names them by name — never by a
+  reference or a paper id.
+- **TC-CONSOLE-82** (FR-CONSOLE-66) — a paper matched to the wrong student moves to the right
+  one, recorded as one `assigned` decision with the teacher's note and the student it came
+  from; moving onto a student who already has a paper is refused by name; the same move posted
+  again changes nothing.
+- **TC-CONSOLE-83** (FR-CONSOLE-67) — an ungraded paper is removed with its documents and
+  regions; removing it again is refused; a paper a run has graded is refused, naming the run,
+  and stays.
+- **TC-CONSOLE-84** (FR-CONSOLE-68) — the wrong test paper is removed with its ungraded sheets
+  (the papers read then asks for a test paper again and lists no sheet); a class with a graded
+  paper keeps its test paper.
+- **TC-CONSOLE-85** (FR-CONSOLE-69) — the class read's check is `{listed, with_paper,
+  without_paper}` with the missing students by name, alphabetically; a closed nameless paper is
+  never a student called `unknown`, a parked second copy never lists its student twice; the
+  class is not deletable once it holds papers; the papers read names each sheet's student.
+- **TC-CONSOLE-86** (FR-CONSOLE-70 / FR-UI-22) — past tests lists runs newest first with class,
+  test version, start date and each graded student by name and total, and narrows by class;
+  the results screen names each student.
+- **TC-INGEST-59** (FR-INGEST-41) — `park_second_paper` parks a second paper matched to a
+  student who already has one (`already_has_paper`, filed under the student) and leaves the
+  first untouched; once the earlier paper is removed the copy is given to the student; another
+  student's paper is left as read. (`tests/integration/ingest/`.)
+- **TC-PIPE-38** (FR-INGEST-41) — *end to end through `aeh ingest`*: a rescan of a sheet already
+  read (new bytes, same page) is parked (`already_has_paper`, the ladder's `ok` diagnosis untouched) with a finding naming the earlier paper,
+  and every paper read before is unchanged. Before the fix it was read as a second graded paper.
+
 ### 3.3 Configuration write path (M-CONF) — E1 rung 0/1
 
 - **TC-CONF-24** (FR-CONF-34 / CT-CONF-24 / RS-07) — *atomic validated writes.* Arms:
