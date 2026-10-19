@@ -44,9 +44,6 @@ _CORRECTION_STATEMENTS = {
         "SELECT submission_id, student_ref, v3_identity, quarantined, ingest_status "
         "FROM submission WHERE submission_id = :submission_id"
     ),
-    "select_roster_name": Statement(
-        "SELECT full_name FROM roster WHERE student_ref = :student_ref"
-    ),
     # The diagnosis (`ingest_status`) stays the ladder's own (TC-INGEST-29: one writer of the
     # status vocabulary); the park is the flag plus the identity outcome, which M-ORCH's
     # identity triage withholds from every stage (`IDENTITY_TRIAGE_V3_OUTCOMES`).

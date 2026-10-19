@@ -9,7 +9,7 @@ or student name and opens a run's results or a student's detail from it.
 
 A read, never a write (`ADR-45`): it reads each class's run rows and M-GRADE's own per-student
 records (`run_grade_records`, the door the results screen and the exports read) beside the
-class list's names. A class file that cannot be read is skipped and counted, not a 500.
+class list's names. A run whose grades cannot be read is listed without its students and counted, not a 500.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ def past_tests_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     graded students (name, ref, total, state). `cohort_id` narrows to one class."""
     del console
     if getattr(app._store, "data_dir", None) is None:
-        return {"runs": [], "skipped_classes": 0}
+        return {"runs": [], "unreadable_runs": 0}
     wanted = str(query.get("cohort_id") or "")
     rows = [dict(row) for row in app._read_cohort_files(Q._SELECT_RUNS_ALL, [])]
     runs: list[dict[str, Any]] = []
@@ -87,7 +87,7 @@ def past_tests_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
             "students": students,
         })
     runs.sort(key=lambda r: (str(r["started_at"] or ""), r["run_id"]), reverse=True)
-    return {"runs": runs, "skipped_classes": skipped}
+    return {"runs": runs, "unreadable_runs": skipped}
 
 
 __all__ = ["past_tests_read"]

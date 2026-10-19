@@ -70,14 +70,14 @@ function Switcher({
 export function ContextHeader({ context, selection, onSelection, onHelp, helpOpen = false }: ContextHeaderProps) {
   const classes = context === null ? [] : ledgerEntries(context);
   const packages = context?.packages ?? [];
-  // FR-CONSOLE-70: the runs of the class in hand, newest first, each named by what the
-  // teacher remembers — class, test and date — never "Grading run 3". With no class chosen,
-  // every run is offered. Past tests lists them all with their students.
-  const runs = newestRunFirst(
-    (context?.runs ?? []).filter(
-      (run) => selection.classId === null || run.cohort_id === selection.classId,
-    ),
-  );
+  // FR-CONSOLE-70: every run, each named by what the teacher remembers — class, test and
+  // date — never "Grading run 3"; the class in hand's runs first, each group newest first.
+  // Past tests lists them all with their students.
+  const allRuns = newestRunFirst(context?.runs ?? []);
+  const runs = [
+    ...allRuns.filter((run) => run.cohort_id === selection.classId),
+    ...allRuns.filter((run) => run.cohort_id !== selection.classId),
+  ];
 
   const classOptions: SwitcherOption[] = classes.map((entry) => ({
     value: entry.cohort_id,

@@ -183,7 +183,7 @@ The consent choice has no default and can never be changed afterwards: it decide
 * **Correct name** fixes a misspelt name in place. The student keeps their papers, and papers read afterwards are matched against the corrected name.
 * **Take off list** removes a student added by mistake (or twice, or who left). It is offered only for a student with no paper yet: move or remove their paper first (5.2).
 * **Add students** adds late students, one per line.
-* **Delete this class…** removes a class for good after you type its name. It is offered only for a class that holds no papers and no grading runs — a class made by mistake. A class with papers but no grading yet can be emptied first (remove its papers on **Load papers**) and then deleted. A graded class is kept: its results stay under **Past tests**, and the screen says so instead of offering the delete.
+* **Delete this class…** removes a class for good after you type its name. It is offered only for a class that holds no papers and no grading runs — a class made by mistake. A class with papers but no grading run yet can be emptied first (remove its papers on **Load papers**) and then deleted; once a grading run has been started for it, the class is kept. A graded class is kept: its results stay under **Past tests**, and the screen says so instead of offering the delete.
 
 ### 5.1 Make the test package (teacher, once, 30 to 60 minutes)
 
@@ -210,7 +210,7 @@ A second route to a published package also exists: `/#/package` shows the setup 
 **Fix a paper.** Beside each paper:
 
 * **Not theirs? Give it to…** moves a paper the console filed under the wrong student (similar names, a borrowed sheet) to the student it belongs to — only students with no paper yet are offered. Marks it already has move with it, and the move is recorded.
-* **Remove paper** takes out a paper that should not be here — the wrong file, another class's sheet, a blank page, the earlier of two scans — so the right scan can be uploaded and read. It is offered only for a paper no grading run has touched; a graded paper stays (correct its marks from Results, or move it to the right student).
+* **Remove paper** takes out a paper that should not be here — the wrong file, another class's sheet, a blank page, the earlier of two scans — so the right scan can be uploaded and read. It is offered only for a paper no grading run has touched; a paper that is part of a run's record stays (correct its marks from Results, move it to the right student, or close it on Parked).
 * **Wrong test paper? Replace it** (beside *The test paper*) removes the test paper read for this class, and the answer sheets already checked against it, so the right test paper and the sheets are read again with your next upload. It is offered only while nothing in the class has been graded.
 
 **The five intake checks, in plain words:**
@@ -245,7 +245,7 @@ Reviewing the results is optional; the review screen is not an action queue, and
 4. **Change a grade.** From the results screen or the student's own screen, use the grade control. For a grade not yet final, the console records a review action; changing a finalized grade requires **a reason**, creates a new revision and keeps the original. The student's screen shows the amendment history, including the reason and actor when recorded.
 5. **Download.** The **Download the results** panel on `/#/results` saves the marks as a spreadsheet (`.xlsx`) or a CSV file, one student's report as a PDF, and the test itself as a readable PDF and as its backup file. *Marks version* 1 is every student's marks as first given; version 2 lists only the students whose final mark was changed. The same screen corrects a multiple-choice **answer key** found wrong after the run (the question's marks are worked out again for the class) and sets the **review window** (hours the grades stay open before finalizing settles them).
 6. **Read the results.** `/#/results` shows each student's grade, class distribution, per-criterion statistics and the lines most students missed; it does not show a grade range or multiple-choice distractor breakdown. Students are listed by name; the search box finds a student by name. Click a name to open that student's own page.
-7. **Answer a question about an earlier test.** Open **Past tests** (`/#/past`). Every test graded before is listed newest first, with its class, the test version, the date and how many students were graded; choose a class to narrow the list. Type a student's name to see that student in every past test, with their total — click a line to open their page for that test, or a test to open its results. The top bar's *Grading run* switcher names each run the same way (class · test · date) and offers the selected class's runs.
+7. **Answer a question about an earlier test.** Open **Past tests** (`/#/past`). Every test graded before is listed newest first, with its class, the test version, the date and how many students were graded; choose a class to narrow the list. Type a student's name to see that student in every past test, with their total — click a line to open their page for that test, or a test to open its results. The top bar's *Grading run* switcher names each run the same way (class · test · date), the selected class's runs first.
 
 ### 5.4 Parked papers (operator)
 

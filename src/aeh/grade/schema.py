@@ -14,8 +14,12 @@ GRADE_STATEMENTS: dict[str, Statement] = {
         "SELECT run_id, cohort_id, package_version_id, package_id, status FROM run "
         "WHERE run_id = :run_id"
     ),
+    # FR-INGEST-41: a parked second paper for a student who already has one is not graded
+    # beside the first (it would be an INCOMPLETE grade under the same student) until the
+    # teacher keeps it — giving it to the student sets its identity check back to `pass`.
     "select_run_submissions": Statement(
         "SELECT submission_id FROM submission WHERE cohort_id = :cohort_id "
+        "AND COALESCE(v3_identity, '') != 'already_has_paper' "
         "ORDER BY submission_id"
     ),
     # The column list is split across string fragments so no single line carries

@@ -1305,11 +1305,14 @@ def _serve_and_drive(store, console_dir: Path, scratch: Path, cfg: Any,
             _goto(page, f"/papers?class={spec.cohort_id}")
             papers_text = spa.main_text(page)
             for plan in plans:
-                # The papers screen displays the pseudonymous ref, not the name —
-                # the same safe form TC-E2E-06's papers leg asserts against.
-                assert ref_by_name[plan.name] in papers_text, (
-                    f"{label}: the papers screen does not show {plan.name!r}'s sheet "
-                    f"(ref {ref_by_name[plan.name]!r})")
+                # FR-UI-22: the papers screen names each student the way the teacher knows
+                # them — by name — and shows the internal ref only to tell two students of
+                # one name apart (the journey's names are distinct, so never here).
+                assert plan.name in papers_text, (
+                    f"{label}: the papers screen does not show {plan.name!r}'s sheet")
+                assert ref_by_name[plan.name] not in papers_text, (
+                    f"{label}: the papers screen shows {plan.name!r} by the internal ref "
+                    f"{ref_by_name[plan.name]!r} (FR-UI-22: by name)")
             # stage 5 on the hub itself: the sidebar strip's list items do not carry
             # the wizard's `stage` class, so the badge is read on the wizard home.
             _goto(page, f"/?class={spec.cohort_id}")

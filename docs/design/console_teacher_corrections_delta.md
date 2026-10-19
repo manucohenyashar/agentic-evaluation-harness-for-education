@@ -52,8 +52,8 @@ terminal, a database tool or an engineer.
 | FR-CONSOLE-67 | The console shall remove a paper no grading run has touched (`remove paper`), with every row intake wrote for it, so the same or a better scan can be read again. A graded paper is refused, naming its run. | M-CONSOLE → M-STORE `discard_ungraded_paper` |
 | FR-CONSOLE-68 | The console shall remove a class's test paper while no paper in the class is graded (`replace test paper`), optionally with every ungraded answer sheet so each is read again against the right test paper; the wrong-test breaker's count restarts. | M-CONSOLE → M-STORE `discard_test_paper` |
 | FR-CONSOLE-69 | The class and papers reads shall state the check a teacher makes against their own list — how many students are listed, how many papers are read, and **by name** who has none — and the run-start screen shall name the students with no paper before a run starts. The class read states whether the class can be deleted outright and, if not, why, before the teacher asks. A paper filed under nobody, or parked as a second copy, is never listed as a student. | M-CONSOLE |
-| FR-CONSOLE-70 | The console shall list every past grading run, newest first, with its class, test version, dates, state and each graded student's name, total and state (`GET /api/v1/past-tests`), filterable by class and findable by a student's name; each entry opens that run's results or the student's page. The run switcher names each run by class, test and date and offers the selected class's runs. | M-CONSOLE, M-UI |
-| FR-INGEST-41 | Intake shall park a paper whose student already has a paper in the class (identity outcome `already_has_paper`, the parked flag set, the ladder's own diagnosis untouched), filed under that student, rather than read it in beside the first; M-ORCH's identity triage gives it no unit of any stage. The teacher keeps one of the two: remove the copy, or remove the earlier paper and give the copy to the student. A copy is never closed as unresolvable (that would grade it INCOMPLETE beside the real paper). | M-PIPE `ingest_files` → M-INGEST `park_second_paper` |
+| FR-CONSOLE-70 | The console shall list every past grading run, newest first, with its class, test version, dates, state and each graded student's name, total and state (`GET /api/v1/past-tests`), filterable by class and findable by a student's name; each entry opens that run's results or the student's page. The run switcher names each run by class, test and date, the selected class's runs first. | M-CONSOLE, M-UI |
+| FR-INGEST-41 | Intake shall park a paper whose student already has a paper in the class (identity outcome `already_has_paper`, the parked flag set, the ladder's own diagnosis untouched), filed under that student, rather than read it in beside the first; M-ORCH's identity triage gives it no unit of any stage and M-GRADE grades it with nothing (`select_run_submissions` skips it). The teacher keeps one of the two: remove the copy, or remove the earlier paper and give the copy to the student. A copy is never closed as unresolvable (that would grade it INCOMPLETE beside the real paper). | M-PIPE `ingest_files` → M-INGEST `park_second_paper` |
 | FR-UI-22 | Every teacher-facing screen and message shall name a student by their full name — the way the teacher knows them. The internal reference is appended after the name only when two students on the same list share it, and stands alone only for a student with no name on the list. | M-UI, M-CONSOLE |
 
 ## 3. Design decisions
@@ -69,7 +69,9 @@ terminal, a database tool or an engineer.
   has a paper" is a fact about the class, not about the sheet. The V0–V4 ladder stays a pure
   reading of one paper (a re-read gives the same verdict, `CT-INGEST-12`); `ingest_files` —
   behind both `aeh ingest` and the papers screen — calls `park_second_paper` after each sheet.
-- **Graded work is never removed.** A paper a run has touched is part of that run's record;
+- **Graded work is never removed.** A paper a run has touched — handed out work for, scored,
+  graded (M-GRADE grades every paper in the class, an unscored one INCOMPLETE), written
+  feedback for, or queued for review — is part of that run's record;
   only the purge removes it. Its corrections are moving it to the right student or amending a
   mark. A graded class is kept, and its results stay under Past tests — the delete control says
   so up front instead of refusing after the click.
@@ -86,4 +88,12 @@ terminal, a database tool or an engineer.
   run for the class, which grades every paper again; a run that grades only the papers not yet
   graded needs a run-scope column and is left for a later delta.
 - A run started by mistake is paused (Jobs) rather than deleted; it stays listed under Past
-  tests with its state.
+  tests with its state, and its class is then kept (a class is deleted outright only while it
+  holds no paper and no run).
+- The second-copy check runs right after a sheet is read, in its own transaction. A process
+  killed between the two leaves that copy admitted; reading the same scan again is skipped, so
+  the teacher removes the copy from Load papers (it is listed under its student) if they see
+  the student twice.
+- M-GRADE grades every other paper in the class, parked ones included (an unscored paper is
+  INCOMPLETE). Such a paper is part of the run's record and is not removable; the teacher
+  closes it, or gives it to its student, on the Parked screen.

@@ -176,9 +176,9 @@ function PastTestsBody({
           ))}
         </ul>
       )}
-      {doc.skipped_classes > 0 && (
+      {doc.unreadable_runs > 0 && (
         <p className="step-note">
-          The grades of {doc.skipped_classes} run(s) could not be read; they are listed without
+          The grades of {doc.unreadable_runs} run(s) could not be read; they are listed without
           their students.
         </p>
       )}

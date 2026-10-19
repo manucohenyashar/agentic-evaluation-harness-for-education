@@ -268,7 +268,10 @@ export function deriveWizard(
     let action: string | null = null;
     let route: string | null = null;
     const roster = papers?.students.length ?? 0;
-    const uploaded = papers?.students.filter((s) => s.submission_id !== null).length ?? 0;
+    // Every paper read counts as uploaded — a parked one too (it is waiting on Parked, not
+    // missing), so the row never says "nothing uploaded" over papers that are in.
+    const matched = papers?.students.filter((s) => s.submission_id !== null).length ?? 0;
+    const uploaded = Math.max(matched, papers?.sheets?.length ?? 0);
     const label = STAGE_LABELS[4] ?? "Upload the papers";
     const push = (): void => {
       rows.push({ index: 5, label, state, detail, action, actionRoute: route });

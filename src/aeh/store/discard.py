@@ -61,19 +61,41 @@ _PAPER_STATEMENTS: dict[str, Statement] = {
     "select_paper": Statement(
         "SELECT submission_id, student_ref FROM submission WHERE submission_id = :submission_id"
     ),
-    # A paper is graded once any run has handed out work for it; its marks hang off those
-    # units, so it is no longer removable this way.
+    # A paper is part of a run's record once any run has touched it: handed out work for it
+    # (`work_unit`), scored it, graded it — M-GRADE grades every paper in the class, an
+    # unscored one INCOMPLETE — written its feedback, or queued it for review. Every one of
+    # those rows references the paper, so it is no longer removable this way.
     "select_paper_runs": Statement(
         "SELECT DISTINCT run_id FROM work_unit WHERE submission_id = :submission_id "
         "ORDER BY run_id"
     ),
+    "select_paper_run_records": Statement(
+        "SELECT (SELECT COUNT(*) FROM work_unit WHERE submission_id = :submission_id) "
+        "+ (SELECT COUNT(*) FROM criterion_score WHERE submission_id = :submission_id) "
+        "+ (SELECT COUNT(*) FROM submission_grade WHERE submission_id = :submission_id) "
+        "+ (SELECT COUNT(*) FROM narrative WHERE submission_id = :submission_id) "
+        "+ (SELECT COUNT(*) FROM review_queue WHERE submission_id = :submission_id)"
+    ),
     "select_graded_paper_count": Statement(
-        "SELECT COUNT(DISTINCT submission_id) FROM work_unit"
+        "SELECT COUNT(*) FROM submission s WHERE "
+        "EXISTS (SELECT 1 FROM work_unit w WHERE w.submission_id = s.submission_id) "
+        "OR EXISTS (SELECT 1 FROM criterion_score c WHERE c.submission_id = s.submission_id) "
+        "OR EXISTS (SELECT 1 FROM submission_grade g WHERE g.submission_id = s.submission_id) "
+        "OR EXISTS (SELECT 1 FROM narrative n WHERE n.submission_id = s.submission_id) "
+        "OR EXISTS (SELECT 1 FROM review_queue q WHERE q.submission_id = s.submission_id)"
     ),
     "select_ungraded_papers": Statement(
-        "SELECT submission_id FROM submission WHERE submission_id NOT IN "
-        "(SELECT submission_id FROM work_unit WHERE submission_id IS NOT NULL) "
-        "ORDER BY submission_id"
+        "SELECT submission_id FROM submission s WHERE NOT ("
+        "EXISTS (SELECT 1 FROM work_unit w WHERE w.submission_id = s.submission_id) "
+        "OR EXISTS (SELECT 1 FROM criterion_score c WHERE c.submission_id = s.submission_id) "
+        "OR EXISTS (SELECT 1 FROM submission_grade g WHERE g.submission_id = s.submission_id) "
+        "OR EXISTS (SELECT 1 FROM narrative n WHERE n.submission_id = s.submission_id) "
+        "OR EXISTS (SELECT 1 FROM review_queue q WHERE q.submission_id = s.submission_id)"
+        ") ORDER BY submission_id"
+    ),
+    # A revision is a child document (`parent_doc_id`) with regions of its own.
+    "select_child_documents": Statement(
+        "SELECT document_id FROM document WHERE parent_doc_id = :document_id"
     ),
     "select_paper_documents": Statement(
         "SELECT document_id FROM document WHERE submission_id = :submission_id"
@@ -87,7 +109,6 @@ _PAPER_STATEMENTS: dict[str, Statement] = {
     "delete_document_regions": Statement(
         "DELETE FROM document_region WHERE document_id = :document_id"
     ),
-    "delete_child_documents": Statement("DELETE FROM document WHERE parent_doc_id = :document_id"),
     "delete_document": Statement("DELETE FROM document WHERE document_id = :document_id"),
     "delete_paper_proposals": Statement(
         "DELETE FROM assessment_match_proposal WHERE submission_id = :submission_id"
@@ -113,14 +134,31 @@ def _class_handle(store: Any, cohort_id: str) -> Any:
 
 
 def _documents_of(handle: Any, statement: Statement, **params: Any) -> list[str]:
-    return [str(row[0]) for row in handle.query(statement, **params)]
+    """The documents `statement` names and every revision under them, each revision before
+    the document it revises — the order their rows can be deleted in without breaking a
+    foreign key, whatever order their ids sort in."""
+    ordered: list[str] = []
+    placed: set[str] = set()
+
+    def place(document_id: str) -> None:
+        if document_id in placed:
+            return
+        placed.add(document_id)
+        for row in handle.query(_PAPER_STATEMENTS["select_child_documents"],
+                                document_id=document_id):
+            place(str(row[0]))
+        ordered.append(document_id)  # after every revision under it
+
+    for row in handle.query(statement, **params):
+        place(str(row[0]))
+    return ordered
 
 
 def _delete_documents(tx: Any, documents: list[str]) -> None:
     for document_id in documents:
         tx.execute(_PAPER_STATEMENTS["delete_document_tokens"], document_id=document_id)
         tx.execute(_PAPER_STATEMENTS["delete_document_regions"], document_id=document_id)
-        tx.execute(_PAPER_STATEMENTS["delete_child_documents"], document_id=document_id)
+    for document_id in documents:
         tx.execute(_PAPER_STATEMENTS["delete_document"], document_id=document_id)
 
 
@@ -141,13 +179,16 @@ def discard_ungraded_paper(store: Any, cohort_id: str, submission_id: str) -> di
     if not rows:
         raise PurgePreconditionError(
             f"no paper {submission_id!r} is in class {cohort_id!r}; nothing was removed.")
-    runs = [str(row[0]) for row in handle.query(_PAPER_STATEMENTS["select_paper_runs"],
-                                                submission_id=submission_id)]
-    if runs:
+    records = int(handle.query(_PAPER_STATEMENTS["select_paper_run_records"],
+                               submission_id=submission_id)[0][0])
+    if records:
+        runs = [str(row[0]) for row in handle.query(_PAPER_STATEMENTS["select_paper_runs"],
+                                                    submission_id=submission_id)]
+        which = f" (grading run {', '.join(runs)})" if runs else ""
         raise PurgePreconditionError(
-            f"this paper was already graded (grading run {', '.join(runs)}), so its marks are "
-            "part of that run's record and it stays. Correct a mark from the results (change "
-            "the grade), or give the paper to the right student; nothing was removed.")
+            f"this paper is already part of a grading run's record{which}, so it stays. "
+            "Correct a mark from the results (change the grade), give the paper to the right "
+            "student, or close it on the Parked screen; nothing was removed.")
     documents = _documents_of(handle, _PAPER_STATEMENTS["select_paper_documents"],
                               submission_id=submission_id)
     with handle.transaction() as tx:

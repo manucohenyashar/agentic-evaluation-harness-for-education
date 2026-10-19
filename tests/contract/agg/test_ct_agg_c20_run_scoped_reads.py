@@ -64,6 +64,13 @@ DECLARED_EXEMPTIONS: tuple[tuple[str, str], ...] = (
     # The precondition of `agg_run_scoped_score` — the migration that added `run_id`. It cannot
     # filter on a column that does not exist until it has run.
     ("agg.py", "SELECT EXISTS (SELECT 1 FROM criterion_score)"),
+    # "Has ANY run touched this paper?" (FR-CONSOLE-67/68): the question is cohort-wide by
+    # design — a paper a past run scored is part of that run's record, so the removal is
+    # refused whichever run it was. A count, never a score read.
+    ("store.py", "SELECT (SELECT COUNT(*) FROM work_unit WHERE submission_id = :submission_id)"),
+    ("store.py", "SELECT COUNT(*) FROM submission s WHERE EXISTS (SELECT 1 FROM work_unit"),
+    ("store.py", "SELECT submission_id FROM submission s WHERE NOT (EXISTS (SELECT 1 FROM work"),
+    ("console.py", "SELECT DISTINCT submission_id FROM criterion_score"),
 )
 
 

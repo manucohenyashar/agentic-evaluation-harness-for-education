@@ -260,6 +260,24 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
         "package_version.published_by",
     ),
     "cancel job": ("run.status",),
+    # The teacher-corrections delta (`docs/design/console_teacher_corrections_delta.md` §2):
+    # a listed name corrected, a mistaken entry removed, a matched paper moved to its student
+    # (recorded in B8's trail), an ungraded paper or the wrong test paper removed. None writes
+    # a field a scoring prompt reads.
+    "rename student": ("roster.full_name",),
+    "remove student": ("roster.cohort_id", "roster.student_ref"),
+    "move paper to student": (
+        "submission.student_ref",
+        "quarantine_decision.decision_id",
+        "quarantine_decision.submission_id",
+        "quarantine_decision.resolution",
+        "quarantine_decision.actor",
+        "quarantine_decision.student_ref",
+        "quarantine_decision.note",
+        "quarantine_decision.decided_at",
+    ),
+    "remove paper": ("submission.submission_id", "document.document_id"),
+    "replace test paper": ("document.document_id", "submission.submission_id"),
 }
 
 #: The three actions §11.8 places **before any scoring exists**, inside the §6.2 lock.

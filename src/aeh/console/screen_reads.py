@@ -176,13 +176,44 @@ def class_roster_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     return {"cohorts": cohorts}
 
 
+def _graded_papers(handle: Any) -> set[str]:
+    """The papers any grading run has touched (work, a score, a grade, feedback or a review
+    row) — M-STORE's `discard_ungraded_paper` refuses exactly these."""
+    graded: set[str] = set()
+    for statement in _GRADED_PAPER_READS:
+        try:
+            graded |= {str(row["submission_id"]) for row in handle.query(statement)}
+        except Exception:  # noqa: BLE001 — a ledger without the table has nothing there
+            continue
+    return graded
+
+
+#: Every table a grading run writes a paper's rows into, one declared read each.
+_GRADED_PAPER_READS: tuple[str, ...] = (
+    "SELECT DISTINCT submission_id FROM work_unit",
+    "SELECT DISTINCT submission_id FROM criterion_score",
+    "SELECT DISTINCT submission_id FROM submission_grade",
+    "SELECT DISTINCT submission_id FROM narrative",
+    "SELECT DISTINCT submission_id FROM review_queue",
+)
+
+
 def _class_summary(students: list[dict[str, Any]]) -> dict[str, Any]:
     without = [s for s in students if s["submission_id"] is None]
+    names = [str(s["full_name"] or "").casefold() for s in students if s["full_name"]]
+    shared = {name for name in names if names.count(name) > 1}
+
+    def label(student: dict[str, Any]) -> str:
+        # FR-UI-22: the name first; the ref only to tell two students of one name apart.
+        name = student["full_name"] or student["student_ref"]
+        if student["full_name"] and str(student["full_name"]).casefold() in shared:
+            return f"{name} ({student['student_ref']})"
+        return str(name)
+
     return {
         "listed": len(students),
         "with_paper": len(students) - len(without),
-        "without_paper": sorted((s["full_name"] or s["student_ref"] for s in without),
-                                key=str.casefold),
+        "without_paper": sorted((label(s) for s in without), key=str.casefold),
     }
 
 
@@ -200,8 +231,7 @@ def _class_standing(app: Any, key: str) -> dict[str, Any]:
     try:
         runs = int(handle.query("SELECT COUNT(*) AS n FROM run")[0]["n"])
         papers = int(handle.query("SELECT COUNT(*) AS n FROM submission")[0]["n"])
-        graded = int(handle.query(
-            "SELECT COUNT(DISTINCT submission_id) AS n FROM work_unit")[0]["n"])
+        graded = len(_graded_papers(handle))
     except Exception:  # noqa: BLE001 — a ledger without the grading tables has graded nothing
         runs, graded = 0, 0
         papers = 0
@@ -286,11 +316,9 @@ def _sheets_of(app: Any, cohort_id: str) -> list[dict[str, Any]]:
             "SELECT student_ref, full_name FROM roster")}
     except Exception:  # noqa: BLE001 — a ledger without names lists refs
         names = {}
-    try:
-        graded = {str(row["submission_id"]) for row in handle.query(
-            "SELECT DISTINCT submission_id FROM work_unit")}
-    except Exception:  # noqa: BLE001 — a ledger without work units has graded nothing
-        graded = set()
+    # A paper is part of a run's record once any run touched it — the rule M-STORE's
+    # `discard_ungraded_paper` refuses on, so the screen never offers a removal it refuses.
+    graded = _graded_papers(handle)
     for row in rows:
         status = str(row["ingest_status"] or "")
         ref = None if row["student_ref"] is None else str(row["student_ref"])
@@ -385,6 +413,23 @@ def review_queue_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     view = app.review_queue(run_id)
     payload = _queue_payload(view)
     payload["run_id"] = run_id
+    # FR-UI-22: each flagged answer names its student the way the teacher knows them, and
+    # its grading point by the question's own label.
+    run_row = _run_row_of(console, app, {"run_id": run_id})
+    if run_row is not None:
+        handle = app._store.cohort(str(run_row["cohort_id"]))
+        names = _roster_names(handle)
+        try:
+            refs = {str(row["submission_id"]): str(row["student_ref"]) for row in handle.query(
+                "SELECT submission_id, student_ref FROM submission")}
+        except Exception:  # noqa: BLE001 — a row then names its paper alone
+            refs = {}
+        labels = _grading_point_labels(app, run_row)
+        for item in payload["shown"]:
+            ref = refs.get(item["submission_id"])
+            item["student_ref"] = ref
+            item["full_name"] = names.get(ref) if ref is not None else None
+            item["label"] = labels.get(item["criterion_id"], item["criterion_id"])
     return payload
 
 

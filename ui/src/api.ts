@@ -126,6 +126,10 @@ export interface ReviewItem {
   submission_id: string;
   criterion_id: string;
   kind: string;
+  /** The student by name (FR-UI-22) and the grading point by its label. */
+  student_ref?: string | null;
+  full_name?: string | null;
+  label?: string;
 }
 
 export interface ReviewQueue {
@@ -813,5 +817,5 @@ export interface PastTestRun {
 
 export interface PastTestsDoc {
   runs: PastTestRun[];
-  skipped_classes: number;
+  unreadable_runs: number;
 }

@@ -265,3 +265,55 @@ def test_tc_console_86_results_name_each_student(console_store, monkeypatch):
         {"submission_id": "sub-1", "total": 7, "state": "final"}])
     doc = results_screen_read(None, console, {"run_id": "run-a"})
     assert doc["students"][0]["full_name"] == "Ada Lovelace"
+
+
+# --- review findings: revisions, and papers a run graded without work units ----------------------
+
+
+@pytest.mark.parametrize("parent, child", [("doc-a", "doc-b"), ("doc-b", "doc-a")])
+def test_tc_console_83_a_revised_paper_is_removed_whatever_its_ids(console_store, parent, child):
+    """A revision is a child document with regions of its own; the removal deletes it before
+    its parent whatever order the ids sort in (a foreign-key failure was a coin flip)."""
+    console, store = console_store
+    _paper(store, "sub-1", _roster(store)["Ada Lovelace"], document=False)
+    with store.cohort(CLASS).transaction() as tx:
+        for doc, parent_id in ((parent, None), (child, parent)):
+            tx.execute("INSERT INTO document (document_id, submission_id, content_hash, kind, "
+                       "parent_doc_id) VALUES (:d, 'sub-1', 'h', 'submission', :p)",
+                       d=doc, p=parent_id)
+            tx.execute("INSERT INTO document_region (region_id, document_id, page_no, "
+                       "element_kind) VALUES (:r, :d, 1, 'text')", r=f"reg-{doc}", d=doc)
+    gone = console.perform("remove paper", cohort_id=CLASS, submission_id="sub-1")
+    assert gone.dispatched and not gone.refused, gone.detail
+    assert store.cohort(CLASS).query("SELECT COUNT(*) AS n FROM document")[0]["n"] == 0
+
+
+def test_tc_console_83_a_paper_a_run_graded_without_work_is_kept_and_said_so(console_store):
+    """M-GRADE grades every paper in the class — a parked one INCOMPLETE, with a rescan review
+    row and no work unit. Such a paper is part of the run's record: refused in words, never a
+    foreign-key error, and the screen does not offer the removal."""
+    console, store = console_store
+    _paper(store, "sub-1", "unknown", identity="unmatched", quarantined=1, status="incomplete")
+    _run(store, "run-a", started="2026-03-01T09:00:00+00:00")
+    with store.cohort(CLASS).transaction() as tx:
+        tx.execute("INSERT INTO review_queue (queue_id, run_id, submission_id, criterion_id, "
+                   "reason) VALUES ('q1', 'run-a', 'sub-1', 'C1', 'rescan')")
+    kept = console.perform("remove paper", cohort_id=CLASS, submission_id="sub-1")
+    assert kept.refused and "part of a grading run's record" in kept.detail, kept.detail
+    assert "IntegrityError" not in kept.detail
+    sheets = papers_read(None, console, {"cohort_id": CLASS})["sheets"]
+    assert sheets[0]["graded"] is True
+
+
+def test_tc_console_85_a_parked_second_copy_is_not_graded(console_store):
+    """FR-INGEST-41: M-GRADE's run population skips a parked second copy, so the student is
+    never shown twice in the results; once given to the student it is graded again."""
+    from aeh.grade import GRADE_STATEMENTS
+
+    console, store = console_store
+    names = _roster(store)
+    _paper(store, "sub-1", names["Ada Lovelace"])
+    _paper(store, "sub-2", names["Ada Lovelace"], identity="already_has_paper", quarantined=1)
+    population = [r["submission_id"] for r in store.cohort(CLASS).query(
+        GRADE_STATEMENTS["select_run_submissions"], cohort_id=CLASS)]
+    assert population == ["sub-1"]

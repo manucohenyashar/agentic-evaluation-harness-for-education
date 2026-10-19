@@ -81,6 +81,10 @@ _DECISION_STATEMENTS = {
     "select_roster_ref": Statement(
         "SELECT student_ref FROM roster WHERE student_ref = :student_ref"
     ),
+    # The student's listed name, for a refusal that names them the way the teacher does.
+    "select_roster_name": Statement(
+        "SELECT full_name FROM roster WHERE student_ref = :student_ref"
+    ),
     # A student "has a paper" unless theirs was CLOSED as unresolvable (status `incomplete`,
     # the parked flag cleared): a closed paper is never graded, so it does not block the real
     # one being given to them; a matched paper still parked could yet be released, so it does.
@@ -137,15 +141,17 @@ def check_assignment(handle: Any, submission_id: str, student_ref: str) -> None:
             "choose the student this paper belongs to. Nothing was written.")
     if not list(handle.query(INGEST_STATEMENTS["select_roster_ref"], student_ref=student_ref)):
         raise QuarantineDecisionError(
-            f"{student_ref!r} is not on this class's list. Add the student to the class "
+            "that student is not on this class's list. Add the student to the class "
             "first, then assign the paper. Nothing was written.")
     others = list(handle.query(INGEST_STATEMENTS["select_other_paper_of_student"],
                                student_ref=student_ref, submission_id=submission_id))
     if others:
+        named = list(handle.query(INGEST_STATEMENTS["select_roster_name"],
+                                  student_ref=student_ref))
+        who = (str(named[0]["full_name"] or "") if named else "") or student_ref
         raise QuarantineDecisionError(
-            f"{student_ref!r} already has a paper in this class "
-            f"({others[0]['submission_id']}); one student cannot be graded on two papers. "
-            "Nothing was written.")
+            f"{who} already has a paper in this class; one student cannot be graded on two "
+            "papers. Remove or move that paper first. Nothing was written.")
 
 
 def record_quarantine_decision(
