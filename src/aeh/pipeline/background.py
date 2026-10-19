@@ -297,3 +297,19 @@ def repeated_parked_decision(handle: Any, submission_id: str, **decision: Any) -
     from aeh.ingest import repeated_decision
 
     return repeated_decision(handle, submission_id, **decision)
+
+
+# --- the teacher's corrections to whose a paper is (FR-CONSOLE-66) ----------------------------
+# Through M-INGEST, for the console, whose declared dependencies stop at M-PIPE
+# (TC-CONSOLE-36). No SQL here. A refusal raises M-INGEST's `PaperCorrectionError`, which the
+# console reports in the teacher's words; `ValueError` catches it. Removing a paper or the test
+# paper is M-STORE's (`discard_ungraded_paper`, `discard_test_paper`).
+
+
+def move_paper_to_student(handle: Any, submission_id: str, student_ref: str, *, actor: str,
+                          note: str | None = None) -> str | None:
+    """Give a matched paper to the right student (FR-CONSOLE-66), recorded."""
+    from aeh.ingest import reassign_paper
+
+    return reassign_paper(handle, submission_id, student_ref, actor=actor, note=note)
+

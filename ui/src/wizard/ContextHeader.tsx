@@ -8,7 +8,8 @@
 
 import { CircleHelp } from "lucide-react";
 import type { ContextDoc } from "../api";
-import { ledgerEntries, type Selection } from "./derivation";
+import { runLabel } from "../screens/PastTests";
+import { ledgerEntries, newestRunFirst, type Selection } from "./derivation";
 import { EntityBadge } from "./StateBadge";
 import { packageLabel } from "./vocabulary";
 
@@ -69,7 +70,14 @@ function Switcher({
 export function ContextHeader({ context, selection, onSelection, onHelp, helpOpen = false }: ContextHeaderProps) {
   const classes = context === null ? [] : ledgerEntries(context);
   const packages = context?.packages ?? [];
-  const runs = context?.runs ?? [];
+  // FR-CONSOLE-70: the runs of the class in hand, newest first, each named by what the
+  // teacher remembers — class, test and date — never "Grading run 3". With no class chosen,
+  // every run is offered. Past tests lists them all with their students.
+  const runs = newestRunFirst(
+    (context?.runs ?? []).filter(
+      (run) => selection.classId === null || run.cohort_id === selection.classId,
+    ),
+  );
 
   const classOptions: SwitcherOption[] = classes.map((entry) => ({
     value: entry.cohort_id,
@@ -79,9 +87,9 @@ export function ContextHeader({ context, selection, onSelection, onHelp, helpOpe
     value: entry.package_id,
     label: packageLabel(index, packages.length),
   }));
-  const runOptions: SwitcherOption[] = runs.map((entry, index) => ({
+  const runOptions: SwitcherOption[] = runs.map((entry) => ({
     value: entry.run_id,
-    label: `Grading run ${index + 1}`,
+    label: runLabel(entry),
   }));
 
   const selectedClass = classes.find((entry) => entry.cohort_id === selection.classId) ?? null;

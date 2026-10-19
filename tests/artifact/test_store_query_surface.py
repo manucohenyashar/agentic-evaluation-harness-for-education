@@ -431,6 +431,24 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # INGEST_STATEMENTS with keyword parameters, in the caller's transaction.
     "aeh.ingest.decisions:185",
     "aeh.ingest.decisions:187",
+    # The teacher-corrections delta (FR-CONSOLE-64..68, FR-INGEST-41): a matched paper moved to
+    # its student and recorded (reassign_paper), a second paper for one student parked
+    # (park_second_paper), a listed name corrected and a mistaken entry removed (M-ORCH), and
+    # an ungraded paper or the wrong test paper removed (M-STORE's discard housekeeping). Every
+    # site passes a declared statement with keyword parameters.
+    "aeh.ingest.corrections:107",
+    "aeh.ingest.corrections:109",
+    "aeh.ingest.corrections:129",
+    "aeh.orch.cohorts:217",
+    "aeh.orch.cohorts:243",
+    "aeh.store.discard:121",
+    "aeh.store.discard:122",
+    "aeh.store.discard:123",
+    "aeh.store.discard:124",
+    "aeh.store.discard:129",
+    "aeh.store.discard:130",
+    "aeh.store.discard:131",
+    "aeh.store.discard:185",
     # The pkg sites are #230's line numbers (the verbatim revision copy and the
     # copied-counts statement shifted the module; the tripwire diff being the
     # line move plus one net-new site). Lines moved again with #91's module-level
@@ -786,7 +804,7 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # and its docstring reflow shifted the pause/resume site down again; same
     # statement. Re-read from the walker, never hand-unioned.)
     "aeh.console.controls:242",
-    "aeh.console.effects:815",
+    "aeh.console.effects:820",
     "aeh.console.key_correction:140",
     "aeh.console.driver:120",
     "aeh.console.driver:159",

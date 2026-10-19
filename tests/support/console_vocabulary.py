@@ -200,9 +200,21 @@ REDESIGN_CONTROL_ACTIONS: dict[str, str] = {
     "cancel job": "FR-CONSOLE-57",
 }
 
+#: The control actions the teacher-corrections delta adds (`docs/design/
+#: console_teacher_corrections_delta.md` §2): every mistake a teacher can make with a class list
+#: or the papers read into it has a way back in the browser. Transcribed from the delta.
+CORRECTIONS_CONTROL_ACTIONS: dict[str, str] = {
+    "rename student": "FR-CONSOLE-64",
+    "remove student": "FR-CONSOLE-65",
+    "move paper to student": "FR-CONSOLE-66",
+    "remove paper": "FR-CONSOLE-67",
+    "replace test paper": "FR-CONSOLE-68",
+}
+
 #: The whole enumerated write surface `FR-CONSOLE-32` pins: §11.8's fifteen plus the deltas'.
 CONTROL_SURFACE_ACTIONS: tuple[str, ...] = (
     HLD_CONTROL_ACTIONS + tuple(DELTA_CONTROL_ACTIONS) + tuple(REDESIGN_CONTROL_ACTIONS)
+    + tuple(CORRECTIONS_CONTROL_ACTIONS)
 )
 
 #: Design §3.19's route table, split by surface. `CT-CONSOLE-17`'s sweep needs the routes to know

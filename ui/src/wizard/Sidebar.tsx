@@ -19,6 +19,8 @@ const SCREEN_LINKS: { label: string; path: string }[] = [
   { label: "Monitor run", path: "/monitor" },
   { label: "Review", path: "/review" },
   { label: "Results", path: "/results" },
+  // FR-CONSOLE-70: every test graded before, findable by class or by a student's name.
+  { label: "Past tests", path: "/past" },
 ];
 
 const SECONDARY_LINKS: { label: string; path: string }[] = [

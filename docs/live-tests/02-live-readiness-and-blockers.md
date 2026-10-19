@@ -66,6 +66,19 @@ A third resolution, **`assigned`**, gives a nameless or unmatched paper to the s
 
 Design note for `/detailed-design-generator`: this widens `resolve quarantine item`'s declared write fields (FR-CONSOLE-32) to the submission's `student_ref`/`v3_identity` and the decision trail; fold that into the next design delta.
 
+### B9. The teacher can fix every class and paper mistake in the browser — closed 2026-10-19
+
+A walk of the console from the teacher's side, looking for the mistakes a teacher or operator will make and the questions they will be asked, found ten places where the only way out was a terminal or an engineer (`docs/design/console_teacher_corrections_delta.md`, §1). All are closed in the browser:
+
+* **A rescan graded the student twice.** Intake skipped only a byte-identical scan, so a sharper rescan was read as a second paper for the same student. It is now parked as a second copy (FR-INGEST-41); the Parked screen keeps one of the two. `TC-PIPE-38`, `TC-INGEST-59`.
+* **The class list could not be corrected.** A misspelt name is corrected in place, a student listed by mistake is taken off (FR-CONSOLE-64/65). `TC-CONSOLE-81`.
+* **A paper under the wrong student, the wrong file, the wrong test paper.** A matched paper moves to the right student with its marks, recorded; an ungraded paper is removed so the right scan can be read; the wrong test paper is replaced, with its sheets, while nothing is graded (FR-CONSOLE-66…68). `TC-CONSOLE-82…84`.
+* **Who is missing?** The class, papers and run-start screens name the students with no paper yet (FR-CONSOLE-69); a delete that cannot happen says why before it is offered. `TC-CONSOLE-85`.
+* **Past results.** **Past tests** lists every graded test by class, test and date and finds a student by name across them; the run switcher names runs the same way (FR-CONSOLE-70). `TC-CONSOLE-86`.
+* **Students were shown by ID.** Every screen and message now names students by their full name; the ID follows the name only when two students share it (FR-UI-22).
+
+Still open, by design: a late paper after a run is graded by a new run of the whole class; a run started by mistake is paused, not deleted (operating tutorial, section 6).
+
 ## The small gaps, and what only a live run can settle
 
 | Still open | What it is | How to close it |

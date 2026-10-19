@@ -238,3 +238,40 @@ clock — instead of asserting it about an export that ran afterwards.
 The run re-point is TC-GRADE-12's disclosed stand-in: M-ORCH owns the run row
 and no landed API re-points it, so the console writes the one column the
 correction owes — and retires the site to M-ORCH's call when that lands.
+
+## The teacher's corrections (`corrections.py`, `history_reads.py`)
+
+`docs/design/console_teacher_corrections_delta.md` (FR-CONSOLE-64…70, FR-INGEST-41, FR-UI-22).
+Five enumerated control actions, each delegating to the module that owns its rows, never
+writing SQL of its own:
+
+- `rename student` / `remove student` → M-ORCH's `rename_on_roster` / `remove_from_roster`
+  (the roster is the base Tier C schema `add_to_roster` already writes);
+- `move paper to student` → M-INGEST's `reassign_paper`, through M-PIPE's re-export
+  (`TC-CONSOLE-36`: the console's intake edge stops at M-PIPE), recorded as an `assigned` row
+  in B8's decision trail;
+- `remove paper` / `replace test paper` → M-STORE's `discard_ungraded_paper` /
+  `discard_test_paper`, beside `discard_empty_cohort`. They live in the store because intake
+  never deletes a document it wrote (`CT-INGEST-02`) and must not read score tables
+  (`CT-INGEST-09/17`) — and "is this paper graded?" is a `work_unit` question. Both refuse once
+  a run has touched the paper (or, for the test paper, any paper in the class).
+
+Each dispatches exactly when nothing was refused, so a refusal rides `refused=True` like the
+class actions'. Outcome and refusal messages name students by their listed name, never by
+`student_ref` or a paper id (FR-UI-22).
+
+The reads: `class_roster_read` and `papers_read` carry the class check (`summary`: listed,
+with a paper, and the names of those without one) and the facts each correction needs
+(`graded_papers`, `deletable`, per-sheet `full_name`/`matched`/`graded`); `_students_of` lists
+one row per student and never a phantom (`unknown`, a ref off the list, a parked second copy).
+`results_screen_read`, `student_detail_read` and `blind_seats_read` carry `full_name`.
+`past_tests_read` (`GET /api/v1/past-tests`) lists every run newest first with its class, test
+version, dates and each graded student's name, total and state, through M-GRADE's
+`run_grade_records` — the door the results screen reads.
+
+The second-copy rule (FR-INGEST-41) is not the console's: `aeh.pipeline.intake.ingest_files`
+calls M-INGEST's `park_second_paper` after each sheet, so `aeh ingest` and the papers screen
+both park a rescan. The parked read names the copy's student and earlier paper
+(`duplicate_of`), and `resolve quarantine item` refuses to close a copy (it would be graded
+INCOMPLETE beside the real paper).
+

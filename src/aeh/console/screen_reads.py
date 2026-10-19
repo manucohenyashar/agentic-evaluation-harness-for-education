@@ -133,9 +133,16 @@ def _students_of(app: Any, cohort_id: str) -> list[dict[str, Any]]:
     # still says who the paper belongs to once it is in.
     names = {str(row["student_ref"]): str(row["full_name"] or "") or None for row in roster}
     for row in handle.query(
-        "SELECT submission_id, student_ref FROM submission ORDER BY submission_id"
+        "SELECT submission_id, student_ref, v3_identity FROM submission "
+        "ORDER BY submission_id"
     ):
         ref = str(row["student_ref"])
+        # One row per student: a paper parked as a second copy of a student's paper
+        # (FR-INGEST-41) and a paper no student was matched to ('unknown', or a ref the list
+        # does not hold) are the Parked screen's, never a second or phantom student here.
+        if ref in seen or (names and ref not in names) or ref == "unknown" or str(
+                row["v3_identity"] or "pass") not in ("pass",):
+            continue
         seen.add(ref)
         students.append({"student_ref": ref, "submission_id": str(row["submission_id"]),
                          "full_name": names.get(ref)})
@@ -153,12 +160,67 @@ def class_roster_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     """The class screen's document (FR-UI-03b): every stored cohort with its students — the
     roster editor's data, read live, so a submission written out of band is on the screen
     after the next reload without the SPA holding any state."""
-    cohorts = [
-        {"cohort_id": key, "students": _students_of(app, key)}
-        for key in app._cohort_keys()
-        if _ledger_is_live(app, key)
-    ]
+    cohorts = []
+    for key in app._cohort_keys():
+        if not _ledger_is_live(app, key):
+            continue
+        students = _students_of(app, key)
+        cohorts.append({
+            "cohort_id": key,
+            "students": students,
+            # FR-CONSOLE-69: the check a teacher makes against their own class list — how
+            # many are listed, how many papers are in, and exactly who has none yet.
+            "summary": _class_summary(students),
+            **_class_standing(app, key),
+        })
     return {"cohorts": cohorts}
+
+
+def _class_summary(students: list[dict[str, Any]]) -> dict[str, Any]:
+    without = [s for s in students if s["submission_id"] is None]
+    return {
+        "listed": len(students),
+        "with_paper": len(students) - len(without),
+        "without_paper": sorted((s["full_name"] or s["student_ref"] for s in without),
+                                key=str.casefold),
+    }
+
+
+def _class_standing(app: Any, key: str) -> dict[str, Any]:
+    """What a class's corrections may still touch (FR-CONSOLE-64..68): its consent class, how
+    many grading runs it has, how many of its papers a run has graded, and whether it can be
+    deleted outright — a class that never held a paper or a run — so the screen says *before*
+    the teacher asks what a delete would do."""
+    handle = app._store.cohort(key)
+    try:
+        consent = handle.query("SELECT consent_class FROM cohort")
+        consent_class = str(consent[0]["consent_class"]) if consent else None
+    except Exception:  # noqa: BLE001 — an unreadable row is shown as unknown
+        consent_class = None
+    try:
+        runs = int(handle.query("SELECT COUNT(*) AS n FROM run")[0]["n"])
+        papers = int(handle.query("SELECT COUNT(*) AS n FROM submission")[0]["n"])
+        graded = int(handle.query(
+            "SELECT COUNT(DISTINCT submission_id) AS n FROM work_unit")[0]["n"])
+    except Exception:  # noqa: BLE001 — a ledger without the grading tables has graded nothing
+        runs, graded = 0, 0
+        papers = 0
+    return {
+        "consent_class": consent_class,
+        "runs": runs,
+        "papers": papers,
+        "graded_papers": graded,
+        "deletable": runs == 0 and papers == 0,
+    }
+
+
+def _roster_names(handle: Any) -> dict[str, str | None]:
+    """A class's listed names by student ref; an unreadable roster answers none."""
+    try:
+        return {str(row["student_ref"]): (str(row["full_name"] or "") or None)
+                for row in handle.query("SELECT student_ref, full_name FROM roster")}
+    except Exception:  # noqa: BLE001 — names are a convenience beside the refs
+        return {}
 
 
 def _ledger_is_live(app: Any, key: str) -> bool:
@@ -189,9 +251,14 @@ def papers_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
         cohort_id = keys[0] if keys else ""
     if not cohort_id:
         raise ValueError("no class exists yet: set up a class first, then load its papers")
+    students = _students_of(app, cohort_id)
+    standing = _class_standing(app, cohort_id)
     return {
         "cohort_id": cohort_id,
-        "students": _students_of(app, cohort_id),
+        "students": students,
+        "summary": _class_summary(students),
+        # FR-CONSOLE-68: the test paper can be replaced while no paper here is graded.
+        "graded_papers": standing["graded_papers"],
         "parts": list(uploaded_parts(app._store, cohort_id)),
         # B4: what the papers screen needs to read papers here — whether the class holds
         # its test paper yet (the sheets are checked against it), and every sheet read so
@@ -207,17 +274,36 @@ def _sheets_of(app: Any, cohort_id: str) -> list[dict[str, Any]]:
     from .vocabulary import QUARANTINE_STATES
 
     sheets: list[dict[str, Any]] = []
+    handle = app._store.cohort(cohort_id)
     try:
-        rows = list(app._store.cohort(cohort_id).query(
-            "SELECT submission_id, student_ref, ingest_status, quarantined FROM submission "
-            "ORDER BY rowid"))
+        rows = list(handle.query(
+            "SELECT submission_id, student_ref, ingest_status, quarantined, v3_identity "
+            "FROM submission ORDER BY rowid"))
     except Exception:  # noqa: BLE001 — an unreadable ledger lists no sheets, not a 500
         return sheets
+    try:
+        names = {str(row["student_ref"]): row["full_name"] for row in handle.query(
+            "SELECT student_ref, full_name FROM roster")}
+    except Exception:  # noqa: BLE001 — a ledger without names lists refs
+        names = {}
+    try:
+        graded = {str(row["submission_id"]) for row in handle.query(
+            "SELECT DISTINCT submission_id FROM work_unit")}
+    except Exception:  # noqa: BLE001 — a ledger without work units has graded nothing
+        graded = set()
     for row in rows:
         status = str(row["ingest_status"] or "")
+        ref = None if row["student_ref"] is None else str(row["student_ref"])
+        matched = str(row["v3_identity"] or "pass") == "pass"
         sheets.append({
             "submission_id": str(row["submission_id"]),
-            "student_ref": None if row["student_ref"] is None else str(row["student_ref"]),
+            "student_ref": ref,
+            # FR-CONSOLE-66/67: the name the paper is filed under (when a student was
+            # matched), whether a run has graded it (a graded paper can be moved, never
+            # removed), and whether it is a matched paper the teacher may move.
+            "full_name": (names.get(ref) if ref is not None else None) or None,
+            "matched": matched and ref not in (None, "unknown"),
+            "graded": str(row["submission_id"]) in graded,
             "status": status or "reading",
             "parked": bool(row["quarantined"]) or status in QUARANTINE_STATES,
         })
@@ -331,6 +417,7 @@ def blind_seats_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
             }
         except Exception:  # noqa: BLE001 — a seat renders its submission id alone
             refs = {}
+    names = _roster_names(app._store.cohort(cohort_id)) if cohort_id else {}
     # Each seat's own scale: the package's declared levels for that grading point, the names
     # M-REVIEW maps a submitted label through — the rubric, not system output, so the blind
     # stays blind. A generic label the criterion does not declare is refused by the review
@@ -345,6 +432,9 @@ def blind_seats_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
             {
                 "submission_id": str(item.submission_id),
                 "student_ref": refs.get(str(item.submission_id)),
+                # The teacher knows the student by name (the blind hides the system's
+                # verdict, never whose paper it is).
+                "full_name": names.get(refs.get(str(item.submission_id), "")),
                 "criterion_id": str(item.criterion_id),
                 "label": labels.get(str(item.criterion_id), str(item.criterion_id)),
                 "band_scale": [name for name, _points in
@@ -581,6 +671,7 @@ def results_screen_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
         by_submission[str(record["submission_id"])] = {
             "submission_id": str(record["submission_id"]),
             "student_ref": None,
+            "full_name": None,
             "total": record["total"],
             "state": str(record["state"] or ""),
             "criteria": [],
@@ -633,9 +724,12 @@ def results_screen_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
         }
     except Exception:  # noqa: BLE001 — the ref column's absence is not the grades'
         refs = {}
+    names = _roster_names(handle)
     for submission_id, ref in refs.items():
         if submission_id in by_submission:
             by_submission[submission_id]["student_ref"] = ref
+            # FR-CONSOLE-70: the teacher finds a student by the name on their list.
+            by_submission[submission_id]["full_name"] = names.get(ref)
     # The distribution's x-axis: the declared levels in the package's own order, merged
     # across the run's grading points (a level two criteria both declare appears once).
     seen_levels: dict[str, tuple[int, str]] = {}
@@ -793,6 +887,7 @@ def student_detail_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
         "run_id": run_id,
         "submission_id": submission_id,
         "student_ref": student_ref,
+        "full_name": _roster_names(handle).get(student_ref) if student_ref else None,
         "total": None if record is None else record["total"],
         "state": None if record is None else str(record["state"] or ""),
         "narrative": narrative,

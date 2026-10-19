@@ -136,6 +136,9 @@ from .decisions import (
     record_quarantine_decision,
     repeated_decision,
 )
+# The teacher's corrections to whose a paper is (FR-CONSOLE-66, FR-INGEST-41): a matched
+# paper moved to its rightful student, and a second paper for one student parked.
+from .corrections import PaperCorrectionError, park_second_paper, reassign_paper
 from .sources import has_assessment_document, park_interrupted_submissions, submitted_sources
 from .assembly import assemble_canonical_markdown, AssembledDocument
 from .records import (
@@ -160,6 +163,9 @@ from .ingestor import Ingestor
 
 
 __all__ = [
+    "PaperCorrectionError",
+    "park_second_paper",
+    "reassign_paper",
     "QUARANTINE_DECISIONS",
     "QuarantineDecisionError",
     "check_assignment",

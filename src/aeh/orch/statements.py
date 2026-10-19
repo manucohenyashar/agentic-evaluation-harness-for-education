@@ -73,6 +73,24 @@ ORCH_STATEMENTS: dict[str, Statement] = {
     "select_roster_refs": Statement(
         "SELECT student_ref FROM roster WHERE cohort_id = :cohort_id ORDER BY student_ref"
     ),
+    # The class list's corrections (FR-CONSOLE-64/65, `cohorts.py`): a misspelt name is
+    # corrected in place, and a student listed by mistake is taken off the list only while no
+    # paper is theirs — a paper keeps its student, so its student keeps their row.
+    "select_roster_entry": Statement(
+        "SELECT student_ref, full_name FROM roster "
+        "WHERE cohort_id = :cohort_id AND student_ref = :student_ref"
+    ),
+    "update_roster_name": Statement(
+        "UPDATE roster SET full_name = :full_name "
+        "WHERE cohort_id = :cohort_id AND student_ref = :student_ref"
+    ),
+    "delete_roster_entry": Statement(
+        "DELETE FROM roster WHERE cohort_id = :cohort_id AND student_ref = :student_ref"
+    ),
+    "select_papers_of_student": Statement(
+        "SELECT submission_id FROM submission "
+        "WHERE cohort_id = :cohort_id AND student_ref = :student_ref ORDER BY submission_id"
+    ),
     "select_all_runs": Statement(
         "SELECT run_id, cohort_id, package_version_id, package_id, panel_config, "
         "backend_profile, provider_config, prompt_template_v, status, started_at, "

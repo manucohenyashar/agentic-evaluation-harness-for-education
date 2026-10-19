@@ -4,18 +4,24 @@ import {
   postRead,
   type ActionResult,
   type ClassRoster as ClassRosterDoc,
+  type ClassRosterEntry,
   type RosterEditorDoc,
   type RosterPreviewDoc,
+  type Student,
 } from "../api";
-import { outcomeText } from "../components/Confirm";
+import { ActionOutcome, ConfirmDialog, outcomeText, useActionState } from "../components/Confirm";
+import { sharedNames, studentLabel, studentName } from "../studentNames";
 import { ReadScreen } from "../components/ReadScreen";
 import { useNavigate } from "../navigate";
 import { useToast } from "../state/StateDisplay";
 import { useScreenRead } from "../useScreenRead";
 
 /**
- * The class setup screen (FR-UI-03b, FR-CONSOLE-42/53/63): every stored class with its
- * students, read live, and the forms that make one — typed or pasted names (`create class`)
+ * The class setup screen (FR-UI-03b, FR-CONSOLE-42/53/63/64/65/69): every stored class with
+ * its students by name — the way the teacher knows them — and the check against their own list
+ * (how many are listed, how many papers are in, who has none yet). A misspelt name is
+ * corrected in place and a student listed by mistake is taken off the list. Then the forms
+ * that make a class — typed or pasted names (`create class`)
  * or a roster file previewed before anything is written (`roster preview`, then `import
  * roster file`) — plus late students added to an existing class (`add students`). The copy
  * the forms need (the consent classes, the paste rule, the optional-ID statement) is the
@@ -44,44 +50,17 @@ export function ClassSetup({ classId }: { classId: string | null }) {
             <p className="panel">No class exists yet. Make one below.</p>
           ) : (
             data.cohorts.map((cohort) => (
-              <section
+              <ClassPanel
                 key={cohort.cohort_id}
-                className="panel"
-                aria-label={`Class ${cohort.cohort_id}`}
-              >
-                <h2>
-                  Class {cohort.cohort_id}
-                  {cohort.cohort_id === classId && (
-                    <span className="badge badge-info"> Selected</span>
-                  )}
-                </h2>
-                <ul className="rows-list">
-                  {cohort.students.map((student) => (
-                    <li key={student.student_ref}>
-                      <span className="step-name">{student.full_name ?? student.student_ref}</span>
-                      {student.full_name !== null && (
-                        <span className="step-note">{student.student_ref}</span>
-                      )}
-                      {student.submission_id === null ? (
-                        <span className="step-state">no paper yet</span>
-                      ) : (
-                        <span className="step-state">paper read</span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-                {cohort.cohort_id !== classId && (
-                  <button
-                    type="button"
-                    className="button"
-                    onClick={() => navigate("/class", { class: cohort.cohort_id, run: null })}
-                  >
-                    Work with this class
-                  </button>
-                )}
-                <AddStudents classId={cohort.cohort_id} onDone={read.retry} />
-                <DeleteClass classId={cohort.cohort_id} onDone={read.retry} />
-              </section>
+                cohort={cohort}
+                selected={cohort.cohort_id === classId}
+                consentMeaning={
+                  editor.data?.consent_classes.find((c) => c.value === cohort.consent_class)
+                    ?.meaning ?? null
+                }
+                onChoose={() => navigate("/class", { class: cohort.cohort_id, run: null })}
+                onChanged={read.retry}
+              />
             ))
           )}
           {editor.data !== null && (
@@ -307,7 +286,6 @@ function RosterPreview({ preview }: { preview: RosterPreviewDoc }) {
           {preview.rows.map((row) => (
             <li key={row.line}>
               <span className="step-name">{row.full_name}</span>
-              {row.student_ref !== null && <span className="step-note">{row.student_ref}</span>}
             </li>
           ))}
         </ul>
@@ -388,12 +366,34 @@ function AddStudents({ classId, onDone }: { classId: string; onDone: () => void 
  * The store refuses while the class's evidence has not been saved for validation, and the
  * refusal is shown as refused. The teacher types the class name to confirm — a purge cannot
  * be undone, so one click is not enough. */
-function DeleteClass({ classId, onDone }: { classId: string; onDone: () => void }) {
+function DeleteClass({
+  classId,
+  deletable,
+  runs,
+  onDone,
+}: {
+  classId: string;
+  deletable: boolean;
+  runs: number;
+  onDone: () => void;
+}) {
   const toast = useToast();
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<string | null>(null);
+  if (!deletable) {
+    // FR-CONSOLE-69: said before the teacher asks, so a delete is never a dead end.
+    return (
+      <p className="step-note">
+        {runs > 0
+          ? "This class has been graded, so it is kept: its results stay under Past tests. "
+          : "This class holds papers. To start it again, remove its papers on the Load " +
+            "papers screen; a class with no papers can then be deleted. "}
+        A class that was made by mistake and holds no papers can be deleted.
+      </p>
+    );
+  }
   if (!open) {
     return (
       <button type="button" className="button" onClick={() => setOpen(true)}>
@@ -423,7 +423,7 @@ function DeleteClass({ classId, onDone }: { classId: string; onDone: () => void 
   return (
     <div className="settings-row" role="group" aria-label={`Delete class ${classId}`}>
       <p className="settings-error">
-        Deleting removes this class's students, papers and marks for good. It cannot be undone.
+        Deleting removes this class and its list of students for good. It cannot be undone.
         Type the class name to confirm.
       </p>
       <label htmlFor={`purge-${classId}`}>Class name</label>
@@ -452,5 +452,188 @@ function DeleteClass({ classId, onDone }: { classId: string; onDone: () => void 
         </p>
       )}
     </div>
+  );
+}
+
+
+/** One class: its students by name, the check against the teacher's own list, and the
+ * corrections — rename, remove, add, delete. */
+function ClassPanel({
+  cohort,
+  selected,
+  consentMeaning,
+  onChoose,
+  onChanged,
+}: {
+  cohort: ClassRosterEntry;
+  selected: boolean;
+  consentMeaning: string | null;
+  onChoose: () => void;
+  onChanged: () => void;
+}) {
+  const action = useActionState(onChanged);
+  const shared = sharedNames(cohort.students);
+  const students = [...cohort.students].sort((a, b) =>
+    studentName(a).localeCompare(studentName(b), undefined, { sensitivity: "base" }));
+  const summary = cohort.summary;
+  return (
+    <section className="panel" aria-label={`Class ${cohort.cohort_id}`}>
+      <h2>
+        Class {cohort.cohort_id}
+        {selected && <span className="badge badge-info"> Selected</span>}
+      </h2>
+      {summary !== undefined && (
+        <p className="hub-state" aria-label="Class check">
+          {summary.listed} student{summary.listed === 1 ? "" : "s"} on the list ·{" "}
+          {summary.with_paper} paper{summary.with_paper === 1 ? "" : "s"} read
+          {summary.without_paper.length > 0
+            ? ` · no paper yet: ${summary.without_paper.join(", ")}`
+            : summary.listed > 0
+              ? " · every student has a paper"
+              : ""}
+        </p>
+      )}
+      {consentMeaning !== null && (
+        <p className="step-note">Whose work this is: {consentMeaning}</p>
+      )}
+      <ul className="rows-list" aria-label="Students">
+        {students.map((student) => (
+          <StudentRow
+            key={student.student_ref}
+            classId={cohort.cohort_id}
+            student={student}
+            label={studentLabel(student, shared)}
+            onRemove={() =>
+              action.open({
+                title: "Take this student off the list",
+                description:
+                  `${studentLabel(student, shared)} will no longer be on the list of class ` +
+                  `${cohort.cohort_id}. A student whose paper is already in cannot be taken ` +
+                  "off: move or remove the paper first.",
+                confirm: "Take off the list",
+                action: "remove student",
+                body: { cohort_id: cohort.cohort_id, student_ref: student.student_ref },
+              })
+            }
+            onRenamed={onChanged}
+          />
+        ))}
+      </ul>
+      <ActionOutcome outcome={action.outcome} />
+      {!selected && (
+        <button type="button" className="button" onClick={onChoose}>
+          Work with this class
+        </button>
+      )}
+      <AddStudents classId={cohort.cohort_id} onDone={onChanged} />
+      <DeleteClass
+        classId={cohort.cohort_id}
+        deletable={cohort.deletable ?? true}
+        runs={cohort.runs ?? 0}
+        onDone={onChanged}
+      />
+      {action.pending !== null && (
+        <ConfirmDialog pending={action.pending} onClose={action.close} onDone={action.finish} />
+      )}
+    </section>
+  );
+}
+
+/** One student on the list: their name first, whether their paper is in, and the two
+ * corrections a list needs — fix the spelling, or take a mistaken entry off. */
+function StudentRow({
+  classId,
+  student,
+  label,
+  onRemove,
+  onRenamed,
+}: {
+  classId: string;
+  student: Student;
+  label: string;
+  onRemove: () => void;
+  onRenamed: () => void;
+}) {
+  const toast = useToast();
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(student.full_name ?? "");
+  const [busy, setBusy] = useState(false);
+  const [outcome, setOutcome] = useState<string | null>(null);
+  const inputId = `rename-${classId}-${student.student_ref}`;
+  const save = (): void => {
+    setBusy(true);
+    setOutcome(null);
+    performAction("rename student", {
+      cohort_id: classId,
+      student_ref: student.student_ref,
+      full_name: name,
+    }).then(
+      (result) => {
+        setBusy(false);
+        if (result.dispatched === true && result.refused !== true && result.error === undefined) {
+          toast({ kind: "success", text: result.detail ?? "Name corrected." });
+          setEditing(false);
+          onRenamed();
+        } else {
+          setOutcome(outcomeText({ ...result, refused: true }));
+        }
+      },
+      (failure: unknown) => {
+        setBusy(false);
+        setOutcome(`Refused: ${failure instanceof Error ? failure.message : String(failure)}`);
+      },
+    );
+  };
+  if (editing) {
+    return (
+      <li>
+        <label htmlFor={inputId} className="step-name">
+          Correct the name
+        </label>
+        <input id={inputId} value={name} onChange={(event) => setName(event.target.value)} />
+        <button
+          type="button"
+          className="button button-primary"
+          disabled={busy || name.trim() === ""}
+          onClick={save}
+        >
+          Save
+        </button>
+        <button type="button" className="button" disabled={busy} onClick={() => setEditing(false)}>
+          Cancel
+        </button>
+        {outcome !== null && (
+          <p role="status" className="action-outcome">
+            {outcome}
+          </p>
+        )}
+      </li>
+    );
+  }
+  return (
+    <li>
+      <span className="step-name">{label}</span>
+      <span className="step-state">
+        {student.submission_id === null ? "no paper yet" : "paper read"}
+      </span>
+      <button
+        type="button"
+        className="button button-small"
+        aria-label={`Correct the name of ${label}`}
+        onClick={() => setEditing(true)}
+      >
+        Correct name
+      </button>
+      {student.submission_id === null && (
+        <button
+          type="button"
+          className="button button-small"
+          aria-label={`Take ${label} off the list`}
+          onClick={onRemove}
+        >
+          Take off list
+        </button>
+      )}
+    </li>
   );
 }

@@ -37,6 +37,7 @@ from .vocabulary import (
     PACKAGE_SETUP_READ,
     PAPERS_READ,
     PARKED_READ,
+    PAST_TESTS_READ,
     READABLE_EXPORT_READ,
     ROSTER_PREVIEW_READ,
     RESULTS_CLASS_READ,
@@ -181,6 +182,9 @@ def _build_routes() -> tuple[ApiRoute, ...]:
         # named exception, citing `FR-CONSOLE-50` — the row carries the label as its
         # `control` so the census sees and admits it, while dispatch routes on `read`.
         ApiRoute("GET", f"{API_PREFIX}/context", None, CONTEXT_READ),
+        # FR-CONSOLE-70: past tests — every grading run with its class, test and dates, and
+        # each graded student's name and total. A pure store projection; writes nothing.
+        ApiRoute("GET", f"{API_PREFIX}/past-tests", None, PAST_TESTS_READ),
         ApiRoute("GET", f"{API_PREFIX}/impact", None, IMPACT_READ),
         ApiRoute("GET", f"{API_PREFIX}/jobs", None, JOBS_READ),
         ApiRoute("GET", f"{API_PREFIX}/jobs/{{job_id}}", None, JOB_READ),

@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { fetchJob, type ContextDoc, type JobRecord, type Papers as PapersDoc } from "../api";
+import {
+  fetchJob,
+  type ContextDoc,
+  type JobRecord,
+  type PaperSheet,
+  type Papers as PapersDoc,
+  type Student,
+} from "../api";
+import { ActionOutcome, ConfirmDialog, useActionState } from "../components/Confirm";
 import { ReadScreen } from "../components/ReadScreen";
+import { sharedNames, studentLabel } from "../studentNames";
 import { useNavigate } from "../navigate";
 import { ProgressBar, useToast } from "../state/StateDisplay";
 import { useScreenRead } from "../useScreenRead";
@@ -15,6 +24,12 @@ import type { Selection } from "../wizard/derivation";
  * read; the console reads it on its own worker with the same checks `aeh ingest` runs, and
  * this screen follows that work's job until it is done. A paper a check refuses is parked
  * for the operator — the Parked page is one link away.
+ *
+ * Every mistake made here has a way back (FR-CONSOLE-66..69): the class check says who has no
+ * paper yet, by name; a paper filed under the wrong student is moved to the right one; a paper
+ * that should not be here (the wrong file, another class's sheet, the earlier of two scans) is
+ * removed so the right scan can be read; and the wrong test paper is replaced while nothing is
+ * graded. Students are named the way the teacher knows them — by name, never by an id.
  */
 
 const JOB_POLL_MS = 1500;
@@ -53,6 +68,7 @@ export function Papers({
     "/api/v1/papers",
     selection.classId === null ? undefined : { cohort_id: selection.classId },
   );
+  const fix = useActionState(read.retry);
 
   // The published test versions, the selected package's (or this class's last run's) first.
   const versions = useMemo(() => {
@@ -233,7 +249,35 @@ export function Papers({
                         </p>
                       </>
                     ) : (
-                      <span>Already in for this class.</span>
+                      <span>
+                        Already in for this class.{" "}
+                        {(data.graded_papers ?? 0) === 0 ? (
+                          <button
+                            type="button"
+                            className="button button-small"
+                            onClick={() =>
+                              fix.open({
+                                title: "Replace the test paper",
+                                description:
+                                  "The test paper read for this class is removed, so the right " +
+                                  "one is read with your next upload. The answer sheets already " +
+                                  "read were checked against the wrong test paper, so they are " +
+                                  "removed too and read again when you upload them. Nothing " +
+                                  "has been graded yet, so no mark is lost.",
+                                confirm: "Replace the test paper",
+                                action: "replace test paper",
+                                body: { cohort_id: data.cohort_id, with_sheets: true },
+                              })
+                            }
+                          >
+                            Wrong test paper? Replace it
+                          </button>
+                        ) : (
+                          <span className="step-note">
+                            Papers here are already graded against it, so it stays.
+                          </span>
+                        )}
+                      </span>
                     )}
                   </div>
                   <div className="settings-row">
@@ -301,19 +345,40 @@ export function Papers({
 
             <section className="panel" aria-label="Students">
               <h2>Students</h2>
-              <ul className="rows-list">
-                {data.students.map((student) => (
-                  <li key={student.student_ref}>
-                    <span className="step-name">{student.full_name ?? student.student_ref}</span>
-                    {student.full_name !== null && (
-                      <span className="step-note">{student.student_ref}</span>
-                    )}
-                    <span className="step-state">
-                      {student.submission_id === null ? "no paper yet" : "paper read"}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              <ClassCheck data={data} />
+              <ActionOutcome outcome={fix.outcome} />
+              <SheetList
+                data={data}
+                onMove={(sheet, student, shared) =>
+                  fix.open({
+                    title: "Give this paper to another student",
+                    description:
+                      `This paper is now filed under ${studentLabel(sheet, shared)}. It will ` +
+                      `belong to ${studentLabel(student, shared)} instead; any marks it already ` +
+                      "has move with it, and the change is recorded.",
+                    confirm: "Move the paper",
+                    action: "move paper to student",
+                    body: {
+                      cohort_id: data.cohort_id,
+                      submission_id: sheet.submission_id,
+                      student_ref: student.student_ref,
+                      actor: "teacher",
+                    },
+                  })
+                }
+                onRemove={(sheet, shared) =>
+                  fix.open({
+                    title: "Remove this paper",
+                    description:
+                      `The paper filed under ${studentLabel(sheet, shared, "no student")} is ` +
+                      "removed from this class, with everything read from it. Upload the right " +
+                      "scan afterwards and it is read again.",
+                    confirm: "Remove the paper",
+                    action: "remove paper",
+                    body: { cohort_id: data.cohort_id, submission_id: sheet.submission_id },
+                  })
+                }
+              />
               {parkedCount > 0 && (
                 <p>
                   {parkedCount === 1 ? "1 paper is" : `${parkedCount} papers are`} parked for a
@@ -324,27 +389,15 @@ export function Papers({
                   .
                 </p>
               )}
-              {readySheets.length > 0 && (
-                <details className="detail-expander">
-                  <summary>Every sheet read so far ({readySheets.length})</summary>
-                  <ul className="rows-list">
-                    {readySheets.map((sheet) => (
-                      <li key={sheet.submission_id}>
-                        <span className="step-name">{sheet.student_ref ?? "no name found"}</span>
-                        <span className="step-state">
-                          {sheetStatusLabel(sheet.status, sheet.parked)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-              )}
               <p className="step-note">
                 {data.parts.length === 0
                   ? "No scans uploaded yet."
                   : `Uploaded files: ${data.parts.join(", ")}.`}
               </p>
             </section>
+            {fix.pending !== null && (
+              <ConfirmDialog pending={fix.pending} onClose={fix.close} onDone={fix.finish} />
+            )}
 
             {confirming && (
               <div role="dialog" aria-modal="true" aria-label="Read these papers" className="dialog">
@@ -375,5 +428,148 @@ export function Papers({
         );
       }}
     </ReadScreen>
+  );
+}
+
+/** The check a teacher makes against their own class list (FR-CONSOLE-69): who is listed,
+ * whose paper is in, and — by name — who has none yet. */
+function ClassCheck({ data }: { data: PapersDoc }) {
+  const summary = data.summary;
+  if (summary === undefined) return null;
+  return (
+    <p className="hub-state" aria-label="Class check">
+      {summary.with_paper} of {summary.listed} student{summary.listed === 1 ? "" : "s"} have a
+      paper read.
+      {summary.without_paper.length > 0
+        ? ` No paper yet: ${summary.without_paper.join(", ")}.`
+        : " Every student on the list has a paper."}
+    </p>
+  );
+}
+
+/** Every student with their paper, by name, and every paper with the two corrections it can
+ * take: give it to the right student, or remove it so the right scan can be read. */
+function SheetList({
+  data,
+  onMove,
+  onRemove,
+}: {
+  data: PapersDoc;
+  onMove: (sheet: PaperSheet, student: Student, shared: Set<string>) => void;
+  onRemove: (sheet: PaperSheet, shared: Set<string>) => void;
+}) {
+  const shared = sharedNames(data.students);
+  const sheets = data.sheets ?? [];
+  const bySubmission = new Map(sheets.map((sheet) => [sheet.submission_id, sheet]));
+  const students = [...data.students].sort((a, b) =>
+    studentLabel(a, shared).localeCompare(studentLabel(b, shared), undefined, {
+      sensitivity: "base",
+    }));
+  const withoutPaper = data.students.filter((student) => student.submission_id === null);
+  const loose = sheets.filter(
+    (sheet) => !data.students.some((student) => student.submission_id === sheet.submission_id),
+  );
+  return (
+    <>
+      <ul className="rows-list" aria-label="Students and their papers">
+        {students.map((student) => {
+          const sheet =
+            student.submission_id === null ? undefined : bySubmission.get(student.submission_id);
+          return (
+            <li key={student.student_ref}>
+              <span className="step-name">{studentLabel(student, shared)}</span>
+              <span className="step-state">
+                {sheet === undefined
+                  ? "no paper yet"
+                  : sheetStatusLabel(sheet.status, sheet.parked)}
+              </span>
+              {sheet !== undefined && (
+                <SheetFixes
+                  sheet={sheet}
+                  shared={shared}
+                  choices={withoutPaper}
+                  onMove={onMove}
+                  onRemove={onRemove}
+                />
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {loose.length > 0 && (
+        <details className="detail-expander" open>
+          <summary>Papers not filed under a student ({loose.length})</summary>
+          <ul className="rows-list">
+            {loose.map((sheet) => (
+              <li key={sheet.submission_id}>
+                <span className="step-name">
+                  {studentLabel(sheet, shared, "No student matched")}
+                </span>
+                <span className="step-state">{sheetStatusLabel(sheet.status, sheet.parked)}</span>
+                {!sheet.graded && (
+                  <button
+                    type="button"
+                    className="button button-small"
+                    onClick={() => onRemove(sheet, shared)}
+                  >
+                    Remove this paper
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </>
+  );
+}
+
+function SheetFixes({
+  sheet,
+  shared,
+  choices,
+  onMove,
+  onRemove,
+}: {
+  sheet: PaperSheet;
+  shared: Set<string>;
+  choices: Student[];
+  onMove: (sheet: PaperSheet, student: Student, shared: Set<string>) => void;
+  onRemove: (sheet: PaperSheet, shared: Set<string>) => void;
+}) {
+  const [target, setTarget] = useState("");
+  const selectId = `move-${sheet.submission_id}`;
+  const chosen = choices.find((student) => student.student_ref === target);
+  return (
+    <span className="sheet-fixes">
+      {sheet.matched === true && choices.length > 0 && (
+        <>
+          <label htmlFor={selectId} className="visually-hidden">
+            Not theirs? Give the paper to
+          </label>
+          <select id={selectId} value={target} onChange={(event) => setTarget(event.target.value)}>
+            <option value="">Not theirs? Give it to…</option>
+            {choices.map((student) => (
+              <option key={student.student_ref} value={student.student_ref}>
+                {studentLabel(student, shared)}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="button button-small"
+            disabled={chosen === undefined}
+            onClick={() => chosen !== undefined && onMove(sheet, chosen, shared)}
+          >
+            Move
+          </button>
+        </>
+      )}
+      {sheet.graded !== true && (
+        <button type="button" className="button button-small" onClick={() => onRemove(sheet, shared)}>
+          Remove paper
+        </button>
+      )}
+    </span>
   );
 }

@@ -30,6 +30,11 @@ from aeh.store import TIER_MIGRATIONS, Migration, Statement, Tier
 V3_PASS = "pass"
 V3_AMBIGUOUS = "ambiguous"
 V3_UNMATCHED = "unmatched"
+#: Not a match outcome but the paper's fate after one (FR-INGEST-41): the name matched a
+#: student who already has a paper in the class — a rescan, or two sheets with one name. The
+#: paper keeps the matched `student_ref` so the teacher sees whose it looks like, and is parked
+#: until the teacher keeps one of the two; it is never graded beside the first.
+V3_ALREADY_HAS_PAPER = "already_has_paper"
 
 #: The `student_ref` an unresolved submission carries.
 UNRESOLVED_REF = "unknown"

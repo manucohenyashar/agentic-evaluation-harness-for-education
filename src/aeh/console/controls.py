@@ -267,5 +267,11 @@ class ControlActionsMixin:
             # rides `refused=True` the way the authoring actions' outcomes carry theirs
             # (PR #794's finding 3 — the shipped shape left it False here).
             return (), detail, dispatched, not dispatched, next_action
+        # The teacher's corrections (FR-CONSOLE-64..68) dispatch exactly when nothing was
+        # refused, like the class actions above, so a refusal rides `refused=True`.
+        if action in ("rename student", "remove student", "move paper to student",
+                      "remove paper", "replace test paper"):
+            detail, dispatched = self._apply_domain_effects(action, params)
+            return (), detail, dispatched, not dispatched, None
         detail, dispatched = self._apply_domain_effects(action, params)
         return (), detail, dispatched, False, None

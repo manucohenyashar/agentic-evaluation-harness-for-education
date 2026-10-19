@@ -3,6 +3,7 @@ import type { ParkedDoc } from "../api";
 import { ActionOutcome, ConfirmDialog, useActionState } from "../components/Confirm";
 import { ReadScreen } from "../components/ReadScreen";
 import { useNavigate } from "../navigate";
+import { sharedNames, studentLabel, studentName } from "../studentNames";
 import { useScreenRead } from "../useScreenRead";
 
 /**
@@ -15,14 +16,18 @@ import { useScreenRead } from "../useScreenRead";
  *   and goes forward to be graded under them;
  * - **Release to scoring** — the console's own match stands;
  * - **Close as unresolvable** — its criteria are missing, never zero.
+ * - **A second paper for one student** (FR-INGEST-41, a rescan) — keep one of the two: remove
+ *   this scan, or remove the earlier paper and give this one to the student. It is never
+ *   closed, which would grade it INCOMPLETE beside the student's real paper.
  *
+ * Students are named the way the teacher knows them: by name, never by an id.
  * Every decision carries the operator's own note (the tick they read, the test the paper
  * belongs to) and is recorded with who decided and when; the card shows the recorded trail.
  * A replacement upload starts on the papers page.
  */
 
 type ParkedEntry = ParkedDoc["parked"][number];
-type Resolution = "matched" | "unresolvable" | "assigned";
+type Resolution = "matched" | "unresolvable" | "assigned" | "remove" | "remove-earlier";
 
 function ParkedCard({
   entry,
@@ -35,6 +40,9 @@ function ParkedCard({
   const [student, setStudent] = useState("");
   const [note, setNote] = useState("");
   const choices = entry.students_without_paper ?? [];
+  const shared = sharedNames(choices);
+  const duplicate = entry.duplicate_of ?? null;
+  const earlierPresent = duplicate !== null && duplicate.submission_id !== null;
   const noteId = `note-${entry.submission_id}`;
   const studentId = `student-${entry.submission_id}`;
   return (
@@ -61,7 +69,7 @@ function ParkedCard({
                 <option value="">Choose the student…</option>
                 {choices.map((choice) => (
                   <option key={choice.student_ref} value={choice.student_ref}>
-                    {choice.full_name ?? choice.student_ref}
+                    {studentLabel(choice, shared)}
                   </option>
                 ))}
               </select>
@@ -88,6 +96,26 @@ function ParkedCard({
         <button type="button" className="button" onClick={() => navigate("/papers")}>
           Upload a replacement
         </button>
+        {duplicate !== null && earlierPresent && (
+          <>
+            <button
+              type="button"
+              className="button"
+              onClick={() => onResolve(entry, "remove", "", note)}
+            >
+              Keep the earlier paper (remove this scan)
+            </button>
+            {!duplicate.graded && (
+              <button
+                type="button"
+                className="button button-primary"
+                onClick={() => onResolve(entry, "remove-earlier", "", note)}
+              >
+                Use this scan instead
+              </button>
+            )}
+          </>
+        )}
         {entry.resolvable && (
           <>
             {entry.assignable === true && (
@@ -100,20 +128,24 @@ function ParkedCard({
                 Give it to this student
               </button>
             )}
-            <button
-              type="button"
-              className="button"
-              onClick={() => onResolve(entry, "matched", "", note)}
-            >
-              Release to scoring
-            </button>
-            <button
-              type="button"
-              className="button"
-              onClick={() => onResolve(entry, "unresolvable", "", note)}
-            >
-              Close as unresolvable
-            </button>
+            {duplicate === null && (
+              <>
+                <button
+                  type="button"
+                  className="button"
+                  onClick={() => onResolve(entry, "matched", "", note)}
+                >
+                  Release to scoring
+                </button>
+                <button
+                  type="button"
+                  className="button"
+                  onClick={() => onResolve(entry, "unresolvable", "", note)}
+                >
+                  Close as unresolvable
+                </button>
+              </>
+            )}
           </>
         )}
       </div>
@@ -123,7 +155,7 @@ function ParkedCard({
             <li key={decision.decided_at}>
               <span className="step-name">{decisionLabel(decision.resolution)}</span>
               {decision.student_ref !== null && (
-                <span className="step-note">to {decision.student_ref}</span>
+                <span className="step-note">to {studentName(decision)}</span>
               )}
               {decision.note !== null && <span className="step-note">“{decision.note}”</span>}
               <span className="step-state">
@@ -173,12 +205,38 @@ export function Parked() {
       action.open({
         title: "Give this paper to a student",
         description:
-          `You are saying this paper belongs to ${chosen?.full_name ?? studentRef}. It goes ` +
+          `You are saying this paper belongs to ${chosen ? studentName(chosen) : "this student"}. It goes ` +
           "forward to be graded as theirs, and your decision is recorded.",
         confirm: "Give it",
         action: "resolve quarantine item",
         body,
       });
+    } else if (resolution === "remove") {
+      const who = entry.duplicate_of ? studentName(entry.duplicate_of) : "the student";
+      action.open({
+        title: "Keep the earlier paper",
+        description:
+          `This scan is removed and ${who}'s earlier paper stays theirs. Nothing else changes.`,
+        confirm: "Remove this scan",
+        action: "remove paper",
+        body: { cohort_id: entry.cohort_id, submission_id: entry.submission_id },
+      });
+      return;
+    } else if (resolution === "remove-earlier") {
+      const who = entry.duplicate_of ? studentName(entry.duplicate_of) : "the student";
+      action.open({
+        title: "Use this scan instead",
+        description:
+          `${who}'s earlier paper is removed. Then choose ${who} under "This paper belongs ` +
+          "to\" on this card to give this scan to them.",
+        confirm: "Remove the earlier paper",
+        action: "remove paper",
+        body: {
+          cohort_id: entry.cohort_id,
+          submission_id: entry.duplicate_of?.submission_id ?? "",
+        },
+      });
+      return;
     } else if (resolution === "matched") {
       action.open({
         title: "Release this paper to scoring",

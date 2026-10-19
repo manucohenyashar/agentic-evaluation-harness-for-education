@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { fetchRead, type ContextDoc, type RunStartState as RunStartDoc } from "../api";
+import {
+  fetchRead,
+  type ContextDoc,
+  type Papers as PapersDoc,
+  type RunStartState as RunStartDoc,
+} from "../api";
 import { ActionOutcome, ConfirmDialog, useActionState } from "../components/Confirm";
 import { ReadScreen } from "../components/ReadScreen";
 import { useNavigate } from "../navigate";
@@ -44,6 +49,11 @@ export function RunStart({
   const runParams = selection.runId === null ? undefined : { run_id: selection.runId };
   const read = useScreenRead<RunStartDoc>("/api/v1/run-start-state", runParams);
   const action = useActionState(read.retry);
+  // FR-CONSOLE-69: who has no paper yet, by name, before the teacher starts grading.
+  const papers = useScreenRead<PapersDoc>(
+    selection.classId === null ? null : "/api/v1/papers",
+    selection.classId === null ? undefined : { cohort_id: selection.classId },
+  ).data;
   const navigate = useNavigate();
 
   // The published test versions a run can grade against, the selected package's first.
@@ -128,6 +138,17 @@ export function RunStart({
             )}
             <section className="panel" aria-label="Start a new grading run">
               <h2>Start a new grading run</h2>
+              {papers?.summary !== undefined && papers.summary.without_paper.length > 0 && (
+                <p className="settings-error" aria-label="Students without a paper">
+                  {papers.summary.without_paper.length} of {papers.summary.listed} students have
+                  no paper read yet: {papers.summary.without_paper.join(", ")}. They get no
+                  result from this run.{" "}
+                  <a href="#/papers" onClick={() => navigate("/papers")}>
+                    Load their papers first
+                  </a>{" "}
+                  if you have them.
+                </p>
+              )}
               {selection.classId === null ? (
                 <p>
                   Choose a class first —{" "}

@@ -141,19 +141,20 @@ The SPA's addresses carry a `#`. Replace `{...}` with your own IDs. The current 
 | Screen | Address | Who | What it does |
 |---|---|---|---|
 | Wizard home | `/#/` | Teacher | The nine stages, each with its state, and the next action for each |
-| Set up a class | `/#/class` | Teacher | Every class and its students; make a class (typed list or a class list file), add late students, delete a class |
+| Set up a class | `/#/class` | Teacher | Every class and its students by name, with who has no paper yet; make a class (typed list or a class list file), add late students, correct a name, take a student off the list, delete a class |
 | Set up a test package | `/#/package` | Teacher | The setup draft's steps, which ones block publishing, and the **Publish** control |
 | Author a package | `/#/package/author` | Teacher | Upload your documents, preview what was understood, start the draft job |
 | Review the draft | `/#/package/review` | Teacher | The draft's open questions to answer; approve it when none remain |
 | Edit the draft | `/#/package/edit` | Teacher | Add, edit, reorder and delete questions and grading points |
-| Load papers | `/#/papers` | Teacher/Operator | Upload the test paper and the answer sheets, read them through the five checks, and see each student's paper |
+| Load papers | `/#/papers` | Teacher/Operator | Upload the test paper and the answer sheets, read them through the five checks, and see each student's paper; give a paper to the right student, remove a paper, replace the wrong test paper |
 | Start a run | `/#/run` | Teacher/Operator | Start a new grading run for the selected class and test version, priced, behind a confirmation |
 | Run monitor | `/#/monitor` | Operator | The run's status and pause reason beside the orchestrator's own progress counts; it refreshes itself |
 | Review queue | `/#/review` | Teacher | The flagged answers that await review, and how many provisional answers remain outside the queue |
 | Blind sample | `/#/review/blind` | Teacher | The papers drawn for the blind sample, each offering that question's own levels from the package |
 | Results | `/#/results` | Teacher | Every student's grade; the finalize control; the amend form; the downloads (marks spreadsheet and CSV, a student's report, the test as a PDF and its backup); correcting an answer key; the review window |
 | One student | `/#/results/students/{submission-id}` | Teacher | The narrative feedback, each line's band, and the amend form |
-| Parked | `/#/parked` | Operator | Each parked paper with its reason; give it to a student, release or close it, with a recorded note |
+| Past tests | `/#/past` | Teacher | Every test graded before, newest first, with its class, test and date; find a student by name across all of them |
+| Parked | `/#/parked` | Operator | Each parked paper with its reason; give it to a student, release or close it, keep one of two papers for one student, with a recorded note |
 | Jobs | `/#/jobs` | Operator | Every job — drafts and runs — with progress, elapsed time and cost so far; a run offers Pause and Resume |
 | Issues | `/#/issues` | Teacher | The run's findings that need a person, by severity |
 | Logs | `/#/logs` | Engineer | The run's stage records, paged |
@@ -173,7 +174,16 @@ The whole day, class to download, as one walk over the sample tests: [`docs/live
 
 Open **Set up a class** (`/#/class`). Give the class a name (lower-case letters, digits, `-`, `_` or `.` — it becomes a file name), choose **whose work this is** — made-up practice work, work the students or their guardians agreed to, or real work without that agreement — and add the students: type or paste one per line (a spreadsheet's *first name, last name, optional ID* columns paste as they are), or **import a class list file**, which lists every student it found and every problem line, with its line number, before anything is written. **Make the class.**
 
-The consent choice has no default and can never be changed afterwards: it decides whether the class's papers may go to a remote model at all. A late student is added with **Add students** under the class. **Delete this class…** removes a class for good after you type its name: a class with no papers is removed at once, and a class whose papers were graded only after its results are saved for validation. With one class stored, the console selects it everywhere; with several, choose one in the top bar's *Class* switcher.
+The consent choice has no default and can never be changed afterwards: it decides whether the class's papers may go to a remote model at all. With one class stored, the console selects it everywhere; with several, choose one in the top bar's *Class* switcher.
+
+**Check the class against your own list.** Each class lists its students **by name**, alphabetically, each with *paper read* or *no paper yet*, and a line above the list says how many students are listed, how many papers are in, and — by name — who has no paper yet. Students are always shown by their names; a student's ID appears after the name only when two students in the class share a name.
+
+**Fix the list.** Under the class:
+
+* **Correct name** fixes a misspelt name in place. The student keeps their papers, and papers read afterwards are matched against the corrected name.
+* **Take off list** removes a student added by mistake (or twice, or who left). It is offered only for a student with no paper yet: move or remove their paper first (5.2).
+* **Add students** adds late students, one per line.
+* **Delete this class…** removes a class for good after you type its name. It is offered only for a class that holds no papers and no grading runs — a class made by mistake. A class with papers but no grading yet can be emptied first (remove its papers on **Load papers**) and then deleted. A graded class is kept: its results stay under **Past tests**, and the screen says so instead of offering the delete.
 
 ### 5.1 Make the test package (teacher, once, 30 to 60 minutes)
 
@@ -193,7 +203,15 @@ A second route to a published package also exists: `/#/package` shows the setup 
 
 ### 5.2 Load the papers and start the run (teacher or operator)
 
-**Reading the scans in.** Open **Load papers** (`/#/papers`) with the class selected. Choose the published test version the papers answer, the **test paper** (once per class — every answer sheet is checked against it) and the **answer sheets**, one PDF per student, each carrying the test name and the student's name or ID. The files you chose are listed; **Read the papers** asks for a confirmation (the pages go to the page reader in the console's settings) and then sends them. The console reads them on its own worker — you can leave the page — and a progress bar shows each file's outcome; the same work is on **Jobs** as *Reading the papers*. Every sheet goes through the five intake checks; a sheet that fails one waits on the Parked screen. Sending a sheet again skips it, so a paper is never graded twice. This is the same reading `aeh ingest` does from the terminal (deployment tutorial, section 8.3).
+**Reading the scans in.** Open **Load papers** (`/#/papers`) with the class selected. Choose the published test version the papers answer, the **test paper** (once per class — every answer sheet is checked against it) and the **answer sheets**, one PDF per student, each carrying the test name and the student's name or ID. The files you chose are listed; **Read the papers** asks for a confirmation (the pages go to the page reader in the console's settings) and then sends them. The console reads them on its own worker — you can leave the page — and a progress bar shows each file's outcome; the same work is on **Jobs** as *Reading the papers*. Every sheet goes through the five intake checks; a sheet that fails one waits on the Parked screen. Sending the same file again skips it, and a **rescan** of a student whose paper is already in (a sharper scan, the pages in the right order) is parked as *a second paper for that student* — never graded beside the first — so a student is never graded twice (5.4 says how to keep the right one). This is the same reading `aeh ingest` does from the terminal (deployment tutorial, section 8.3).
+
+**Check who is missing.** The *Students* panel says how many of the listed students have a paper read and names those who have none yet, and lists every student by name with their paper's state. Papers not filed under a student (no name found, or parked) are listed below it.
+
+**Fix a paper.** Beside each paper:
+
+* **Not theirs? Give it to…** moves a paper the console filed under the wrong student (similar names, a borrowed sheet) to the student it belongs to — only students with no paper yet are offered. Marks it already has move with it, and the move is recorded.
+* **Remove paper** takes out a paper that should not be here — the wrong file, another class's sheet, a blank page, the earlier of two scans — so the right scan can be uploaded and read. It is offered only for a paper no grading run has touched; a graded paper stays (correct its marks from Results, or move it to the right student).
+* **Wrong test paper? Replace it** (beside *The test paper*) removes the test paper read for this class, and the answer sheets already checked against it, so the right test paper and the sheets are read again with your next upload. It is offered only while nothing in the class has been graded.
 
 **The five intake checks, in plain words:**
 
@@ -207,7 +225,7 @@ A second route to a published package also exists: `/#/package` shows the setup 
 
 Papers with problems do **not** hold the run back: they wait on the Parked screen while the rest are graded.
 
-**Start the run.** Open `/#/run` with the class selected, choose the test version and press **Start a new grading run**. The confirmation says what will be graded, under which settings profile, and the estimated cost. A run that is still waiting to start shows its own **Start the run** control. Confirm, and the run starts on a worker the console owns and the console opens the run monitor. Recovery resumes eligible interrupted work at console startup; an intentionally paused run is resumed only when it has an unapplied queued Resume request.
+**Start the run.** Open `/#/run` with the class selected, choose the test version and press **Start a new grading run**. If some students have no paper read yet, the screen names them first — they get no result from the run, so load their papers before starting if you have them. The confirmation says what will be graded, under which settings profile, and the estimated cost. A run that is still waiting to start shows its own **Start the run** control. Confirm, and the run starts on a worker the console owns and the console opens the run monitor. Recovery resumes eligible interrupted work at console startup; an intentionally paused run is resumed only when it has an unapplied queued Resume request.
 
 **Watch it.** `/#/monitor` shows the run ID, status, any pause reason, and progress values supplied by the orchestrator (such as done, in-flight, pending and quarantined work). There is deliberately no per-student progress figure, because the work is done by criterion, not by student. The screen refreshes itself every two seconds.
 
@@ -226,7 +244,8 @@ Reviewing the results is optional; the review screen is not an action queue, and
 3. **Finalize.** On `/#/results`, the **Finalize the batch** control stamps the run as delivered behind its confirmation, naming you (the console has no accounts, so the recorded name is the console's operator label). If the package declared a review window, finalizing inside the window leaves the grades *provisional*; the system settles them when the window ends.
 4. **Change a grade.** From the results screen or the student's own screen, use the grade control. For a grade not yet final, the console records a review action; changing a finalized grade requires **a reason**, creates a new revision and keeps the original. The student's screen shows the amendment history, including the reason and actor when recorded.
 5. **Download.** The **Download the results** panel on `/#/results` saves the marks as a spreadsheet (`.xlsx`) or a CSV file, one student's report as a PDF, and the test itself as a readable PDF and as its backup file. *Marks version* 1 is every student's marks as first given; version 2 lists only the students whose final mark was changed. The same screen corrects a multiple-choice **answer key** found wrong after the run (the question's marks are worked out again for the class) and sets the **review window** (hours the grades stay open before finalizing settles them).
-6. **Read the results.** `/#/results` shows each student's grade, class distribution, per-criterion statistics and the lines most students missed; it does not show a grade range or multiple-choice distractor breakdown. `/#/results/students/{submission-id}` opens one student — use the submission ID the results screen shows (it looks like `sub-22a56dc63714`), **not** the student's own ID.
+6. **Read the results.** `/#/results` shows each student's grade, class distribution, per-criterion statistics and the lines most students missed; it does not show a grade range or multiple-choice distractor breakdown. Students are listed by name; the search box finds a student by name. Click a name to open that student's own page.
+7. **Answer a question about an earlier test.** Open **Past tests** (`/#/past`). Every test graded before is listed newest first, with its class, the test version, the date and how many students were graded; choose a class to narrow the list. Type a student's name to see that student in every past test, with their total — click a line to open their page for that test, or a test to open its results. The top bar's *Grading run* switcher names each run the same way (class · test · date) and offers the selected class's runs.
 
 ### 5.4 Parked papers (operator)
 
@@ -236,10 +255,18 @@ Open `/#/parked`. Each waiting paper shows **why it was parked** — the check t
 * **Release** the paper to scoring. This is right when you have looked at the paper and the system's reading stands. For a doubled mark, the paper is scored on what the page reader read — write the tick you read in the note, and correct the mark on the student's result if it needs it.
 * **Close** the paper as unresolvable. Closing never gives zero: the unscored lines are marked MISSING and the grade INCOMPLETE. For a wrong-test paper, note which test it is and upload it on the right class.
 
+**A second paper for one student** (a rescan, or two sheets with one name) is parked with the student's name and the note that they already have a paper. Keep one of the two:
+
+* **Keep the earlier paper (remove this scan)** removes the new scan; nothing else changes.
+* **Use this scan instead** removes the earlier paper (offered only while it is not graded); then choose the student under *This paper belongs to* and press **Give it to this student**.
+
+A second paper is never closed — closed, it would be graded INCOMPLETE beside the student's real paper.
+
 Every decision asks for a confirmation before it is sent, and is recorded with your name, the time, the student and your note; the card shows the decisions already recorded. The system will **not** reassign a paper by itself.
 
 ### 5.5 The rest of the sidebar
 
+* **Past tests** — every test graded before, by class, test and date; find a student by name across them (5.3, step 7).
 * **Jobs** — every background job (drafts and runs) with its state, progress, duration and **cost so far** in dollars, or a dash while it has none. Pause or resume a run here. A drafting job can be cancelled from its authoring screen; Jobs does not offer run cancellation.
 * **Issues** — the run's findings that need a person: second-opinion notes are labelled *Information*, every other known source *Needs attention*, with the words beside the icon, not colour alone.
 * **Logs** — the run's stage records, paged; the page size is a knob (deployment tutorial, section 10).
@@ -249,6 +276,22 @@ Every decision asks for a confirmation before it is sent, and is recorded with y
 
 ---
 
+### 5.6 Fixing a mistake: where to go
+
+| The mistake | Where to fix it |
+|---|---|
+| A student's name is misspelt | **Set up a class** → *Correct name* |
+| A student is listed by mistake, twice, or has left | **Set up a class** → *Take off list* (move or remove their paper first) |
+| A student is missing from the list | **Set up a class** → *Add students*, then give them their paper (Parked or Load papers) |
+| A paper was filed under the wrong student | **Load papers** → *Not theirs? Give it to…* |
+| The wrong file, or another class's paper, was read | **Load papers** → *Remove paper* (ungraded papers) |
+| A sharper rescan of a sheet was uploaded | **Parked** → keep one of the two papers |
+| The wrong test paper was read | **Load papers** → *Wrong test paper? Replace it* (before grading) |
+| A class was made with the wrong name or consent choice | Remove its papers if any, delete the class, and make it again |
+| A mark is wrong | **Results** → the student → change the grade (with a reason once final) |
+| A multiple-choice answer key was wrong | **Results** → correct the answer key |
+| "What did this student get on the last test?" | **Past tests** → type the student's name |
+
 ## 6. What is not in the console yet
 
 Named plainly, so nobody meets them by surprise. Each is a known, tracked gap.
@@ -256,6 +299,8 @@ Named plainly, so nobody meets them by surprise. Each is a known, tracked gap.
 | Gap | What you do instead |
 |---|---|
 | **Starting the console** reads its environment once: the OpenRouter key and settings such as `HARNESS_ORCH_RANDOM_ARM_RATE` cannot be changed from the browser. | The operator sets them before `aeh console` (section 3.1; the live-test walk's step 0). |
+| **A late paper after the run.** A student who sat the test late is graded by a new run for the class, which grades every paper again. | Load the late paper on **Load papers**, then **Start a new grading run**; the new run's results include everyone. Past tests keeps both runs. |
+| **Undoing a run started by mistake.** A run is never deleted. | Pause it on **Jobs**; it stays listed under Past tests with its state. Start the right run. |
 | **The ambiguity questions are not in the SPA flow.** The SPA does not show this step. On the legacy `/setup/optional` page, its card is present but marked unavailable/arriving in version 2 (Phase 4); it is not a teacher-facing SPA control. | Nothing to do; the drafts' own review questions cover what blocks approval. |
 
 Nothing here hides a failure: every screen that would need a missing capability either does not offer the control or says so in its own words.

@@ -15,6 +15,7 @@ import {
   scoreStateLabel,
 } from "../state/model";
 import { useScreenRead } from "../useScreenRead";
+import { sharedNames, studentLabel } from "../studentNames";
 import { useRunParams } from "../selection";
 
 /**
@@ -34,7 +35,8 @@ import { useRunParams } from "../selection";
 function matchesFilters(student: ResultStudent, search: string, level: string, flag: string): boolean {
   if (search !== "") {
     const needle = search.toLowerCase();
-    const hay = `${student.student_ref ?? ""} ${student.submission_id}`.toLowerCase();
+    // The teacher searches by the name they know the student by.
+    const hay = `${student.full_name ?? ""} ${student.student_ref ?? ""}`.toLowerCase();
     if (!hay.includes(needle)) return false;
   }
   if (level !== "" && !student.criteria.some((criterion) => criterion.criterion_band === level)) {
@@ -203,12 +205,12 @@ export function Results() {
   return (
     <ReadScreen title="Results" read={read}>
       {(doc) => {
+        const shared = sharedNames(doc.students);
         const shown = doc.students
           .filter((student) => matchesFilters(student, search, levelFilter, flagFilter))
           .sort((a, b) => {
-            const refA = a.student_ref ?? a.submission_id;
-            const refB = b.student_ref ?? b.submission_id;
-            const compared = refA.localeCompare(refB);
+            const compared = studentLabel(a, shared).localeCompare(
+              studentLabel(b, shared), undefined, { sensitivity: "base" });
             return sort === "za" ? -compared : compared;
           });
         const levelsFor = (criterionId: string): string[] =>
@@ -251,7 +253,7 @@ export function Results() {
                             onClick={() =>
                               navigate(`/results/students/${item.student.submission_id}`)}
                           >
-                            {item.student.student_ref ?? item.student.submission_id}
+                            {studentLabel(item.student, shared)}
                           </a>{" "}
                           — {item.label}: {flagLabel(item.flag)}
                         </li>
@@ -317,7 +319,7 @@ export function Results() {
                           href={`#/results/students/${student.submission_id}`}
                           onClick={() => navigate(`/results/students/${student.submission_id}`)}
                         >
-                          {student.student_ref ?? student.submission_id}
+                          {studentLabel(student, shared)}
                         </a>
                         <span>Total: {student.total ?? "—"}</span>
                         <span>{student.state === "" ? "—" : scoreStateLabel(student.state)}</span>
@@ -402,7 +404,13 @@ function exportHref(path: string, params: Record<string, string>): string {
 function Downloads({ doc }: { doc: ResultsDoc }) {
   const runId = doc.run_id ?? "";
   const [revision, setRevision] = useState("1");
-  const firstRef = doc.students.find((s) => s.student_ref !== null)?.student_ref ?? "";
+  const shared = sharedNames(doc.students);
+  const named = doc.students
+    .filter((s) => s.student_ref !== null)
+    .sort((a, b) => studentLabel(a, shared).localeCompare(studentLabel(b, shared), undefined, {
+      sensitivity: "base",
+    }));
+  const firstRef = named[0]?.student_ref ?? "";
   const [student, setStudent] = useState(firstRef);
   const rev = /^[1-9][0-9]*$/.test(revision) ? revision : "1";
   const version = doc.package_version_id ?? "";
@@ -430,13 +438,11 @@ function Downloads({ doc }: { doc: ResultsDoc }) {
             value={student}
             onChange={(event) => setStudent(event.target.value)}
           >
-            {doc.students
-              .filter((s) => s.student_ref !== null)
-              .map((s) => (
-                <option key={s.submission_id} value={s.student_ref ?? ""}>
-                  {s.student_ref}
-                </option>
-              ))}
+            {named.map((s) => (
+              <option key={s.submission_id} value={s.student_ref ?? ""}>
+                {studentLabel(s, shared)}
+              </option>
+            ))}
           </select>
         </div>
       </div>

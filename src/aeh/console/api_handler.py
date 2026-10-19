@@ -58,6 +58,7 @@ from .screen_reads import (
     student_detail_read,
     system_status_read,
 )
+from .history_reads import past_tests_read
 from .spa_reads import (
     context_read,
     impact_read,
@@ -84,6 +85,7 @@ from .vocabulary import (
     PACKAGE_SETUP_READ,
     PAPERS_READ,
     PARKED_READ,
+    PAST_TESTS_READ,
     READABLE_EXPORT_READ,
     RESULTS_CLASS_READ,
     RESULTS_EXPORT_READ,
@@ -185,6 +187,8 @@ _READS = {
     ISSUES_READ: lambda _console, app, _params, query: issues_read(_console, app, query),
     LOGS_READ: lambda _console, app, _params, query: logs_read(_console, app, query),
     PARKED_READ: lambda _console, app, _params, query: parked_read(_console, app, query),
+    # FR-CONSOLE-70: past tests — every run with its class, test, dates and graded students.
+    PAST_TESTS_READ: lambda _console, app, _params, query: past_tests_read(_console, app, query),
     CONFIG_READ: lambda _console, app, _params, query: config_read(_console, app, query),
     AUTHORING_PREVIEW_READ: lambda _console, _app, _params, body: authoring_preview_read(
         _console, _app, body),
