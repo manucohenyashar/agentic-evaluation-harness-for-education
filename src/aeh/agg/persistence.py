@@ -75,7 +75,8 @@ def write_score(
         # FR-AGG-20: every not-final code but one is re-derivable from the row's own columns
         # (`stored_not_final_reason`), so only `more_graders_unavailable` — a fact about the
         # escalation, not the row — is written, in the state-reason column (no migration). An
-        # engine-off row therefore stays byte-identical to its pre-delta form (TC-REG-08).
+        # engine-off row therefore stays byte-identical to its pre-delta form (TC-REG-08),
+        # except a cell whose wanted escalation found no real judge seat, which now records it.
         state_reason=(getattr(score, "state_reason", None)
                       or (MORE_GRADERS_UNAVAILABLE
                           if getattr(score, "not_final_reason", None) == MORE_GRADERS_UNAVAILABLE
