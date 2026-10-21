@@ -119,8 +119,7 @@ def test_tc_judge_c07_decision_confidence_is_only_the_weighted_concern() -> None
         for engine in ("decision", "llm"):
             v = verdict("E", 3, self_confidence=confidence)
             v.scoring_engine = engine
-            twins.append(aggregate([v], crit, favourable_signals(),
-                                   config=SimpleNamespace(jev_final_on_accept=False)))
+            twins.append(aggregate([v], crit, favourable_signals(), jev_final_on_accept=False))
         assert twins[0] == twins[1]
     for fn in (aggregate, should_escalate):
         params = set(inspect.signature(fn).parameters)

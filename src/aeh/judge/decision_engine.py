@@ -319,6 +319,35 @@ def _inventory(decision: Decision, bands: tuple[BandView, ...], cited_labels: li
             f"band probabilities: {probabilities}; sufficiency: {sufficiency:.4f}")
 
 
+# --- FR-JUDGE-39: the confirming judge, recorded on the accepted pre-screen row ----------------
+
+#: The pre-screen `reason` key when the seat's LLM judge gave the decision's band.
+CONFIRMED_BY = "confirmed_by"
+#: The pre-screen `reason` key when it gave another band.
+UNCONFIRMED_BY = "unconfirmed_by"
+#: The verdict's `prescreen_outcome` when the judge's band differed, so its verdict is the unit's.
+UNCONFIRMED = "unconfirmed"
+
+
+def prescreen_confirmation(reason: Any) -> "tuple[str, str, str] | None":
+    """Read an accepted pre-screen row's `reason` as FR-JUDGE-39's confirmation:
+    `(CONFIRMED_BY or UNCONFIRMED_BY, judge_id, band)`, or `None` when no confirming judge has
+    answered (the knob was off, or the row predates FR-JUDGE-39)."""
+    if not isinstance(reason, str) or not reason.startswith("{"):
+        return None
+    try:
+        parsed = json.loads(reason)
+    except ValueError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    for kind in (CONFIRMED_BY, UNCONFIRMED_BY):
+        entry = parsed.get(kind)
+        if isinstance(entry, dict):
+            return kind, str(entry.get("judge_id") or ""), str(entry.get("band") or "")
+    return None
+
+
 def gate_decision(decision: Decision, request: ScoringRequest, engine: Any, *,
                   judge_id: str = "", attempts: int = 1) -> Accepted | BelowGate:
     """Apply the confidence gate to a decision-engine answer (FR-JUDGE-27, FR-JUDGE-28). Pure. The

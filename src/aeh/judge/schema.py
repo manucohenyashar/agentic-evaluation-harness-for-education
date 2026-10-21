@@ -225,6 +225,12 @@ JUDGE_STATEMENTS: dict[str, Statement] = {
         ":sufficiency_p, :argmax_band, :band_probabilities, :band_score, :cite_probabilities, "
         ":threshold, :tokens_in, :latency_ms, :cost)"
     ),
+    # FR-JUDGE-39 (#806): the confirming judge's answer on an accepted pre-screen row, in its
+    # `reason` (NULL on an accepted row until then; no migration). Written once per unit.
+    "record_prescreen_confirmation": Statement(
+        "UPDATE decision_prescreen SET reason = :reason "
+        "WHERE work_id = :work_id AND outcome = 'accepted' AND reason IS NULL"
+    ),
     # FR-JUDGE-36: one run's pre-screen rows, for `decision_engine_metrics`.
     "select_run_prescreens": Statement(
         "SELECT criterion_id, outcome, reason, gate_confidence, latency_ms "

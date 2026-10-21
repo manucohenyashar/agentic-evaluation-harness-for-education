@@ -113,6 +113,7 @@ def aggregate(
     fallback: bool = False,
     breaker_tripped: bool = False,
     deterministic_score: Any = None,
+    jev_final_on_accept: bool = AGG_JEV_FINAL_ON_ACCEPT,
     _jev_final_allowed: bool = True,
 ) -> CriterionScore:
     """Combine a panel's verdicts into one criterion score (FR-AGG-01..04), with its confidence
@@ -165,6 +166,7 @@ def aggregate(
                 signals,
                 config=config,
                 breaker_tripped=breaker_tripped,
+                jev_final_on_accept=jev_final_on_accept,
                 _jev_final_allowed=False,
             )
             return replace(
@@ -227,15 +229,12 @@ def aggregate(
         )
         uncited_multiplier = getattr(config, "uncited_multiplier", AGG_UNCITED_MULTIPLIER)
         holistic_multiplier = getattr(config, "holistic_multiplier", AGG_HOLISTIC_MULTIPLIER)
-        jev_final_on_accept = bool(
-            getattr(config, "jev_final_on_accept", AGG_JEV_FINAL_ON_ACCEPT))
     else:
         caps = None
         atomic_threshold = AGG_AUTO_THRESHOLD_ATOMIC
         holistic_threshold = AGG_AUTO_THRESHOLD_HOLISTIC
         uncited_multiplier = AGG_UNCITED_MULTIPLIER
         holistic_multiplier = AGG_HOLISTIC_MULTIPLIER
-        jev_final_on_accept = AGG_JEV_FINAL_ON_ACCEPT
     cap_table = dict(AGG_CAP_TABLE) if caps is None else dict(caps)
 
     scoring_model = getattr(criterion, "scoring_model", "atomic")

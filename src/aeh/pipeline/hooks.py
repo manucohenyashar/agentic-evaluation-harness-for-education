@@ -194,8 +194,7 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any,
     latched = {trip.criterion_id for trip in orch.tripped_breakers(handle.run_id)}
     # FR-AGG-20: the Jev-final rule the run froze at creation (recorded on its row), so a
     # resumed run aggregates every cell by one rule whatever the environment says now.
-    agg_config = SimpleNamespace(
-        jev_final_on_accept=bool(getattr(handle, "jev_final_on_accept", True)))
+    jev_final_on_accept = bool(getattr(handle, "jev_final_on_accept", True))
     detail: list[str] = []
     escalated = 0
     current: Any = None
@@ -287,7 +286,7 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any,
                 fallback=len(verdicts) == 2 and quarantined > 0,
                 breaker_tripped=cell.criterion_id in latched,
                 # FR-AGG-20: the run's frozen rule, never the environment at this pass.
-                config=agg_config,
+                jev_final_on_accept=jev_final_on_accept,
             )
             # `should_escalate` is pure (FR-AGG-08); the decision is the unmodified score's.
             decision = should_escalate(

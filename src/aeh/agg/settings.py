@@ -29,7 +29,8 @@ AGG_UNCITED_MULTIPLIER: float = 0.80
 
 #: FR-AGG-20 (ADR-50): whether a cell whose only verdict is an accepted decision-engine verdict
 #: is final. The production default; a run's frozen value (`HARNESS_JEV_FINAL_ON_ACCEPT`,
-#: recorded on the run row) reaches `aggregate` through `config.jev_final_on_accept`.
+#: recorded on the run row) reaches `aggregate` as its `jev_final_on_accept` keyword; `aggregate`
+#: reads no environment (CT-AGG-01).
 AGG_JEV_FINAL_ON_ACCEPT: bool = True
 
 
