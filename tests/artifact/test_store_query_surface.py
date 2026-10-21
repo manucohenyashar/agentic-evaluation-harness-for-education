@@ -261,19 +261,19 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # as before, and the re-pin is line drift only. `run_lifecycle.py` is unchanged on
     # main, so #664's numbers hold; `enumeration.py` is #597's SQL-ready rewrite, whose
     # sites are main's re-pin.
-    "aeh.orch.run_lifecycle:108",
+    "aeh.orch.run_lifecycle:112",
     "aeh.orch.enumeration:103",
     "aeh.orch.enumeration:112",
-    "aeh.orch.run_lifecycle:269",
-    "aeh.orch.run_lifecycle:264",
-    "aeh.orch.run_lifecycle:258",
-    "aeh.orch.run_lifecycle:290",
-    "aeh.orch.run_lifecycle:302",
-    "aeh.orch.run_lifecycle:330",
-    "aeh.orch.run_lifecycle:450",
-    "aeh.orch.run_lifecycle:432",
-    "aeh.orch.run_lifecycle:474",
-    "aeh.orch.run_lifecycle:482",
+    "aeh.orch.run_lifecycle:273",
+    "aeh.orch.run_lifecycle:268",
+    "aeh.orch.run_lifecycle:262",
+    "aeh.orch.run_lifecycle:294",
+    "aeh.orch.run_lifecycle:306",
+    "aeh.orch.run_lifecycle:334",
+    "aeh.orch.run_lifecycle:454",
+    "aeh.orch.run_lifecycle:436",
+    "aeh.orch.run_lifecycle:478",
+    "aeh.orch.run_lifecycle:486",
     "aeh.orch.leasing:234",
     "aeh.orch.leasing:253",
     "aeh.orch.leasing:265",
@@ -318,15 +318,15 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # so a run recovery REFUSED to resume - a profile switch, FR-CONF-15 - would keep a
     # stale reason that answers a different question. Declared statement,
     # keyword-parameterized, in the caller's transaction (FR-STORE-08).
-    "aeh.orch.run_lifecycle:570",
+    "aeh.orch.run_lifecycle:574",
     "aeh.orch.leasing:672",
     "aeh.orch.leasing:674",
-    "aeh.orch.dispatch:461",
+    "aeh.orch.dispatch:449",
     # #810 (FR-CONSOLE-75): `add_run_metrics` (368, the declared `add_run_metric` with
     # keyword parameters) lands above `record_run_metrics`, which moves 369 -> 389.
     "aeh.orch.reporting:381",
     "aeh.orch.reporting:402",
-    "aeh.orch.run_records:210",
+    "aeh.orch.run_records:221",
     # #612 (live OpenRouter enablement): cohort creation and roster widening write the
     # roster through ORCH_STATEMENTS, and ingest marks interrupted submissions
     # not_reached through INGEST_STATEMENTS - declared statements, keyword parameters,
@@ -370,9 +370,9 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # artifact read `M-EXTRACT` shares with `M-JUDGE`, ~48 lines — landed above the
     # sites; the statements are the same three. Re-read from the walker, never
     # hand-unioned.)
-    "aeh.extract.worker:189",
-    "aeh.extract.worker:194",
-    "aeh.extract.worker:196",
+    "aeh.extract.worker:188",
+    "aeh.extract.worker:193",
+    "aeh.extract.worker:195",
     # The judge sites are #80's line numbers (moved from #79's 1453/1458/1460 by the
     # response-contract work above them: the v17 migration block, the prose-assessment
     # gate, the amendment payload, the extended dispatch loop — then re-pinned once
@@ -393,13 +393,17 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # statements are the same three. Re-read from the walker, never hand-unioned.)
     # #361's durable write: `_record_contract_violations`' `tx.execute` of the declared
     # `JUDGE_STATEMENTS["add_contract_violations"]` upsert (FR-JUDGE-21).
-    "aeh.judge.worker:383",
-    "aeh.judge.worker:423",
-    "aeh.judge.worker:438",
-    "aeh.judge.worker:428",
+    "aeh.judge.worker:456",
+    # #806 FR-JUDGE-39: the confirming judge recorded on the accepted pre-screen row
+    # (`record_prescreen_confirmation`), and the changed-row count that tells it it won.
+    "aeh.judge.worker:432",
+    "aeh.judge.worker:434",
+    "aeh.judge.worker:496",
+    "aeh.judge.worker:511",
+    "aeh.judge.worker:501",
     # #448 (Jev design delta FR-JUDGE-34): the decision-seat pre-screen row, one declared
     # JUDGE_STATEMENTS["insert_prescreen"] with keyword parameters, INSERT OR IGNORE on the work id.
-    "aeh.judge.worker:252",
+    "aeh.judge.worker:255",
     # The ingest sites are #220's line numbers (the transcription strike loop
     # and the honest-quarantine catch shifted the module; every statement
     # verified unchanged against the prior baseline, the tripwire diff being
@@ -407,13 +411,13 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # (#144's re-pin: `select_document_head` gained its `markdown` column, one
     # statement line grown to two above every site; the statements are the same
     # fifteen. Re-read from the walker, never hand-unioned.)
-    "aeh.ingest.documents:437",
-    "aeh.ingest.documents:426",
-    "aeh.ingest.documents:460",
+    "aeh.ingest.documents:436",
+    "aeh.ingest.documents:425",
+    "aeh.ingest.documents:459",
     "aeh.ingest.revision:254",
     "aeh.ingest.revision:277",
     "aeh.ingest.revision:304",
-    "aeh.ingest.submissions:54",
+    "aeh.ingest.submissions:52",
     # #355's per-kind split (FR-INGEST-36): `resolve_selection_region` writes a matched
     # option's selection and state together, and `update_region_text` (below) replaces the
     # content of a region that resolved to no declared option — both declared statements,
@@ -423,11 +427,11 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.ingest.clusters:113",
     "aeh.ingest.clusters:131",
     "aeh.ingest.clusters:136",
-    "aeh.ingest.submissions:230",
-    "aeh.ingest.submissions:456",
-    "aeh.ingest.submissions:468",
-    "aeh.ingest.assessment_match:395",
-    "aeh.ingest.assessment_match:418",
+    "aeh.ingest.submissions:216",
+    "aeh.ingest.submissions:442",
+    "aeh.ingest.submissions:454",
+    "aeh.ingest.assessment_match:394",
+    "aeh.ingest.assessment_match:417",
     "aeh.ingest.uploads:19",
     # B8: the operator's parked-paper decision (aeh.ingest.decisions) — the assignment of a
     # nameless paper to a roster student and the append-only decision row, both declared
@@ -444,13 +448,13 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.ingest.corrections:129",
     "aeh.orch.cohorts:217",
     "aeh.orch.cohorts:243",
+    "aeh.store.discard:159",
+    "aeh.store.discard:160",
     "aeh.store.discard:162",
-    "aeh.store.discard:163",
-    "aeh.store.discard:165",
-    "aeh.store.discard:170",
-    "aeh.store.discard:171",
-    "aeh.store.discard:172",
-    "aeh.store.discard:229",
+    "aeh.store.discard:167",
+    "aeh.store.discard:168",
+    "aeh.store.discard:169",
+    "aeh.store.discard:226",
     # The pkg sites are #230's line numbers (the verbatim revision copy and the
     # copied-counts statement shifted the module; the tripwire diff being the
     # line move plus one net-new site). Lines moved again with #91's module-level
@@ -621,7 +625,7 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # again with #523's MC-only helpers landing in the resolution section above the
     # write, again with #668's roster-identity read landing beside `_evidence` — same
     # statement, re-pinned from the walker each time.)
-    "aeh.synth.worker:360",
+    "aeh.synth.worker:353",
     # The grade sites are #104's line numbers (the module's own write surface, every
     # one from GRADE_STATEMENTS or a raw fixture DDL string, keyword-parameterized):
     # `compute_all`'s five pass writes (demote/insert/settle/queue-row/queue-clear),
