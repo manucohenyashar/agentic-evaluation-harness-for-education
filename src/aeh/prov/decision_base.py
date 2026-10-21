@@ -205,6 +205,11 @@ class _BaseDecisionProvider:
     def _cost_per_input_token(self) -> Decimal | None:
         return None
 
+    def _answered_build(self, served: str, model_ref: ModelRef) -> str:
+        """The build an answer reports, from what the engine served (after the build watch). A
+        provider whose engine echoes only a served name reports its verified build instead."""
+        return served
+
     def _prepare_document(self, document: Any) -> Any:
         """The decoded response before it is checked; a provider may remove anything it must not
         trust."""
@@ -267,23 +272,20 @@ class _BaseDecisionProvider:
                     self._build_watch.record(model_key, decision.resolved_build)
                 else:
                     self._build_watch.check(model_key, decision.resolved_build)
-            journal_cost = decision.cost
-            if self._billed and journal_cost is None:
+            elapsed_ms = int(round((self._clock.monotonic() - started) * 1000))
+            cost = decision.cost
+            if self._billed and cost is None:
                 per_token = self._cost_per_input_token()
-                journal_cost = None if per_token is None else Decimal(decision.tokens_in) * per_token
+                cost = None if per_token is None else Decimal(decision.tokens_in) * per_token
+            if not self._billed:
+                cost = None
+            decision = dataclasses.replace(
+                decision, latency_ms=elapsed_ms, cost=cost,
+                resolved_build=self._answered_build(decision.resolved_build, model_ref))
             journal.succeeded(
                 response=decision_response_document(decision.answers),
                 resolved_build=decision.resolved_build, tokens_in=decision.tokens_in,
-                tokens_out=decision.tokens_out,
-                cost=journal_cost if self._billed else None)
-        elapsed_ms = int(round((self._clock.monotonic() - started) * 1000))
-        cost = decision.cost
-        if self._billed and cost is None:
-            per_token = self._cost_per_input_token()
-            cost = None if per_token is None else Decimal(decision.tokens_in) * per_token
-        if not self._billed:
-            cost = None
-        decision = dataclasses.replace(decision, latency_ms=elapsed_ms, cost=cost)
+                tokens_out=decision.tokens_out, cost=cost, latency_ms=elapsed_ms)
         snap = call_counters.snapshot()
         self._counters.on_decision(tokens_in=decision.tokens_in,
                                    transport_retries=snap.transport_retries,

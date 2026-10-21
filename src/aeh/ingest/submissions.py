@@ -7,6 +7,8 @@ import re
 import uuid
 from typing import Any, Sequence
 
+from aeh.prov import call_context
+
 from .settings import (
     BLANK_TOLERANCE_ENV,
     _configured_dpi,
@@ -137,6 +139,18 @@ class SubmissionIngestionMixin:
         mismatch records a ranked PROPOSAL and never reassigns (`FR-INGEST-26`).
         When the cohort's breaker is tripped, this call refuses outright — the one
         gate outcome that raises, because it halts the cohort, not the unit."""
+        # FR-PROV-45: every page-reading call of this submission is journaled under its class.
+        with call_context(cohort_id=cohort_id):
+            return self._ingest_submission(
+                blobs, cohort_id, package_version, order_hint=order_hint, filenames=filenames,
+                package_catalog=package_catalog)
+
+    def _ingest_submission(
+        self, blobs: Sequence[str], cohort_id: str,
+        package_version: str, order_hint: Sequence[str] | None = None,
+        filenames: dict[str, str] | None = None,
+        package_catalog: Any | None = None,
+    ) -> IngestReport:
         if (tripped := self.cohort_breaker(cohort_id)) is not None:
             raise IngestCohortBreakerTripped(tripped["finding"])
         submission_id = f"sub-{uuid.uuid4().hex[:12]}"

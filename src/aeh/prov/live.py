@@ -387,7 +387,7 @@ class _BaseLiveProvider:
             journal.succeeded(
                 response=completion.text, resolved_build=completion.resolved_build,
                 tokens_in=completion.tokens_in, tokens_out=completion.tokens_out,
-                cost=completion.cost)
+                cost=completion.cost, latency_ms=completion.latency_ms)
         # CT-PROV-14's per-call DEBUG line, on the live path exactly as the fixture path
         # emits it: metadata only, never a payload value (`CT-PROV-13`).
         _LOGGER.debug(

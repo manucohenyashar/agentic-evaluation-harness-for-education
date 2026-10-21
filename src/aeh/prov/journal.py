@@ -35,7 +35,6 @@ import os
 import re
 import threading
 import time
-import uuid
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -183,16 +182,16 @@ class CallRecord:
     latency_ms: int | None
     cost: str | None
 
-    def to_json_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """The record as one JSON object, fields in declaration order."""
         return {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
 
 
 @runtime_checkable
 class CallJournal(Protocol):
-    """Where records go. `append` is called once per attempt, from any thread."""
+    """Where records go: called as `sink(record)` once per attempt, from any thread."""
 
-    def append(self, record: CallRecord) -> None: ...
+    def __call__(self, record: CallRecord) -> None: ...
 
 
 # --- the process-wide slot (FR-CONSOLE-77) ------------------------------------------------------
@@ -274,16 +273,28 @@ def payload_request(fields: tuple[tuple[str, str], ...]) -> list[list[str]]:
     recorded: list[list[str]] = []
     for index, (name, value) in enumerate(fields):
         if name == _IMAGE_FIELD:
-            if len(images) == 1 and context.page_no is not None:
-                page_no, page_count = context.page_no, context.page_count or context.page_no
-            else:
-                page_no, page_count = images.index(index) + 1, len(images)
+            page_no, page_count = _page_of(fields, images, index, context)
             value = _binary_descriptor(value, f"page image: page {page_no} of {page_count}")
         else:
             value = _LONG_BASE64.sub(lambda m: _binary_descriptor(m.group(0), "binary data"),
                                      value)
         recorded.append([name, value])
     return recorded
+
+
+def _page_of(fields: tuple[tuple[str, str], ...], images: list[int], index: int,
+             context: CallContext) -> tuple[int, int]:
+    """Which page an image field shows, and of how many. A payload with several images is
+    numbered by position. A single page names itself through the call context or the payload's
+    own `page_no` field; its count comes from the context, and when no caller said, the page
+    number stands in for it (the count is then a lower bound)."""
+    if len(images) > 1:
+        return images.index(index) + 1, len(images)
+    page_no = context.page_no
+    if page_no is None:
+        named = dict(fields).get("page_no", "")
+        page_no = int(named) if named.isdigit() and int(named) > 0 else 1
+    return page_no, max(context.page_count or page_no, page_no)
 
 
 def decision_request_document(state: str, questions: Mapping[str, Any]) -> dict[str, Any]:
@@ -325,7 +336,9 @@ class AttemptJournal:
         self._model = model
         self._request = request
         self._secrets = tuple(s for s in secrets if s)
-        self._call_id = uuid.uuid4().hex
+        # Drawn from the OS, not `uuid.uuid4()`: a test that seeds `uuid` for reproducible ids
+        # must see the same sequence whether or not a journal is installed.
+        self._call_id = os.urandom(16).hex() if sink is not None else ""
         self._context = _CALL_CONTEXT.get()
         self._held: tuple[int, int | None] | None = None
         self._attempts = 0
@@ -355,11 +368,11 @@ class AttemptJournal:
         if self._sink is None:
             return
         attempt, held_latency = self._held if self._held is not None else (self._attempts + 1,
-                                                                          latency_ms)
+                                                                          None)
         self._held = None
         self._finished = True
         self._emit(attempt=attempt, outcome="ok", error=None,
-                   latency_ms=held_latency if held_latency is not None else latency_ms,
+                   latency_ms=latency_ms if latency_ms is not None else held_latency,
                    response=response, resolved_build=resolved_build, tokens_in=tokens_in,
                    tokens_out=tokens_out, cost=cost)
 
@@ -403,7 +416,7 @@ class AttemptJournal:
 
 def _append_safely(sink: CallJournal, record: CallRecord) -> None:
     try:
-        sink.append(record)
+        sink(record)
     except Exception as failure:  # noqa: BLE001 - the journal never fails a model call
         _LOGGER.warning("the AI-call journal could not record a call: %s",
                         type(failure).__name__)
@@ -568,7 +581,7 @@ class JsonlCallJournal:
         return self._root.joinpath(*journal_folder(record), f"{record.at[:10]}.jsonl")
 
     def append(self, record: CallRecord) -> None:
-        line = json.dumps(record.to_json_dict(), ensure_ascii=False, default=str) + "\n"
+        line = json.dumps(record.to_dict(), ensure_ascii=False, default=str) + "\n"
         data = line.encode("utf-8")
         path = self.path_for(record)
         flags = os.O_RDWR | os.O_CREAT | os.O_APPEND | getattr(os, "O_BINARY", 0)
@@ -588,6 +601,8 @@ class JsonlCallJournal:
             finally:
                 os.close(fd)
 
+    __call__ = append
+
 
 class ListCallJournal:
     """A sink that keeps records in memory, for a caller that wants them as objects."""
@@ -600,15 +615,17 @@ class ListCallJournal:
         with self._lock:
             self.records.append(record)
 
+    __call__ = append
+
 
 # --- reading ------------------------------------------------------------------------------------
 
 
-def read_journal_file(path: str | os.PathLike[str]) -> list[dict[str, Any]]:
+def read_journal_file(journal_file: str | os.PathLike[str]) -> list[dict[str, Any]]:
     """The records in one journal file, in file order. A line that does not parse as a JSON
     object (a torn last line after a crash) is skipped."""
     records: list[dict[str, Any]] = []
-    with open(path, "rb") as handle:
+    with open(journal_file, "rb") as handle:
         for raw in handle:
             try:
                 document = json.loads(raw.decode("utf-8"))
