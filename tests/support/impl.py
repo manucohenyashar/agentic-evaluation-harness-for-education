@@ -2346,8 +2346,15 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "python -c \"import sys; sys.path.insert(0, 'src'); from aeh.conf import DECISION_KEYS;"
         "sys.exit(0 if 'HARNESS_JEV_FINAL_ON_ACCEPT' in DECISION_KEYS else 1)\"",
         ("tests/contract/agg/test_tc_agg_27_28_31_jev_final_clause.py",
-         "tests/contract/judge/test_tc_judge_46_injection_never_final.py",
          "tests/unit/pipe/test_tc_agg_31_seatless_reason.py"),
+    ),
+    # TC-JUDGE-46's residual arm also reads #807's call journal, so it waits on both.
+    "#806+#807 TC-JUDGE-46 — Jev-final knob and the AI-call journal": (
+        "command",
+        "python -c \"import sys; sys.path.insert(0, 'src'); from aeh.conf import DECISION_KEYS;"
+        "import aeh.prov as p; sys.exit(0 if 'HARNESS_JEV_FINAL_ON_ACCEPT' in DECISION_KEYS"
+        " and hasattr(p, 'install_call_journal') else 1)\"",
+        ("tests/contract/judge/test_tc_judge_46_injection_never_final.py",),
     ),
 
 }
