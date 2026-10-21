@@ -330,7 +330,7 @@ def eng7_grade_gaps(grades: dict[str, float | None]) -> list[Any]:
 def author_questions_landed() -> bool:
     """#809 (FR-AUTHOR-31/32): a grade gap carries its typed, ranged answer."""
     (gap,) = eng7_grade_gaps({})
-    return getattr(gap, "answer_kind", None) is not None
+    return bool(getattr(gap, "answer_kind", ""))
 
 
 def jev_final_on_accept_landed() -> bool:

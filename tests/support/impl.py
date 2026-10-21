@@ -2352,14 +2352,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
 
     # --- #812 (console-clarity T1): the clarity fixtures' and the Jev-final seed's fitness
     # cases. Behavioural `command` probes (tests/support/clarity_world.py), since every name
-    # the stories touch already exists: #809 resolves when a grade gap carries `answer_kind`,
-    # #806 when the seed's accepted-decision cell is stored `final`.
-    "#809 authoring gaps as typed questions — AF-22/AF-23 fitness (TC-AUTHOR-44 fixture half)": (
-        "command",
-        "python -c \"import sys; from tests.support.clarity_world import "
-        "author_questions_landed as f; sys.exit(0 if f() else 1)\"",
-        ("tests/artifact/test_tc_author_44_clarity_fixtures.py",),
-    ),
+    # the stories touch already exists: #806 resolves when the seed's accepted-decision cell
+    # is stored `final`. (#809's entry, for the AF-22/AF-23 fitness cases, LANDED with
+    # #809: the cases run unmarked.)
     "#806 a confident Jev decision is final — the Jev-final seed's routes (TC-CONSOLE-97 seed half)": (
         "command",
         "python -c \"import sys; from tests.support.clarity_world import "

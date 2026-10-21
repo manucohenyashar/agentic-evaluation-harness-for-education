@@ -19,8 +19,8 @@ grade-policy paragraph — a structural diff, so a variant that also dropped a r
 
 Markers. The census cases are green: the fixtures are this story's deliverable. The two
 fitness cases at the bottom — the draft assembler asks exactly the fixture's declared
-placeholder, with an answer range the fixture's scripted answer satisfies — are
-`writtenahead` on #809 (FR-AUTHOR-31/32), entry in `WRITTEN_AHEAD_BLOCKERS`.
+placeholder, with an answer range the fixture's scripted answer satisfies — were
+written ahead of #809 (FR-AUTHOR-31/32) and run unmarked since it landed.
 """
 
 from __future__ import annotations
@@ -134,9 +134,8 @@ def test_tc_author_44_variants_come_from_the_sample_generator() -> None:
                 f"with `python fixtures/F-AUTHOR/build_authoring_fixtures.py`")
 
 
-# --- fitness for the path each fixture exists for (written ahead of #809) -----------------
+# --- fitness for the path each fixture exists for (#809, FR-AUTHOR-31/32) ---------------
 
-@pytest.mark.writtenahead
 def test_tc_author_44_af22_drives_the_passing_score_question() -> None:
     """AF-22's documents state no grade table, so the draft asks exactly its declared gap,
     `grades`, typed as a whole number 1..8 — a range the fixture's scripted 6 is inside."""
@@ -144,11 +143,10 @@ def test_tc_author_44_af22_drives_the_passing_score_question() -> None:
     assert [gap.item_id for gap in gaps] == _expected("AF-22")["placeholders"]
     (gap,) = gaps
     assert gap.answer_kind == "whole_number", f"{CASE}: AF-22's gap is not a whole number"
-    assert (gap.min, gap.max) == (1, ENG7_TOTAL_MAX), f"{CASE}: AF-22's range is not 1..8"
-    assert gap.min <= _expected("AF-22")["review"]["answers"]["grades"] <= gap.max
+    assert (gap.answer_min, gap.answer_max) == (1, ENG7_TOTAL_MAX), f"{CASE}: AF-22's range is not 1..8"
+    assert gap.answer_min <= _expected("AF-22")["review"]["answers"]["grades"] <= gap.answer_max
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("not_yet", [None, 0], ids=["not-yet-unstated", "not-yet-zero"])
 def test_tc_author_44_af23_drives_the_lowest_score_for_pass_question(not_yet) -> None:
     """AF-23 names pass and not yet with no boundary: the draft asks `grades pass` only —
@@ -158,5 +156,5 @@ def test_tc_author_44_af23_drives_the_lowest_score_for_pass_question(not_yet) ->
         f"{CASE}: AF-23 asks {[g.item_id for g in gaps]}, not its declared placeholder")
     (gap,) = gaps
     assert gap.answer_kind == "whole_number"
-    assert (gap.min, gap.max) == (1, ENG7_TOTAL_MAX)
-    assert gap.min <= _expected("AF-23")["review"]["answers"]["grades pass"] <= gap.max
+    assert (gap.answer_min, gap.answer_max) == (1, ENG7_TOTAL_MAX)
+    assert gap.answer_min <= _expected("AF-23")["review"]["answers"]["grades pass"] <= gap.answer_max
