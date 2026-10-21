@@ -21,6 +21,7 @@ from .disk_full import _halt_if_disk_full
 from .security import _harden_dir, _harden_files, _refuse_insecure_location, _validated_component
 from .interfaces import Tier
 from .purge import (
+    _remove_ai_call_journal,
     _assert_purge_order_matches_fk_graph,
     _COHORT_PURGE_ORDER,
     _collect_blob_hash_references,
@@ -43,12 +44,6 @@ from .connection import _BEGIN, _COMMIT, _connect, _open_tier, _ROLLBACK, _run, 
 from .limits import StoreLimits
 from .blobs import ContentAddressedBlobStore, INCOMING_DIR
 from .tier_handle import SqliteTierHandle
-
-
-#: The AI-call journal's home under the data folder, one sub-folder per class (FR-CONSOLE-77).
-#: The same layout as `aeh.prov.journal.JOURNAL_DIR_PARTS`; `M-STORE` imports nothing from
-#: `M-PROV`, so the two segments are restated here for the purge.
-AI_CALL_JOURNAL_DIR: tuple[str, ...] = ("logs", "ai-calls")
 
 
 # --- the store ---------------------------------------------------------------------------------
@@ -383,10 +378,7 @@ class SqliteStore:
         # (requests) and what the models said about them, so it goes with the class. Only
         # reached once the preconditions passed and the deletes committed: a refused purge
         # leaves the folder in place.
-        journal_folder = self._data_dir.joinpath(*AI_CALL_JOURNAL_DIR, cohort_id)
-        journal_deleted = journal_folder.is_dir()
-        if journal_deleted:
-            shutil.rmtree(journal_folder)
+        journal_deleted = _remove_ai_call_journal(self._data_dir, cohort_id)
 
         self._last_vacuum_ms = vacuum_ms
         return PurgeReport(

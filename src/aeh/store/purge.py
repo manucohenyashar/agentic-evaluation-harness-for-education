@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import re
+import shutil
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping
+from typing import Any, Mapping
 
 from .errors import ConfigurationProblem
 from .interfaces import Statement
@@ -415,6 +416,24 @@ def _collect_blob_hash_references_from_dump(connection: sqlite3.Connection) -> s
     for line in connection.iterdump():
         hashes.update(_BLOB_HASH_RUN_ANYCASE.findall(line))
     return hashes
+
+
+#: The AI-call journal's home under the data folder, one sub-folder per class (FR-CONSOLE-77).
+#: The same layout as `aeh.prov.journal.JOURNAL_DIR_PARTS`; `M-STORE` imports nothing from
+#: `M-PROV`, so the two segments are restated here for the class removals.
+AI_CALL_JOURNAL_DIR: tuple[str, ...] = ("logs", "ai-calls")
+
+
+def _remove_ai_call_journal(data_dir: Any, cohort_id: str) -> bool:
+    """Delete `<data_dir>/logs/ai-calls/<cohort_id>/`, the class's AI-call journal: it holds
+    the class's students' answers and what the models said of them, so nothing of a removed
+    class survives in it (CT-STORE-10, FR-CONSOLE-77). `cohort_id` is already validated as a
+    safe file-name component. Returns whether the folder existed."""
+    folder = Path(data_dir).joinpath(*AI_CALL_JOURNAL_DIR, cohort_id)
+    if not folder.is_dir():
+        return False
+    shutil.rmtree(folder)
+    return True
 
 
 @dataclass(frozen=True)

@@ -444,13 +444,13 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.ingest.corrections:129",
     "aeh.orch.cohorts:217",
     "aeh.orch.cohorts:243",
-    "aeh.store.discard:159",
-    "aeh.store.discard:160",
     "aeh.store.discard:162",
-    "aeh.store.discard:167",
-    "aeh.store.discard:168",
-    "aeh.store.discard:169",
-    "aeh.store.discard:226",
+    "aeh.store.discard:163",
+    "aeh.store.discard:165",
+    "aeh.store.discard:170",
+    "aeh.store.discard:171",
+    "aeh.store.discard:172",
+    "aeh.store.discard:229",
     # The pkg sites are #230's line numbers (the verbatim revision copy and the
     # copied-counts statement shifted the module; the tripwire diff being the
     # line move plus one net-new site). Lines moved again with #91's module-level
