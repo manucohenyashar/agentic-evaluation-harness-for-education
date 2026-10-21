@@ -373,7 +373,7 @@ class ScoringWorker:
     def _jev_final_on_accept(self, request: ScoringRequest) -> bool:
         """The run's frozen FR-AGG-20 rule: read from the run row the unit belongs to (recorded at
         creation), so a resumed run confirms by the rule it started with; the bound run config's
-        value when there is no store or no row."""
+        value when there is no store, no row, or no recorded value."""
         fallback = bool(getattr(self._run_config, "jev_final_on_accept", True))
         if self._store is None:
             return fallback
@@ -390,7 +390,7 @@ class ScoringWorker:
         except (TypeError, ValueError):
             return fallback
         value = recorded.get("jev_final_on_accept") if isinstance(recorded, dict) else None
-        return value if isinstance(value, bool) else True
+        return value if isinstance(value, bool) else fallback
 
     def _confirm(self, request: ScoringRequest, judge: Any,
                  decision: ScoringResult) -> "ScoringResult | str":

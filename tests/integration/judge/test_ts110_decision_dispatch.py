@@ -83,7 +83,10 @@ def _next_arm(world, units):
 def _engine_config(tmp_data_dir, panel=3, **overrides):
     cfg = edge_cfg(panel=edge_panel(panel), HARNESS_DECISION_ENGINE="jev", HARNESS_DECISION_PROVIDER="fixture",
                    HARNESS_JEV_BUILD=JEV_BUILD, HARNESS_JEV_QUANTIZATION="bf16",
-                   HARNESS_FIXTURE_DIR=str(tmp_data_dir))
+                   HARNESS_FIXTURE_DIR=str(tmp_data_dir),
+                   # #806: these dispatch cases predate FR-JUDGE-39's confirming judge call, so
+                   # they run under the pre-delta rule; TC-JUDGE-47 covers the knob-on path.
+                   HARNESS_JEV_FINAL_ON_ACCEPT="false")
     cfg.update(overrides)
     return resolve_run_config(cfg, CohortRef(cohort_id=ORCH_COHORT_ID, consent_class="synthetic"))
 
@@ -586,7 +589,12 @@ def test_tc_judge_43_decision_path_injection_twins(tmp_path) -> None:
                 single = verdict(outcome.result.band, outcome.result.band_ordinal,
                                  cited=not outcome.result.uncited, self_confidence=outcome.result.self_confidence)
                 single.scoring_engine = "decision"
-                score = aggregate([single], criterion(bands), favourable_signals())
+                # #806 (FR-AGG-20, FR-JUDGE-37(c) amended by r6): a lone decision verdict that
+                # reaches aggregation has been confirmed by an LLM judge and is final by design.
+                # This structural check keeps FR-AGG-07's rule (the knob off); TC-JUDGE-46 holds
+                # the amended property (an injection is unconfirmed, below gate or refused).
+                score = aggregate([single], criterion(bands), favourable_signals(),
+                                  jev_final_on_accept=False)
                 assert score.confidence <= 0.75 and score.routing != "auto"
     for pair in by_pair.values():
         member, benign_scoring, benign_request = pair["benign"]

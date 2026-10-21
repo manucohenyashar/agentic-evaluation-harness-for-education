@@ -2330,37 +2330,8 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
          "tests/integration/console/test_tc_console_87_92_teacher_text_census.py"),
     ),
 
-    # --- #814 T3, the Jev-final clause suite (TC-AGG-27/28/31, TC-JUDGE-46) ----------------
-    # Keyed on the one name the design fixes verbatim (FR-AGG-20's knob in DECISION_KEYS), not
-    # on the assumed Python surface: if #806 names that surface differently, the unmarked tests
-    # fail loudly in the gate instead of this probe staying red forever.
-    "#806 Jev-final rule (FR-AGG-20) — HARNESS_JEV_FINAL_ON_ACCEPT in DECISION_KEYS": (
-        "command",
-        "python -c \"import sys; sys.path.insert(0, 'src'); from aeh.conf import DECISION_KEYS;"
-        "sys.exit(0 if 'HARNESS_JEV_FINAL_ON_ACCEPT' in DECISION_KEYS else 1)\"",
-        ("tests/contract/agg/test_tc_agg_27_28_31_jev_final_clause.py",
-         "tests/unit/pipe/test_tc_agg_31_seatless_reason.py"),
-    ),
-    # TC-JUDGE-46's residual arm also reads #807's call journal, so it waits on both.
-    "#806+#807 TC-JUDGE-46 — Jev-final knob and the AI-call journal": (
-        "command",
-        "python -c \"import sys; sys.path.insert(0, 'src'); from aeh.conf import DECISION_KEYS;"
-        "import aeh.prov as p; sys.exit(0 if 'HARNESS_JEV_FINAL_ON_ACCEPT' in DECISION_KEYS"
-        " and hasattr(p, 'install_call_journal') else 1)\"",
-        ("tests/contract/judge/test_tc_judge_46_injection_never_final.py",),
-    ),
-
-    # --- #812 (console-clarity T1): the clarity fixtures' and the Jev-final seed's fitness
-    # cases. Behavioural `command` probes (tests/support/clarity_world.py), since every name
-    # the stories touch already exists: #806 resolves when the seed's accepted-decision cell
-    # is stored `final`. (#809's entry, for the AF-22/AF-23 fitness cases, LANDED with
-    # #809: the cases run unmarked.)
-    "#806 a confident Jev decision is final — the Jev-final seed's routes (TC-CONSOLE-97 seed half)": (
-        "command",
-        "python -c \"import sys; from tests.support.clarity_world import "
-        "jev_final_on_accept_landed as f; sys.exit(0 if f() else 1)\"",
-        ("tests/artifact/test_tc_console_97_jev_final_seed.py",),
-    ),
+    # #806 landed: its three entries (#814 TC-AGG-27/28/31 and TC-JUDGE-46, #812 the Jev-final
+    # seed) were dropped and their cases run unmarked.
 }
 
 def blocker_is_resolved(kind: str, target: str, repo_root: Any) -> bool:
