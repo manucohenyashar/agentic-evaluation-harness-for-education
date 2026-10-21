@@ -250,8 +250,8 @@ def _escalation_judge_refs(config: Mapping[str, Any], run_config: Any, cohort: A
     score provisional, for review). The random-arm sample (`FR-ORCH-11`) widens panels when
     work is enumerated, before any of that, so a live run with the sample on must have the two
     seats it adds: otherwise it is refused here, before it exists. Raises `ValueError`."""
-    from aeh.conf import ModelRef, resolve_run_config
-    from aeh.orch import ESCALATION_ARM_PREFIX, ORCH_RANDOM_ARM_RATE, RANDOM_ARM_RATE_ENV
+    from aeh.conf import ModelRef, environment_snapshot, resolve_orch_knobs, resolve_run_config
+    from aeh.orch import ESCALATION_ARM_PREFIX, RANDOM_ARM_RATE_ENV
 
     raw = config.get(ESCALATION_JUDGES_KEY, ())
     if raw in (None, ()):
@@ -285,19 +285,19 @@ def _escalation_judge_refs(config: Mapping[str, Any], run_config: Any, cohort: A
                 f"{ESCALATION_JUDGES_KEY}[{index}] names {ref.build_id!r}, which already has a "
                 f"seat: one model, one seat (a doubled seat lets one model outvote the others).")
         seen.append(ref.build_id)
-    raw_rate = os.environ.get(RANDOM_ARM_RATE_ENV, "").strip()
-    try:
-        rate = float(raw_rate) if raw_rate else ORCH_RANDOM_ARM_RATE
-    except ValueError:
-        rate = ORCH_RANDOM_ARM_RATE  # M-ORCH refuses the typo itself, naming the knob
+    # FR-CONF-36: the rate the run will use — the environment, else the config file, else the
+    # default — so a file that turns the sample off is not refused for seats it never needs.
+    rate = resolve_orch_knobs(
+        {**config, **environment_snapshot(include_orch=True)}).random_arm_rate
     sampled = min(3, len(panel)) + 2
     if rate > 0 and len(panel) + len(refs) < sampled:
         short = sampled - len(panel) - len(refs)
         raise ValueError(
-            f"the random-arm sample ({RANDOM_ARM_RATE_ENV}, {rate}) gives some answers "
+            f"the random extra-grader sample ({rate}) gives some answers "
             f"{sampled} judges, and this live run has {len(panel) + len(refs)} real judge "
             f"model(s). Add {short} [[profiles.<name>.{ESCALATION_JUDGES_KEY}]] table(s), each "
-            f"a different model, or turn the sample off with {RANDOM_ARM_RATE_ENV}=0. "
-            f"Nothing was started.")
+            f"a different model, or turn the sample off (orch_random_arm_rate = 0 in the "
+            f"config file, or {RANDOM_ARM_RATE_ENV}=0 in the environment, which wins over the "
+            f"file). Nothing was started.")
     return {f"{ESCALATION_ARM_PREFIX}-{len(panel) + position}": ref
             for position, ref in enumerate(refs, start=1)}

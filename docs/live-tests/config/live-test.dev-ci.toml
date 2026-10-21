@@ -34,6 +34,11 @@ prompt_template_v = "judge-prompt/3"
 HARNESS_COST_CEILING = 5
 HARNESS_COST_CURRENCY = "USD"
 
+# A small class: every disagreement may get more judges (the 0.30 default stops a few-paper run).
+orch_escalation_budget = 1.0
+# A one-judge panel: no random extra-grader sample (it needs two escalation judges, see below).
+orch_random_arm_rate = 0
+
 # The Jev decision engine is ON by default on this profile (FR-CONF-29): every rubric cell is
 # pre-screened by the Jev decision model, which either settles the band itself or hands the cell
 # back to the judge panel — both outcomes are recorded in run_metrics. The engine needs its own
@@ -79,7 +84,7 @@ build_id = "openrouter/openai/gpt-6-luna@2026-06-01"
 # the judges are unsure or disagree, one more if a judge call is lost). Each must be a different
 # model from the panel and from each other, pinned with a date, and answer under zero retention
 # (check it first; see the deployment tutorial 7.6). Without them, such answers keep their score
-# as provisional and go to teacher review, and HARNESS_ORCH_RANDOM_ARM_RATE must be set to 0.
+# as provisional and go to teacher review, and orch_random_arm_rate (above) must stay 0.
 # For a one-judge panel: two let the random sample stay on; five cover every seat a run can
 # ever need (a sampled answer has three judges, can widen to five, plus one replacement).
 # Placeholders, not recommendations:

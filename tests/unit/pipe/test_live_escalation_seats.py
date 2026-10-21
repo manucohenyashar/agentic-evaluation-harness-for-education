@@ -225,8 +225,11 @@ def test_tc_pipe_33_escalation_judges_take_the_seats_past_the_panel(
 
 
 def test_tc_pipe_33_the_random_arm_without_its_seats_is_refused_before_the_run(
-        tmp_data_dir, tmp_path, physics, capsys):
+        tmp_data_dir, tmp_path, physics, capsys, monkeypatch):
     fake, run = physics
+    # The shipped config turns the sample off (FR-CONF-37); the environment, which wins over
+    # the file (FR-CONF-36), turns it back on at its default rate.
+    monkeypatch.setenv("HARNESS_ORCH_RANDOM_ARM_RATE", "0.07")
     sent = len(fake.sent)
     code, _result, err = run(_config(tmp_path, EXTRA_JUDGES[:1]), capsys)
     assert code == 1

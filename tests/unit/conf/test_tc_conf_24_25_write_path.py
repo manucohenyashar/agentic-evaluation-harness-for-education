@@ -422,10 +422,11 @@ def test_tc_conf_25_the_projection_renders_every_setting_safely(monkeypatch):
 
     views = configuration_projection(cfg_with_secret)
 
-    # Every setting present, with a teacher label, a type tag and an editable flag — 18
-    # settings, each named once.
-    assert len(views) == 18, f"the projection carries {len(views)} settings, not 18"
-    assert len({view.setting for view in views}) == 18, "a setting is named twice"
+    # Every setting present, with a teacher label, a type tag and an editable flag — 20
+    # settings (FR-CONF-36 added the second-opinion budget and the random extra-grader
+    # sample), each named once.
+    assert len(views) == 20, f"the projection carries {len(views)} settings, not 20"
+    assert len({view.setting for view in views}) == 20, "a setting is named twice"
     for view in views:
         assert isinstance(view.label, str) and view.label.strip(), (
             f"{view.setting} has no teacher label"

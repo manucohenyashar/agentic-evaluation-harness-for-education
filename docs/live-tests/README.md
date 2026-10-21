@@ -35,10 +35,7 @@ Windows PowerShell, from the project folder (the one that contains `pyproject.to
 $env:OPENROUTER_API_KEY = "sk-or-..."      # your key; never write it in a file
 $D = "$HOME\aeh-live-1"                    # a NEW, empty data folder for this test
 $CFG = "docs\live-tests\config\live-test.dev-ci.toml"
-# A class of six is small: let every disagreement get more judges.
-$env:HARNESS_ORCH_ESCALATION_BUDGET = "1.0"
-# The shipped file has ONE judge: turn off the random extra-judge sample.
-$env:HARNESS_ORCH_RANDOM_ARM_RATE = "0"
+# The shipped config already sets a 100% second-opinion budget and no random extra-judge sample.
 ```
 
 ### Step 1: check everything offline (free, no network)

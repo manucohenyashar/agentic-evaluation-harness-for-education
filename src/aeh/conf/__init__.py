@@ -94,6 +94,13 @@ from .panel import compute_panel_build_ref
 from .panel_profile import panel_for_profile
 from .consent import consent_override_for, CONSENTED_CLASSES, ConsentOverride, REMOTE_PROFILES
 from .qa_model import QA_MODEL_KEY
+from .orch_knobs import (
+    ESCALATION_BUDGET_FILE_KEY,
+    ORCH_KEYS,
+    OrchKnobs,
+    RANDOM_ARM_RATE_FILE_KEY,
+    resolve_orch_knobs,
+)
 from .resolution import resolve_run_config
 from .rehydrate import rehydrate_run_config, RUN_CONFIG_FIELDS
 from .audit_log import log_run_start, LOGGER_NAME, RUN_START_EVENT
@@ -111,6 +118,11 @@ __all__ = [
     "consent_override_for",
     "CONSOLE_KEYS",
     "effective_config",
+    "ESCALATION_BUDGET_FILE_KEY",
+    "ORCH_KEYS",
+    "OrchKnobs",
+    "RANDOM_ARM_RATE_FILE_KEY",
+    "resolve_orch_knobs",
     "format_profile_banner",
     "parse_config_document",
     "PROFILE_SOURCE_CONFIG_FILE",

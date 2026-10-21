@@ -600,7 +600,7 @@ def _run_command(
     operator did not flag is re-applied from the row — a run keeps the identities it
     froze (`FR-CONF-15`'s posture, `TC-PIPE-36`).
     """
-    from aeh.conf import resolve_run_config
+    from aeh.conf import environment_snapshot, resolve_orch_knobs, resolve_run_config
 
     given = dict(pins or {})
     existing = [
@@ -612,6 +612,9 @@ def _run_command(
     # `'real'` and fail-closed, so passing the bare id would refuse every synthetic cohort
     # against a remote backend — the gate firing on an answer nobody looked up.
     run_config = resolve_run_config(dict(config), Orchestrator(store).cohort_ref(args.cohort))
+    # FR-CONF-36 / CT-CONF-25: the escalation budget and random-arm rate, environment > config
+    # file > default, recorded on the run row so the run grades by them.
+    orch_knobs = resolve_orch_knobs(config)
     # The providers are built BEFORE the run exists and bound to the orchestrator that creates
     # it. A `cloud-hosted` run's retention gate runs inside `create_run` and asks them
     # (`FR-PROV-14`); without one it refused every hosted run as "given no provider able to
@@ -650,9 +653,17 @@ def _run_command(
         # enumerated work (the pin feeds `compute_work_id`'s extractor input). Refused
         # before anything is driven; a role recorded but not flagged is re-applied below.
         applied = _applied_pins(given, handle)
+        # A continuing run grades by the values ITS row recorded at start (or the defaults, for
+        # a run started before they were recorded), with the environment still first — so the
+        # banner below describes those, not today's file.
+        orch_knobs = resolve_orch_knobs({
+            **_recorded_orch_knobs(orchestrator._run_row(run_id)),
+            **environment_snapshot(include_orch=True),
+        })
     else:
         run_id = orchestrator.create_run(
-            args.cohort, args.package_version, run_config, model_pins=given or None)
+            args.cohort, args.package_version, run_config, model_pins=given or None,
+            orch_knobs=orch_knobs)
         applied = dict(given)
     # `create_run` leaves the run `pending`, and a pending run never reaches the completion
     # predicate: `_maybe_complete_run` fires only from `running`. Without this the command
@@ -671,6 +682,8 @@ def _run_command(
     # file (`FR-CONF-14`), and after a switch the question is always "did it take mine?".
     source = "environment" if os.environ.get("HARNESS_PROFILE") else "config file"
     print(f"HARNESS_PROFILE source: {source}")
+    for line in orch_knobs.banner_lines():
+        print(line)
     summary = getattr(run_config, "profile_summary", None)
     if callable(summary):
         print(summary())
@@ -679,6 +692,20 @@ def _run_command(
         store, run_id, provider=provider, run_config=run_config,
         decision_provider=decision_provider, judge_refs=judge_refs,
         extractor=applied.get("extractor"), synthesizer=applied.get("synthesizer"))
+
+
+def _recorded_orch_knobs(run_row: Any) -> dict[str, Any]:
+    """The `orch_*` values a run row's `provider_config` recorded (FR-CONF-36); empty when none."""
+    from aeh.conf import ESCALATION_BUDGET_FILE_KEY, RANDOM_ARM_RATE_FILE_KEY
+
+    try:
+        recorded = json.loads(run_row["provider_config"] or "{}")
+    except (KeyError, IndexError, TypeError, ValueError):
+        return {}
+    if not isinstance(recorded, dict):
+        return {}
+    return {key: recorded[key] for key in (ESCALATION_BUDGET_FILE_KEY, RANDOM_ARM_RATE_FILE_KEY)
+            if key in recorded}
 
 
 def _applied_pins(given: Mapping[str, Any], handle: Any) -> dict[str, Any]:

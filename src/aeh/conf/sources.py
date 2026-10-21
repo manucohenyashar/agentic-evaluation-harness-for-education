@@ -11,6 +11,7 @@ from typing import Any, Literal
 from .errors import ConfigurationError
 from .model_ref import ModelRef, _REF_FIELDS
 from .checks import _echo
+from .orch_knobs import ORCH_KEYS, OrchKnobs
 from .run_config import RunConfig
 
 
@@ -66,7 +67,7 @@ PROFILE_SOURCE_CONFIG_FILE = "config file"
 
 def environment_snapshot(
     environ: Mapping[str, str] | None = None, *, include_console: bool = False,
-    include_decision: bool = False,
+    include_decision: bool = False, include_orch: bool = False,
 ) -> dict[str, str]:
     """Read the six `HARNESS_*` keys from the process environment, once, for a caller to merge into
     `cfg`.
@@ -78,10 +79,14 @@ def environment_snapshot(
     `include_console=True` also lifts `CONSOLE_KEYS` — the console's bind and port, which
     `effective_config` composes under the same environment-wins rule (`FR-CONF-14`). The default
     snapshot is unchanged: exactly the `HARNESS_*` keys.
+
+    `include_orch=True` also lifts `ORCH_KEYS` — the escalation budget and random-arm rate —
+    so `resolve_orch_knobs` can order the environment over the config file's plain keys
+    (FR-CONF-36).
     """
     source = os.environ if environ is None else environ
     keys = HARNESS_KEYS + (CONSOLE_KEYS if include_console else ()) + (
-        DECISION_KEYS if include_decision else ())
+        DECISION_KEYS if include_decision else ()) + (ORCH_KEYS if include_orch else ())
     return {key: source[key] for key in keys if key in source}
 
 
@@ -249,7 +254,8 @@ def effective_config(
     if cfg is not None and not isinstance(cfg, Mapping):
         raise ConfigurationError(f"cfg must be a Mapping, got {type(cfg).__name__}.")
     base_cfg: Mapping[str, Any] = cfg if cfg is not None else {}
-    snapshot = environment_snapshot(environ, include_console=True, include_decision=True)
+    snapshot = environment_snapshot(environ, include_console=True, include_decision=True,
+                                    include_orch=True)
     profile = snapshot.get("HARNESS_PROFILE", base_cfg.get("HARNESS_PROFILE"))
     base = select_profile_config(base_cfg, profile)
     return {**base, **snapshot}
@@ -267,12 +273,18 @@ def profile_source(
     return None
 
 
-def format_profile_banner(config: RunConfig, source: str | None) -> str:
+def format_profile_banner(config: RunConfig, source: str | None,
+                          orch_knobs: OrchKnobs | None = None) -> str:
     """The lines an entry point prints at start-up (FR-CONF-16): the resolved profile summary and
     where `HARNESS_PROFILE` came from, so an operator can see which profile is in effect. It shows
-    only build identities and names, nothing else from the environment (CT-CONF-10)."""
+    only build identities and names, nothing else from the environment (CT-CONF-10).
+
+    Given `orch_knobs`, it first says, in teacher words, the second-opinion budget and the random
+    extra-grader sample the run will use and where each came from (FR-CONF-36)."""
     summary = config.profile_summary()
-    return (
+    knob_lines = "" if orch_knobs is None else "".join(
+        f"{line}\n" for line in orch_knobs.banner_lines())
+    return knob_lines + (
         f"HARNESS_PROFILE: {summary.backend_profile}\n"
         f"HARNESS_PROFILE source: {source if source is not None else 'unset'}\n"
         f"{_decision_banner_lines(config)}\n"

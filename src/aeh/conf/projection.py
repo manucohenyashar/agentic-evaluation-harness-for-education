@@ -37,6 +37,7 @@ from .decision_engine import (
 from .errors import ConfigurationError
 from .hardware import DEFAULT_HOSTED_PREFIX_TOKEN_CEILING, HARDWARE_PROFILES
 from .model_ref import ModelRef
+from .orch_knobs import BUDGET_LABEL, SAMPLE_LABEL, resolve_orch_knobs
 from .qa_model import resolve_qa_model
 from .resolution import (
     _resolve_confidence_threshold,
@@ -207,6 +208,8 @@ def configuration_projection(
                            DEFAULT_HOSTED_PREFIX_TOKEN_CEILING)
     )
     provider = _decision_provider(cfg, backend_profile)
+    # FR-CONF-36: each knob with where it came from, in the banner's own teacher words.
+    orch_knobs = resolve_orch_knobs(cfg)
 
     def configured(name: str) -> bool:
         return bool(secrets_configured.get(name, False)) if secrets_configured else False
@@ -263,6 +266,10 @@ def configuration_projection(
                     "number", False),
         SettingView("prompt_template", "Prompt template version",
                     str(cfg.get("prompt_template_v") or ""), "text", False),
+        SettingView("second_opinion_budget", BUDGET_LABEL, orch_knobs.budget_text(),
+                    "text", False),
+        SettingView("random_extra_grader_sample", SAMPLE_LABEL, orch_knobs.sample_text(),
+                    "text", False),
         SettingView(_MODEL_PROVIDER_KEY_ID, "Model provider key", "", "secret", False,
                     configured=configured(_MODEL_PROVIDER_KEY_ID)),
     ]

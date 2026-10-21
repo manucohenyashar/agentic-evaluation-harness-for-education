@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import os
 from datetime import datetime, timezone
+from typing import Any
 
 from .errors import WorkLedgerError
 
@@ -245,6 +247,48 @@ def _env_float(name: str, default: float, *, low: float, high: float) -> float:
             f"{name}={value} is outside its allowed range [{low}, {high}]"
         )
     return value
+
+#: The `provider_config` keys `create_run` records the run's resolved escalation budget and
+#: random-arm rate under (FR-CONF-36) — the config file's own key names.
+ESCALATION_BUDGET_RECORD_KEY = "orch_escalation_budget"
+
+
+RANDOM_ARM_RATE_RECORD_KEY = "orch_random_arm_rate"
+
+
+def _run_knob(run_row: Any, env_name: str, record_key: str, default: float) -> float:
+    """A rate knob for one run (FR-CONF-36, CT-CONF-25): the environment variable when it is set
+    (read each call, refused out of [0, 1] like any `_env_float`), else the value the run row
+    recorded at start — the config file's, resolved by M-CONF — else the code default.
+
+    The environment stays first, so an operator override still wins over the file, and a run
+    started before the file keys existed (no recorded value) behaves exactly as it always did.
+    """
+    raw = os.environ.get(env_name)
+    if raw is not None and raw.strip():
+        return _env_float(env_name, default, low=0.0, high=1.0)
+    recorded = _recorded_provider_config(run_row).get(record_key)
+    valid = isinstance(recorded, (int, float)) and not isinstance(recorded, bool)
+    if valid and 0.0 <= float(recorded) <= 1.0:
+        return float(recorded)
+    return default
+
+
+def _recorded_provider_config(run_row: Any) -> dict[str, Any]:
+    """The run row's `provider_config` JSON as a mapping; empty when absent or unreadable."""
+    if run_row is None:
+        return {}
+    try:
+        raw = run_row["provider_config"]
+    except (KeyError, IndexError, TypeError):
+        return {}
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(str(raw))
+    except (TypeError, ValueError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def _now() -> str:

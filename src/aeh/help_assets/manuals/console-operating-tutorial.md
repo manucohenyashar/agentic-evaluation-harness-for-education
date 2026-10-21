@@ -298,7 +298,7 @@ Named plainly, so nobody meets them by surprise. Each is a known, tracked gap.
 
 | Gap | What you do instead |
 |---|---|
-| **Starting the console** reads its environment once: the OpenRouter key and settings such as `HARNESS_ORCH_RANDOM_ARM_RATE` cannot be changed from the browser. | The operator sets them before `aeh console` (section 3.1; the live-test walk's step 0). |
+| **Starting the console** reads its environment once: the OpenRouter key and other environment settings cannot be changed from the browser. | The operator sets them before `aeh console` (section 3.1; the live-test walk's step 0). |
 | **A late paper after the run.** A student who sat the test late is graded by a new run for the class, which grades every paper again. | Load the late paper on **Load papers**, then **Start a new grading run**; the new run's results include everyone. Past tests keeps both runs. |
 | **Undoing a run started by mistake.** A run is never deleted. | Pause it on **Jobs**; it stays listed under Past tests with its state. Start the right run. |
 | **The ambiguity questions are not in the SPA flow.** The SPA does not show this step. On the legacy `/setup/optional` page, its card is present but marked unavailable/arriving in version 2 (Phase 4); it is not a teacher-facing SPA control. | Nothing to do; the drafts' own review questions cover what blocks approval. |

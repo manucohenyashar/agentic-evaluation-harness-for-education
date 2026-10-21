@@ -18,10 +18,11 @@ from .statements import ORCH_STATEMENTS
 from .settings import (
     ENUM_COMMIT_BATCH_DEFAULT,
     ENUM_COMMIT_BATCH_ENV,
-    _env_float,
     _env_int,
     ORCH_RANDOM_ARM_RATE,
     RANDOM_ARM_RATE_ENV,
+    RANDOM_ARM_RATE_RECORD_KEY,
+    _run_knob,
 )
 from .escalation_policy import escalation_plan, random_arm_selection, run_random_arm_seed
 from .reports import EnumerationReport
@@ -239,8 +240,8 @@ class EnumerationMixin:
             f"{len(identity_held)} submission(s) held for identity triage get no units"
         )
 
-        random_arm_rate = _env_float(
-            RANDOM_ARM_RATE_ENV, ORCH_RANDOM_ARM_RATE, low=0.0, high=1.0
+        random_arm_rate = _run_knob(
+            row, RANDOM_ARM_RATE_ENV, RANDOM_ARM_RATE_RECORD_KEY, ORCH_RANDOM_ARM_RATE
         )
         run_seed = run_random_arm_seed(run_id)
 

@@ -88,7 +88,7 @@ def start_run_in_background(
     on it, and `recover` is what continues an interrupted run."""
     import threading
 
-    from aeh.conf import resolve_run_config
+    from aeh.conf import resolve_orch_knobs, resolve_run_config
 
     run_config = resolve_run_config(dict(config), Orchestrator(store).cohort_ref(cohort_id))
     # Built before the run exists and bound to every orchestrator that touches it, exactly as
@@ -119,7 +119,10 @@ def start_run_in_background(
                 f"{package_version_id!r} is already {latest.status}; nothing was started"
             )
         else:
-            run_id = orchestrator.create_run(cohort_id, package_version_id, run_config)
+            # FR-CONF-36 / CT-CONF-25: the same resolved budget and random-arm rate `aeh run`
+            # records, so a run started here grades by the config file's values.
+            run_id = orchestrator.create_run(cohort_id, package_version_id, run_config,
+                                             orch_knobs=resolve_orch_knobs(config))
     else:
         status = orchestrator.run_handle(run_id).status
         if status != "pending" and not (allow_running and status == "running"):

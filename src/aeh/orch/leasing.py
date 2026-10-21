@@ -134,7 +134,7 @@ class LeasingMixin:
                         if escalation_admission is None:
                             escalation_admission = (
                                 self._escalation_dispatch_admission(
-                                    cohort, run_row["run_id"]
+                                    cohort, run_row["run_id"], run_row
                                 )
                             )
                         if (row["submission_id"], row["criterion_id"]) not in (
