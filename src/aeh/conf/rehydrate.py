@@ -124,6 +124,8 @@ def rehydrate_run_config(
         # from the environment; a pre-delta row has none and rehydrates to `None`.
         qa_model=(None if provider_config.get("qa_model") is None
                   else _ref_from_dict(provider_config.get("qa_model"), "qa_model")),
+        # FR-AGG-20: the frozen rule comes back as recorded, never re-read from the environment.
+        jev_final_on_accept=_recorded_jev_final(provider_config),
     )
 
     if cfg is not None:
@@ -131,6 +133,17 @@ def rehydrate_run_config(
     if cohort is not None:
         _check_consent(cfg if cfg is not None else {}, cohort, config.backend_profile)
     return config
+
+
+def _recorded_jev_final(provider_config: Mapping[str, Any]) -> bool:
+    """The run's frozen FR-AGG-20 rule. A row with no record (engine off, or written before
+    FR-AGG-20) reads as the default, true; a recorded value must be a boolean."""
+    raw = provider_config.get("jev_final_on_accept")
+    if raw is None:
+        return True
+    if not isinstance(raw, bool):
+        raise ConfigurationError("persisted jev_final_on_accept must be a boolean.")
+    return raw
 
 
 def _refuse_on_mismatch(persisted: RunConfig, cfg: Mapping[str, Any]) -> None:

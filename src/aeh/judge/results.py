@@ -69,6 +69,9 @@ class StoredVerdict:
     uncited: bool
     #: FR-JUDGE-35 / CT-JUDGE-24: `llm` or `decision`; a pre-delta row's NULL reads `llm`.
     scoring_engine: str = "llm"
+    #: FR-AGG-20: the accepted decision's gate value, `min(c_band, c_sufficient)`, from its
+    #: pre-screen row. `None` for an LLM verdict.
+    gate_confidence: float | None = None
 
     @property
     def ordinal(self) -> int:
@@ -98,6 +101,8 @@ def verdicts_for(
             evidence_sufficient=bool(row["evidence_sufficient"]),
             uncited=bool(row["uncited"]),
             scoring_engine=row["scoring_engine"] or "llm",
+            gate_confidence=(None if row["gate_confidence"] is None
+                             else float(row["gate_confidence"])),
         )
         for row in rows
     )

@@ -65,6 +65,9 @@ DESIGN_RUN_CONFIG_FIELDS = (
     # "is recorded on the run's provider_config" and "rehydrated identically on resume" — so it
     # needs a carrier on the frozen config. The 14th field.
     "qa_model",
+    # FR-AGG-20 (console-clarity delta, #806): the Jev-final rule is "frozen into RunConfig with
+    # the other decision keys and recorded on the run row". The 15th field.
+    "jev_final_on_accept",
 )
 
 

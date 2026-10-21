@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -95,3 +96,96 @@ class CriterionScore:
     #: key, in the table's order — an adverse signal whose cap sits below the
     #: pre-cap base, so the cap lowered the figure. Empty when none did.
     caps_fired: tuple[str, ...] = ()
+    #: FR-AGG-20: why a cell is not settled, one code from `NOT_FINAL_REASONS`. `None` on a
+    #: settled cell (`final` and not `queued`). Not a column: a stored row's code is
+    #: re-derived from its own columns by `stored_not_final_reason` (no migration), except
+    #: `more_graders_unavailable`, which `write_score` records in `state_reason`.
+    not_final_reason: str | None = None
+
+
+# --- FR-AGG-20: the not-final reason codes ---------------------------------------------------------
+
+#: A single LLM verdict (including Jev below its gate, whose seat an LLM judge answered).
+ONE_GRADER_UNSURE = "one_grader_unsure"
+#: A panel whose spread or agreement left the confidence below the threshold.
+GRADERS_DISAGREE = "graders_disagree"
+#: The evidence-required cap fired.
+EVIDENCE_NOT_FOUND = "evidence_not_found"
+#: The citation-verification cap fired.
+QUOTE_NOT_VERIFIED = "quote_not_verified"
+#: Escalation was wanted and could not be seated.
+MORE_GRADERS_UNAVAILABLE = "more_graders_unavailable"
+#: The criterion's breaker tripped (`ungradeable_by_panel`).
+GRADERS_REFUSED = "graders_refused"
+
+#: FR-AGG-20's closed set.
+NOT_FINAL_REASONS: tuple[str, ...] = (
+    ONE_GRADER_UNSURE,
+    GRADERS_DISAGREE,
+    EVIDENCE_NOT_FOUND,
+    QUOTE_NOT_VERIFIED,
+    MORE_GRADERS_UNAVAILABLE,
+    GRADERS_REFUSED,
+)
+
+#: Stored state reasons that predate FR-AGG-20 and the code each one reads as. An even panel
+#: left after a quarantine whose replacement arm was refused (FR-PIPE-18) is a cell more
+#: graders could not be found for.
+_LEGACY_STATE_REASONS = {"even_panel_after_quarantine": MORE_GRADERS_UNAVAILABLE}
+
+
+def is_settled(state: Any, routing: Any) -> bool:
+    """Whether a cell is settled: `final` and not waiting in the teacher's queue."""
+    return state == "final" and routing != "queued"
+
+
+def not_final_reason_for(
+    state: Any, routing: Any, *, judge_count: Any, caps_fired: Any, state_reason: Any = None,
+) -> str | None:
+    """FR-AGG-20's code for why a cell is not settled; `None` for a settled one.
+
+    The cause's precedence: a recorded reason (`more_graders_unavailable`, or FR-PIPE-18's
+    even panel); the breaker; then the evidence and citation caps, which name what is missing
+    more precisely than the panel's shape does; then one grader, or a panel that disagreed."""
+    if is_settled(state, routing):
+        return None
+    if state_reason in NOT_FINAL_REASONS:
+        return state_reason
+    if state_reason in _LEGACY_STATE_REASONS:
+        return _LEGACY_STATE_REASONS[state_reason]
+    if state == "ungradeable_by_panel":
+        return GRADERS_REFUSED
+    caps = tuple(caps_fired or ())
+    if "evidence_present" in caps:
+        return EVIDENCE_NOT_FOUND
+    if "spans_verified" in caps:
+        return QUOTE_NOT_VERIFIED
+    if judge_count is not None and int(judge_count) == 1:
+        return ONE_GRADER_UNSURE
+    if judge_count is not None and int(judge_count) == 0:
+        # A deterministic row (FR-AGG-10) has no panel to name; its state is its own story.
+        return None
+    return GRADERS_DISAGREE
+
+
+def stored_not_final_reason(row: Any) -> str | None:
+    """The FR-AGG-20 reason code of a stored `criterion_score` row (a mapping, a `sqlite3.Row`
+    or a `CriterionScore`), re-derived from the row's own `state`, `routing`, `judge_count`,
+    `caps_fired` and `state_reason`. `None` for a settled cell."""
+    def read(name: str) -> Any:
+        if isinstance(row, dict):
+            return row.get(name)
+        try:
+            return row[name]
+        except (KeyError, IndexError, TypeError):
+            return getattr(row, name, None)
+
+    caps = read("caps_fired")
+    if isinstance(caps, str):
+        try:
+            caps = json.loads(caps)
+        except ValueError:
+            caps = ()
+    return not_final_reason_for(
+        read("state"), read("routing"), judge_count=read("judge_count"),
+        caps_fired=caps, state_reason=read("state_reason"))

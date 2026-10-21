@@ -39,15 +39,30 @@ from .settings import (
     AGG_ESCALATION_SIGNAL_WEIGHT,
     AGG_ESCALATION_THRESHOLD,
     AGG_HOLISTIC_MULTIPLIER,
+    AGG_JEV_FINAL_ON_ACCEPT,
     AGG_UNCITED_MULTIPLIER,
 )
 from .rows import adverse_signal_count
-from .records import CriterionScore
+from .records import (
+    CriterionScore,
+    EVIDENCE_NOT_FOUND,
+    GRADERS_DISAGREE,
+    GRADERS_REFUSED,
+    is_settled,
+    MORE_GRADERS_UNAVAILABLE,
+    not_final_reason_for,
+    NOT_FINAL_REASONS,
+    ONE_GRADER_UNSURE,
+    QUOTE_NOT_VERIFIED,
+    stored_not_final_reason,
+)
 from .agreement import describe_agreement, ordinal_alpha
 from .aggregate import (
     aggregate,
     aggregate_even_panel_after_quarantine,
     EVEN_PANEL_AFTER_QUARANTINE,
+    JEV_FINAL_NOTE,
+    is_jev_final,
 )
 from .recompute import recompute_confidence
 from .schema import AGG_SIGNAL_STATEMENTS, AGG_STATEMENTS
@@ -93,4 +108,18 @@ __all__ = [
     "recompute_confidence",
     "write_score",
     "should_escalate",
+    # FR-AGG-20
+    "AGG_JEV_FINAL_ON_ACCEPT",
+    "EVIDENCE_NOT_FOUND",
+    "GRADERS_DISAGREE",
+    "GRADERS_REFUSED",
+    "is_jev_final",
+    "is_settled",
+    "JEV_FINAL_NOTE",
+    "MORE_GRADERS_UNAVAILABLE",
+    "NOT_FINAL_REASONS",
+    "not_final_reason_for",
+    "ONE_GRADER_UNSURE",
+    "QUOTE_NOT_VERIFIED",
+    "stored_not_final_reason",
 ]

@@ -586,7 +586,13 @@ def test_tc_judge_43_decision_path_injection_twins(tmp_path) -> None:
                 single = verdict(outcome.result.band, outcome.result.band_ordinal,
                                  cited=not outcome.result.uncited, self_confidence=outcome.result.self_confidence)
                 single.scoring_engine = "decision"
-                score = aggregate([single], criterion(bands), favourable_signals())
+                # #806 (FR-AGG-20, FR-JUDGE-37(c) amended): a lone ACCEPTED decision is now final
+                # by design, so this structural check runs under FR-AGG-07's rule (the knob off).
+                # Whether an injected case can reach `final` end to end — the gate plus citation
+                # verification — is TC-JUDGE-46's to hold.
+                from types import SimpleNamespace
+                score = aggregate([single], criterion(bands), favourable_signals(),
+                                  config=SimpleNamespace(jev_final_on_accept=False))
                 assert score.confidence <= 0.75 and score.routing != "auto"
     for pair in by_pair.values():
         member, benign_scoring, benign_request = pair["benign"]

@@ -97,7 +97,11 @@ class RunLifecycleMixin:
                 "cost_currency": cfg.cost_currency,
                 # FR-ORCH-40: recorded only when the engine is on (byte-identical when off).
                 **({} if decision_engine is None
-                   else {"decision_engine": decision_engine_record(decision_engine)}),
+                   else {"decision_engine": decision_engine_record(decision_engine),
+                         # FR-AGG-20: the frozen Jev-final rule, read back by `run_handle`
+                         # so a resumed run aggregates by the rule it started with.
+                         "jev_final_on_accept": bool(
+                             getattr(cfg, "jev_final_on_accept", True))}),
             },
             separators=_JSON_SEPARATORS,
             sort_keys=True,

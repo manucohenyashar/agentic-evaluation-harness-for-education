@@ -110,7 +110,12 @@ if given is not None:
                          scoring_model=model)
         llm = [_v("BDPE"[o], o, "llm", cited=cited) for o in ordinals]
         labelled = [_v("BDPE"[o], o, "decision" if i == 0 else "llm", cited=cited) for i, o in enumerate(ordinals)]
-        a, b = aggregate(llm, crit, favourable_signals()), aggregate(labelled, crit, favourable_signals())
+        # #806 (CT-AGG-23 amended): engine-blind except FR-AGG-20's lone accepted decision, so a
+        # one-verdict set is compared under FR-AGG-07's rule (the knob off).
+        from types import SimpleNamespace
+        cfg = SimpleNamespace(jev_final_on_accept=False) if len(ordinals) == 1 else None
+        a = aggregate(llm, crit, favourable_signals(), config=cfg)
+        b = aggregate(labelled, crit, favourable_signals(), config=cfg)
         assert a == b
         assert should_escalate(a, crit, criterion_history(), expected_distribution()) == \
             should_escalate(b, crit, criterion_history(), expected_distribution())

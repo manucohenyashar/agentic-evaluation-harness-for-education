@@ -41,7 +41,7 @@ from .checks import (
     RETENTION_SETTINGS,
 )
 from .run_config import CohortRef, RunConfig
-from .sources import parse_allow_remote_real_work
+from .sources import JEV_FINAL_ON_ACCEPT_KEY, parse_allow_remote_real_work, parse_jev_final_on_accept
 from .panel import compute_panel_build_ref
 from .consent import _check_consent, REMOTE_PROFILES
 from .qa_model import resolve_qa_model
@@ -322,6 +322,9 @@ def resolve_run_config(cfg: Mapping[str, Any], cohort: CohortRef) -> RunConfig:
     #     run path before anything starts; `create_run` records the resolved pair on the run row.
     resolve_orch_knobs(cfg)
 
+    # 5e. FR-AGG-20: whether a lone accepted decision is final, frozen with the decision keys.
+    jev_final_on_accept = parse_jev_final_on_accept(cfg.get(JEV_FINAL_ON_ACCEPT_KEY))
+
     # 6. The consent gate (FR-CONF-08), last because it is the only check that reads `cohort`:
     #    a malformed config reports the malformation, and a well-formed one gets an unambiguous
     #    consent verdict rather than one buried behind a typo.
@@ -343,6 +346,7 @@ def resolve_run_config(cfg: Mapping[str, Any], cohort: CohortRef) -> RunConfig:
         panel_build_ref=compute_panel_build_ref(panel, decision_engine),
         decision_engine=decision_engine,
         qa_model=qa_model,
+        jev_final_on_accept=jev_final_on_accept,
     )
 
 

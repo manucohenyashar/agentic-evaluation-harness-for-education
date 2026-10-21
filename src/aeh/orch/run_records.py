@@ -139,6 +139,17 @@ def _panel_build_ref_of(row: Any) -> str:
     return str(config.get("panel_build_ref") or "") if isinstance(config, dict) else ""
 
 
+def _jev_final_on_accept_of(row: Any) -> bool:
+    """The run's frozen FR-AGG-20 rule, from its saved provider config; `True` when the row
+    records none (engine off, or a row written before the rule)."""
+    try:
+        config = json.loads(_mapping_get(row, "provider_config") or "{}")
+    except (TypeError, ValueError):
+        return True
+    value = config.get("jev_final_on_accept") if isinstance(config, dict) else None
+    return value if isinstance(value, bool) else True
+
+
 def _model_pin_records_of(
     row: Any,
 ) -> tuple[tuple[str, str, str, "str | None"], ...]:

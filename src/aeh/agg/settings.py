@@ -27,6 +27,12 @@ AGG_AUTO_THRESHOLD_HOLISTIC: float = 0.90
 AGG_UNCITED_MULTIPLIER: float = 0.80
 
 
+#: FR-AGG-20 (ADR-50): whether a cell whose only verdict is an accepted decision-engine verdict
+#: is final. The production default; a run's frozen value (`HARNESS_JEV_FINAL_ON_ACCEPT`,
+#: recorded on the run row) reaches `aggregate` through `config.jev_final_on_accept`.
+AGG_JEV_FINAL_ON_ACCEPT: bool = True
+
+
 #: §3.12's multiplier applied to the base for a holistic criterion.
 AGG_HOLISTIC_MULTIPLIER: float = 0.85
 

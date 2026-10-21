@@ -277,8 +277,9 @@ def test_tc_conf_c02_decision_engine_iff_in_both_directions() -> None:
     off = resolve_run_config(_cfg("cloud-hosted", HARNESS_DECISION_ENGINE="off"), COHORT)
     on = resolve_run_config(_cfg("cloud-hosted", HARNESS_DECISION_ENGINE="jev"), COHORT)
     assert off.decision_engine is None and on.decision_engine is not None
-    # 14 since #616: FR-CONF-30's `qa_model` joined `decision_engine` (CT-CONF-C02's design list).
-    assert len(dataclasses.fields(off)) == 14
+    # 14 since #616: FR-CONF-30's `qa_model` joined `decision_engine` (CT-CONF-C02's design list);
+    # 15 since #806: FR-AGG-20's `jev_final_on_accept`.
+    assert len(dataclasses.fields(off)) == 15
     with pytest.raises(ConfigurationError):
         dataclasses.replace(off, decision_engine=on.decision_engine)
     with pytest.raises(ConfigurationError):

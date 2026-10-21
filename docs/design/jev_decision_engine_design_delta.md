@@ -571,7 +571,7 @@ CT-ORCH-27 (exactly five alert names) is **not** amended. Decision-engine alerts
 | FR-AGG-19 | Apart from FR-AGG-18, `aggregate`, `should_escalate` and the confidence computation shall not read `scoring_engine`. A decision-engine verdict is a verdict: same median, same α, same caps, same uncited multiplier, same self-confidence weight. | User directive: bias protection unchanged | 1 |
 
 **Why the engine needs no confidence adjustment here** (worked from `agg.py`):
-- A decision seat is a single base judge. Its base is `_band_position_prior`, 0.50–0.75, below the atomic auto-accept 0.80. So **a Jev verdict alone never auto-accepts**, exactly like an LLM verdict alone.
+- A decision seat is a single base judge. Its base is `_band_position_prior`, 0.50–0.75, below the atomic auto-accept 0.80. So **a Jev verdict alone never auto-accepts**, exactly like an LLM verdict alone. *(Withdrawn by the console-clarity delta, FR-AGG-20 / ADR-50: a lone accepted decision is final, with its gate value as confidence, unless `HARNESS_JEV_FINAL_ON_ACCEPT=false`.)*
 - An **uncited** verdict fires the uncited escalation signal at full weight (1.0 = threshold). FR-JUDGE-28's per-span citation Nouls are therefore what keep a confident Jev verdict from escalating by default. Without them every Jev cell would escalate and the speedup would vanish, which is why ADR-23 exists.
 
 **Contract delta** (`CT-AGG` → **v2.1**, additive)

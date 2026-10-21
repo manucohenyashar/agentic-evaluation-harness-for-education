@@ -129,9 +129,10 @@ class ProfileSummary:
 class RunConfig:
     """One frozen answer to "which grader is this run?" (design §3.1).
 
-    The field set is **exactly** these fourteen (Jev design delta FR-CONF-17 added
-    `decision_engine`, and the operator-requirements delta FR-CONF-30 / CT-CONF-22 added
-    `qa_model`; both default `None` so a literal written before them still constructs).
+    The field set is **exactly** these fifteen (Jev design delta FR-CONF-17 added
+    `decision_engine`, the operator-requirements delta FR-CONF-30 / CT-CONF-22 added
+    `qa_model`, and the console-clarity delta FR-AGG-20 added `jev_final_on_accept`; each has a
+    default so a literal written before it still constructs).
     `CT-CONF-C02` asserts set equality rather than a
     subset, so adding a convenience field here breaks the contract suite by design — that is the
     clause working, not a broken test.
@@ -166,6 +167,10 @@ class RunConfig:
     #: identity: it never reaches `panel_build_ref` or `profile_summary()`. `None` only on a
     #: literal or a row written before FR-CONF-30, where the assistant falls back to `panel[0]`.
     qa_model: ModelRef | None = None
+    #: FR-AGG-20: whether a cell whose only verdict is an accepted decision is final. Frozen at
+    #: resolution (`HARNESS_JEV_FINAL_ON_ACCEPT`, default true) and recorded with the decision
+    #: engine, so a resumed run grades every cell by one rule. Not part of the grader identity.
+    jev_final_on_accept: bool = True
 
     def __post_init__(self) -> None:
         """Enforce CT-CONF-02 and CT-CONF-03 on the type itself, not only in the resolver.
@@ -304,6 +309,9 @@ class RunConfig:
             _check_resolved(self.decision_engine.model, "decision_engine.model", self.backend_profile)
 
         self._check_qa_model()
+        if not isinstance(self.jev_final_on_accept, bool):
+            raise ConfigurationError(
+                f"jev_final_on_accept must be a bool, got {type(self.jev_final_on_accept).__name__}.")
 
         expected_ref = compute_panel_build_ref(self.panel, self.decision_engine)
         if self.panel_build_ref != expected_ref:
@@ -404,7 +412,10 @@ class RunConfig:
                 # FR-CONF-17: present only when the engine is on, so an engine-off row is
                 # byte-identical to its pre-delta form (NFR-SYS-14).
                 **({} if self.decision_engine is None
-                   else {"decision_engine": self.decision_engine.to_dict()}),
+                   else {"decision_engine": self.decision_engine.to_dict(),
+                         # FR-AGG-20: recorded beside the engine it governs, so an
+                         # engine-off row stays byte-identical.
+                         "jev_final_on_accept": self.jev_final_on_accept}),
                 # FR-CONF-30: recorded on every resolved run; absent only on a pre-delta literal,
                 # so such a row still round-trips byte-identically.
                 **({} if self.qa_model is None else {"qa_model": _ref_to_dict(self.qa_model)}),

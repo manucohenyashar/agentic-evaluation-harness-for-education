@@ -8,7 +8,9 @@ from typing import Any
 
 from aeh.agg import (
     EvenPanelError,
+    MORE_GRADERS_UNAVAILABLE,
     aggregate,
+    is_jev_final,
     aggregate_even_panel_after_quarantine,
     should_escalate,
     write_score,
@@ -190,6 +192,10 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any,
     # of scheduling at 23,000 units. The report already says when a widening was breaker-
     # halted, so the set is updated from it instead.
     latched = {trip.criterion_id for trip in orch.tripped_breakers(handle.run_id)}
+    # FR-AGG-20: the Jev-final rule the run froze at creation (recorded on its row), so a
+    # resumed run aggregates every cell by one rule whatever the environment says now.
+    agg_config = SimpleNamespace(
+        jev_final_on_accept=bool(getattr(handle, "jev_final_on_accept", True)))
     detail: list[str] = []
     escalated = 0
     current: Any = None
@@ -280,11 +286,15 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any,
                 # panel reached some other way, a defect that must pause (TC-PIPE-23(c)).
                 fallback=len(verdicts) == 2 and quarantined > 0,
                 breaker_tripped=cell.criterion_id in latched,
+                # FR-AGG-20: the run's frozen rule, never the environment at this pass.
+                config=agg_config,
             )
             # `should_escalate` is pure (FR-AGG-08); the decision is the unmodified score's.
             decision = should_escalate(
                 score=score, criterion=criterion, history=history, baseline=baseline)
-            escalates = bool(getattr(decision, "escalate", False))
+            # FR-ORCH-45: a Jev-final cell is not an escalation candidate — nothing is enqueued
+            # and no budget is consumed. Every other cell escalates exactly as before.
+            escalates = bool(getattr(decision, "escalate", False)) and not is_jev_final(score)
             seatless = False
             with handle.cohort.transaction() as tx:
                 write_score(tx, handle.run_id, cell.submission_id, score, signals)
@@ -311,9 +321,15 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any,
                         # not be seated: it goes to the teacher rather than being settled.
                         score = replace(
                             score, routing="provisional", state="provisional_unreviewed",
+                            not_final_reason=MORE_GRADERS_UNAVAILABLE,
                             notes=score.notes + (
                                 "escalation wanted, no real judge model for the next seats: "
                                 "provisional, routed to review",))
+                        write_score(tx, handle.run_id, cell.submission_id, score, signals)
+                    elif seatless and score.state == "provisional_unreviewed":
+                        # FR-AGG-20: still provisional, but the reason is now that more graders
+                        # were wanted and none could be seated.
+                        score = replace(score, not_final_reason=MORE_GRADERS_UNAVAILABLE)
                         write_score(tx, handle.run_id, cell.submission_id, score, signals)
                 orch.mark_cell_phase(
                     tx, handle.run_id, cell.submission_id, cell.criterion_id,

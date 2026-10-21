@@ -252,6 +252,10 @@ class PipeWorld(SynthWorld):
             "HARNESS_JEV_BUILD": CORPUS_DECISION_BUILD,
             "HARNESS_JEV_QUANTIZATION": "bf16",
             "HARNESS_FIXTURE_DIR": self._fixture_dir_for_cfg,
+            # FR-AGG-20 (#806): a world built to exercise the ladder over a decision seat
+            # keeps the pre-delta rule, so its accepted decisions still escalate.
+            **({} if getattr(self, "jev_final_on_accept", True)
+               else {"HARNESS_JEV_FINAL_ON_ACCEPT": "false"}),
         }
 
     def _make_provider(self, fixture_dir: Any) -> Any:
@@ -424,6 +428,9 @@ class JevSynthWorld(SynthWorld):
     def __init__(self, data_dir: Any, fixture_dir: Any, *, monkeypatch: Any = None,
                  record_as_you_go: bool = True) -> None:
         self.decision_engine = True
+        # #806: TC-E2E-05 drives accepted decisions up the ladder, which FR-AGG-20 would now
+        # settle as final; the world keeps FR-AGG-07's rule (HARNESS_JEV_FINAL_ON_ACCEPT=false).
+        self.jev_final_on_accept = False
         self.decision_outcomes: dict[tuple[str, str], dict[str, Any]] = {}
         self.uniform_panel_ordinal = None
         self._fixture_dir_for_cfg = str(fixture_dir)
