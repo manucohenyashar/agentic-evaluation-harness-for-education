@@ -325,13 +325,26 @@ The format is: ID (traces) — *title*. Setup / input. **Oracle.** Expected. Lev
   `HARNESS_JEV_FINAL_ON_ACCEPT=true`, pause after half the cells, set it to `false`, and
   resume. Expected: every accepted-decision cell in the run is `final`, and the run row
   records `true`. Rung 3.
-- **TC-JUDGE-46** (amended FR-JUDGE-37 / CT-JUDGE-14, CT-JUDGE-07; RC-01) — *injection cannot
+- **TC-JUDGE-46** (amended FR-JUDGE-37 / CT-JUDGE-14, CT-JUDGE-07, FR-JUDGE-39; RC-01) — *injection cannot
   become final.* Run the CT-JUDGE-14 adversarial set through the decision path with
-  `HARNESS_JEV_FINAL_ON_ACCEPT=true`. For each case, expected one of: (i) the recorded
-  decision is below the gate, so it falls back and is not final; or (ii) citation verification
-  fails, so it is below gate and not final. **No case yields `final`.** A mutation arm swaps
+  `HARNESS_JEV_FINAL_ON_ACCEPT=true`, with F-ADV-INJ-DECISION's recorded Jev answers (fooled: top
+  band, 0.99, real citations) and a recorded confirming-judge answer per case that grades the
+  benign band. For each case, expected one of: (i) the recorded decision is below the gate;
+  (ii) citation verification fails; or (iii) the confirming judge's band differs, so the unit's
+  verdict is the LLM verdict (`prescreen_outcome='unconfirmed'`) and not final.
+  **No case yields `final`.** A residual arm records the judge fooled too (same band) and asserts
+  the cell *is* final and both calls are in the AI-call log — the documented residual risk, kept
+  visible rather than hidden. A mutation arm swaps
   in a recording that is above the gate with a forged citation, and asserts the citation
   check refuses it. This is the adversarial "plausible change" construction. Rung 3.
+
+- **TC-JUDGE-47** (FR-JUDGE-39, FR-AGG-20, CT-JUDGE-22) — *the confirmation call.* Rung 3, recorded answers, knob true:
+  - (a) Jev accepts band `reference`, judge gives `reference` → one verdict, `scoring_engine='decision'`, cell `final`/`auto`, confidence = gate, prescreen `confirmed_by` names the judge and band;
+  - (b) Jev accepts `top`, judge gives `reference` → one verdict, `scoring_engine='llm'`, `prescreen_outcome='unconfirmed'`, cell `provisional_unreviewed` / `one_grader_unsure`, and escalation runs exactly as for an engine-off single verdict;
+  - (c) the judge call fails terminally → the unit fails as an LLM-path unit does; no decision verdict is written;
+  - (d) knob false → no confirmation call (journal has only the `jev_decision` record) and the lone decision verdict is provisional (FR-AGG-07);
+  - (e) the judge request is byte-identical to the engine-off request for the same unit (CT-JUDGE-22).
+  Mutation: return the decision verdict without checking the judge's band → (b) goes red.
 
 ### 3.3 The call journal (M-PROV, callers, M-STORE) — E1
 
@@ -807,6 +820,7 @@ covered by the existing console access suite.
 | FR-AGG-07 (amended) | TC-AGG-27 |
 | FR-JUDGE-37 (amended) | TC-JUDGE-46 |
 | FR-ORCH-45 | TC-ORCH-61, TC-ORCH-62 |
+| FR-JUDGE-39 | TC-JUDGE-47, TC-JUDGE-46 |
 | FR-CONF-36 | TC-CONF-40, TC-CONF-41, TC-CONF-43, TC-REG-21 |
 | FR-CONF-37 | TC-CONF-42 |
 | FR-PROV-44 | TC-PROV-65, TC-PROV-66 |
@@ -832,7 +846,7 @@ closes, the marker is removed and the test kept. A `yes` story carries no depend
 | T3 | Jev-final clause suite (agg/judge/orch) | TC-AGG-27, TC-AGG-28, TC-AGG-31, TC-JUDGE-46 | contract | — | **yes** |
 | T4 | Teacher-text census and console clause cases | TC-CONSOLE-87, TC-CONSOLE-88, TC-CONSOLE-92 | contract + integration | — | **yes** |
 | T5 | Config knob suite | TC-CONF-40, TC-CONF-41, TC-CONF-42, TC-CONF-43, TC-REG-21 | unit + integration | S1 | no |
-| T6 | Jev-final integration pairs | TC-AGG-29, TC-AGG-30, TC-ORCH-61, TC-ORCH-62, TC-CONF-44, TC-REG-20 | integration | S2, T1 | no |
+| T6 | Jev-final integration pairs | TC-AGG-29, TC-AGG-30, TC-ORCH-61, TC-ORCH-62, TC-JUDGE-47, TC-CONF-44, TC-REG-20 | integration | S2, T1 | no |
 | T7 | Journal integration: files, crash safety, purge, full-pipeline kinds | TC-PROV-69, TC-CONSOLE-93, TC-CONSOLE-94, TC-STORE-30 | integration | S3 | no |
 | T8 | AI-call read and CLI | TC-CONSOLE-95, TC-CONSOLE-102, TC-CONSOLE-103 | integration | S4, T7 | no |
 | T9 | Authoring questions and approve reads | TC-AUTHOR-44, TC-AUTHOR-45, TC-AUTHOR-46, TC-AUTHOR-47, TC-AUTHOR-48, TC-CONSOLE-89, TC-CONSOLE-90, TC-CONSOLE-91, TC-REG-18 | unit + integration | S5, S6, T1 | no |
@@ -848,7 +862,7 @@ Code stories (from the design delta, for the dependency graph):
 | Story | Title | Traces to | Depends on |
 |---|---|---|---|
 | S1 | Orchestration knobs read from the config file; shipped configs and tutorials updated | FR-CONF-36, FR-CONF-37, CT-CONF-25 | — |
-| S2 | A confident Jev decision is final; not-final reason codes; no escalation for Jev-final; knob frozen in RunConfig | FR-AGG-20, FR-ORCH-45, CT-AGG-23, CT-AGG-24, CT-JUDGE-07, CT-JUDGE-14 | — |
+| S2 | A confident Jev decision is final, confirmed by one judge; not-final reason codes; no escalation for Jev-final; knob frozen in RunConfig | FR-AGG-20, FR-ORCH-45, FR-JUDGE-39, CT-AGG-23, CT-AGG-24, CT-JUDGE-07, CT-JUDGE-14 | — |
 | S3 | AI-call journal: CallRecord from all five providers, call context at callers, process-wide JSONL sink, purge | FR-PROV-44, FR-PROV-45, FR-PROV-46, FR-CONSOLE-77, CT-PROV-11, CT-PROV-14, CT-PROV-31, CT-PROV-32, CT-STORE-10 | — |
 | S4 | AI-call read and `aeh logs ai-calls` | FR-CONSOLE-78, FR-CONSOLE-79, CT-CONSOLE-09 | S3 |
 | S5 | Teacher-text boundary, version label, package summary and approve outcomes | FR-CONSOLE-71, FR-CONSOLE-72, FR-CONSOLE-73, FR-CONSOLE-74, CT-CONSOLE-53 | — |
