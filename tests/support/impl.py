@@ -2330,13 +2330,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
          "tests/integration/console/test_tc_console_87_92_teacher_text_census.py"),
     ),
 
-    # --- #807 AI-call journal (TC-PROV-65..68, #813) ---------------------------------------------
-    "#807 AI-call journal — call_context and install_call_journal": (
-        "symbols",
-        "aeh.prov:call_context,aeh.prov:install_call_journal",
-        ("tests/contract/prov/test_tc_prov_65_68_call_journal.py",),
-    ),
-
     # --- #814 T3, the Jev-final clause suite (TC-AGG-27/28/31, TC-JUDGE-46) ----------------
     # Keyed on the one name the design fixes verbatim (FR-AGG-20's knob in DECISION_KEYS), not
     # on the assumed Python surface: if #806 names that surface differently, the unmarked tests

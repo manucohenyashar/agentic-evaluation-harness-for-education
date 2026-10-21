@@ -21,6 +21,7 @@ from .disk_full import _halt_if_disk_full
 from .security import _harden_dir, _harden_files, _refuse_insecure_location, _validated_component
 from .interfaces import Tier
 from .purge import (
+    _remove_ai_call_journal,
     _assert_purge_order_matches_fk_graph,
     _COHORT_PURGE_ORDER,
     _collect_blob_hash_references,
@@ -373,6 +374,12 @@ class SqliteStore:
                 if self.blobs().delete(content_hash):
                     blobs_deleted += 1
 
+        # FR-CONSOLE-77 / CT-STORE-10: the class's AI-call journal holds its students' answers
+        # (requests) and what the models said about them, so it goes with the class. Only
+        # reached once the preconditions passed and the deletes committed: a refused purge
+        # leaves the folder in place.
+        journal_deleted = _remove_ai_call_journal(self._data_dir, cohort_id)
+
         self._last_vacuum_ms = vacuum_ms
         return PurgeReport(
             cohort_id=cohort_id,
@@ -383,6 +390,7 @@ class SqliteStore:
             file_bytes_after=bytes_after,
             vacuum_duration_ms=vacuum_ms,
             blobs_deleted=blobs_deleted,
+            ai_call_journal_deleted=journal_deleted,
         )
 
     def _blob_hashes_referenced_elsewhere(self, purged_path: Path) -> set[str]:

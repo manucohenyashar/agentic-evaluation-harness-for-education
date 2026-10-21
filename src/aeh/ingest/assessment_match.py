@@ -6,7 +6,7 @@ import json
 import uuid
 from typing import Any, Sequence
 
-from aeh.prov import PromptPayload, SamplingParams
+from aeh.prov import call_context, PromptPayload, SamplingParams
 
 from .settings import (
     DEFAULT_V4_BREAKER_MIN,
@@ -259,8 +259,9 @@ class AssessmentMatchMixin:
         if self._residency is not None:
             self._residency.acquire("transcriber")
         try:
-            completion = self._provider.complete(payload, self._model_ref,
-                                                 SamplingParams(temperature=0.0))
+            with call_context(kind="page_reading"):
+                completion = self._provider.complete(payload, self._model_ref,
+                                                     SamplingParams(temperature=0.0))
         except Exception as error:  # contained: the deterministic outcome stands
             signals["semantic_escalation"]["error"] = f"{type(error).__name__}: {error}"
             return

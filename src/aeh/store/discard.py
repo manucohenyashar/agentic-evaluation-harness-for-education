@@ -24,7 +24,7 @@ from typing import Any
 
 from .errors import PurgePreconditionError, ReadOnlyTierError
 from .interfaces import Statement, Tier
-from .purge import _DISCARD_WORK_COUNTS
+from .purge import _DISCARD_WORK_COUNTS, _remove_ai_call_journal
 from .security import _validated_component
 
 
@@ -53,6 +53,9 @@ def discard_empty_cohort(store: Any, cohort_id: str) -> None:
         handles.pop((Tier.COHORT, cohort_id, False), None)
     for suffix in ("", "-wal", "-shm"):
         Path(f"{path}{suffix}").unlink(missing_ok=True)
+    # The class's AI-call journal goes with it (FR-CONSOLE-77): a test paper read into a class
+    # deleted this way has already been journaled under it.
+    _remove_ai_call_journal(store.data_dir, cohort_id)
 
 
 # --- one paper, or the class's test paper (FR-CONSOLE-67, FR-CONSOLE-68) ----------------------

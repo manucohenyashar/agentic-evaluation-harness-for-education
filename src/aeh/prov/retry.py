@@ -144,6 +144,7 @@ def dispatch_with_retries(
     counters: RunCountersTracker | None = None,
     build_watch: BuildWatch | None = None,
     model_key: str = "",
+    on_attempt: Callable[..., None] | None = None,
 ) -> Any:
     """Send one request through `transport`, retrying only the failures FR-PROV-06 allows.
 
@@ -160,6 +161,12 @@ def dispatch_with_retries(
        is no flag, parameter or hook that re-enters the loop after a parse succeeds, and
        `FR-PROV-06`'s surface assertion (TC-PROV-10) holds because there is nothing to flip.
 
+    `on_attempt`, when given, observes each attempt as it ends (FR-PROV-44, the AI-call
+    journal): `on_attempt(attempt, outcome, error, latency_ms)`, with the 1-based attempt, the
+    outcome (`ok`, `retried`, or the final `malformed`/`rejected`/`failed`), the error the
+    attempt ended with, and its latency through the clock seam. It observes only; it cannot
+    change what the loop does. With none given the loop reads the clock as it always has.
+
     Budget exhaustion on transport/5xx/429 raises `ProviderUnavailableError` with the last
     error chained — terminal for the run, and the reason no provider substitution exists
     downstream (`FR-PROV-08`): a caller that received this was told, loudly, that the panel
@@ -173,6 +180,14 @@ def dispatch_with_retries(
     throttled = False
 
     for attempt in range(resolved_policy.max_attempts):
+        final = attempt == resolved_policy.max_attempts - 1
+        started = resolved_clock.monotonic() if on_attempt is not None else 0.0
+
+        def ended(outcome: str, error: BaseException | None) -> None:
+            if on_attempt is not None:
+                elapsed_ms = int(round((resolved_clock.monotonic() - started) * 1000))
+                on_attempt(attempt + 1, outcome, error, elapsed_ms)
+
         try:
             response = transport.send(request_factory())
         except TransportError as error:
@@ -199,6 +214,7 @@ def dispatch_with_retries(
                 throttled = True
                 last_error = RateLimitedError(
                     f"HTTP 429 from the provider (attempt {attempt + 1})")
+                ended("failed" if final else "retried", last_error)
                 _wait(resolved_clock, wait)
                 if counters is not None and attempt > 0:
                     counters.on_retry()
@@ -206,6 +222,7 @@ def dispatch_with_retries(
             if 500 <= response.status <= 599:
                 last_error = TransportError(
                     f"HTTP {response.status} from the provider (attempt {attempt + 1})")
+                ended("failed" if final else "retried", last_error)
                 if counters is not None and attempt > 0:
                     counters.on_retry()
                 _wait(resolved_clock, jittered_backoff(
@@ -217,19 +234,23 @@ def dispatch_with_retries(
                     build_watch.check(model_key, getattr(parsed, "resolved_build", ""))
                 if counters is not None and attempt > 0:
                     counters.on_retry()
+                ended("ok", None)
                 return parsed
-            except MissingConfidenceError:
+            except MissingConfidenceError as error:
                 # Not transient (design 1.8): surfaces after this one send.
+                ended("malformed", error)
                 if counters is not None and attempt > 0:
                     counters.on_retry()
                 raise
             except MalformedResponseError as error:
                 last_error = error
+                ended("malformed" if final else "retried", error)
                 _wait(resolved_clock, jittered_backoff(
                     resolved_policy.backoff_base_ms, attempt, resolved_rng))
                 if counters is not None and attempt > 0:
                     counters.on_retry()
                 continue
+        ended("failed" if final else "retried", last_error)
         if counters is not None and attempt > 0:
             counters.on_retry()
         _wait(resolved_clock, jittered_backoff(

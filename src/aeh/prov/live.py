@@ -39,6 +39,7 @@ from .records import (
 from .transport import Clock, _DefaultTransport, HttpRequest, HttpResponse, SystemClock, Transport
 from .retry import ConcurrencyGovernor, dispatch_with_retries, RetryPolicy
 from .counters import BuildWatch, RunCounters, RunCountersTracker
+from .journal import attempt_journal, payload_request
 
 
 #: The answers `verify_retention` treats as a zero-retention confirmation. Deliberately a
@@ -376,6 +377,36 @@ class _BaseLiveProvider:
             headers["Authorization"] = f"Bearer {self._api_key}"
         model_key = f"{model_ref.provider}:{model_ref.build_id}"
         retries_before = self._counters.snapshot().transport_retries
+        # FR-PROV-44: each attempt is journaled when a journal is installed. The request is
+        # recorded from the payload, never from `headers` or the wire body (FR-PROV-46).
+        with attempt_journal(model=model_ref.build_id,
+                             request=lambda: payload_request(prompt.fields),
+                             secrets=(self._api_key or "",)) as journal:
+            completion = self._dispatch_journaled(
+                model_ref, body, state, headers, model_key, journal)
+            journal.succeeded(
+                response=completion.text, resolved_build=completion.resolved_build,
+                tokens_in=completion.tokens_in, tokens_out=completion.tokens_out,
+                cost=completion.cost, latency_ms=completion.latency_ms)
+        # CT-PROV-14's per-call DEBUG line, on the live path exactly as the fixture path
+        # emits it: metadata only, never a payload value (`CT-PROV-13`).
+        _LOGGER.debug(
+            "provider call",
+            extra={
+                "model_ref": model_ref.build_id,
+                "resolved_build": completion.resolved_build,
+                "latency_ms": completion.latency_ms,
+                "tokens_in": completion.tokens_in,
+                "tokens_out": completion.tokens_out,
+                "retry_count": self._counters.snapshot().transport_retries - retries_before,
+            },
+        )
+        return completion
+
+    def _dispatch_journaled(self, model_ref: ModelRef, body: Any, state: str,
+                            headers: dict[str, str], model_key: str,
+                            journal: Any) -> "Completion":
+        """The retry loop, then the cost and latency this provider owns."""
         started = self._clock.monotonic()
         completion = dispatch_with_retries(
             self._transport,
@@ -384,6 +415,7 @@ class _BaseLiveProvider:
             policy=self._policy, clock=self._clock, rng=self._rng,
             governor=self._governor, counters=self._counters,
             build_watch=self._build_watch, model_key=model_key,
+            on_attempt=journal.on_attempt,
         )
         # Latency is measured, not echoed: FR-PROV-01 returns it as data, the per-call
         # DEBUG line reports it (CT-PROV-14), and a hardcoded 0 would have the nightly
@@ -411,19 +443,6 @@ class _BaseLiveProvider:
         completion = dataclasses.replace(completion, latency_ms=elapsed_ms)
         self._counters.on_usage(
             completion.tokens_in, completion.tokens_out, completion.cached_prefix_tokens)
-        # CT-PROV-14's per-call DEBUG line, on the live path exactly as the fixture path
-        # emits it: metadata only, never a payload value (`CT-PROV-13`).
-        _LOGGER.debug(
-            "provider call",
-            extra={
-                "model_ref": model_ref.build_id,
-                "resolved_build": completion.resolved_build,
-                "latency_ms": completion.latency_ms,
-                "tokens_in": completion.tokens_in,
-                "tokens_out": completion.tokens_out,
-                "retry_count": self._counters.snapshot().transport_retries - retries_before,
-            },
-        )
         return completion
 
     def estimate_cost(self, plan: CallPlan) -> CostEstimate:

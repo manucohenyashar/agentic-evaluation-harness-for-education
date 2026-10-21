@@ -68,7 +68,7 @@ from tests.support.clock import FrozenClock
 from tests.support.impl import require
 from tests.support.prov_contract import CountingClock, completion, flat_ok, model_ref, params, payload
 
-pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.contract]
 
 ISSUE = "#807"
 

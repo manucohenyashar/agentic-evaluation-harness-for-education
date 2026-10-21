@@ -19,7 +19,7 @@ import json
 from typing import Any, Mapping, Sequence
 
 from aeh.pkg import PackageVersionId
-from aeh.prov import PromptPayload
+from aeh.prov import call_context, PromptPayload
 
 from .settings import (
     _configured_derivation_attempts,
@@ -177,7 +177,9 @@ class GeneralDerivationMixin:
         last_error = ""
         for attempt in range(1, budget + 1):
             try:
-                completion = self._provider.complete(payload, self._model_ref, self._params)
+                with call_context(kind="rubric_setup",
+                                  package_id=getattr(self, "package_id", None)):
+                    completion = self._provider.complete(payload, self._model_ref, self._params)
                 bands = _parse_derivation_reply(completion.text, criterion_id, max_points)
             except _ReplyError as error:
                 last_error = f"attempt {attempt}: {error}"

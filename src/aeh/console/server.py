@@ -466,11 +466,37 @@ class ConsoleServer:
         self.socket = self._httpd.socket
         self.returncode: int | None = None
         self._closed = False
+        self._install_call_journal(store)
         self._thread = threading.Thread(
             target=self._httpd.serve_forever, name="aeh-console", daemon=True
         )
         self._thread.start()
         self._warm_reads()
+
+    def _install_call_journal(self, store: Any) -> None:
+        """Journal every AI call this process makes into the store's data folder
+        (FR-CONSOLE-77): one process-wide slot, so the run, intake, drafting and help paths
+        need no sink passed in. The sink it replaced comes back at `terminate()`."""
+        self._journal: Any = None
+        self._journal_previous: Any = None
+        data_dir = getattr(store, "data_dir", None) if store is not None else None
+        if data_dir is None:
+            return
+        from aeh.prov import install_call_journal, JsonlCallJournal
+
+        self._journal = JsonlCallJournal(data_dir)
+        self._journal_previous = install_call_journal(self._journal)
+
+    def _uninstall_call_journal(self) -> None:
+        """Put back the sink `_install_call_journal` replaced, unless another has replaced
+        this console's own since."""
+        if self._journal is None:
+            return
+        from aeh.prov import install_call_journal, installed_call_journal
+
+        if installed_call_journal() is self._journal:
+            install_call_journal(self._journal_previous)
+        self._journal = None
 
     def _warm_reads(self) -> None:
         """One throwaway in-process call per parameterless read route's reader, before use.
@@ -587,6 +613,7 @@ class ConsoleServer:
         with contextlib.suppress(Exception):
             self._httpd.server_close()
         self._thread.join(timeout=10)
+        self._uninstall_call_journal()
         self.returncode = 0 if not self._thread.is_alive() else None
         with contextlib.suppress(Exception):
             self.socket.close()

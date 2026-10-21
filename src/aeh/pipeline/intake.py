@@ -77,6 +77,21 @@ def ingest_files(store: Any, run_config: Any, cohort_id: str, package_version: s
                  assessment: str | Path | None, sheets: Sequence[Path],
                  provider: Any = None,
                  on_sheet: Callable[[SheetOutcome], None] | None = None) -> IntakeResult:
+    """Read the test paper (unless the cohort already holds it) and every answer sheet, with
+    every page-reading call journaled under this class (FR-PROV-45). The reading itself is
+    `_ingest_files`."""
+    from aeh.prov import call_context
+
+    with call_context(cohort_id=cohort_id):
+        return _ingest_files(store, run_config, cohort_id, package_version,
+                             assessment=assessment, sheets=sheets, provider=provider,
+                             on_sheet=on_sheet)
+
+
+def _ingest_files(store: Any, run_config: Any, cohort_id: str, package_version: str, *,
+                  assessment: str | Path | None, sheets: Sequence[Path],
+                  provider: Any = None,
+                  on_sheet: Callable[[SheetOutcome], None] | None = None) -> IntakeResult:
     """Read the test paper (unless the cohort already holds it) and every answer sheet.
 
     One PDF is one student's paper. A sheet whose scan was already read into this cohort is

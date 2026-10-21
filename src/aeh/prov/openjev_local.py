@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import dataclasses
 import json
 import os
 from collections.abc import Sequence
@@ -210,9 +209,12 @@ class OpenJevLocalProvider(_LoopbackDecisionProvider):
                                      {"Content-Type": "application/json"}, body,
                                      fallback_build=model_ref.build_id)
         self._calls_since_probe += 1
-        # The shim echoes only the served name, so the (probe-verified) ModelRef build is the
-        # identity every answer reports (FR-PROV-24).
-        return dataclasses.replace(decision, resolved_build=model_ref.build_id)
+        return decision
+
+    def _answered_build(self, served: str, model_ref: ModelRef) -> str:
+        """The shim echoes only the served name, so the (probe-verified) ModelRef build is the
+        identity every answer reports (FR-PROV-24)."""
+        return model_ref.build_id
 
 
 OPENJEV_SMALL_BASE_URL_ENV = "HARNESS_OPENJEV_SMALL_BASE_URL"

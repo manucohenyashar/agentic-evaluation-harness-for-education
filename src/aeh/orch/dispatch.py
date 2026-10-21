@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
 from typing import Any, Sequence
 
-from aeh.prov import BuildChangedError, ProviderUnavailableError, RateLimitedError
+from aeh.prov import BuildChangedError, call_context, ProviderUnavailableError, RateLimitedError
 from aeh.store import store_metrics
 
 from .constants import _JSON_SEPARATORS, STAGE_DETERMINISTIC, STAGE_EXTRACT, STAGE_SCORE
@@ -304,10 +304,22 @@ class DispatchMixin:
 
         run_unit = executor.execute  # bound first — see `_PreparedExecutor.execute`
 
+        try:
+            cohort_id, run_id = run_row["cohort_id"], run_row["run_id"]
+        except (KeyError, IndexError, TypeError):
+            cohort_id = run_id = None
+
         def invoke(unit: Any) -> Any:
             # The executor owns what a unit means; the counters are wrapped around the
             # provider it is handed, so a worker cannot spend calls this run does not count.
-            return run_unit(unit, governed)
+            # The call context is set here, on the pool thread, so every model call the
+            # stage worker makes is journaled under this class, run and unit (FR-PROV-45);
+            # the worker adds only the kind.
+            with call_context(cohort_id=cohort_id, run_id=run_id,
+                              work_id=getattr(unit, "work_id", None),
+                              submission_id=getattr(unit, "submission_id", None),
+                              criterion_id=getattr(unit, "criterion_id", None)):
+                return run_unit(unit, governed)
 
         # For the transport seam, assembly still completes for the WHOLE batch before the
         # pool exists — a raise here lands with nothing submitted, and the burst that follows
