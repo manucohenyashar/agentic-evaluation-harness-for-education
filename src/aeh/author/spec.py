@@ -11,7 +11,7 @@ above the first table, `[grades]` last — so a completed draft needs no reforma
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 # The spec-export rendering helpers, imported for their behaviour, not their ownership:
@@ -22,6 +22,7 @@ from typing import Any
 # that would change is the comment in `validation._plan_issues`).
 from aeh.pipeline.spec_export import _assign, _toml_key, _toml_str
 
+from .questions import gap_question, lowest_grade
 from .rubric import aspect_present_points
 
 #: The sentinel the draft carries for a field it could not determine (`FR-AUTHOR-11`):
@@ -39,9 +40,18 @@ class Gap:
     sentinel) or is named only in the report (an optional field, omitted)."""
 
     item_id: str          # the sentinel's field — the review answer's item id
-    reason: str           # why the field is missing
+    reason: str           # why the field is missing — the audit record, never displayed
     supply: str           # what the teacher must supply
     in_draft: bool        # True: the sentinel stands in the draft; False: omitted, report-only
+    #: The teacher's side of the gap (FR-AUTHOR-31), filled by `assemble` from
+    #: `questions.gap_question` against the assembled draft: a plain question ending in
+    #: `?`, the answer's form in words, and its kind (`text` | `whole_number` | `yes_no`)
+    #: with integer limits. Derived, so a consumer reading a later draft re-derives them.
+    question: str = ""
+    answer_hint: str = ""
+    answer_kind: str = ""
+    answer_min: int | None = None
+    answer_max: int | None = None
 
 
 @dataclass
@@ -105,9 +115,13 @@ def assemble(package_id: str, questions: list[dict[str, Any]],
     if grades:
         # A partial table renders its stated boundaries and a per-grade sentinel where the
         # document names a grade but states no boundary — stated derived, missing named
-        # (TC-AUTHOR-11's partial case).
+        # (TC-AUTHOR-11's partial case). The lowest grade is never asked: its floor is
+        # always 0, filled in here (FR-AUTHOR-32) — a fact of the table, not an invention.
         spec["grades"] = dict(grades)
-        for name, floor in grades.items():
+        lowest = lowest_grade(grades)
+        if lowest is not None and grades.get(lowest) is None:
+            spec["grades"][lowest] = 0
+        for name, floor in spec["grades"].items():
             if floor is None:
                 assembly.gaps.append(Gap(
                     item_id=f"grades {name}",
@@ -126,7 +140,27 @@ def assemble(package_id: str, questions: list[dict[str, Any]],
             supply="the grade boundaries, as grade name and minimum mark or percentage",
             in_draft=True))
     assembly.spec = spec
+    _ask_plainly(assembly)
     return assembly
+
+
+def _ask_plainly(assembly: Assembly) -> None:
+    """Give every gap its teacher fields (FR-AUTHOR-31), derived from the assembled draft —
+    the same derivation the console read and the answer check use. The gap records are
+    frozen, so each is replaced in both lists that hold it, keeping the attribution's
+    identity (`_gap_for` resolves through `question_gaps`)."""
+    owners = {id(gap): qid for qid, gaps in assembly.question_gaps.items() for gap in gaps}
+    replaced: dict[int, Gap] = {}
+    for gap in assembly.gaps:
+        asked = gap_question(gap.item_id, assembly.spec, owners.get(id(gap)))
+        replaced[id(gap)] = replace(
+            gap, question=asked.question, answer_hint=asked.answer_hint,
+            answer_kind=asked.answer_kind, answer_min=asked.answer_min,
+            answer_max=asked.answer_max)
+    assembly.gaps = [replaced[id(gap)] for gap in assembly.gaps]
+    assembly.question_gaps = {
+        qid: [replaced.get(id(gap), gap) for gap in gaps]
+        for qid, gaps in assembly.question_gaps.items()}
 
 
 def _attribute(assembly: Assembly, qid: str, gap: Gap) -> None:

@@ -49,7 +49,7 @@ AF09_ANSWERS = (
     ("criterion Q1",
      "none: the essay states no thesis at all (0 points); "
      "clear: a clear thesis supported by evidence from the text (4 points)"),
-    ("grades A", "80"),
+    ("grades A", "8"),
 )
 
 

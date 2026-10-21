@@ -67,6 +67,7 @@ from aeh.pipeline.spec_export import _toml_str
 
 from .errors import AuthoringInputError
 from .progress import check_cancel, commit_artifacts, emit, emit_completion
+from .questions import check_gap_answer, gap_question, two_grade_table
 from .report import report_filename
 from .types import AuthoringCancel, AuthoringObserver, AuthoringProgress, ReviewAnswer, \
     ReviewResult
@@ -195,6 +196,19 @@ def run_review(draft_path: Path, answers: Iterable[ReviewAnswer] | None, *,
     tentative: list[tuple[int, _Pending, str, Any]] = []
 
     def consume(index: int, item: _Pending, raw: str) -> None:
+        # The plain question's own check (FR-AUTHOR-31/32, CT-AUTHOR-27), on the one walk
+        # the console and the terminal share: the approver's name, a grade floor, and a
+        # bare passing score are refused with the question's hint before anything lands.
+        # (The terminal's `name: floor` pair grammar for a whole table keeps its own check;
+        # a grade question still waiting on missing points is not held to a range here —
+        # the terminal walk has no points question to answer first, the console does.)
+        if _plainly_checked(item, raw) and \
+                not gap_question(item.item_id, spec, item.owner_qid).waiting_on:
+            refusal = check_gap_answer(item.item_id, raw, spec, item.owner_qid)
+            if refusal is not None:
+                rejected.append(_Rejected(item.item_id, refusal))
+                LOGGER.warning("review/%s: rejected — %s", item.item_id, refusal)
+                return
         ok, value, reason = _evaluate(item, raw.strip(), spec)
         if not ok:
             rejected.append(_Rejected(item.item_id, reason))
@@ -568,6 +582,14 @@ def _is_authoring_draft(spec: Mapping[str, Any]) -> bool:
 # --- the answers: local, deterministic checks per field kind ---------------------------------------
 
 
+def _plainly_checked(item: _Pending, raw: str) -> bool:
+    """Whether the answer is held to its plain question's kind and range: the approver, a
+    grade floor, and a whole grade table answered as one passing score."""
+    if item.item_id == "approved_by" or item.kind == "grades_boundary":
+        return True
+    return item.kind == "grades_table" and not re.search(r"[:=;\n]", raw)
+
+
 def _evaluate(item: _Pending, raw: str, spec: Mapping[str, Any]) -> tuple[bool, Any, str]:
     """`(accepted, value, rejection-reason)` for one answer, by field kind. The checks are
     the field's own deterministic rules — the same ones `validate_draft` and the build run —
@@ -577,6 +599,10 @@ def _evaluate(item: _Pending, raw: str, spec: Mapping[str, Any]) -> tuple[bool, 
     if item.kind == "bands":
         return _eval_bands(raw)
     if item.kind == "grades_table":
+        if re.fullmatch(r"\d+", raw.strip()):
+            # A bare passing score — the console's plain question (FR-AUTHOR-32) — builds
+            # the two-grade table: `pass` = the answer, `not yet` = 0.
+            return True, two_grade_table(int(raw.strip())), ""
         return _eval_grade_pairs(raw.splitlines() if "\n" in raw else re.split(r";", raw),
                                  "the grade boundaries, as grade name and minimum mark or "
                                  "percentage, e.g. `Pass: 50`")
@@ -589,6 +615,8 @@ def _evaluate(item: _Pending, raw: str, spec: Mapping[str, Any]) -> tuple[bool, 
         return _eval_key(raw, spec, item.owner_qid)
     if item.kind == "type":
         value = raw.strip().strip('"').lower()
+        # "Is question <n> multiple choice?" (FR-AUTHOR-32) is answered yes or no.
+        value = {"yes": "mcq", "no": "open"}.get(value, value)
         if value not in ("mcq", "open", "mixed"):
             return False, None, ("a question's type is \"mcq\" (multiple choice), \"open\" "
                                  "(free text) or \"mixed\"")

@@ -35,6 +35,7 @@ from .intake import check_document, document_text, log_intake, normalize_documen
 from .progress import commit_artifacts
 from .inventory import AUTHOR_INVENTORY_TEMPLATE_V, slugify_package_id
 from .rubric import AUTHOR_RUBRIC_TEMPLATE_V
+from .questions import GapQuestion, check_gap_answer, gap_question, missing_points
 from .review import run_review
 from .service import PROMPT_VERSIONS, AuthoringService, authoring_service
 from .settings import (
@@ -140,6 +141,12 @@ __all__ = [
     # library through its one public surface
     "run_review",
     "commit_artifacts",
+    # the missing pieces as plain questions (FR-AUTHOR-31/32): the teacher fields derived
+    # from a gap's item id and the draft, and the server's answer check (CT-AUTHOR-27)
+    "GapQuestion",
+    "gap_question",
+    "check_gap_answer",
+    "missing_points",
     # the package-id slug rule (FR-AUTHOR-29): the from-scratch start names a draft with
     # the same rule the fallback id uses, re-exported so the console drives it through
     # this one surface

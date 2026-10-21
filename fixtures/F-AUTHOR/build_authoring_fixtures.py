@@ -1150,7 +1150,6 @@ AF08_ANSWERS = {
 
 AF10_ANSWERS = {
     "approved_by": REVIEW_TEACHER,
-    "grades D": 0,
 }
 
 AF12_ANSWERS = {
@@ -1289,10 +1288,10 @@ Q1: 436218. Q2: ABOUT 12 KM. Q3: ABOUT 045 DEGREES.
 """,
         "expected": _expected(
             "AF-10", "one document; scan-style, no text layer",
-            ["geo7-mapwork-01-scanned-test.pdf"], "partial", ["grades D"], "publishes",
+            ["geo7-mapwork-01-scanned-test.pdf"], "resolved", [], "publishes",
             "resolved via the transcriber path (FR-AUTHOR-02); the scan states grade D's "
-            "boundary in words (BELOW 3 POINTS), not as a number, so FR-AUTHOR-08's "
-            "never-invent rule leaves a per-grade placeholder (the capture's honest class)",
+            "boundary in words (BELOW 3 POINTS), not as a number, but D is the lowest "
+            "grade, whose floor is always 0 and filled in, never asked (FR-AUTHOR-32)",
             review_answers=dict(AF10_ANSWERS)),
     },
     "AF-11": {

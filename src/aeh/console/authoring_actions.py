@@ -75,12 +75,14 @@ from aeh.author import (
     with_approval_marker,
 )
 from aeh.author import slugify_package_id
+from aeh.author import check_gap_answer, missing_points
 from aeh.author.report import draft_filename
 from aeh.pipeline.packages import PackageSpecError, build_package, read_package_spec
 from aeh.pipeline.runtime import _open_store, _provider_for
 
 from .html import _now
 from .authoring_reads import _load_draft, _walk_placeholders, find_draft_for
+from .authoring_reads import owner_qid
 from .records import ControlOutcome
 from .settings import author_doc_max_bytes
 from .spa_reads import _strip_exception_name
@@ -497,7 +499,13 @@ def _answer_authoring_review(app: Any, params: Mapping[str, Any]) -> ControlOutc
     if spec is None:
         return _refused(
             "the draft file could not be read; re-draft the package from its documents.")
-    open_items = {item_id for item_id, _where in _walk_placeholders(spec, "")}
+    owners: dict[str, str | None] = {}
+    for item_id, where in _walk_placeholders(spec, ""):
+        owners.setdefault(item_id, owner_qid(spec, where))
+    # A question's missing points stand in no sentinel, yet are asked (FR-AUTHOR-32): the
+    # answer lands through the structured edit, not the review walk.
+    points_items = set(missing_points(spec))
+    open_items = set(owners) | points_items
     for answer in answers:
         if answer.item_id not in open_items:
             listing = ", ".join(sorted(open_items)) or "none"
@@ -505,8 +513,35 @@ def _answer_authoring_review(app: Any, params: Mapping[str, Any]) -> ControlOutc
                 f"the review item {answer.item_id!r} is not one this draft still asks "
                 f"about (open items: {listing}). Answer from the review screen, which "
                 "lists the items that still stand.")
+    # The server re-applies the field's check (CT-AUTHOR-27): an answer outside its kind or
+    # range is refused with the gap's own hint, before anything is written.
+    for answer in answers:
+        refusal = check_gap_answer(answer.item_id, answer.value, spec,
+                                   owners.get(answer.item_id))
+        if refusal is not None:
+            return _refused(refusal)
+    points_answers = [answer for answer in answers if answer.item_id in points_items]
+    answers = [answer for answer in answers if answer.item_id not in points_items]
+    if points_answers and answers:
+        # Two writers in one request could half-land: the points edit saved while a review
+        # answer is turned down. The points come first, on their own.
+        return _refused(
+            "Answer how many points each question is worth first, on its own. Then "
+            "answer the other questions.")
 
     def run() -> ControlOutcome:
+        for answer in points_answers:
+            try:
+                apply_structured_edit(path, "edit question", params={
+                    "item_id": answer.item_id.partition(" ")[2], "field": "points",
+                    "value": int(answer.value.strip())})
+            except AuthoringInputError as refused:
+                return _refused(str(refused))
+        if not answers:
+            return ControlOutcome(
+                rows_written=(), refused=False, dispatched=True,
+                next_action="answer the remaining questions on the review screen.",
+                detail="the answer was recorded.")
         # The review walk directly, not through a constructed service: a review makes no
         # model call, so `AuthoringService.review` would only re-seat the same `run_review`
         # door (`FR-AUTHOR-16/17`); the console drives the one implementation both surfaces

@@ -654,37 +654,23 @@ def test_tc_author_11_grades_derive_only_what_is_stated_and_placeholder_the_rest
         "(FR-AUTHOR-08)"
     )
 
-    # AF-10 — the partial table (Q-O8's middle arm): stated rows derived exactly, the
-    # unstated row a per-grade sentinel. The scan states grade D's boundary in words
-    # ("BELOW 3 POINTS"), never as a number — the boundary is not invented.
+    # AF-10 — the partial table: stated rows derived exactly. The scan states grade D's
+    # boundary only in words ("BELOW 3 POINTS"); D is the table's lowest grade, whose
+    # floor is always 0 and filled in automatically, never asked (FR-AUTHOR-32, #809), so
+    # no sentinel stands. The per-grade sentinel of a non-lowest grade (Q-O8's middle
+    # arm) stays pinned on AF-09's `grades A`.
     result, _counted = _draft(author, make_fixture_provider, "AF-10", tmp_path / "af10")
     draft, raw = _draft_toml(result)
     grades = draft.get("grades")
-    assert grades == {"A": 5, "B": 4, "C": 3, "D": "<<PLACEHOLDER: grades D>>"}, (
+    assert grades == {"A": 5, "B": 4, "C": 3, "D": 0}, (
         f"TC-AUTHOR-11 (AF-10): the draft's [grades] table is {grades!r} — the scan "
-        "states A/B/C's boundaries as numbers (derived exactly) and grade D's only in "
-        "words ('BELOW 3 POINTS'), so D is the per-grade sentinel: stated boundaries "
-        "derived, the missing one named for the teacher (FR-AUTHOR-08, Q-O8's middle arm)"
+        "states A/B/C's boundaries as numbers (derived exactly), and D is the lowest "
+        "grade, whose floor is always 0 (FR-AUTHOR-08, FR-AUTHOR-32)"
     )
-    lines = raw.splitlines()
-    sentinel_lines = [
-        (index, line)
-        for index, line in enumerate(lines)
-        if "<<PLACEHOLDER: grades D>>" in line
-    ]
-    for index, _line in sentinel_lines:
-        above = lines[index - 1] if index else ""
-        match = PLACEHOLDER_COMMENT_RE.search(above)
-        assert match and match.group(2).strip(), (
-            "TC-AUTHOR-11 (AF-10): grade D's sentinel line carries no "
-            "'# PLACEHOLDER(<reason>): <what the teacher must supply>' comment with a "
-            "reason on the line above (FR-AUTHOR-11, CT-AUTHOR-04)"
-        )
-    assert set(placeholder_fields(raw)) - {"approved_by"} == {"grades D"}, (
+    assert set(placeholder_fields(raw)) - {"approved_by"} == set(), (
         f"TC-AUTHOR-11 (AF-10): the draft's content placeholders are "
-        f"{sorted(set(placeholder_fields(raw)) - {'approved_by'})} — exactly the "
-        "fixture's declared `placeholders` (['grades D']), the missing row and nothing "
-        "else"
+        f"{sorted(set(placeholder_fields(raw)) - {'approved_by'})} — the fixture "
+        "declares none: the lowest grade is never asked"
     )
     grades_outcomes = [o for o in result.outcomes if o.step == "grades"]
     assert grades_outcomes and all(
