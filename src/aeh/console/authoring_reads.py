@@ -41,6 +41,7 @@ from aeh.author.extraction import (
     extract_documents,
 )
 from aeh.author.intake import NormalizedDocument, normalize_document
+from aeh.author import gap_question, missing_points
 from aeh.author.report import draft_filename
 from aeh.author.validation import PLACEHOLDER_PREFIX, validate_draft
 
@@ -145,6 +146,22 @@ def _placeholder_notes(raw_text: str, item_id: str) -> tuple[str, str]:
     return "", ""
 
 
+def owner_qid(spec: dict[str, Any], where: str) -> str | None:
+    """The question a sentinel at `where` (`question[1].model_answer`, `criterion[2].key`)
+    stands in, or `None` for a package-level field."""
+    match = re.match(r"(question|criterion)\[(\d+)\]", where)
+    if match is None:
+        return None
+    blocks = spec.get(match.group(1))
+    index = int(match.group(2))
+    if not isinstance(blocks, list) or index >= len(blocks) \
+            or not isinstance(blocks[index], dict):
+        return None
+    block = blocks[index]
+    qid = block.get("id") if match.group(1) == "question" else block.get("question")
+    return str(qid) if qid is not None else None
+
+
 def draft_placeholders(path: Path | None) -> int | None:
     """How many missing pieces stand in a draft file, or `None` when there is no readable
     draft there — the context read's stage-3 signal."""
@@ -240,9 +257,18 @@ def authoring_draft_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
             "location": where,
             "reason": reason,
             "supply": supply,
+            # The teacher's side (FR-AUTHOR-31): the screen shows these, never `reason`.
+            **gap_question(item_id, spec, owner_qid(spec, where)).as_fields(),
         }
         for item_id, where in _walk_placeholders(spec, "")
         for reason, supply in [_placeholder_notes(raw_text, item_id)]
+    ]
+    # A question's missing points stand in no sentinel (a report-only gap), yet the test's
+    # total waits on them (FR-AUTHOR-32): they are asked beside the placeholders, in a
+    # list of their own so the placeholder count keeps its meaning.
+    points_questions = [
+        {"item_id": item_id, **gap_question(item_id, spec).as_fields()}
+        for item_id in missing_points(spec)
     ]
     issues = validate_draft(spec)
     issue_rows = [
@@ -263,6 +289,7 @@ def authoring_draft_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
             "criteria": [_project_criterion(criterion) for criterion in criteria],
             "grades": spec.get("grades"),
             "placeholders": placeholders,
+            "points_questions": points_questions,
             "issues": issue_rows,
             "missing_pieces": len(placeholders),
         },

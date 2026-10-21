@@ -140,7 +140,7 @@ def test_tc_console_62_a_second_action_while_one_is_mid_flight_is_refused_by_the
     try:
         assert entered.wait(timeout=30), "the first review never reached its walk"
         second = _action(port, "answer authoring review", {
-            "package_id": package_id, "item_id": ITEM_GRADES, "value": "80",
+            "package_id": package_id, "item_id": ITEM_GRADES, "value": "1",
         })
     finally:
         release.set()

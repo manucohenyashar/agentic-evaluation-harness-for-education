@@ -67,6 +67,7 @@ from aeh.pipeline.spec_export import _toml_str
 
 from .errors import AuthoringInputError
 from .progress import check_cancel, commit_artifacts, emit, emit_completion
+from .questions import two_grade_table
 from .report import report_filename
 from .types import AuthoringCancel, AuthoringObserver, AuthoringProgress, ReviewAnswer, \
     ReviewResult
@@ -577,6 +578,10 @@ def _evaluate(item: _Pending, raw: str, spec: Mapping[str, Any]) -> tuple[bool, 
     if item.kind == "bands":
         return _eval_bands(raw)
     if item.kind == "grades_table":
+        if re.fullmatch(r"\d+", raw.strip()):
+            # A bare passing score — the console's plain question (FR-AUTHOR-32) — builds
+            # the two-grade table: `pass` = the answer, `not yet` = 0.
+            return True, two_grade_table(int(raw.strip())), ""
         return _eval_grade_pairs(raw.splitlines() if "\n" in raw else re.split(r";", raw),
                                  "the grade boundaries, as grade name and minimum mark or "
                                  "percentage, e.g. `Pass: 50`")
@@ -589,6 +594,8 @@ def _evaluate(item: _Pending, raw: str, spec: Mapping[str, Any]) -> tuple[bool, 
         return _eval_key(raw, spec, item.owner_qid)
     if item.kind == "type":
         value = raw.strip().strip('"').lower()
+        # "Is question <n> multiple choice?" (FR-AUTHOR-32) is answered yes or no.
+        value = {"yes": "mcq", "no": "open"}.get(value, value)
         if value not in ("mcq", "open", "mixed"):
             return False, None, ("a question's type is \"mcq\" (multiple choice), \"open\" "
                                  "(free text) or \"mixed\"")
