@@ -40,6 +40,15 @@ from .class_actions import roster_preview_read
 from .cohort_editor import roster_editor_payload
 from .config_read import config_read
 from .errors import ConsoleBindRefused
+from .refusals import (
+    ACTION_NEXT,
+    action_what,
+    read_refusal,
+    refusal_parts,
+    without_references,
+)
+from .teacher_text import VersionLabel, teacher_payload
+from .version_labels import version_label_for
 from .export_reads import readable_package_export_read, workbook_export_read
 from .hub_state import hub_payload
 from .parity import parity_inventory
@@ -105,16 +114,22 @@ ASSETS_PREFIX = "/assets/"
 #: The largest refused body read off the socket before closing it; anything bigger is left
 #: unread rather than spending a read on a request already refused.
 REFUSED_BODY_DRAIN_BYTES = 64 * 1024
+#: The refusal for a request body that is not a JSON object.
+NOT_A_JSON_OBJECT = "the request did not carry its details in the expected form"
 
 
-def outcome_json(action: str, outcome: Any) -> bytes:
+def outcome_json(action: str, outcome: Any,
+                 version_label: VersionLabel | None = None) -> bytes:
     """A control outcome as the JSON both transports answer with. `next_action` is carried
     only when the action set one (a refusal's named next step, `CT-CONSOLE-33`, #761),
     `refresh_required` only when the outcome set it (§3.19's stale-screen refusal asks
-    for the refresh, PR #794's finding 4), and `job_id` only when the outcome dispatched
-    a job (`#760`'s authoring actions), so no outcome that predates any of the three
-    fields changes shape."""
-    answer = {
+    for the refresh, PR #794's finding 4), `job_id` only when the outcome dispatched
+    a job (`#760`'s authoring actions), and `what` / `why` / `next` only when the outcome
+    set them (FR-UI-25's three parts, FR-CONSOLE-73's next link), so no outcome that
+    predates any of these fields changes shape. Every display string passes the
+    teacher-text boundary on the way out (FR-CONSOLE-71), with `version_label` naming
+    package versions."""
+    answer: dict[str, Any] = {
         "action": action,
         "dispatched": bool(getattr(outcome, "dispatched", False)),
         "refused": bool(getattr(outcome, "refused", False)),
@@ -124,12 +139,33 @@ def outcome_json(action: str, outcome: Any) -> bytes:
     next_action = getattr(outcome, "next_action", None)
     if next_action:
         answer["next_action"] = str(next_action)
+    for part in ("what", "why"):
+        text = getattr(outcome, part, None)
+        if text:
+            answer[part] = str(text)
+    next_link = getattr(outcome, "next", None)
+    if next_link:
+        answer["next"] = {str(key): str(value) for key, value in dict(next_link).items()}
     if getattr(outcome, "refresh_required", False):
         answer["refresh_required"] = True
     job_id = getattr(outcome, "job_id", None)
     if job_id:
         answer["job_id"] = str(job_id)
-    return json.dumps(answer).encode("utf-8")
+    # FR-UI-23: a run or job id (a UUID) is never teacher text.
+    answer["detail"] = without_references(answer["detail"])
+    if answer["refused"]:
+        # FR-UI-25: every refusal says what happened, why and what to do next.
+        answer.update(refusal_parts(
+            why=getattr(outcome, "why", None) or answer["detail"],
+            what=getattr(outcome, "what", None), next_action=next_action,
+            fallback_what=action_what(action), fallback_next=ACTION_NEXT))
+    return json.dumps(teacher_payload(answer, version_label)).encode("utf-8")
+
+
+def _error_json(error: Any, **extra: Any) -> bytes:
+    """A refusing request's body: its `error` sentence and FR-UI-25's three parts, through
+    the teacher-text boundary."""
+    return json.dumps(teacher_payload(read_refusal(error, **extra))).encode("utf-8")
 
 
 #: The reads the API answers, by the name a read route carries. Each takes the running
@@ -228,6 +264,11 @@ class ApiRequestsMixin:
 
     # -- the API ----------------------------------------------------------------------------
 
+    def _version_label(self) -> VersionLabel:
+        """The package-version resolver one response's teacher text uses (FR-CONSOLE-74),
+        bound to the running app's store and cached for this response only."""
+        return version_label_for(getattr(self._console.app, "_store", None))
+
     def _serve_api(self, method: str, route: str, query: dict[str, str] | None = None) -> None:
         """Dispatch one `/api/` request through the route table, and nothing else."""
         matched, params, other_verb = match_route(method, route)
@@ -237,10 +278,10 @@ class ApiRequestsMixin:
             # the client then never sees the 404/405 it was owed.
             self._drain_small_body()
             if other_verb:
-                self._respond(405, b'{"error":"method not allowed"}', JSON_TYPE, close=True,
+                self._respond(405, _error_json("method not allowed"), JSON_TYPE, close=True,
                               headers={"Allow": ", ".join(allowed_methods(route))})
             else:
-                self._respond(404, b'{"error":"not found"}', JSON_TYPE, close=True)
+                self._respond(404, _error_json("not found"), JSON_TYPE, close=True)
             return
         if matched.read is not None:
             # A read dispatches on its read label, whatever verb it answers under: the
@@ -254,7 +295,7 @@ class ApiRequestsMixin:
         try:
             self._console.recheck_environment()
         except ConsoleBindRefused as refusal:
-            body = json.dumps({"error": str(refusal)}).encode("utf-8")
+            body = _error_json(refusal)
             self._drain_small_body()
             self._respond(403, body, JSON_TYPE, close=True)
             return
@@ -279,37 +320,37 @@ class ApiRequestsMixin:
             return
         if route.method not in READ_METHODS:
             if self.headers.get("Transfer-Encoding"):
-                self._respond(411, b'{"error":"a JSON body requires Content-Length"}',
+                self._respond(411, _error_json("a JSON body requires Content-Length"),
                               JSON_TYPE, close=True)
                 return
             length = self._declared_length()
             if length is None:
-                self._respond(400, b'{"error":"invalid Content-Length"}', JSON_TYPE, close=True)
+                self._respond(400, _error_json("invalid Content-Length"), JSON_TYPE, close=True)
                 return
             body = self._read_json_object(length)
             if body is None:
-                self._respond(400, b'{"error":"the body must be a JSON object"}', JSON_TYPE)
+                self._respond(400, _error_json(NOT_A_JSON_OBJECT), JSON_TYPE)
                 return
             query = body  # type: ignore[assignment] — a POST read's query is its body
         reader = _READS[str(route.read)]
         try:
             answer = reader(self._console, self._console.app, path_params, query)
         except (ValueError, KeyError) as refusal:
-            body = json.dumps({"error": str(refusal)}).encode("utf-8")
+            body = _error_json(refusal)
             self._respond(400, body, JSON_TYPE)
             return
         except Exception as error:  # noqa: BLE001 — a failed read is a 500, never a dropped socket
-            body = json.dumps({"error": str(error)}).encode("utf-8")
+            body = _error_json(error)
             self._respond(500, body, JSON_TYPE, close=True)
             return
         if answer is None:
-            body = json.dumps({"error": "not found"}).encode("utf-8")
+            body = _error_json("nothing by that name is here")
             self._respond(404, body, JSON_TYPE, close=True)
             return
         if isinstance(answer, FileAnswer):
             self._respond(200, answer.body, answer.content_type)
             return
-        self._respond(200, json.dumps(answer).encode("utf-8"), JSON_TYPE)
+        self._respond(200, json.dumps(teacher_payload(answer, self._version_label())).encode("utf-8"), JSON_TYPE)
 
     def _help_ask(self, query: dict[str, str]) -> None:
         """The grounded Q&A ask (`M-HELP`, `CT-HELP-01`): one read-only GET whose only write
@@ -322,9 +363,7 @@ class ApiRequestsMixin:
         the identifiers it is (`CT-UI-07`)."""
         question = query.get(ASK_QUERY_PARAM, "").strip()
         if not question:
-            body = json.dumps(
-                {"error": "the ask read takes the question as ?q=<question>"}
-            ).encode("utf-8")
+            body = _error_json("the ask read takes the question as ?q=<question>")
             self._respond(400, body, JSON_TYPE)
             return
         raw_context = query.get(ASK_CONTEXT_PARAM, "").strip()
@@ -333,18 +372,16 @@ class ApiRequestsMixin:
             try:
                 context = parse_screen_context(json.loads(raw_context))
             except ValueError as refusal:  # JSONDecodeError is one, as is every shape refusal
-                body = json.dumps(
-                    {"error": f"the ask read could not take the context: {refusal}"}
-                ).encode("utf-8")
+                body = _error_json(f"the ask read could not take the context: {refusal}")
                 self._respond(400, body, JSON_TYPE)
                 return
         try:
             payload = ask_payload(self._console.help_assistant(), question, context)
         except Exception as error:  # noqa: BLE001 — a failed ask is a 500, never a dropped socket
-            body = json.dumps({"error": str(error)}).encode("utf-8")
+            body = _error_json(error)
             self._respond(500, body, JSON_TYPE, close=True)
             return
-        self._respond(200, json.dumps(payload).encode("utf-8"), JSON_TYPE)
+        self._respond(200, json.dumps(teacher_payload(payload)).encode("utf-8"), JSON_TYPE)
 
     def _api_control(self, route: ApiRoute, path_params: dict[str, str]) -> None:
         """Pass the request's parameters to the door unvalidated: refusing a malformed request
@@ -352,29 +389,29 @@ class ApiRequestsMixin:
         if self.headers.get("Transfer-Encoding"):
             # A chunked body is not decoded here; left on the socket it would be parsed as the
             # next request, so the refusal closes the connection (the `_upload` precedent).
-            self._respond(411, b'{"error":"a JSON body requires Content-Length"}', JSON_TYPE,
+            self._respond(411, _error_json("a JSON body requires Content-Length"), JSON_TYPE,
                           close=True)
             return
         length = self._declared_length()
         if length is None:
-            self._respond(400, b'{"error":"invalid Content-Length"}', JSON_TYPE, close=True)
+            self._respond(400, _error_json("invalid Content-Length"), JSON_TYPE, close=True)
             return
         body = self._read_json_object(length)
         if body is None:
-            self._respond(400, b'{"error":"the body must be a JSON object"}', JSON_TYPE)
+            self._respond(400, _error_json(NOT_A_JSON_OBJECT), JSON_TYPE)
             return
         action = str(route.control)
         try:
             outcome = self._console.app.perform(action, **{**body, **path_params})
         except (TypeError, ValueError, KeyError) as refusal:
-            answer = json.dumps({"action": action, "error": str(refusal)}).encode("utf-8")
+            answer = _error_json(refusal, action=action)
             self._respond(400, answer, JSON_TYPE)
             return
         except Exception as error:  # noqa: BLE001 — a failed action is a 500, never a dropped socket
-            answer = json.dumps({"action": action, "error": str(error)}).encode("utf-8")
+            answer = _error_json(error, action=action)
             self._respond(500, answer, JSON_TYPE, close=True)
             return
-        self._respond(200, outcome_json(action, outcome), JSON_TYPE)
+        self._respond(200, outcome_json(action, outcome, self._version_label()), JSON_TYPE)
 
     def _declared_length(self) -> int | None:
         """The declared `Content-Length`: 0 when absent, `None` when it is not a

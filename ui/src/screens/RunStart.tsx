@@ -58,10 +58,10 @@ export function RunStart({
 
   // The published test versions a run can grade against, the selected package's first.
   const versions = useMemo(() => {
-    const published = (context?.packages ?? []).filter((p) => p.published_version !== null);
+    const published = (context?.packages ?? []).filter((p) => p.published_version_id !== null);
     published.sort((a, b) =>
       a.package_id === selection.packageId ? -1 : b.package_id === selection.packageId ? 1 : 0);
-    return published.map((p) => p.published_version as string);
+    return published.map((p) => p.published_version_id as string);
   }, [context, selection.packageId]);
   const [version, setVersion] = useState<string>("");
   useEffect(() => {

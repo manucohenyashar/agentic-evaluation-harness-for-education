@@ -24,7 +24,7 @@ resolver is TC-CONSOLE-89's.
 **Isolation: rung 0.** **Written ahead of implementation: yes** (#808) — every case fails
 with `NotImplementedYet` until `aeh.console.teacher_text` exists.
 
-**Markers.** `writtenahead`, keyed in `WRITTEN_AHEAD_BLOCKERS` under #808.
+**Markers.** None: the `writtenahead` marker came off when #808 landed.
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ from hypothesis import strategies as st
 
 from tests.support.impl import CONSOLE_MODULE, require
 
-pytestmark = pytest.mark.writtenahead
+
 
 ISSUE = "#808"
 VERSION_ID = "ENG7-READ-01@e34abeaceb0a"

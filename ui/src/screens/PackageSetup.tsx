@@ -61,7 +61,7 @@ export function PackageSetup({ context }: { context: ContextDoc | null }) {
                 {published.map((p) => (
                   <li key={p.package_id}>
                     <span className="step-name">{p.package_id}</span>
-                    <span className="step-note">version {p.published_version}</span>
+                    <span className="step-note">{p.published_version}</span>
                   </li>
                 ))}
               </ul>
