@@ -2322,6 +2322,12 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         ("tests/unit/author/test_tc_author_32_42_intake_suite.py",),
     ),
 
+    # --- #807 AI-call journal (TC-PROV-65..68, #813) ---------------------------------------------
+    "#807 AI-call journal — call_context and install_call_journal": (
+        "symbols",
+        "aeh.prov:call_context,aeh.prov:install_call_journal",
+        ("tests/contract/prov/test_tc_prov_65_68_call_journal.py",),
+    ),
 }
 
 def blocker_is_resolved(kind: str, target: str, repo_root: Any) -> bool:
