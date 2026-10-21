@@ -2350,6 +2350,17 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         ("tests/contract/judge/test_tc_judge_46_injection_never_final.py",),
     ),
 
+    # --- #812 (console-clarity T1): the clarity fixtures' and the Jev-final seed's fitness
+    # cases. Behavioural `command` probes (tests/support/clarity_world.py), since every name
+    # the stories touch already exists: #806 resolves when the seed's accepted-decision cell
+    # is stored `final`. (#809's entry, for the AF-22/AF-23 fitness cases, LANDED with
+    # #809: the cases run unmarked.)
+    "#806 a confident Jev decision is final — the Jev-final seed's routes (TC-CONSOLE-97 seed half)": (
+        "command",
+        "python -c \"import sys; from tests.support.clarity_world import "
+        "jev_final_on_accept_landed as f; sys.exit(0 if f() else 1)\"",
+        ("tests/artifact/test_tc_console_97_jev_final_seed.py",),
+    ),
 }
 
 def blocker_is_resolved(kind: str, target: str, repo_root: Any) -> bool:

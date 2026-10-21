@@ -1,0 +1,12 @@
+af = "AF-23"
+description = "the four ENG7 PDFs; the rubric names pass with no boundary"
+documents = ["01-test-paper.pdf", "02-model-answer.pdf", "03-rubric-pass-no-boundary.pdf", "04-blank-answer-sheet.pdf"]
+outcome = "partial"
+placeholders = ["grades pass"]
+build = "publishes"
+format = ["pdf", "pdf", "pdf", "pdf"]
+notes = "the grades are named, pass has no boundary: the [grades pass] gap is asked as 'What is the lowest total score that earns 'pass'?' (whole number 1..8); not yet is the lowest grade, floor 0, never asked (FR-AUTHOR-32, TC-AUTHOR-44)"
+
+[review.answers]
+"approved_by" = "Sample-materials teacher"
+"grades pass" = 6

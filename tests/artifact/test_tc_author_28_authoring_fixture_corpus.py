@@ -55,7 +55,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CORPUS = REPO_ROOT / "fixtures" / "F-AUTHOR"
 GENERATOR = CORPUS / "build_authoring_fixtures.py"
 
-EXPECTED_AF_IDS = [f"AF-{i:02d}" for i in range(1, 22)]
+#: AF-22/AF-23 (#812) are the console-clarity variants of the ENG7 sample test: its four PDFs
+#: with the rubric's grade table left out, or naming *pass* with no boundary
+#: (`console_clarity_test_plan.md` §2.4). Their own checks are
+#: `test_tc_author_44_clarity_fixtures.py`; here they join the census like any fixture.
+EXPECTED_AF_IDS = [f"AF-{i:02d}" for i in range(1, 24)]
 OUTCOME_DOMAIN = {"resolved", "partial", "unresolved", "refused"}
 BUILD_DOMAIN = {"publishes", "refused"}
 #: §3.1.1's `IntakeWarning` vocabulary — the codes `expected.toml` may require.
@@ -90,7 +94,7 @@ DESIGN_REFUSAL_TABLE = {
 }
 
 
-def test_the_twenty_one_fixture_dirs_exist() -> None:
+def test_the_twenty_three_fixture_dirs_exist() -> None:
     missing = [af for af in EXPECTED_AF_IDS if not (CORPUS / af / "expected.toml").is_file()]
     assert not missing, (
         f"{CASE}: the authoring fixture corpus is incomplete — "
