@@ -694,6 +694,40 @@ def _cell_flag(routing: str, state: str, escalated: bool) -> str | None:
     return None
 
 
+#: FR-CONSOLE-75: the timed stages in run order, each with the name the teacher reads. The
+#: stage is the suffix of M-PIPE's `run_metrics` row `stage_seconds.<stage>`.
+STAGE_TIMING_LABELS: tuple[tuple[str, str], ...] = (
+    ("extract", "Reading answers"),
+    ("judge", "AI grading"),
+    ("aggregate", "Combining grades"),
+    ("synth", "Writing feedback"),
+)
+
+_STAGE_SECONDS_SQL = (
+    "SELECT metric, value FROM run_metrics WHERE run_id = :run_id "
+    "AND metric LIKE 'stage_seconds.%' "
+    "AND submission_id = '' AND criterion_id = '' AND judge_id = ''"
+)
+
+
+def _stage_timings(app: Any, run_id: str) -> list[dict[str, Any]]:
+    """The run's `stage_timings` (FR-CONSOLE-75): `{stage, label, seconds}` in run order,
+    for the stages M-PIPE timed. A stage with no row did not run and is not listed — never
+    shown as 0. An unreadable metrics table answers no timings, not a failed screen."""
+    try:
+        rows = app._store.durable().query(_STAGE_SECONDS_SQL, run_id=run_id)
+    except Exception:  # noqa: BLE001 — timings are a footnote to the grades, never a 500
+        return []
+    seconds = {
+        str(row["metric"]).removeprefix("stage_seconds."): float(row["value"])
+        for row in rows if str(row["metric"]).startswith("stage_seconds.")
+    }
+    return [
+        {"stage": stage, "label": label, "seconds": seconds[stage]}
+        for stage, label in STAGE_TIMING_LABELS if stage in seconds
+    ]
+
+
 def results_screen_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     """The results screen's document (FR-UI-03g, extended by FR-UI-15): every student's
     grade record (M-GRADE's own, the ledger's) beside the run's per-criterion score levels,
@@ -707,7 +741,7 @@ def results_screen_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     run_row = _run_row_of(console, app, query)
     if run_row is None:
         return {"run_id": None, "cohort_id": None, "score_levels": [], "scales": [],
-                "students": []}
+                "students": [], "stage_timings": []}
     run_id = str(run_row["run_id"])
     cohort_id = str(run_row["cohort_id"])
     records = run_grade_records(app._store, run_id)
@@ -798,6 +832,8 @@ def results_screen_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
             for criterion, entries in sorted(scales.items())
         ],
         "students": list(by_submission.values()),
+        # FR-CONSOLE-75: how long each long step of this run took, in run order.
+        "stage_timings": _stage_timings(app, run_id),
     }
 
 

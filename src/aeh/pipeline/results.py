@@ -32,6 +32,9 @@ class StageTrace:
     #: Jev design delta FR-PIPE-13: structured figures a stage reports beside its detail — the
     #: decision-engine summary on the score stage, by CT-JUDGE-28's names. `None` elsewhere.
     metrics: Any = None
+    #: FR-CONSOLE-75: the stage's elapsed seconds in this call, by the run's clock seam.
+    #: `None` for a stage this module does not time — never a fabricated 0.
+    seconds: float | None = None
 
 
 @dataclass(frozen=True)

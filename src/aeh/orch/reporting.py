@@ -352,6 +352,26 @@ class ReportingMixin:
                     continue
         return sorted(seen)
 
+    def add_run_metrics(self, run_id: str, increments: Mapping[str, float]) -> None:
+        """Add to one run's run-level metrics, one row per metric (FR-CONSOLE-75).
+
+        `record_run_metrics` replaces; this accumulates, for a figure that is summed across
+        passes and resumes — the stage seconds `M-PIPE` writes as `stage_seconds.<stage>`.
+        A metric with no row yet starts at the increment. One transaction; M-ORCH stays
+        `run_metrics`' sole writer (`CT-STORE-03`).
+        """
+        if not increments:
+            return
+        durable = self._store.durable()
+        with durable.transaction() as tx:
+            for name, value in increments.items():
+                tx.execute(
+                    ORCH_STATEMENTS["add_run_metric"],
+                    run_id=run_id,
+                    metric=str(name),
+                    value=float(value),
+                )
+
     def record_run_metrics(self, run_id: str, metrics: Mapping[str, Any]) -> None:
         """Write one run's metrics as one row per metric (CT-ORCH-20).
 

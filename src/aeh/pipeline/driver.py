@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from dataclasses import replace
 from typing import Any, Sequence
 
 from aeh.conf import effective_config
@@ -15,7 +16,7 @@ from aeh.prov import BuildChangedError, ProviderUnavailableError
 
 from .settings import _int_knob, MAX_PASSES_ENV, PASS_SLEEP_MS_ENV, STALL_PASSES
 from .results import RecoveryReport, RunResult, StageTrace
-from .executor import ProductionStageExecutor
+from .executor import ProductionStageExecutor, monotonic_of
 from .decision_engine import (
     _decision_provider_for_run,
     _decision_run_start_checks,
@@ -62,6 +63,46 @@ def _stall_reason(orch: Any, run_id: str) -> str:
         "the escalation budget is within range, so the pending units are blocked by "
         "something else - inspect the ledger"
     )
+
+
+# --- stage timings (FR-CONSOLE-75) ---------------------------------------------------------
+
+#: The `run_metrics` name prefix for a stage's elapsed seconds, and the trace stage each
+#: timed metric is read from. The judge metric is the score stage: Jev and the LLM together.
+STAGE_SECONDS_PREFIX = "stage_seconds."
+_TIMED_STAGES = {
+    "extract": "extract",
+    "score": "judge",
+    "aggregate": "aggregate",
+    "synthesize": "synth",
+}
+
+
+def _record_stage_seconds_safely(
+    orch: Any, run_id: str, traces: Sequence[StageTrace],
+) -> StageTrace | None:
+    """Add the timed traces' seconds to the run's `stage_seconds.<stage>` rows.
+
+    Additive (`add_run_metrics`), so the figure sums across passes and resumes. A trace with
+    no `seconds` — a stage that did not run — writes no row, so it stays absent rather than
+    reading as 0. A failed write is returned as a `timings` trace naming it, never raised:
+    timing is observability, and it must not cost the run its result — nor vanish silently.
+    """
+    increments: dict[str, float] = {}
+    for trace in traces:
+        metric = _TIMED_STAGES.get(trace.stage)
+        if metric is None or trace.seconds is None:
+            continue
+        name = STAGE_SECONDS_PREFIX + metric
+        increments[name] = increments.get(name, 0.0) + float(trace.seconds)
+    if not increments:
+        return None
+    try:
+        orch.add_run_metrics(run_id, increments)
+    except Exception as error:  # noqa: BLE001 - reported on the trace, never raised
+        return StageTrace("timings", detail=(
+            f"stage seconds not recorded: {type(error).__name__}: {error}",))
+    return None
 
 
 # --- the driver -----------------------------------------------------------------------------
@@ -119,9 +160,11 @@ def run_to_completion(
     needing exact identities (a replay against a recorded corpus) supplies them; everything
     else takes the declared default.
 
-    `clock` is accepted for the signature the design states and for #365's `recover`. Nothing
+    `clock` is the run's clock seam for stage timings (FR-CONSOLE-75): its `monotonic()`
+    times extract, judge, aggregate and synthesis, defaulting to `time.monotonic`. Nothing
     here reads a wall clock: every deadline belongs to `M-ORCH`'s lease clock.
     """
+    monotonic = monotonic_of(clock)
     passes_cap = (
         max_passes if max_passes is not None
         else _int_knob(MAX_PASSES_ENV, None, minimum=1)
@@ -136,7 +179,7 @@ def run_to_completion(
         store, provider, run_config,
         high_risk_criteria=high_risk_criteria,
         extractor=extractor, second_family=second_family, judge_refs=judge_refs,
-        decision_provider=decision_provider,
+        decision_provider=decision_provider, clock=clock,
     )
     # The provider is bound alongside the executor: `M-ORCH` wraps it in the `GovernedProvider`
     # the stage workers actually call, so the run's counters see every call a worker makes
@@ -195,8 +238,11 @@ def run_to_completion(
         try:
             report = orch.progress(run_id)
             pre = _integrity_pre_hook(orch, handle, gate)
+            agg_started = monotonic()
             agg = _aggregate_hook(orch, handle, gate, catalog, view, store,
                                   seats=executor.seat_count())
+            if agg.units:
+                agg = replace(agg, seconds=max(monotonic() - agg_started, 0.0))
         except (ProviderUnavailableError, BuildChangedError):
             # Defensive only. `FR-ORCH-30` absorbs both per future inside `_run_model_batch`
             # and pauses the run there, so neither normally reaches this frame; if one ever
@@ -211,16 +257,25 @@ def run_to_completion(
             fault = f"{_FAULT_PREFIX}{type(error).__name__}: {error}"
             # Drain first: the pass that faulted may still have extracted and scored, and a
             # trace that dropped that work would under-report what the run actually did.
-            stages.extend(_drain(executor))
+            drained = _drain(executor)
+            stages.extend(drained)
+            timing_fault = _record_stage_seconds_safely(orch, run_id, drained)
+            if timing_fault is not None:
+                stages.append(timing_fault)
             stages.append(StageTrace(
                 "aggregate", detail=(fault,) if cell is None else (fault, f"{fault} at {cell}")))
             break
 
-        stages.extend(_drain(executor))
+        drained = _drain(executor)
+        stages.extend(drained)
         if pre.units:
             stages.append(pre)
         if agg.units:
             stages.append(agg)
+        timing_fault = _record_stage_seconds_safely(
+            orch, run_id, [*drained, agg] if agg.units else drained)
+        if timing_fault is not None:
+            stages.append(timing_fault)
 
         handle = orch.run_handle(run_id)
         if handle.status in ("paused", "failed"):
@@ -293,8 +348,14 @@ def run_to_completion(
         # grading are hooks too, and an exception here used to propagate out of
         # `run_to_completion` instead.
         try:
-            stages.append(
-                _synthesize(store, provider, run_config, orch, handle, synthesizer))
+            synth_started = monotonic()
+            synth = _synthesize(store, provider, run_config, orch, handle, synthesizer)
+            if synth.units:
+                synth = replace(synth, seconds=max(monotonic() - synth_started, 0.0))
+            stages.append(synth)
+            timing_fault = _record_stage_seconds_safely(orch, run_id, [synth])
+            if timing_fault is not None:
+                stages.append(timing_fault)
             # Synthesis ran after the last dispatch pass: persist what it accrued (#596).
             orch.flush_metrics(run_id)
             grade_trace, grades_computed, grades_final = _grade(store, handle)

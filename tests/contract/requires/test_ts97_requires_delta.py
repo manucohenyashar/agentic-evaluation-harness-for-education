@@ -71,6 +71,9 @@ COMPOSITION_SURFACE = {
     # M-PIPE takes the run's governed provider, persists its counters, and charges and checks
     # the frozen ceiling through M-ORCH's doors; still no SQL of its own (CT-PIPE-05).
     "governed_provider", "flush_metrics", "charge_post_dispatch", "post_dispatch_ceiling_reached",
+    # #810 (FR-CONSOLE-75): the stage seconds, summed into `run_metrics` through M-ORCH's
+    # additive door — M-ORCH stays the table's sole writer (CT-STORE-03).
+    "add_run_metrics",
 }
 
 

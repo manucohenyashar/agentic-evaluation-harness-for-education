@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from dataclasses import replace
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 from aeh.conf import ModelRef
 from aeh.extract import ExtractionWorker
@@ -42,6 +44,7 @@ class ProductionStageExecutor:
         second_family: Any = None,
         judge_refs: Any = None,
         decision_provider: Any = None,
+        clock: Any = None,
     ) -> None:
         self._store = store
         self._provider = provider
@@ -63,6 +66,12 @@ class ProductionStageExecutor:
         #: Bound by `run_to_completion`. The executor asks the ledger whether a worker has
         #: already terminalised a unit; it never writes one.
         self.orchestrator: Any = None
+        #: FR-CONSOLE-75: each stage's `[first start, last end]` this pass, on the run's clock.
+        #: A span, not a sum of unit times: units run concurrently in the pool, and a sum
+        #: would report more seconds than the teacher waited. Drained with `executed`.
+        self.spans: dict[str, list[float]] = {}
+        self._spans_lock = threading.Lock()
+        self._monotonic = monotonic_of(clock)
 
     # -- model identities ----------------------------------------------------------------
 
@@ -119,6 +128,31 @@ class ProductionStageExecutor:
     # -- the seam ------------------------------------------------------------------------
 
     def execute(self, unit: Any, governed: Any) -> StageOutcome:
+        """Run one leased unit through its stage's worker, timing it into the stage's span
+        (FR-CONSOLE-75)."""
+        started = self._monotonic()
+        try:
+            return self._execute(unit, governed)
+        finally:
+            self._widen_span(str(unit.stage), started, self._monotonic())
+
+    def _widen_span(self, stage: str, started: float, ended: float) -> None:
+        with self._spans_lock:
+            span = self.spans.get(stage)
+            if span is None:
+                self.spans[stage] = [started, ended]
+            else:
+                span[0] = min(span[0], started)
+                span[1] = max(span[1], ended)
+
+    def drain_seconds(self, stage: str) -> float | None:
+        """The stage's span this pass, in seconds, and clear it; `None` when no unit of the
+        stage ran."""
+        with self._spans_lock:
+            span = self.spans.pop(stage, None)
+        return None if span is None else max(span[1] - span[0], 0.0)
+
+    def _execute(self, unit: Any, governed: Any) -> StageOutcome:
         """Run one leased unit through its stage's worker.
 
         Deterministic units never arrive here — the orchestrator's walk closes them directly
@@ -198,6 +232,13 @@ class ProductionStageExecutor:
         if self.orchestrator is None:
             return False
         return self.orchestrator.unit_status(unit.work_id) == "quarantined"
+
+
+def monotonic_of(clock: Any) -> Callable[[], float]:
+    """The run's clock seam as a monotonic reader: an injected clock's `monotonic()`
+    (the store's `Clock` protocol), else `time.monotonic`."""
+    reader = getattr(clock, "monotonic", None)
+    return reader if callable(reader) else time.monotonic
 
 
 def _default_extractor(run_config: Any) -> Any:
