@@ -206,9 +206,13 @@ def evaluate_alerts(
     rate = _as_float(_mapping_get(metrics, "escalation_rate"), -1.0)
     if rate < 0:
         rate = _as_float(_mapping_get(budget_state, "escalation_rate"), -1.0)
-    budget = _env_float(
-        ESCALATION_BUDGET_ENV, ORCH_ESCALATION_BUDGET, low=0.0, high=1.0
-    )
+    # The run's own budget when the gatherer read it (FR-CONF-36: environment, else the value the
+    # run recorded from the config file); otherwise the call-time knob, as before.
+    budget = _as_float(_mapping_get(budget_state, "escalation_budget"), -1.0)
+    if budget < 0:
+        budget = _env_float(
+            ESCALATION_BUDGET_ENV, ORCH_ESCALATION_BUDGET, low=0.0, high=1.0
+        )
     if rate > budget:
         # ABOVE the budget, never at it: the budget is the allowance, and a run that
         # spends exactly its allowance has not overrun it. The budget is the same

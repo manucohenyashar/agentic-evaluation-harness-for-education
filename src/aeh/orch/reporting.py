@@ -9,7 +9,15 @@ from aeh.store import store_metrics
 
 from .constants import _JSON_SEPARATORS, STAGE_SCORE
 from .statements import ORCH_STATEMENTS
-from .settings import BACKPRESSURE_DIVISOR_DEFAULT, BACKPRESSURE_DIVISOR_ENV, _env_int
+from .settings import (
+    BACKPRESSURE_DIVISOR_DEFAULT,
+    BACKPRESSURE_DIVISOR_ENV,
+    ESCALATION_BUDGET_ENV,
+    ESCALATION_BUDGET_RECORD_KEY,
+    ORCH_ESCALATION_BUDGET,
+    _env_int,
+    _run_knob,
+)
 from .alerts import (
     _as_float,
     evaluate_alerts,
@@ -173,6 +181,11 @@ class ReportingMixin:
             "escalation_rate": rate,
             "ceiling": _as_float(ceiling) if ceiling is not None else 0.0,
             "spend": _as_float(_mapping_get(run_row, "cost_spend")),
+            # The admission sites' budget for THIS run (FR-CONF-36), so the alert and the
+            # admission gate never disagree about what "over budget" means.
+            "escalation_budget": _run_knob(
+                run_row, ESCALATION_BUDGET_ENV, ESCALATION_BUDGET_RECORD_KEY,
+                ORCH_ESCALATION_BUDGET),
         }
         # The RUN-scoped read: `select_breaker` answers about one criterion, and the
         # alert is about the run having any tripped breaker at all.

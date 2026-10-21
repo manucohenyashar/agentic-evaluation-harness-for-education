@@ -24,15 +24,13 @@ Windows PowerShell, from the project folder:
 ```powershell
 .venv\Scripts\Activate.ps1
 $env:OPENROUTER_API_KEY = "sk-or-..."            # your key; never write it in a file
-$env:HARNESS_ORCH_ESCALATION_BUDGET = "1.0"      # a small class: let every disagreement get more judges
-$env:HARNESS_ORCH_RANDOM_ARM_RATE = "0"          # the shipped config has ONE judge: no random extra-judge sample
 $D = "$HOME\aeh-console-1"                       # a NEW, empty data folder for this test
 python -m aeh console --data-dir $D --config docs\live-tests\config\live-test.dev-ci.toml
 ```
 
 It prints `provider for runs started here: OpenRouter …` and the console's address, and opens the browser. Leave this window open: closing it stops the console (the work already done is kept).
 
-> **Why the two `HARNESS_ORCH_…` lines matter.** Without `HARNESS_ORCH_RANDOM_ARM_RATE = "0"`, starting the run is refused with *"the random-arm sample … gives some answers 3 judges, and this live run has 1 real judge model(s)"* — the refusal you get from `aeh run` too. These two are environment settings the console cannot change for you; set them before starting it. (Adding two `escalation_judge` models to the config file is the other way out; see the config file's comments.)
+> **No orchestration settings to export.** The shipped config file sets the second-opinion budget to 100% (a small class) and turns the random extra-grader sample off (it has ONE judge). The run-start banner and **Settings** show both with *"from the config file"*. An environment variable still overrides the file if you set one.
 
 **Check:** the browser shows the home page with nine stages, and the top bar says *Class: None yet*.
 
@@ -156,5 +154,5 @@ The same screen also has **Correct an answer key** (a multiple-choice key found 
 | *… not read — this class has no test paper yet* | Upload the test paper first, then the sheets |
 | The reading job fails: *no file could be read* | Almost always the page reader: the key, the account's credit, or the model name. Fix it, restart the console, and upload again — sheets already read are skipped |
 | Good sheets come out parked as the *wrong test* | Check the package name equals the printed test code (step 2's check), or the page reader dropped the printed questions ([02, "A risk to plan around"](02-live-readiness-and-blockers.md)) |
-| Starting the run is refused naming `HARNESS_ORCH_RANDOM_ARM_RATE` | Step 0's settings were not set before the console started: stop it, set them, start it again |
+| Starting the run is refused because the random extra-grader sample needs more judges | The config file's `orch_random_arm_rate` is not 0 (or the environment overrides it): set it to 0, restart the console, start again |
 | A run pauses | **Monitor run** names the reason; the README's table explains it; resume from **Jobs** |

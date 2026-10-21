@@ -34,6 +34,7 @@ class RunLifecycleMixin:
         *,
         run_id: str | None = None,
         model_pins: "Mapping[str, Any] | None" = None,
+        orch_knobs: Any = None,
     ) -> str:
         """Create the run row and its audit record, and return the run id.
 
@@ -46,6 +47,12 @@ class RunLifecycleMixin:
         a later `aeh run` / `aeh recover` validates a fresh flag against. Absent or empty,
         nothing is recorded and the row is byte-identical to its pre-feature shape
         (`NFR-CONF-04`).
+
+        `orch_knobs` (`FR-CONF-36`, `CT-CONF-25`) is M-CONF's `OrchKnobs` — the escalation budget
+        and random-arm rate resolved environment > config file > default. Its values are
+        recorded in `provider_config`, and the run's budget and random-arm reads use them
+        whenever the environment does not set the knob. Absent, nothing is recorded and the
+        row is byte-identical to its pre-feature shape.
         """
         package_id = self._package_id_for(package_version)
         # FR-ORCH-31: the version's own declarations must hang together before the run row
@@ -72,6 +79,8 @@ class RunLifecycleMixin:
                 ref.build_id for ref in retention.confirmed
             )
         provider_fields.update(_pin_records(model_pins))
+        if orch_knobs is not None:
+            provider_fields.update(orch_knobs.to_record())
         provider_config = json.dumps(
             {
                 **provider_fields,

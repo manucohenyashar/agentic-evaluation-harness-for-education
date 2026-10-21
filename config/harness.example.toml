@@ -77,6 +77,10 @@ build_id = "openrouter/qwen/qwen3-30b-a3b@2026-06-01"
 [profiles.dev-ci]
 HARNESS_COST_CEILING = 5
 HARNESS_COST_CURRENCY = "USD"
+# A small class: every disagreement may get more judges (the 0.30 default stops a few-paper run).
+orch_escalation_budget = 1.0
+# A one-judge panel: no random extra-grader sample (it needs two escalation judges).
+orch_random_arm_rate = 0
 HARNESS_DECISION_ENGINE = "jev"
 HARNESS_DECISION_PROVIDER = "openrouter-jev"
 HARNESS_JEV_BUILD = "openrouter/typesafe/jev-1.13@20260917"

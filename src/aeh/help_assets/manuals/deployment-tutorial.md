@@ -637,12 +637,9 @@ This is the repeatable command-line path for the sample physics test's six typed
 $env:OPENROUTER_API_KEY = "sk-or-..."
 $D = "$HOME\aeh-live-1"
 $S = "docs\live-tests\sample-materials\pdf\PS9-FORCES-01"
-# A class of six is small: let every disagreement get more judges (the 0.30 default is a share
-# of all answers, and with six papers it stops the run with "no progress").
-$env:HARNESS_ORCH_ESCALATION_BUDGET = "1.0"
-# The shipped file has ONE judge. Turn off the random extra-judge sample (7% of answers get
-# three judges, to measure the system), or add escalation judges to the file (see below).
-$env:HARNESS_ORCH_RANDOM_ARM_RATE = "0"
+# The shipped config file already suits a small class with ONE judge: it lets every
+# disagreement get more judges (orch_escalation_budget = 1.0) and turns off the random
+# extra-judge sample (orch_random_arm_rate = 0). Nothing to set here.
 
 # 1. The class: synthetic practice work, six students (8.1)
 python -m aeh cohort create --data-dir $D --cohort ps9-class --consent synthetic --roster docs\live-tests\config\ps9-roster.txt
@@ -671,7 +668,7 @@ What to expect, and what to record:
 
 * **Step 4.** If the model writes the page markup the checks expect, the outcome is three `ok`, two `incomplete` (S9-004: a doubled mark; S9-006: no name) and one `unmatched_assessment` (S9-005: the wrong test), as the live-test guide says. If good papers are parked instead, that is the most important finding of the test: note each paper's status, and keep the folder.
 * **Step 5.** Exit code 0 means the run completed; inspect the result summary for ungraded or provisional work. Exit code 3 means it did not finish: read `status` and `pause_reason` in what it printed (for example the cost ceiling, 7.3, or an OpenRouter refusal, 7.6). Fix the cause, then resume through the console's Jobs screen or queue the appropriate Resume request; rerunning `aeh run` does not resume a paused run, and recovery resumes it only when a Resume request is queued.
-* **Extra judges.** When judges are unsure or disagree, the system adds two more judges to that answer, and one more if a judge call is lost. With one judge in the file and no extra models, it cannot: the answer keeps its score, marked provisional, and goes to teacher review (the run's output says `no real judge for seats 2-3`, and the score's state is `provisional_unreviewed`). To let it add judges, add `[[profiles.dev-ci.escalation_judge]]` tables to the configuration file, each a **different** model from the panel and from each other, checked on a zero-retention host first (7.6). For a one-judge panel, **two** are enough to leave the random sample on (drop the `HARNESS_ORCH_RANDOM_ARM_RATE` line); if the sample is on and there are fewer, `aeh run` refuses before starting and says how many to add. Each one more lets one more step happen instead of leaving the answer provisional; **five** cover every seat a one-judge run can ever need (a sampled answer starts with three judges, can widen to five, and can get one replacement).
+* **Extra judges.** When judges are unsure or disagree, the system adds two more judges to that answer, and one more if a judge call is lost. With one judge in the file and no extra models, it cannot: the answer keeps its score, marked provisional, and goes to teacher review (the run's output says `no real judge for seats 2-3`, and the score's state is `provisional_unreviewed`). To let it add judges, add `[[profiles.dev-ci.escalation_judge]]` tables to the configuration file, each a **different** model from the panel and from each other, checked on a zero-retention host first (7.6). For a one-judge panel, **two** are enough to leave the random sample on (set `orch_random_arm_rate` back to `0.07` in the file, or remove it); if the sample is on and there are fewer, `aeh run` refuses before starting and says how many to add. Each one more lets one more step happen instead of leaving the answer provisional; **five** cover every seat a one-judge run can ever need (a sampled answer starts with three judges, can widen to five, and can get one replacement).
 * **Step 6.** Open the console and walk the SPA (the operating tutorial): the Results screen shows each mark and its state, the Review screen lists the answers that need a teacher, and the Parked screen lists the parked papers — a parked paper can be released or closed there (section 5); the no-name paper can only be closed.
 
 **The second test: every rubric method.** The physics test has multiple-choice keys and band lines only. The sample English test uses one line of each scoring method (8.2): an evidence checklist (C1, the sum of items C1a and C1b), a band line (C2) and a line in the teacher's own words (C3). Run it in the same data folder and terminal, after the physics run:

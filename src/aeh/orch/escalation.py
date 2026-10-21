@@ -15,9 +15,11 @@ from .settings import (
     _env_float,
     _env_int,
     ESCALATION_BUDGET_ENV,
+    ESCALATION_BUDGET_RECORD_KEY,
     ORCH_CRITERION_BREAKER_MIN_N,
     ORCH_CRITERION_BREAKER_RATE,
     ORCH_ESCALATION_BUDGET,
+    _run_knob,
 )
 from .escalation_policy import (
     admit_escalations,
@@ -178,7 +180,8 @@ class EscalationMixin:
             gates["breaker"] = f"latched {latch[0]['tripped_at']}"
             return report(REPLACEMENT_REFUSED,
                           f"criterion breaker latched for {criterion_id} (FR-ORCH-13)")
-        budget = _env_float(ESCALATION_BUDGET_ENV, ORCH_ESCALATION_BUDGET, low=0.0, high=1.0)
+        budget = _run_knob(
+            row, ESCALATION_BUDGET_ENV, ESCALATION_BUDGET_RECORD_KEY, ORCH_ESCALATION_BUDGET)
         processed, escalated, rate = self._escalation_rate(tx.execute, run_id)
         gates["budget"] = f"observed rate {rate:.4f} ({escalated}/{processed}) vs {budget}"
         if rate > budget:
@@ -219,8 +222,8 @@ class EscalationMixin:
         """
         run_id = row["run_id"]
         arms = self._panel_arms(row["panel_config"])
-        budget = _env_float(
-            ESCALATION_BUDGET_ENV, ORCH_ESCALATION_BUDGET, low=0.0, high=1.0
+        budget = _run_knob(
+            row, ESCALATION_BUDGET_ENV, ESCALATION_BUDGET_RECORD_KEY, ORCH_ESCALATION_BUDGET
         )
         breaker_rate = _env_float(
             CRITERION_BREAKER_RATE_ENV, ORCH_CRITERION_BREAKER_RATE, low=0.0, high=1.0
@@ -479,7 +482,9 @@ class EscalationMixin:
             )
         return inserted
 
-    def _escalation_dispatch_admission(self, cohort: Any, run_id: str) -> frozenset:
+    def _escalation_dispatch_admission(
+        self, cohort: Any, run_id: str, run_row: Any = None
+    ) -> frozenset:
         """The (submission, criterion) pairs whose pending escalation units may be dispatched this
         pass (FR-ORCH-14).
 
@@ -496,8 +501,10 @@ class EscalationMixin:
         at the defer site is what makes the next pass re-derive rather than serve a
         stale order.
         """
-        budget = _env_float(
-            ESCALATION_BUDGET_ENV, ORCH_ESCALATION_BUDGET, low=0.0, high=1.0
+        budget = _run_knob(
+            run_row if run_row is not None else self._run_row_in(cohort, run_id),
+            ESCALATION_BUDGET_ENV,
+            ESCALATION_BUDGET_RECORD_KEY, ORCH_ESCALATION_BUDGET,
         )
         processed, escalated, _rate = self._escalation_rate(cohort.query, run_id)
         candidates = [
@@ -584,8 +591,8 @@ class EscalationMixin:
         """
         row = self._run_row(run_id)
         cohort = self._store.cohort(row["cohort_id"])
-        budget = _env_float(
-            ESCALATION_BUDGET_ENV, ORCH_ESCALATION_BUDGET, low=0.0, high=1.0
+        budget = _run_knob(
+            row, ESCALATION_BUDGET_ENV, ESCALATION_BUDGET_RECORD_KEY, ORCH_ESCALATION_BUDGET
         )
         processed, escalated, rate = self._escalation_rate(cohort.query, run_id)
         queue_depth = int(cohort.query(

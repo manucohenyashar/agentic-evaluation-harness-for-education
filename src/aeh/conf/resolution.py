@@ -45,6 +45,7 @@ from .sources import parse_allow_remote_real_work
 from .panel import compute_panel_build_ref
 from .consent import _check_consent, REMOTE_PROFILES
 from .qa_model import resolve_qa_model
+from .orch_knobs import resolve_orch_knobs
 
 
 def _resolve_cost(cfg: Mapping[str, Any], backend_profile: str) -> tuple[Decimal | None, str | None]:
@@ -315,6 +316,11 @@ def resolve_run_config(cfg: Mapping[str, Any], cohort: CohortRef) -> RunConfig:
     #     NOT passed to the consent gate: the assistant receives manual passages and the teacher's
     #     question, never student work, so it is not remote dispatch of a cohort (FR-CONF-31).
     qa_model = resolve_qa_model(cfg, backend_profile, panel)
+
+    # 5d. The two orchestration knobs (FR-CONF-36): not frozen into `RunConfig` (its field set is
+    #     the design's, CT-CONF-C02) but refused here, so an out-of-range file value stops every
+    #     run path before anything starts; `create_run` records the resolved pair on the run row.
+    resolve_orch_knobs(cfg)
 
     # 6. The consent gate (FR-CONF-08), last because it is the only check that reads `cohort`:
     #    a malformed config reports the malformation, and a well-formed one gets an unambiguous

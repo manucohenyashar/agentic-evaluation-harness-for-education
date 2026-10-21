@@ -9,11 +9,14 @@ from typing import Any
 
 from aeh.conf import (
     CONFIDENCE_THRESHOLD_FILE_KEY,
+    ESCALATION_BUDGET_FILE_KEY,
+    RANDOM_ARM_RATE_FILE_KEY,
     RunConfigError,
     effective_config,
     format_profile_banner,
     profile_source,
     rehydrate_run_config,
+    resolve_orch_knobs,
     resolve_run_config,
     select_profile_config,
 )
@@ -78,7 +81,7 @@ def compose_restart_config(app: Any, run_id: str) -> dict[str, Any]:
     if cohort_key is None:
         raise ValueError(f"no cohort ledger holds run {run_id!r}")
     rows = list(app._store.cohort(cohort_key).query(
-        "SELECT run_config FROM run WHERE run_id = :run_id", run_id=run_id))
+        "SELECT run_config, provider_config FROM run WHERE run_id = :run_id", run_id=run_id))
     if not rows:
         raise ValueError(f"no run {run_id!r} is stored")
     raw = rows[0]["run_config"]
@@ -120,7 +123,23 @@ def compose_restart_config(app: Any, run_id: str) -> dict[str, Any]:
         flat["HARNESS_JEV_CITE_THRESHOLD"] = str(engine.cite_threshold)
         flat["HARNESS_JEV_MAX_CITATION_QUESTIONS"] = engine.max_citation_questions
         flat["HARNESS_JEV_TOKEN_BYTES_RATIO"] = engine.token_bytes_ratio
+    # FR-CONF-36: the budget and random-arm rate the run recorded at start, so a restart's
+    # checks and banner see the run's own values rather than today's file.
+    flat.update(_recorded_orch_knobs(rows[0]["provider_config"]))
     return flat
+
+
+def _recorded_orch_knobs(raw: Any) -> dict[str, Any]:
+    """The `orch_*` values a run row's `provider_config` recorded; empty for a run started before
+    they were recorded (it keeps the default it always had)."""
+    try:
+        recorded = json.loads(raw) if isinstance(raw, str) and raw.strip() else {}
+    except ValueError:
+        return {}
+    if not isinstance(recorded, dict):
+        return {}
+    return {key: recorded[key] for key in (ESCALATION_BUDGET_FILE_KEY, RANDOM_ARM_RATE_FILE_KEY)
+            if key in recorded}
 
 
 def run_start_preview_read(app: Any, query: Any) -> dict[str, Any]:
@@ -191,5 +210,6 @@ def run_start_preview_read(app: Any, query: Any) -> dict[str, Any]:
     orchestrator = Orchestrator(
         app._store, provider=provider, decision_provider=decision_provider)
     estimate = orchestrator.preview_run_start(cohort_id, package_version, run_config)
-    banner = format_profile_banner(run_config, profile_source_note)
+    banner = format_profile_banner(run_config, profile_source_note,
+                                   orch_knobs=resolve_orch_knobs(composed))
     return {"banner": banner, "estimate": None if estimate is None else str(estimate)}
