@@ -2336,6 +2336,20 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "aeh.prov:call_context,aeh.prov:install_call_journal",
         ("tests/contract/prov/test_tc_prov_65_68_call_journal.py",),
     ),
+
+    # --- #814 T3, the Jev-final clause suite (TC-AGG-27/28/31, TC-JUDGE-46) ----------------
+    # Keyed on the one name the design fixes verbatim (FR-AGG-20's knob in DECISION_KEYS), not
+    # on the assumed Python surface: if #806 names that surface differently, the unmarked tests
+    # fail loudly in the gate instead of this probe staying red forever.
+    "#806 Jev-final rule (FR-AGG-20) — HARNESS_JEV_FINAL_ON_ACCEPT in DECISION_KEYS": (
+        "command",
+        "python -c \"import sys; sys.path.insert(0, 'src'); from aeh.conf import DECISION_KEYS;"
+        "sys.exit(0 if 'HARNESS_JEV_FINAL_ON_ACCEPT' in DECISION_KEYS else 1)\"",
+        ("tests/contract/agg/test_tc_agg_27_28_31_jev_final_clause.py",
+         "tests/contract/judge/test_tc_judge_46_injection_never_final.py",
+         "tests/unit/pipe/test_tc_agg_31_seatless_reason.py"),
+    ),
+
 }
 
 def blocker_is_resolved(kind: str, target: str, repo_root: Any) -> bool:
