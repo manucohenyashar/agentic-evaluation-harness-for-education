@@ -322,7 +322,10 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.orch.leasing:672",
     "aeh.orch.leasing:674",
     "aeh.orch.dispatch:449",
-    "aeh.orch.reporting:369",
+    # #810 (FR-CONSOLE-75): `add_run_metrics` (368, the declared `add_run_metric` with
+    # keyword parameters) lands above `record_run_metrics`, which moves 369 -> 389.
+    "aeh.orch.reporting:368",
+    "aeh.orch.reporting:389",
     "aeh.orch.run_records:210",
     # #612 (live OpenRouter enablement): cohort creation and roster widening write the
     # roster through ORCH_STATEMENTS, and ingest marks interrupted submissions

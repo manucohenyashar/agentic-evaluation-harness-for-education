@@ -79,6 +79,7 @@ from aeh.author.report import draft_filename
 from aeh.pipeline.packages import PackageSpecError, build_package, read_package_spec
 from aeh.pipeline.runtime import _open_store, _provider_for
 
+from .html import _now
 from .authoring_reads import _load_draft, _walk_placeholders, find_draft_for
 from .records import ControlOutcome
 from .settings import author_doc_max_bytes
@@ -249,7 +250,7 @@ def _draft_package_from_documents(
     app._authoring_cancels[job_id] = event
     try:
         app._jobs.register(job_id=job_id, kind="authoring_draft",
-                           current=f"{len(refs)} document(s) staged")
+                           current=f"{len(refs)} document(s) staged", started_at=_now())
     except ValueError:
         _release_lock(app, dir_key, job_id)
         app._authoring_cancels.pop(job_id, None)
@@ -320,20 +321,20 @@ def _draft_worker(
             job_id, current=(
                 f"the draft stands at {result.draft_path.name} "
                 f"({result.placeholders} review item(s) to answer)"))
-        registry.finish(job_id, state="succeeded")
+        registry.finish(job_id, state="succeeded", finished_at=_now())
     except AuthoringCancelled as stopped:
         registry.finish(
-            job_id, state="cancelled", error_detail=str(stopped),
+            job_id, state="cancelled", finished_at=_now(), error_detail=str(stopped),
             error_next_action="start the draft again from the documents.")
     except OverwriteRefusedError as refused:
         registry.finish(
-            job_id, state="failed", error_detail=str(refused),
+            job_id, state="failed", finished_at=_now(), error_detail=str(refused),
             error_next_action=(
                 "the draft already stands: open it on the authoring screen, or start "
                 "the job again with replace confirmed."))
     except Exception as error:  # noqa: BLE001 - recorded on the job, never swallowed
         registry.finish(
-            job_id, state="failed",
+            job_id, state="failed", finished_at=_now(),
             error_detail=_strip_exception_name(error)
             or "the draft job failed for a reason the console could not name.",
             error_next_action=(

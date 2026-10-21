@@ -630,6 +630,13 @@ ORCH_STATEMENTS: dict[str, Statement] = {
         "INSERT OR REPLACE INTO run_metrics (run_id, metric, value) "
         "VALUES (:run_id, :metric, :value)"
     ),
+    # FR-CONSOLE-75: a run-level figure that accumulates across passes and resumes (the
+    # stage seconds), added to the aggregate cell rather than replacing it.
+    "add_run_metric": Statement(
+        "INSERT INTO run_metrics (run_id, metric, value) VALUES (:run_id, :metric, :value) "
+        "ON CONFLICT (run_id, metric, submission_id, criterion_id, judge_id) "
+        "DO UPDATE SET value = value + excluded.value"
+    ),
     # The OOM remedy's panel record (RES-13): the reduced panel is written to the run
     # row as a strict subset — a later validation record cannot claim the full panel
     # the box could not hold.

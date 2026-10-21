@@ -81,9 +81,12 @@ def _drain(executor: Any) -> list[StageTrace]:
     drained: list[StageTrace] = []
     for stage_name in (STAGE_EXTRACT, STAGE_SCORE):
         done = executor.executed.get(stage_name) or []
+        drain_seconds = getattr(executor, "drain_seconds", None)
+        seconds = drain_seconds(stage_name) if callable(drain_seconds) else None
         if done:
             drained.append(StageTrace(
-                stage_name, units=len(done), done=len(done), detail=tuple(done)))
+                stage_name, units=len(done), done=len(done), detail=tuple(done),
+                seconds=seconds))
             executor.executed[stage_name] = []
     return drained
 
