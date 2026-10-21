@@ -474,15 +474,53 @@ def english_test() -> Doc:
     return d
 
 
-def english_rubric() -> Doc:
+ENGLISH_TOTAL_SENTENCE = (
+    "The test total is out of 8 points: Q1's evidence checklist (two 1-point items, out of "
+    "2), Q2's band line (out of 3) and Q3's line described in the teacher's own words "
+    "(out of 3).")
+
+#: The shipped rubric's grade table, in words: both grades with their boundary.
+ENGLISH_GRADE_POLICY = ENGLISH_TOTAL_SENTENCE + " 6 or more is a pass; below 6 is not yet a pass."
+
+#: The console-clarity authoring variants (test plan `console_clarity_test_plan.md` §2.4), built
+#: from the same rubric with only the grade policy changed. AF-22 omits the grade policy
+#: entirely (no grade table: the "What is the passing score for this test?" path). AF-23 names
+#: both grades, *pass* and *not yet*, but states no boundary for *pass* (the "What is the lowest
+#: total score that earns 'pass'?" path); *not yet* is the lowest grade, whose floor is 0 and is
+#: never asked. `fixtures/F-AUTHOR/build_authoring_fixtures.py` imports these and writes them as
+#: AF-22 and AF-23, where TC-AUTHOR-28's census pins their bytes.
+ENGLISH_GRADE_POLICY_PASS_NO_BOUNDARY = (
+    ENGLISH_TOTAL_SENTENCE + " Two grades are given: pass, or not yet a pass. A paper that has "
+    "not reached a pass is marked not yet.")
+
+
+def english_rubric(grade_policy: str | None = ENGLISH_GRADE_POLICY) -> Doc:
+    """The ENG7 rubric. `grade_policy=None` leaves the grade policy section out (AF-22)."""
     d = Doc()
     _header(d, ENGLISH_ID, "Marking Rubric - " + ENGLISH_TITLE, None, False)
     _rubric_body(d, ENGLISH_RUBRIC)
-    d.line("Grade policy (plain language)", "b")
-    d.para("The test total is out of 8 points: Q1's evidence checklist (two 1-point items, out of "
-           "2), Q2's band line (out of 3) and Q3's line described in the teacher's own words "
-           "(out of 3). 6 or more is a pass; below 6 is not yet a pass.")
+    if grade_policy is not None:
+        d.line("Grade policy (plain language)", "b")
+        d.para(grade_policy)
     return d
+
+
+def english_authoring_variants() -> dict[str, dict[str, bytes]]:
+    """AF-22 and AF-23: the four ENG7 PDFs with the rubric's grade policy changed, by file name.
+
+    The test paper, model answer and blank answer sheet are byte-identical to the shipped
+    ENG7-READ-01 files, so the variants differ from the real test in the rubric alone."""
+    shared = {
+        "01-test-paper.pdf": english_test().render(),
+        "02-model-answer.pdf": english_model_answer().render(),
+        "04-blank-answer-sheet.pdf": answer_sheet(
+            dict(test=ENGLISH_ID, student=None, mcq={}, written={}), blank=True).render(),
+    }
+    return {
+        "AF-22": {**shared, "03-rubric-no-grade-table.pdf": english_rubric(None).render()},
+        "AF-23": {**shared, "03-rubric-pass-no-boundary.pdf": english_rubric(
+            ENGLISH_GRADE_POLICY_PASS_NO_BOUNDARY).render()},
+    }
 
 
 def english_model_answer() -> Doc:

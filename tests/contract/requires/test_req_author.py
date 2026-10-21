@@ -605,7 +605,12 @@ def test_tc_req_136_the_fixture_drafts_face_the_real_build_gate(tmp_path, capsys
     # gate covers the PDF fixtures it was written against, so a directory with no PDF is not
     # drafted here; the intake fixtures' expected outcomes are TC-AUTHOR-32..38's (#753's
     # writtenahead suite, unmarked when #754 lands).
-    draftable = [af for af in fixture_dirs if any(af.glob("*.pdf"))]
+    # AF-22/AF-23 (#812, the console-clarity ENG7 variants) are PDFs, but their drafting
+    # replies are captured from the live ENG7 walk (console-clarity TC-E2E-14), never
+    # fabricated; until that capture lands they have no recordings to replay here.
+    uncaptured = {"AF-22", "AF-23"}
+    draftable = [af for af in fixture_dirs
+                 if any(af.glob("*.pdf")) and af.name not in uncaptured]
     assert draftable, f"control: no PDF fixture directories under {corpus}"
 
     service = AuthoringService(

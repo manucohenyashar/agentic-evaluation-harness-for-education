@@ -1,11 +1,12 @@
-"""The F-AUTHOR authoring-fixture corpus: twenty-one teacher test descriptions (TC-AUTHOR-28).
+"""The F-AUTHOR authoring-fixture corpus: twenty-three teacher test descriptions (TC-AUTHOR-28).
 
 Every authoring test replays against this corpus -- the fixture space M-AUTHOR is written
 against, spanning the happy paths and the paths that need a human (test-plan §4.2). AF-01..AF-13
 are the package-authoring delta's §5.1 matrix; AF-14..AF-21 are the console-redesign delta's
-§5.1 intake matrix, built by #753 ahead of the intake tier (#754). One directory per fixture:
+§5.1 intake matrix, built by #753 ahead of the intake tier (#754); AF-22/AF-23 are the
+console-clarity variants of the ENG7 sample test (#812). One directory per fixture:
 
-    fixtures/F-AUTHOR/AF-01 .. AF-21/   one or more teacher documents + an expected.toml
+    fixtures/F-AUTHOR/AF-01 .. AF-23/   one or more teacher documents + an expected.toml
     fixtures/F-AUTHOR/adversarial/      the refusal-matrix files that are not fixture-shaped
                                         (password-wrapped, .rtf, a magic-byte mismatch)
     fixtures/F-AUTHOR/rosters/          the class/cohort roster CSVs (TC-CONSOLE-65's inputs)
@@ -45,6 +46,28 @@ sys.path.insert(0, str(_REPO_ROOT))
 
 from harness.corpora import pdf_writer  # noqa: E402
 from harness.corpora import scan as scan_module  # noqa: E402
+
+
+def _sample_materials():
+    """`docs/live-tests/sample-materials/build_sample_materials.py`, loaded by path.
+
+    AF-22 and AF-23 are the ENG7 sample test with its rubric's grade policy changed, and the
+    sample-materials generator is where the ENG7 documents are declared -- so they are rendered
+    there (`english_authoring_variants`) and written here, never re-typed (test plan
+    `console_clarity_test_plan.md` §2.4: "generated in-tree by extending
+    build_sample_materials.py")."""
+    import importlib.util
+
+    path = _REPO_ROOT / "docs" / "live-tests" / "sample-materials" / "build_sample_materials.py"
+    spec = importlib.util.spec_from_file_location("build_sample_materials", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+#: The console-clarity variants (#812): file name -> bytes, per fixture, in hand-in order.
+ENG7_VARIANTS = {af: dict(sorted(files.items()))
+                 for af, files in _sample_materials().english_authoring_variants().items()}
 
 #: Where the corpus is written. The script lives inside the corpus directory, so the default
 #: root is the directory above this file -- the same tree a fresh clone checks out.
@@ -1415,6 +1438,33 @@ Q1: 436218. Q2: ABOUT 12 KM. Q3: ABOUT 045 DEGREES.
             "against (TC-E2E-11's carry-over)",
             formats=["docx", "txt", "txt"], review_answers=dict(REVIEW_ANSWERS)),
     },
+    # -- the console-clarity variants (console_clarity_test_plan.md §2.4; #812) --------------
+    # The four ENG7-READ-01 PDFs with only the rubric's grade policy changed, rendered by the
+    # sample-materials generator. Out of 8 points; the shipped package's answer is pass = 6.
+    "AF-22": {
+        "description": "the four ENG7 PDFs; the rubric omits the grade table",
+        "documents": [(name, data, "raw") for name, data in ENG7_VARIANTS["AF-22"].items()],
+        "expected": _expected(
+            "AF-22", "the four ENG7 PDFs; the rubric omits the grade table",
+            list(ENG7_VARIANTS["AF-22"]), "partial", ["grades"], "publishes",
+            "no grade table at all: the [grades] gap is asked as 'What is the passing score "
+            "for this test?' (whole number 1..8), and the answer builds pass / not yet = 0 "
+            "(FR-AUTHOR-32, TC-AUTHOR-44, TC-UI-28)",
+            formats=["pdf"] * 4,
+            review_answers={"approved_by": REVIEW_TEACHER, "grades": 6}),
+    },
+    "AF-23": {
+        "description": "the four ENG7 PDFs; the rubric names pass with no boundary",
+        "documents": [(name, data, "raw") for name, data in ENG7_VARIANTS["AF-23"].items()],
+        "expected": _expected(
+            "AF-23", "the four ENG7 PDFs; the rubric names pass with no boundary",
+            list(ENG7_VARIANTS["AF-23"]), "partial", ["grades pass"], "publishes",
+            "the grades are named, pass has no boundary: the [grades pass] gap is asked as "
+            "'What is the lowest total score that earns 'pass'?' (whole number 1..8); "
+            "not yet is the lowest grade, floor 0, never asked (FR-AUTHOR-32, TC-AUTHOR-44)",
+            formats=["pdf"] * 4,
+            review_answers={"approved_by": REVIEW_TEACHER, "grades pass": 6}),
+    },
 }
 
 
@@ -1468,12 +1518,14 @@ def build(root: Path = CORPUS_ROOT) -> None:
 _CORPUS_README = """\
 # fixtures/F-AUTHOR -- the authoring fixture corpus (TC-AUTHOR-28)
 
-Twenty-one teacher test descriptions, `AF-01`..`AF-21`, one directory each: the documents a
+Twenty-three teacher test descriptions, `AF-01`..`AF-23`, one directory each: the documents a
 teacher would hand a colleague, plus an `expected.toml` stating the **outcome class** the
 tests assert -- which items resolve, which placeholder, whether the build publishes or is
 refused. AF-01..AF-13 are the package-authoring delta's §5.1 matrix; AF-14..AF-21 are the
-console-redesign delta's §5.1 intake matrix (built by #753 ahead of the intake tier, #754).
-Alongside the numbered fixtures sit the adversarial intake set (`adversarial/`) and the
+console-redesign delta's §5.1 intake matrix (built by #753 ahead of the intake tier, #754);
+AF-22/AF-23 are the console-clarity variants of the ENG7 sample test (#812): its four PDFs,
+rendered by `docs/live-tests/sample-materials/build_sample_materials.py`, with the rubric's
+grade table left out (AF-22) or naming *pass* with no boundary (AF-23). Alongside the numbered fixtures sit the adversarial intake set (`adversarial/`) and the
 roster CSVs (`rosters/`). The double-honesty rule (test-plan §4.2) lives in `recordings/`.
 
 **Generated, not edited by hand.** Regenerate with:
@@ -1497,7 +1549,7 @@ TC-AUTHOR-28's census instead, which re-runs this script and diffs the bytes.
 
 | key | meaning |
 |---|---|
-| `af` | the fixture id, `AF-01`..`AF-21` |
+| `af` | the fixture id, `AF-01`..`AF-23` |
 | `description` | what the fixture exercises (§5.1's wording) |
 | `documents` | the document filenames in this directory, in hand-in order |
 | `outcome` | `resolved` (fully drafted), `partial` (named placeholders), `unresolved` (not converging after all attempts), `refused` (the intake refuses the hand-in, FR-AUTHOR-28) |
@@ -1536,6 +1588,9 @@ the line), a fully blank row (skipped), and one valid row. The names are synthet
 No recordings exist for AF-14..AF-21: the intake tier's prompts do not exist until #754
 lands, and a recording captured before its prompt is a key no request will ever ask for.
 The implementing stories capture them, once, from a live run (see `recordings/README.md`).
+AF-22 and AF-23 carry none either: their drafting replies are captured from the live ENG7
+walk (console-clarity TC-E2E-14, `record=True`), never fabricated, so the recorded
+build-gate walk (TC-REQ-136) skips them until that capture lands.
 The oversize refusal arm (FR-AUTHOR-28's 10 MB sentence) has no committed fixture either:
 its tests generate the oversize file through the `HARNESS_AUTHOR_DOC_MAX_BYTES` knob.
 

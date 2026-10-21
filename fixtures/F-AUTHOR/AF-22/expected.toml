@@ -1,0 +1,12 @@
+af = "AF-22"
+description = "the four ENG7 PDFs; the rubric omits the grade table"
+documents = ["01-test-paper.pdf", "02-model-answer.pdf", "03-rubric-no-grade-table.pdf", "04-blank-answer-sheet.pdf"]
+outcome = "partial"
+placeholders = ["grades"]
+build = "publishes"
+format = ["pdf", "pdf", "pdf", "pdf"]
+notes = "no grade table at all: the [grades] gap is asked as 'What is the passing score for this test?' (whole number 1..8), and the answer builds pass / not yet = 0 (FR-AUTHOR-32, TC-AUTHOR-44, TC-UI-28)"
+
+[review.answers]
+"approved_by" = "Sample-materials teacher"
+"grades" = 6

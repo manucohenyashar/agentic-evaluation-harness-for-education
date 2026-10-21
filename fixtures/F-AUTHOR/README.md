@@ -1,11 +1,13 @@
 # fixtures/F-AUTHOR -- the authoring fixture corpus (TC-AUTHOR-28)
 
-Twenty-one teacher test descriptions, `AF-01`..`AF-21`, one directory each: the documents a
+Twenty-three teacher test descriptions, `AF-01`..`AF-23`, one directory each: the documents a
 teacher would hand a colleague, plus an `expected.toml` stating the **outcome class** the
 tests assert -- which items resolve, which placeholder, whether the build publishes or is
 refused. AF-01..AF-13 are the package-authoring delta's §5.1 matrix; AF-14..AF-21 are the
-console-redesign delta's §5.1 intake matrix (built by #753 ahead of the intake tier, #754).
-Alongside the numbered fixtures sit the adversarial intake set (`adversarial/`) and the
+console-redesign delta's §5.1 intake matrix (built by #753 ahead of the intake tier, #754);
+AF-22/AF-23 are the console-clarity variants of the ENG7 sample test (#812): its four PDFs,
+rendered by `docs/live-tests/sample-materials/build_sample_materials.py`, with the rubric's
+grade table left out (AF-22) or naming *pass* with no boundary (AF-23). Alongside the numbered fixtures sit the adversarial intake set (`adversarial/`) and the
 roster CSVs (`rosters/`). The double-honesty rule (test-plan §4.2) lives in `recordings/`.
 
 **Generated, not edited by hand.** Regenerate with:
@@ -29,7 +31,7 @@ TC-AUTHOR-28's census instead, which re-runs this script and diffs the bytes.
 
 | key | meaning |
 |---|---|
-| `af` | the fixture id, `AF-01`..`AF-21` |
+| `af` | the fixture id, `AF-01`..`AF-23` |
 | `description` | what the fixture exercises (§5.1's wording) |
 | `documents` | the document filenames in this directory, in hand-in order |
 | `outcome` | `resolved` (fully drafted), `partial` (named placeholders), `unresolved` (not converging after all attempts), `refused` (the intake refuses the hand-in, FR-AUTHOR-28) |
@@ -68,6 +70,9 @@ the line), a fully blank row (skipped), and one valid row. The names are synthet
 No recordings exist for AF-14..AF-21: the intake tier's prompts do not exist until #754
 lands, and a recording captured before its prompt is a key no request will ever ask for.
 The implementing stories capture them, once, from a live run (see `recordings/README.md`).
+AF-22 and AF-23 carry none either: their drafting replies are captured from the live ENG7
+walk (console-clarity TC-E2E-14, `record=True`), never fabricated, so the recorded
+build-gate walk (TC-REQ-136) skips them until that capture lands.
 The oversize refusal arm (FR-AUTHOR-28's 10 MB sentence) has no committed fixture either:
 its tests generate the oversize file through the `HARNESS_AUTHOR_DOC_MAX_BYTES` knob.
 
