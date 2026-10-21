@@ -157,7 +157,10 @@ def build_eng7_package(store: Any) -> tuple[str, str]:
 
 
 def _criterion(catalog: Any, version: str, criterion_id: str) -> Any:
-    """The criterion value `aggregate` reads, built the way the aggregate hook builds it."""
+    """The criterion value `aggregate` reads, shaped as the aggregate hook builds it (catalog
+    row + bands). One deviation: `evidence_required` is fixed False here, where the hook reads
+    `criterion_requires_citation` (fail-closed True for ENG7); the seed's verdicts are cited
+    and its signals favourable, so the `evidence_present` cap never binds either way."""
     from types import SimpleNamespace
 
     row = next(r for r in catalog.criteria(version) if str(r["criterion_id"]) == criterion_id)
