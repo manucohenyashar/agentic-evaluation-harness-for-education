@@ -45,6 +45,12 @@ from .blobs import ContentAddressedBlobStore, INCOMING_DIR
 from .tier_handle import SqliteTierHandle
 
 
+#: The AI-call journal's home under the data folder, one sub-folder per class (FR-CONSOLE-77).
+#: The same layout as `aeh.prov.journal.JOURNAL_DIR_PARTS`; `M-STORE` imports nothing from
+#: `M-PROV`, so the two segments are restated here for the purge.
+AI_CALL_JOURNAL_DIR: tuple[str, ...] = ("logs", "ai-calls")
+
+
 # --- the store ---------------------------------------------------------------------------------
 
 
@@ -373,6 +379,15 @@ class SqliteStore:
                 if self.blobs().delete(content_hash):
                     blobs_deleted += 1
 
+        # FR-CONSOLE-77 / CT-STORE-10: the class's AI-call journal holds its students' answers
+        # (requests) and what the models said about them, so it goes with the class. Only
+        # reached once the preconditions passed and the deletes committed: a refused purge
+        # leaves the folder in place.
+        journal_folder = self._data_dir.joinpath(*AI_CALL_JOURNAL_DIR, cohort_id)
+        journal_deleted = journal_folder.is_dir()
+        if journal_deleted:
+            shutil.rmtree(journal_folder)
+
         self._last_vacuum_ms = vacuum_ms
         return PurgeReport(
             cohort_id=cohort_id,
@@ -383,6 +398,7 @@ class SqliteStore:
             file_bytes_after=bytes_after,
             vacuum_duration_ms=vacuum_ms,
             blobs_deleted=blobs_deleted,
+            ai_call_journal_deleted=journal_deleted,
         )
 
     def _blob_hashes_referenced_elsewhere(self, purged_path: Path) -> set[str]:

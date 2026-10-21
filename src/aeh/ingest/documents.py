@@ -9,7 +9,7 @@ import re
 import uuid
 from typing import Any, Sequence
 
-from aeh.prov import PromptPayload, SamplingParams
+from aeh.prov import call_context, PromptPayload, SamplingParams
 
 from .settings import (
     _configured_dpi,
@@ -125,8 +125,9 @@ class DocumentIngestionMixin:
                 pages_used += len(pages)
                 page_images.extend(pages)
                 for page in pages:
-                    completion = self._transcribe_page(page, blob_hash,
-                                                       attempt_log, declared)
+                    with call_context(page_count=len(pages)):
+                        completion = self._transcribe_page(page, blob_hash,
+                                                           attempt_log, declared)
                     if (transcriber_ref is not None
                             and completion.resolved_build != transcriber_ref):
                         raise IngestError(
@@ -572,7 +573,8 @@ class DocumentIngestionMixin:
                                      "build_id": second_ref.build_id},
                 }
                 try:
-                    completion = self._provider.complete(payload, second_ref, params)
+                    with call_context(kind="page_reading"):
+                        completion = self._provider.complete(payload, second_ref, params)
                     text = (completion.text or "").strip()
                     resolved = getattr(completion, "resolved_build", None)
                     entry["resolved_build"] = resolved

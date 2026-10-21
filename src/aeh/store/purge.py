@@ -442,3 +442,5 @@ class PurgeReport:
     file_bytes_after: int
     vacuum_duration_ms: float
     blobs_deleted: int = 0
+    #: Whether the class's AI-call journal folder existed and was deleted (FR-CONSOLE-77).
+    ai_call_journal_deleted: bool = False

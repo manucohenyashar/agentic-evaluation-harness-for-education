@@ -28,7 +28,7 @@ from aeh.help.log import OUTCOME_GROUNDED, OUTCOME_NOT_FOUND, record_exchange
 from aeh.help.manuals import load_manuals
 from aeh.help.prompts import build_prompt
 from aeh.help.retrieval import Passage, build_index, retrieve
-from aeh.prov import SamplingParams
+from aeh.prov import call_context, SamplingParams
 
 #: The not-found answer (FR-HELP-02): explicit, pointing at the manuals page — and at the
 #: Results screen for the "what did this student get?" kind of question, which the assistant
@@ -89,7 +89,8 @@ class HelpAssistant:
         passages = retrieve(self.index, question)
         if passages:
             prompt = build_prompt(passages, question, context)
-            completion = self._provider.complete(prompt, self._model_ref, self._sampling)
+            with call_context(kind="help_question"):
+                completion = self._provider.complete(prompt, self._model_ref, self._sampling)
             answer = completion.text
             citations = tuple(Citation(passage.manual_id, passage.anchor) for passage in passages)
             tokens_in, tokens_out = completion.tokens_in, completion.tokens_out

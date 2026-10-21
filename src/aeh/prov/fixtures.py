@@ -42,6 +42,13 @@ from .decision_base import (
     _decision_request_record,
     _FIXTURE_DECISION_CAPABILITIES,
 )
+from .decision_parsing import decision_questions_document
+from .journal import (
+    attempt_journal,
+    decision_request_document,
+    decision_response_document,
+    payload_request,
+)
 
 
 # --- the recorded-fixture implementation ------------------------------------------------------
@@ -112,7 +119,21 @@ class RecordedFixtureProvider:
     def complete(
         self, prompt: PromptPayload, model_ref: ModelRef, params: SamplingParams
     ) -> Completion:
-        """Return the recording for exactly this request, or raise. Never touches the network."""
+        """Return the recording for exactly this request, or raise. Never touches the network.
+
+        Journaled like a live call, as one attempt (FR-PROV-44, CT-PROV-32)."""
+        with attempt_journal(model=model_ref.build_id,
+                             request=lambda: payload_request(prompt.fields)) as journal:
+            completion = self._replay(prompt, model_ref, params)
+            journal.succeeded(
+                response=completion.text, resolved_build=completion.resolved_build,
+                tokens_in=completion.tokens_in, tokens_out=completion.tokens_out,
+                cost=completion.cost, latency_ms=completion.latency_ms)
+        return completion
+
+    def _replay(
+        self, prompt: PromptPayload, model_ref: ModelRef, params: SamplingParams
+    ) -> Completion:
         key = request_key(prompt, model_ref, params)
         path = self._path_for(key)
         try:
@@ -204,6 +225,20 @@ class RecordedFixtureProvider:
         if not isinstance(request, DecisionRequest):
             raise TypeError(f"decide takes a DecisionRequest, got {type(request).__name__}")
         request.validate_for(_FIXTURE_DECISION_CAPABILITIES)
+        # Journaled like a live call, as one attempt (FR-PROV-44, CT-PROV-32).
+        with attempt_journal(
+                model=model_ref.build_id,
+                request=lambda: decision_request_document(
+                    request.state, decision_questions_document(request))) as journal:
+            decision = self._replay_decision(request, model_ref)
+            journal.succeeded(
+                response=decision_response_document(decision.answers),
+                resolved_build=decision.resolved_build, tokens_in=decision.tokens_in,
+                tokens_out=decision.tokens_out, cost=decision.cost,
+                latency_ms=decision.latency_ms)
+        return decision
+
+    def _replay_decision(self, request: DecisionRequest, model_ref: ModelRef) -> Decision:
         key = decision_request_key(request, model_ref)
         path = self._path_for(key)
         try:

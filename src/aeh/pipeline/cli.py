@@ -468,6 +468,20 @@ def main(argv: "Sequence[str] | None" = None) -> int:
     """
     parser = _build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
+    data_dir = getattr(args, "data_dir", None)
+    if not data_dir:
+        return _dispatch_command(args)
+    # FR-CONSOLE-77: every subcommand with a data folder journals its AI calls there, through
+    # the one process-wide slot, so no provider construction site needs the sink passed in.
+    # Restored on return, so an in-process caller (a test) finds the slot as it left it.
+    from aeh.prov import journal_installed, JsonlCallJournal
+
+    with journal_installed(JsonlCallJournal(data_dir)):
+        return _dispatch_command(args)
+
+
+def _dispatch_command(args: Any) -> int:
+    """Run the parsed subcommand and return its exit code (`main`'s body)."""
     try:
         if args.command == "cohort":
             return _cohort_command(args)

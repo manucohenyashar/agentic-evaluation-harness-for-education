@@ -8,7 +8,7 @@ from typing import Any, Mapping, Sequence
 
 from aeh.ingest import DocumentId
 from aeh.pkg import PackageError, PackageVersionId, default_evaluation_mode
-from aeh.prov import PromptPayload
+from aeh.prov import call_context, PromptPayload
 
 from .settings import (
     _configured_readback_attempts,
@@ -537,8 +537,10 @@ class ReadbackStepMixin:
         last_error = ""
         for attempt in range(1, budget + 1):
             try:
-                completion = self._provider.complete(payload, self._model_ref,
-                                                     self._params)
+                with call_context(kind="rubric_setup",
+                                  package_id=getattr(self, "package_id", None)):
+                    completion = self._provider.complete(payload, self._model_ref,
+                                                         self._params)
                 criteria = _parse_readback_reply(completion.text, confirmed_ids)
             except _ReplyError as error:
                 last_error = f"attempt {attempt}: {error}"

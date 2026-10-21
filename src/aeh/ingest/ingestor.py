@@ -8,7 +8,7 @@ import re
 from typing import Any, Sequence
 
 from aeh.conf import ModelRef
-from aeh.prov import Completion, InferenceProvider, PromptPayload, SamplingParams
+from aeh.prov import call_context, Completion, InferenceProvider, PromptPayload, SamplingParams
 
 from .settings import (
     _configured_max_tokens,
@@ -262,8 +262,9 @@ class Ingestor(DocumentIngestionMixin, SourceChecksMixin, RevisionMixin, TokenCl
         strikes: list[dict] = []
         for attempt in range(1, attempts + 1):
             try:
-                completion = self._provider.complete(payload, self._model_ref,
-                                                     params)
+                with call_context(kind="page_reading", page_no=page.page_no):
+                    completion = self._provider.complete(payload, self._model_ref,
+                                                         params)
             except Exception as error:  # noqa: BLE001 -- any model-channel
                 # failure is a strike (NFR-INGEST-08's fail-closed reading):
                 # the channel never produced a reading, whatever the cause.

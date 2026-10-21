@@ -6,7 +6,7 @@ import json
 from typing import Any, Mapping, Sequence
 
 from aeh.pkg import PackageVersionId
-from aeh.prov import PromptPayload
+from aeh.prov import call_context, PromptPayload
 
 from .settings import (
     CLASSIFICATIONS,
@@ -183,8 +183,10 @@ class DecomposabilityMixin:
         last_error = ""
         for attempt in range(1, budget + 1):
             try:
-                completion = self._provider.complete(payload, self._model_ref,
-                                                     self._params)
+                with call_context(kind="rubric_setup",
+                                  package_id=getattr(self, "package_id", None)):
+                    completion = self._provider.complete(payload, self._model_ref,
+                                                         self._params)
                 answers, warning_signs, reply_reasoning = _parse_classify_reply(
                     completion.text, criterion_id)
             except _ReplyError as error:

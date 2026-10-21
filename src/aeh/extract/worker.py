@@ -15,7 +15,7 @@ from aeh.orch import (
     _env_int,
 )
 from aeh.orch import _cohort_keys_on_filesystem
-from aeh.prov import SamplingParams
+from aeh.prov import call_context, SamplingParams
 from aeh.prov import BuildChangedError, ProviderError, ProviderUnavailableError, RateLimitedError
 from aeh.store import lease_clock
 
@@ -133,9 +133,10 @@ class ExtractionWorker:
         error_text: str | None = None
         for attempt in range(1, budget + 1):
             try:
-                completion = self._provider.complete(
-                    payload, self._model_ref, params
-                )
+                with call_context(kind="answer_extraction"):
+                    completion = self._provider.complete(
+                        payload, self._model_ref, params
+                    )
                 spans = parse_spans(completion.text, md_bytes)
                 success_latency = int(completion.latency_ms)
                 break
@@ -230,9 +231,10 @@ class ExtractionWorker:
         last_error: Exception | None = None
         for _attempt in range(1, budget + 1):
             try:
-                completion = self._provider.complete(
-                    payload, self._second_family_model, params
-                )
+                with call_context(kind="answer_extraction"):
+                    completion = self._provider.complete(
+                        payload, self._second_family_model, params
+                    )
                 spans = parse_spans(completion.text, md_bytes)
                 return {
                     "resolved_build": completion.resolved_build,

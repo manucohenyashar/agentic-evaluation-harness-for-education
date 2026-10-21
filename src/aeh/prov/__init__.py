@@ -24,6 +24,7 @@ Files:
     openjev_local.py    OpenJev and OpenJevSmall served on loopback
     fixtures.py         `RecordedFixtureProvider`, the network-free provider used by tests
     factories.py        choosing the provider a model reference names
+    journal.py          the AI-call journal: call context, `CallRecord`, the process-wide sink
 
 Detailed design notes (the full original module description): `docs/code-notes/prov.md`.
 """
@@ -164,6 +165,27 @@ from .openjev_local import (
 from .fixtures import FIXTURE_SCHEMA, RecordedFixtureProvider
 from .factories import decision_provider_for, describe_provider, provider_for
 from .replies import json_from_reply
+from .journal import (
+    CALL_KINDS,
+    CALL_OUTCOMES,
+    call_context,
+    CallContext,
+    CallJournal,
+    CallRecord,
+    current_call_context,
+    held_call_records,
+    install_call_journal,
+    installed_call_journal,
+    iter_call_records,
+    journal_files,
+    journal_installed,
+    journal_root,
+    JsonlCallJournal,
+    ListCallJournal,
+    read_journal_file,
+    release_held_call_records,
+    UNLABELLED_KIND,
+)
 
 
 __all__ = [
@@ -239,4 +261,24 @@ __all__ = [
     "decision_request_key",
     "derived_confidence",
     "parse_decision",
+    # the AI-call journal (console clarity delta §3.8)
+    "CALL_KINDS",
+    "CALL_OUTCOMES",
+    "call_context",
+    "CallContext",
+    "CallJournal",
+    "CallRecord",
+    "current_call_context",
+    "held_call_records",
+    "install_call_journal",
+    "installed_call_journal",
+    "iter_call_records",
+    "journal_files",
+    "journal_installed",
+    "journal_root",
+    "JsonlCallJournal",
+    "ListCallJournal",
+    "read_journal_file",
+    "release_held_call_records",
+    "UNLABELLED_KIND",
 ]

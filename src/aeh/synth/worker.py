@@ -11,7 +11,7 @@ from aeh.ingest.identity import pseudonymize_name, redact_identity_head
 from aeh.orch import ORCH_MAX_ATTEMPTS, ORCH_STATEMENTS, _cohort_keys_on_filesystem, _env_int
 from aeh.orch.work_units import _row_evaluation_mode
 from aeh.pkg import PackageCatalog, is_composite
-from aeh.prov import PromptPayload, ProviderError, SamplingParams
+from aeh.prov import call_context, PromptPayload, ProviderError, SamplingParams
 
 from .schema import SYNTH_STATEMENTS
 from .settings import (
@@ -281,7 +281,8 @@ class SynthesisWorker:
 
     # -- the model call and the write -------------------------------------------------------
 
-    def _call(self, payload: PromptPayload) -> "tuple[str, tuple[str, ...], bool]":
+    def _call(self, payload: PromptPayload, *, run_row: Any = None,
+              submission_id: str | None = None) -> "tuple[str, tuple[str, ...], bool]":
         """Make one narrative's model call. Transport and parse failures share one attempt budget
         (`HARNESS_SYNTH_MAX_ATTEMPTS`, defaulting to the ledger's own limit), and every reply that
         parses goes through the score-claim check (CT-SYNTH-03).
@@ -308,7 +309,13 @@ class SynthesisWorker:
         for _attempt in range(1, budget + 1):
             try:
                 self._model_calls += 1
-                completion = self._provider.complete(payload, self._model_ref, params)
+                # FR-PROV-45: synthesis runs outside the dispatch pool, so it names its own
+                # class, run and submission for the AI-call journal.
+                with call_context(kind="feedback_writing",
+                                  cohort_id=run_row["cohort_id"] if run_row is not None else None,
+                                  run_id=run_row["run_id"] if run_row is not None else None,
+                                  submission_id=submission_id):
+                    completion = self._provider.complete(payload, self._model_ref, params)
                 text, citations = parse_narrative(completion.text)
             except (ProviderError, ValueError) as error:
                 last_error = error
@@ -474,7 +481,8 @@ class SynthesisWorker:
             ),
             evidence=self._evidence(cohort, units, criterion_ids, submission_id),
         )
-        text, citations, flagged = self._call(prompt_for(request))
+        text, citations, flagged = self._call(
+            prompt_for(request), run_row=run_row, submission_id=submission_id)
         self._store_narrative(
             cohort,
             run_id=run_id,
@@ -596,7 +604,8 @@ class SynthesisWorker:
                         submission_id=submission_id,
                         syntheses=tuple(row["text"] for row in l1_rows),
                     )
-                    text, citations, flagged = self._call(prompt_for(request))
+                    text, citations, flagged = self._call(
+                        prompt_for(request), run_row=run_row, submission_id=submission_id)
                     self._store_narrative(
                         cohort,
                         run_id=run_id,

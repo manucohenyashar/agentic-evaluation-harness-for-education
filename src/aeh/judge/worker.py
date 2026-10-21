@@ -8,7 +8,7 @@ from typing import Any
 
 from aeh.orch import ORCH_MAX_ATTEMPTS, ORCH_STATEMENTS, _env_float, _env_int, _judge_id_of
 from aeh.prov import (
-    BuildChangedError,
+    BuildChangedError, call_context,
     MalformedResponseError,
     ProviderError,
     ProviderUnavailableError,
@@ -158,7 +158,8 @@ class ScoringWorker:
         last_error: Exception | None = None
         for attempt in range(1, budget + 1):
             try:
-                completion = self._provider.complete(payload, judge, params)
+                with call_context(kind="ai_judge"):
+                    completion = self._provider.complete(payload, judge, params)
                 verdict = _verdict_of(completion.text, request)
                 # FR-JUDGE-17's third defence, composed here: the reply's citations,
                 # verified byte-exactly against the canonical document BEFORE the
@@ -328,7 +329,8 @@ class ScoringWorker:
             raise JudgmentError(f"the decision request for {request.work_id[:12]} cannot be built: {error}") from error
         scan_decision_request(request, decision_req)
         try:
-            decision = self._decision_provider.decide(decision_req, engine.model)
+            with call_context(kind="jev_decision"):
+                decision = self._decision_provider.decide(decision_req, engine.model)
         except DecisionRequestError as error:
             raise JudgmentError(
                 f"the decision request for {request.work_id[:12]} exceeds the engine's declared "

@@ -18,6 +18,7 @@ is a provider failure for that model, and the chain moves on.
 
 from __future__ import annotations
 
+import contextvars
 import logging
 import re
 import threading
@@ -27,7 +28,8 @@ from typing import Any
 
 from aeh.conf import ConfigurationError, ModelRef, panel_for_profile, select_profile_config
 from aeh.conf.panel import _build_identity
-from aeh.prov import InferenceProvider, PromptPayload, SamplingParams
+from aeh.prov import call_context, held_call_records, InferenceProvider, PromptPayload, \
+    release_held_call_records, SamplingParams
 
 from .carryover import apply_carry_over, prior_artifacts
 from .errors import AuthoringInputError, OverwriteRefusedError
@@ -129,7 +131,16 @@ class AuthoringService:
         `True` stops the run there with `AuthoringCancelled`, leaving the output directory
         byte-for-byte as the last completed step left it (`CT-AUTHOR-24`). Both default to
         `None`, so every existing call site keeps its behaviour unchanged.
+
+        Every model call is journaled as `package_drafting` under the package the inventory
+        names (FR-PROV-45, FR-CONSOLE-77); the calls before that answer are held until it.
         """
+        with call_context(kind="package_drafting"), held_call_records():
+            return self._draft(documents, output_dir, force, observer=observer, cancel=cancel)
+
+    def _draft(self, documents: Sequence[Path], output_dir: Path,
+               force: bool = False, *, observer: AuthoringObserver | None = None,
+               cancel: AuthoringCancel | None = None) -> DraftResult:
         settings = self._settings.effective()  # knob refusals precede everything
         paths = [Path(document) for document in documents]
         if not paths:
@@ -206,6 +217,7 @@ class AuthoringService:
             documents_text, settings.attempts, call, rows, models_used, on_item=on_item)
         package_id = inventory_value.get("package") or fallback_package_id(
             [(document.source_name, document_text(document)) for document in ordered])
+        release_held_call_records(package_id=package_id)
         # Now the questions are named, the stage's item count is known: the inventory's
         # rows, one rubric item per question the chain will actually work on (an untyped
         # question is skipped, its gaps standing as sentinels), and the grades table.
@@ -423,7 +435,10 @@ class AuthoringService:
                 except BaseException as error:  # noqa: BLE001 - re-raised on this thread
                     box["error"] = error
 
-            worker = threading.Thread(target=run, daemon=True, name="aeh-author-complete")
+            # The watchdog thread runs in a copy of this call's context, so the call is
+            # journaled with the drafting context the caller set (FR-PROV-45).
+            worker = threading.Thread(target=contextvars.copy_context().run, args=(run,),
+                                      daemon=True, name="aeh-author-complete")
             worker.start()
             worker.join(timeout_s)
             if worker.is_alive():

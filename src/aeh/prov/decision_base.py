@@ -32,6 +32,7 @@ from .retry import dispatch_with_retries, RetryPolicy
 from .counters import BuildWatch, DecisionCounters, RunCountersTracker
 from .decision_types import CHOICE_MAX_OPTIONS, Decision, DecisionCapabilities, DecisionRequest
 from .decision_parsing import confidence_rule, decision_questions_document, parse_decision
+from .journal import attempt_journal, decision_request_document, decision_response_document
 
 
 @runtime_checkable
@@ -244,19 +245,37 @@ class _BaseDecisionProvider:
             return parse_decision(document, request, fallback_build=fallback_build, cost=cost,
                                   rule=confidence_rule(model_ref))
 
-        decision = dispatch_with_retries(
-            transport if transport is not None else self._transport,
-            lambda: HttpRequest("POST", url, headers, body), parse,
-            policy=self._policy, clock=self._clock, rng=self._rng, counters=call_counters,
-            build_watch=self._build_watch, model_key=model_key)
-        with self._build_lock:
-            # The first answer of the run fixes the served build unless run start recorded one;
-            # any later difference raises BuildChangedError (FR-PROV-24). Under a lock so two
-            # concurrent first calls served different builds cannot both pass.
-            if self._build_watch._expected.get(model_key) is None:
-                self._build_watch.record(model_key, decision.resolved_build)
-            else:
-                self._build_watch.check(model_key, decision.resolved_build)
+        # FR-PROV-44: each attempt is journaled when a journal is installed, from the decision
+        # request itself, never from `headers` or the wire body (FR-PROV-46, CT-PROV-32: the
+        # SDK route comes through here too).
+        with attempt_journal(
+                model=model_ref.build_id,
+                request=lambda: decision_request_document(
+                    request.state, decision_questions_document(request)),
+                secrets=(str(getattr(self, "_api_key", "") or ""),)) as journal:
+            decision = dispatch_with_retries(
+                transport if transport is not None else self._transport,
+                lambda: HttpRequest("POST", url, headers, body), parse,
+                policy=self._policy, clock=self._clock, rng=self._rng, counters=call_counters,
+                build_watch=self._build_watch, model_key=model_key,
+                on_attempt=journal.on_attempt)
+            with self._build_lock:
+                # The first answer of the run fixes the served build unless run start recorded
+                # one; any later difference raises BuildChangedError (FR-PROV-24). Under a lock
+                # so two concurrent first calls served different builds cannot both pass.
+                if self._build_watch._expected.get(model_key) is None:
+                    self._build_watch.record(model_key, decision.resolved_build)
+                else:
+                    self._build_watch.check(model_key, decision.resolved_build)
+            journal_cost = decision.cost
+            if self._billed and journal_cost is None:
+                per_token = self._cost_per_input_token()
+                journal_cost = None if per_token is None else Decimal(decision.tokens_in) * per_token
+            journal.succeeded(
+                response=decision_response_document(decision.answers),
+                resolved_build=decision.resolved_build, tokens_in=decision.tokens_in,
+                tokens_out=decision.tokens_out,
+                cost=journal_cost if self._billed else None)
         elapsed_ms = int(round((self._clock.monotonic() - started) * 1000))
         cost = decision.cost
         if self._billed and cost is None:
