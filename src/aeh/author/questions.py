@@ -32,6 +32,9 @@ POINTS_MIN, POINTS_MAX = 1, 100
 PASS_GRADE = "pass"
 LOWEST_GRADE = "not yet"
 
+#: Grade names that are, by their own words, the bottom of a table.
+_FAILING_NAMES = frozenset({"not yet", "fail", "failed", "u", "ungraded"})
+
 _SENTINEL_PREFIX = "<<PLACEHOLDER:"
 _WHOLE = re.compile(r"^\d+$")
 
@@ -97,20 +100,31 @@ def paper_total(spec: Mapping[str, Any]) -> int | None:
 
 
 def grades_low_to_high(grades: Mapping[str, Any]) -> list[str]:
-    """The grade names, lowest first. Documents list grades top-down (A, B, … not yet), so
-    the table's order is read as highest first — unless its stated floors rise along it,
-    in which case it was written bottom-up."""
+    """The grade names, lowest first. Documents usually list grades top-down (A, B, … not
+    yet), so that is the default reading. The stated floors override it: two or more read
+    the direction off their order; a single stated 0 marks its grade as the lowest; a
+    single stated positive floor at one end of the table is not the lowest grade."""
     names = [str(name) for name in grades]
-    stated = [_number(grades.get(name)) for name in names]
-    known = [floor for floor in stated if floor is not None]
-    ascending = len(known) >= 2 and known[0] < known[-1]
+    known = [(index, floor) for index, name in enumerate(names)
+             if (floor := _number(grades.get(name))) is not None]
+    ascending = False
+    if len(known) >= 2:
+        ascending = known[0][1] < known[-1][1]
+    elif len(known) == 1 and len(names) > 1:
+        index, floor = known[0]
+        ascending = index == 0 if floor == 0 else index == len(names) - 1
+    elif not known and len(names) > 1:
+        # Nothing stated: a failing grade's own name says which end is the bottom.
+        ascending = names[0].strip().lower() in _FAILING_NAMES \
+            and names[-1].strip().lower() not in _FAILING_NAMES
     return names if ascending else list(reversed(names))
 
 
 def lowest_grade(grades: Mapping[str, Any]) -> str | None:
-    """The lowest grade's name — the one never asked: its floor is always 0."""
+    """The lowest grade's name — the one never asked: its floor is always 0. A table of one
+    grade has no lowest-below-the-rest, so `None` (its floor is asked, never filled)."""
     ranked = grades_low_to_high(grades)
-    return ranked[0] if ranked else None
+    return ranked[0] if len(ranked) >= 2 else None
 
 
 def _question_label(qid: str | None) -> str:
@@ -200,12 +214,15 @@ def _grade_floor_question(name: str, spec: Mapping[str, Any]) -> GapQuestion:
     total = paper_total(spec)
     if total is None:
         return _waiting(question, spec)
-    lo = _grade_bounds(name, spec)[0]
+    lo, _below, above = _grade_bounds(name, spec)
+    # The range served is the range the check accepts: under a stated grade above, the
+    # floor stays below that grade's (FR-UI-36: one definition for format and check).
+    hi = min(total, int(above[1]) - 1) if above is not None else total
     return GapQuestion(
         question=question,
-        answer_hint=(f"A whole number from {lo} to {total}. The test is out of {total} "
+        answer_hint=(f"A whole number from {lo} to {hi}. The test is out of {total} "
                      "points."),
-        answer_kind=WHOLE_NUMBER, answer_min=lo, answer_max=total)
+        answer_kind=WHOLE_NUMBER, answer_min=lo, answer_max=hi)
 
 
 def _waiting(question: str, spec: Mapping[str, Any]) -> GapQuestion:
@@ -228,7 +245,7 @@ def _grade_bounds(name: str, spec: Mapping[str, Any]) -> \
     if not isinstance(grades, Mapping) or name not in grades:
         return 1, None, None
     ranked = grades_low_to_high(grades)
-    lowest = ranked[0]
+    lowest = lowest_grade(grades)
     position = ranked.index(name)
 
     def floor_of(grade: str) -> float | None:
@@ -287,11 +304,11 @@ def _check_grade_floor(name: str, value: int, spec: Mapping[str, Any],
     """A grade floor: outside 1..total is refused with the hint; inside it, a floor that does
     not rise strictly above the grade below (or stay under the grade above) is refused with
     the order sentence."""
-    total = asked.answer_max
+    total = paper_total(spec)
     lo, below, above = _grade_bounds(name, spec)
     if value < min(lo, 1) or (total is not None and value > total):
         return asked.answer_hint
-    hi = int(above[1]) - 1 if above is not None else total
+    hi = asked.answer_max
     if below is not None and value < lo:
         below_name, below_floor = below
         return (f"'{name}' must need more points than '{below_name}' "

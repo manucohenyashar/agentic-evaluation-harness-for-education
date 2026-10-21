@@ -67,7 +67,7 @@ from aeh.pipeline.spec_export import _toml_str
 
 from .errors import AuthoringInputError
 from .progress import check_cancel, commit_artifacts, emit, emit_completion
-from .questions import two_grade_table
+from .questions import check_gap_answer, gap_question, two_grade_table
 from .report import report_filename
 from .types import AuthoringCancel, AuthoringObserver, AuthoringProgress, ReviewAnswer, \
     ReviewResult
@@ -196,6 +196,19 @@ def run_review(draft_path: Path, answers: Iterable[ReviewAnswer] | None, *,
     tentative: list[tuple[int, _Pending, str, Any]] = []
 
     def consume(index: int, item: _Pending, raw: str) -> None:
+        # The plain question's own check (FR-AUTHOR-31/32, CT-AUTHOR-27), on the one walk
+        # the console and the terminal share: the approver's name, a grade floor, and a
+        # bare passing score are refused with the question's hint before anything lands.
+        # (The terminal's `name: floor` pair grammar for a whole table keeps its own check;
+        # a grade question still waiting on missing points is not held to a range here —
+        # the terminal walk has no points question to answer first, the console does.)
+        if _plainly_checked(item, raw) and \
+                not gap_question(item.item_id, spec, item.owner_qid).waiting_on:
+            refusal = check_gap_answer(item.item_id, raw, spec, item.owner_qid)
+            if refusal is not None:
+                rejected.append(_Rejected(item.item_id, refusal))
+                LOGGER.warning("review/%s: rejected — %s", item.item_id, refusal)
+                return
         ok, value, reason = _evaluate(item, raw.strip(), spec)
         if not ok:
             rejected.append(_Rejected(item.item_id, reason))
@@ -567,6 +580,14 @@ def _is_authoring_draft(spec: Mapping[str, Any]) -> bool:
 
 
 # --- the answers: local, deterministic checks per field kind ---------------------------------------
+
+
+def _plainly_checked(item: _Pending, raw: str) -> bool:
+    """Whether the answer is held to its plain question's kind and range: the approver, a
+    grade floor, and a whole grade table answered as one passing score."""
+    if item.item_id == "approved_by" or item.kind == "grades_boundary":
+        return True
+    return item.kind == "grades_table" and not re.search(r"[:=;\n]", raw)
 
 
 def _evaluate(item: _Pending, raw: str, spec: Mapping[str, Any]) -> tuple[bool, Any, str]:

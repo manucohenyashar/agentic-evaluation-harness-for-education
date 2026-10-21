@@ -521,6 +521,12 @@ def _answer_authoring_review(app: Any, params: Mapping[str, Any]) -> ControlOutc
             return _refused(refusal)
     points_answers = [answer for answer in answers if answer.item_id in points_items]
     answers = [answer for answer in answers if answer.item_id not in points_items]
+    if points_answers and answers:
+        # Two writers in one request could half-land: the points edit saved while a review
+        # answer is turned down. The points come first, on their own.
+        return _refused(
+            "Answer how many points each question is worth first, on its own. Then "
+            "answer the other questions.")
 
     def run() -> ControlOutcome:
         for answer in points_answers:
