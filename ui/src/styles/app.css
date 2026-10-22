@@ -1950,3 +1950,79 @@ textarea:focus-visible {
   gap: var(--space-sm);
   margin: 0 0 var(--space-xs);
 }
+
+/*
+ * The logs tabs (FR-UI-34) and the AI-call view (FR-UI-35): a tab strip, the call rows,
+ * and the two verbatim panels — monospace, pre-wrapped, each with its Copy button.
+ */
+
+.tab-strip {
+  display: flex;
+  gap: var(--space-sm);
+  margin: 0 0 var(--space-md);
+  border-bottom: 1px solid var(--color-line);
+}
+
+.tab-strip a {
+  padding: var(--space-xs) var(--space-md);
+  text-decoration: none;
+  color: var(--color-muted);
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+.tab-strip a[aria-current="page"] {
+  color: var(--color-text);
+  font-weight: 700;
+  background-color: var(--color-surface);
+  border-color: var(--color-line);
+}
+
+.ai-calls-list,
+.ai-call-row {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.ai-call-row details {
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+  margin: 0 0 var(--space-sm);
+  max-width: 48rem;
+}
+
+.ai-call-row summary {
+  cursor: pointer;
+}
+
+.ai-call-kind {
+  font-weight: 700;
+}
+
+.ai-call-panel {
+  margin: var(--space-sm) 0 0;
+}
+
+.ai-call-panel h4 {
+  margin: 0 0 var(--space-xs);
+}
+
+.ai-call-verbatim,
+.ai-call-jev {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: var(--font-size-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  padding: var(--space-sm);
+  margin: 0 0 var(--space-xs);
+}
+
+.ai-call-jev p {
+  margin: 0 0 var(--space-xs);
+}

@@ -675,6 +675,50 @@ export async function fetchLogs(
   return fetchRead<LogsDoc>("/api/v1/logs", signal, { run_id: runId, page: String(page) });
 }
 
+/** One journaled AI call, as the read answers it (FR-CONSOLE-78): the journal's own
+ * fields, the kind's teacher label, the student and question it belongs to, and the
+ * verbatim request and response. A Jev decision carries `confidence` — the gate's value
+ * and the threshold the run recorded (FR-UI-34); other kinds carry `confidence: null`. */
+export interface AiCallRow {
+  call_id: string | null;
+  attempt: number | null;
+  at: string | null;
+  kind: string;
+  kind_label: string;
+  cohort_id: string | null;
+  run_id: string | null;
+  work_id: string | null;
+  submission_id: string | null;
+  student_ref: string | null;
+  student_name: string | null;
+  criterion_id: string | null;
+  question: string | null;
+  package_id: string | null;
+  model: string | null;
+  resolved_build: string | null;
+  outcome: string | null;
+  error: string | null;
+  latency_ms: number | null;
+  tokens_in: number | null;
+  tokens_out: number | null;
+  cost: string | number | null;
+  request: unknown;
+  response: unknown;
+  confidence?: { value: number; threshold: string | null } | null;
+}
+
+/** One page of the AI-call read (FR-CONSOLE-78): newest first, 50 per page, with the
+ * paging and the projection (what was read, how many matched) beside them. */
+export interface AiCallsDoc {
+  items: AiCallRow[];
+  page: number;
+  page_size: number;
+  total: number;
+  more: boolean;
+  filters: Record<string, unknown>;
+  projected: { files_read: number; records_read: number; matched: number };
+}
+
 export async function fetchConfig(signal?: AbortSignal): Promise<ConfigDoc> {
   return fetchRead<ConfigDoc>("/api/v1/config", signal);
 }
