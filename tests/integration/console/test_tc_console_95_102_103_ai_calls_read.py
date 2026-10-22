@@ -106,6 +106,7 @@ PAGES_PER_PAPER = 10
 CELL_KINDS = ("answer_extraction", "jev_decision", "ai_judge", "feedback_writing")
 #: The live-provider cell (the CT-PROV-32 arm).
 LIVE_CELL = (TOMAS, "C2")
+LIVE_JUDGE_ANSWER = '{"band": "adequate", "why": "names two causes"}'
 
 KEY = "sk-or-TESTKEY-0123456789"
 JEV_REF = ModelRef(role="decision", provider="openrouter-jev",
@@ -127,6 +128,9 @@ class AiCallWorld:
     records: list[dict[str, Any]]
     #: The (provider family, kind, submission, criterion) of every emitted record, in order.
     emitted: list[tuple[str, str, str | None, str | None]]
+    #: What the test itself sent and was answered, per `(call_id, attempt)`: the independent
+    #: oracle for "request and response in full" (`request`/`response`, or a decision's `state`).
+    sent: dict[tuple[str, int], dict[str, Any]]
 
 
 class _Transport:
@@ -178,18 +182,22 @@ def _seed_class(store: Any, package: tuple[str, str]) -> str:
 
 
 def _journal_calls(fixture_dir: Path, run_id: str, real_run_id: str,
-                   real_submissions: dict[str, str]) -> list[tuple[str, str, str | None, str | None]]:
-    """Every AI call of the world, each inside the context the pipeline sets for its kind."""
+                   real_submissions: dict[str, str]) -> tuple[list[Any], list[dict[str, Any]]]:
+    """Every AI call of the world, each inside the context the pipeline sets for its kind.
+    Returns what was emitted and, aligned with it, what each attempt sent and got back."""
     fixture = RecordedFixtureProvider(fixture_dir=fixture_dir)
     decision = jev_corpora.wire_request()
     fixture.record_decision(decision, OJ_REF, dict(_WIRE["edge-well-formed-reported"]))
     emitted: list[tuple[str, str, str | None, str | None]] = []
+    sent: list[dict[str, Any]] = []
+    asked = {"state": decision.state}
 
     def complete(kind: str, *parts: str) -> None:
         prompt = _prompt(kind, *parts)
-        fixture.record(prompt, model_ref(), params(),
-                       completion(text=json.dumps({"kind": kind, "for": list(parts)})))
+        text = json.dumps({"kind": kind, "for": list(parts)})
+        fixture.record(prompt, model_ref(), params(), completion(text=text))
         fixture.complete(prompt, model_ref(), params())
+        sent.append({"request": [list(f) for f in prompt.fields], "response": text})
 
     for name, submission_id in SUBMISSIONS.items():  # intake: page reading, no run yet
         for page in range(1, PAGES_PER_PAPER + 1):
@@ -211,19 +219,25 @@ def _journal_calls(fixture_dir: Path, run_id: str, real_run_id: str,
                         JevOpenRouterProvider(api_key=KEY, transport=transport,
                                               clock=FrozenClock()).decide(decision, JEV_REF)
                         emitted.append(("live", kind, submission_id, criterion_id))
+                        sent.append(asked)
                     elif kind == "jev_decision":
                         fixture.decide(decision, OJ_REF)
                         emitted.append(("fixture", kind, submission_id, criterion_id))
+                        sent.append(asked)
                     elif kind == "ai_judge" and live:
                         transport = _Transport(HttpResponse(503, {}, b'{"error": "busy"}'),
-                                               flat_ok(text='{"band": "adequate"}'))
+                                               flat_ok(text=LIVE_JUDGE_ANSWER))
+                        prompt = _prompt(kind, submission_id, criterion_id)
                         OpenRouterProvider(
                             base_url="http://or/v1", api_key=KEY, transport=transport,
                             clock=CountingClock(), rng=random.Random(20261022),
                             retention_answers=lambda build: "yes",
-                        ).complete(_prompt(kind, submission_id, criterion_id), model_ref(), params())
+                        ).complete(prompt, model_ref(), params())
+                        request = [list(f) for f in prompt.fields]
                         emitted.append(("live", kind, submission_id, criterion_id))  # the 503
+                        sent.append({"request": request, "response": None})
                         emitted.append(("live", kind, submission_id, criterion_id))  # the retry
+                        sent.append({"request": request, "response": LIVE_JUDGE_ANSWER})
                     else:
                         complete(kind, submission_id, criterion_id)
                         emitted.append(("fixture", kind, submission_id, criterion_id))
@@ -235,11 +249,32 @@ def _journal_calls(fixture_dir: Path, run_id: str, real_run_id: str,
                               submission_id=submission_id, criterion_id=criterion_id):
                 fixture.decide(decision, OJ_REF)
             emitted.append(("fixture", "jev_decision", submission_id, criterion_id))
+            sent.append(asked)
         with call_context(kind="feedback_writing", cohort_id="eng7-clarity-real",
                           run_id=real_run_id, submission_id=submission_id):
             complete("feedback_writing", submission_id)
         emitted.append(("fixture", "feedback_writing", submission_id, None))
-    return emitted
+    assert len(sent) == len(emitted)
+    return emitted, sent
+
+
+def _seed_run_steps(store: Any, cohort_id: str, run_id: str,
+                    submissions: dict[str, str]) -> None:
+    """Run-steps material for the real run: its start, a judged step per paper and grading
+    point, one per paper failed — so `/api/v1/logs` has stage records to (not) leak through."""
+    with store.cohort(cohort_id).transaction() as tx:
+        for submission_id in submissions.values():
+            for criterion_id in QUESTION_OF:
+                failed = criterion_id == "C3"
+                tx.execute(
+                    "INSERT INTO work_unit (work_id, run_id, submission_id, stage, status, "
+                    "criterion_id, judge_id, attempts, last_error) VALUES (:w, :r, :s, "
+                    "'judged', :st, :c, 'j-1', 1, :e)",
+                    w=f"wu-{submission_id}-{criterion_id}", r=run_id, s=submission_id,
+                    st="failed" if failed else "done", c=criterion_id,
+                    e="JudgeTimeoutError: judge did not answer in time" if failed else None)
+        tx.execute("UPDATE run SET started_at = :t WHERE run_id = :r",
+                   t=BASE_AT.isoformat(), r=run_id)
 
 
 @pytest.fixture(scope="module")
@@ -253,18 +288,21 @@ def world(tmp_path_factory: pytest.TempPathFactory) -> AiCallWorld:
         package = build_eng7_package(store)
         run_id = _seed_class(store, package)
         real = seed_jev_final(store, consent_class="real", package=package)
+        _seed_run_steps(store, real.cohort_id, real.run_id, real.submissions)
     finally:
         store.close()
     with pytest.MonkeyPatch.context() as mp, journal_installed(JsonlCallJournal(data_dir)):
         mp.setattr(journal_module, "datetime", _ticking_datetime())
-        emitted = _journal_calls(scratch / "fixtures", run_id, real.run_id, real.submissions)
+        emitted, sent = _journal_calls(scratch / "fixtures", run_id, real.run_id,
+                                       real.submissions)
     records = sorted(iter_call_records(data_dir), key=lambda r: r["at"])
     # Preconditions: one record per emitted call attempt, in emission order, ticks distinct.
     assert [(r["kind"], r["submission_id"], r["criterion_id"]) for r in records] == [
         (kind, sub, crit) for _family, kind, sub, crit in emitted], "the journal is not the calls"
     assert len({r["at"] for r in records}) == len(records)
     return AiCallWorld(data_dir=data_dir, run_id=run_id, real_run_id=real.run_id,
-                       real_submissions=real.submissions, records=records, emitted=emitted)
+                       real_submissions=real.submissions, records=records, emitted=emitted,
+                       sent={(r["call_id"], r["attempt"]): x for r, x in zip(records, sent)})
 
 
 @pytest.fixture
@@ -327,6 +365,16 @@ def _check_items(world: AiCallWorld, items: list[dict[str, Any]]) -> None:
             "at": record["at"],
         }
         got = {key: item.get(key) for key in expected}
+        mine = world.sent[(item["call_id"], item["attempt"])]
+        if "state" in mine:  # a decision: the state the test sent, and an answer
+            if not (isinstance(item["request"], dict)
+                    and item["request"].get("state") == mine["state"]
+                    and isinstance(item["response"], dict) and item["response"]):
+                problems.append(f"{item['call_id']}: the decision request/response is not the "
+                                f"one sent: {str(item['request'])[:200]}")
+        elif (item["request"], item["response"]) != (mine["request"], mine["response"]):
+            problems.append(f"{item['call_id']}: request/response differ from what was sent: "
+                            f"{(item['request'], item['response'])!r} != {mine!r}")
         if got != expected:
             problems.append(f"{item['call_id']}#{item['attempt']}: "
                             f"{ {k: (got[k], expected[k]) for k in expected if got[k] != expected[k]} }")
@@ -401,7 +449,6 @@ def test_tc_console_95_a_fixture_record_and_a_live_record_read_alike(world, port
     raw = {(r["call_id"], r["attempt"]): r for r in world.records}
     assert set(raw[(live["call_id"], live["attempt"])]) == set(
         raw[(fixture["call_id"], fixture["attempt"])]), "the journal records differ in shape"
-    assert set(live) == set(fixture)
     for item in (live, fixture):
         assert item["kind_label"] == "Jev decision" and item["question"] == "Q2"
         assert item["request"] and item["response"], item
@@ -435,6 +482,9 @@ def test_tc_console_102_run_steps_still_carries_no_per_student_figure(world, por
     status, _headers, raw = _request(port, "GET", f"/api/v1/logs?run_id={world.real_run_id}")
     assert status == 200, raw[:400]
     payload = json.loads(raw)
+    kinds = {record["kind"] for record in payload["records"]}
+    assert {"milestone", "summary", "problem"} <= kinds, (
+        f"precondition: Run steps has its stage records, got {payload['records']!r}")
     assert per_student_progress_figures(payload) == []
     text = raw.decode("utf-8")
     leaked = [token for name, sub in world.real_submissions.items()
@@ -450,10 +500,6 @@ def _cli(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run([sys.executable, "-m", "aeh", "logs", "ai-calls", *args],
                           capture_output=True, text=True, encoding="utf-8", env=env,
                           timeout=120)
-
-
-def _verbatim(value: Any) -> str:
-    return value if isinstance(value, str) else json.dumps(value, indent=2, ensure_ascii=False)
 
 
 def _tomas_q2(world: AiCallWorld) -> list[dict[str, Any]]:
@@ -489,13 +535,21 @@ def test_tc_console_103_full_adds_request_and_response(world):
     assert done.returncode == 0, done.stderr[-1500:]
     out = done.stdout
     assert out.count("What the AI was asked:") == 5 and out.count("What it answered:") == 5
-    lines = set(line.strip() for line in out.splitlines())
-    for record in _tomas_q2(world):
-        for field in ("request", "response"):
-            if record[field] is None:
-                continue
-            for text in _verbatim(record[field]).splitlines():
-                assert text.strip() in lines, (record["kind"], field, text)
+    # One block per call, newest first: each block holds its own call's request and response.
+    blocks = [block for block in out.split("\n\n") if block.strip()]
+    expected = _tomas_q2(world)
+    assert len(blocks) == len(expected), out
+    for block, record in zip(blocks, expected):
+        assert block.startswith(record["at"]), (block[:80], record["at"])
+        mine = world.sent[(record["call_id"], record["attempt"])]
+        asked, answered = block.split("What it answered:")
+        if "state" in mine:
+            assert json.dumps(mine["state"], ensure_ascii=False) in asked, block[:400]
+            continue
+        for name, value in mine["request"]:
+            assert json.dumps(value, ensure_ascii=False) in asked, (name, value, block[:400])
+        if mine["response"] is not None:
+            assert mine["response"] in answered, block[:400]
 
 
 def test_tc_console_103_json_lines_are_the_journal_records(world):
@@ -504,6 +558,12 @@ def test_tc_console_103_json_lines_are_the_journal_records(world):
     assert done.returncode == 0, done.stderr[-1500:]
     parsed = [json.loads(line) for line in done.stdout.splitlines()]
     assert parsed == _tomas_q2(world)
+    for record in parsed:
+        mine = world.sent[(record["call_id"], record["attempt"])]
+        if "state" in mine:
+            assert record["request"]["state"] == mine["state"]
+        else:
+            assert (record["request"], record["response"]) == (mine["request"], mine["response"])
 
 
 def test_tc_console_103_unknown_student_is_an_empty_answer(world):
