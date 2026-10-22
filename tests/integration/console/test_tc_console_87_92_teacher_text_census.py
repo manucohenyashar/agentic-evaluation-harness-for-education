@@ -45,8 +45,8 @@ curated success arms above.
 **Isolation: rung 3 (E1).** **Written ahead of implementation: yes** (#808): both cases are
 red until every display string passes `teacher_text()` and every refusal has three parts.
 
-**Markers.** `integration` (the fast tier excludes it) and `writtenahead`, keyed in
-`WRITTEN_AHEAD_BLOCKERS` under #808.
+**Markers.** `integration` (the fast tier excludes it); the `writtenahead` marker came off
+when #808 landed.
 """
 
 from __future__ import annotations
@@ -81,7 +81,7 @@ from tests.support.console_redesign_world import (
 )
 from tests.support.console_world import seed_scored_run
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = pytest.mark.integration
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 ENG7_SPEC = REPO_ROOT / "docs" / "live-tests" / "config" / "eng7-read-01.package.toml"

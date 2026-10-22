@@ -36,6 +36,7 @@ import aeh.synth  # noqa: F401
 from aeh.pkg import PackageCatalog
 from tests.support.console_redesign_world import (
     _action,
+    _get_json,
     _request,
     draft_path_in,
     draft_read,
@@ -64,8 +65,11 @@ def _approved_version(served_authoring):
     assert answer["refused"] is False, answer["detail"]
     approval = _action(port, "approve draft package", {"package_id": package_id})
     assert approval["refused"] is False, approval["detail"]
-    version = approval["detail"].split(f"the package {package_id} ", 1)[1].split(
-        " was built", 1)[0]
+    # The approve outcome names the version in teacher words (FR-CONSOLE-73, #808); the
+    # version id is read from the package page's context row instead.
+    context = _get_json(port, "/api/v1/context")
+    version = next(row["published_version_id"] for row in context["packages"]
+                   if row["package_id"] == package_id)
     return port, store, data_dir, package_id, version
 
 

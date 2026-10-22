@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from dataclasses import dataclass, fields as dataclass_fields
-from typing import Any, Iterator, NamedTuple
+from typing import Any, Iterator, Mapping, NamedTuple
 
 from .vocabulary import _GATE_COLUMNS, _GATE_NOT_REACHED, _STATE_PRESENTATION
 from .html import _row_get
@@ -73,6 +73,13 @@ class ControlOutcome:
     #: The job id a dispatched background action started (`FR-CONSOLE-61`): the draft job
     #: the jobs page then tracks. `None` for every synchronous action.
     job_id: str | None = None
+    #: FR-UI-25's three-part refusal (the clarity delta): `what` happened and `why`, each a
+    #: full teacher sentence, beside `next_action`. Unset on the outcomes that predate it.
+    what: str | None = None
+    why: str | None = None
+    #: Where the teacher goes next, as a link the screen renders (FR-CONSOLE-73's "Load
+    #: papers" after an approve): `{"label": ..., "route": ...}`. `None` when there is none.
+    next: Mapping[str, str] | None = None
 
 
 @dataclass(frozen=True)

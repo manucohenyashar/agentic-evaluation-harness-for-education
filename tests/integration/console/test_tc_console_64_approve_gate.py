@@ -77,19 +77,18 @@ def test_tc_console_64a_approving_a_draft_with_sentinels_is_refused_with_the_loc
     assert answer["refused"] is True
     assert answer["dispatched"] is False
     detail = answer["detail"]
-    assert "the draft is not complete: field" in detail, (
-        f"the refusal is not FR-PKG-28's sentence: {detail!r}")
-    assert "still carries the placeholder sentinel" in detail
-    assert "(line " in detail, "the refusal does not name the field's line"
-    assert "more placeholder line(s) remain)" in detail, (
-        f"the refusal does not count the remaining placeholder lines: {detail!r}")
+    # The console clarity delta (#808, FR-UI-25) replaced FR-PKG-28's engineering sentence
+    # (field, line, sentinel) with the teacher's three parts; the count stands.
+    assert answer["what"] == f"{package_id} was not published."
+    assert answer["why"] == (
+        f"The draft still has {len(_items)} unanswered pieces, and a test is published "
+        "only when every piece is answered.")
+    assert detail == f"{answer['what']} {answer['why']}"
     assert str(data_dir) not in detail, (
         "the refusal carries a server-side path; CT-CONSOLE-31 projects the draft's "
         "server path to its file name")
-    assert package_id in detail or "draft" in detail
     assert answer["next_action"] == (
-        "resolve the draft's remaining review items on the review screen, "
-        "then approve again.")
+        "Answer the remaining questions on the review screen, then press Approve again.")
 
 
 def test_tc_console_64b_the_resolved_draft_approves_to_a_published_version(served_authoring):
@@ -112,18 +111,17 @@ def test_tc_console_64b_the_resolved_draft_approves_to_a_published_version(serve
     assert approved["refused"] is False, approved["detail"]
     assert approved["dispatched"] is True
     detail = approved["detail"]
-    assert f"the package {package_id}" in detail
-    assert "was built and published from the draft" in detail
-    assert "the approval is recorded in the draft itself." in detail
-    assert approved["next_action"] == "start a run with the new package version."
+    # FR-CONSOLE-73 (#808): the outcome names the version in teacher words, never by id.
+    assert detail.startswith(f"Published {package_id}, version 1."), detail
+    assert "Approved by Prof. Dana Whitfield on " in detail
+    assert detail.endswith("Next: load the students' papers.")
+    assert "@" not in detail
+    assert approved["next"] == {"label": "Load papers", "route": "/papers"}
 
-    version = detail.split(f"the package {package_id} ", 1)[1].split(" was built", 1)[0]
     context = _get_json(port, "/api/v1/context")
     rows = [row for row in context["packages"] if row["package_id"] == package_id]
     assert len(rows) == 1, f"the package page lists {len(rows)} row(s) for {package_id}"
-    assert rows[0]["published_version"] == version, (
-        f"the catalog's published version is {rows[0]['published_version']!r}, not the "
-        f"one the approval built ({version!r})")
+    assert rows[0]["published_version"], "the catalog names no published version"
     assert rows[0]["state"] == "published"
     assert rows[0]["version_count"] >= 1
 
@@ -140,8 +138,9 @@ def test_tc_console_64c_replaying_the_approval_is_idempotent_and_builds_no_secon
     })
     approved = _action(port, "approve draft package", {"package_id": package_id})
     assert approved["refused"] is False
-    version = approved["detail"].split(
-        f"the package {package_id} ", 1)[1].split(" was built", 1)[0]
+    context = _get_json(port, "/api/v1/context")
+    version = next(row["published_version_id"] for row in context["packages"]
+                   if row["package_id"] == package_id)
 
     replay = _action(port, "approve draft package", {"package_id": package_id})
 
@@ -149,15 +148,15 @@ def test_tc_console_64c_replaying_the_approval_is_idempotent_and_builds_no_secon
     assert replay["dispatched"] is False, (
         f"the replay dispatched ({replay!r}); approving an unchanged draft must "
         "change nothing")
-    assert f"the draft was already approved as {package_id} {version}" in replay["detail"], (
-        f"the replay's detail does not name the version the first approval built: "
-        f"{replay['detail']!r}")
-    assert "approving the unchanged draft again changes nothing" in replay["detail"]
+    # FR-CONSOLE-73 (#808): a repeat press is the success outcome, prefixed — no hash.
+    assert replay["detail"].startswith(
+        f"Already published — {package_id}, version 1."), replay["detail"]
+    assert "@" not in replay["detail"]
     assert "job_id" not in replay
 
     context = _get_json(port, "/api/v1/context")
     rows = [row for row in context["packages"] if row["package_id"] == package_id]
-    assert rows[0]["published_version"] == version
+    assert rows[0]["published_version_id"] == version
     assert rows[0]["version_count"] == 1, (
         f"the catalog now lists {rows[0]['version_count']} version(s); the idempotent "
         "replay must not have built a second one")

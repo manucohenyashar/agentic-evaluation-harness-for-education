@@ -588,6 +588,22 @@ def test_tc_console_57_exports_are_byte_identical_and_views_match_the_cli(
         f"TC-CONSOLE-57: both surfaces agree but not with the grade ledger: {truth}")
     assert (rollup or {}).get("rollup") not in (None, {}, []), (
         f"TC-CONSOLE-57: the class view shows no rollup: {rollup!r}")
-    assert rollup.get("rollup") == shown_by_cli.get("rollup"), (
+    # #808 (FR-CONSOLE-74): the console names each rubric version in teacher words and keeps
+    # the id under `rubric_version_id`; the CLI's id-bearing rollup is the same data once
+    # its strings pass the console's teacher-text boundary.
+    from aeh.console.teacher_text import teacher_payload
+    from aeh.console.version_labels import version_label_for
+
+    labels_store = open_store(tmp_data_dir)
+    try:
+        cli_rollup = teacher_payload(shown_by_cli.get("rollup"),
+                                     version_label_for(labels_store))
+    finally:
+        _close(labels_store)
+    for console_segment, cli_segment in zip(
+            rollup["rollup"].get("segments") or (),
+            (shown_by_cli.get("rollup") or {}).get("segments") or ()):
+        assert console_segment.pop("rubric_version_id") == cli_segment["rubric_version"]
+    assert rollup.get("rollup") == cli_rollup, (
         f"TC-CONSOLE-57: the class view differs from the CLI's: {rollup.get('rollup')!r} vs "
         f"{shown_by_cli.get('rollup')!r}")

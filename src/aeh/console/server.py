@@ -27,6 +27,8 @@ from .paper_intake import check_paper_upload, queue_paper_intake, wants_read
 from .run_planning import build_console
 from .api import SPA_BUNDLE_DIR, API_ROUTES, action_slug as _action_slug
 from .api_handler import _READS, ApiRequestsMixin, outcome_json
+from .refusals import refusal_parts
+from .teacher_text import teacher_payload
 
 #: Paths the API owns: everything under it is routed from `API_ROUTES` and nothing else.
 _API_ROOT = "/api/"
@@ -96,6 +98,11 @@ def _known_route(route: str) -> bool:
         if re.fullmatch(re.sub(r"\{(\w+)\}", r"(?P<\1>[^/]+)", template), route):
             return True
     return route == "/"
+
+
+#: A refused upload's "what happened" and next step (FR-UI-25).
+UPLOAD_REFUSED = "The file was not taken in."
+UPLOAD_NEXT = "Check the file, then upload it again."
 
 
 class _ConsoleRequestHandler(ApiRequestsMixin, BaseHTTPRequestHandler):
@@ -258,7 +265,8 @@ class _ConsoleRequestHandler(ApiRequestsMixin, BaseHTTPRequestHandler):
             return
         form = self._read_form()
         outcome = self._console.app.perform(action, **form)
-        self._respond(200, outcome_json(action, outcome), "application/json; charset=utf-8")
+        self._respond(200, outcome_json(action, outcome, self._version_label()),
+                      "application/json; charset=utf-8")
 
     def _other_verb(self, method: str) -> None:
         """PUT, PATCH and DELETE: routed only where `API_ROUTES` lists them (it lists none
@@ -316,8 +324,10 @@ class _ConsoleRequestHandler(ApiRequestsMixin, BaseHTTPRequestHandler):
                 # client still sending a multi-megabyte scan when the socket closed would see
                 # a reset instead of the refusal, and the teacher would never learn why.
                 _discard_body(self.rfile, length)
-                body = json.dumps({"dispatched": False, "blob_refs": [],
-                                   "detail": refusal}).encode("utf-8")
+                answer = {"dispatched": False, "blob_refs": [], "detail": refusal,
+                          **refusal_parts(why=refusal, fallback_what=UPLOAD_REFUSED,
+                                          fallback_next=UPLOAD_NEXT)}
+                body = json.dumps(teacher_payload(answer)).encode("utf-8")
                 self._respond(400, body, "application/json; charset=utf-8", close=True)
                 return
         reader = _BoundedReader(self.rfile, length)
@@ -356,7 +366,12 @@ class _ConsoleRequestHandler(ApiRequestsMixin, BaseHTTPRequestHandler):
                 kind=str(query.get("kind")), filename=str(query.get("filename")),
                 chunk_refs=tuple(str(ref) for ref in outcome.blob_refs))
             answer["detail"] = "staged; the papers reader has it in its queue"
-        body = json.dumps(answer).encode("utf-8")
+        if not outcome.dispatched:
+            # FR-UI-25: a refused upload says what happened, why and what to do next.
+            answer.update(refusal_parts(
+                why=answer["detail"], fallback_what=UPLOAD_REFUSED,
+                fallback_next=UPLOAD_NEXT))
+        body = json.dumps(teacher_payload(answer, self._version_label())).encode("utf-8")
         self._respond(200 if outcome.dispatched else 400, body, "application/json; charset=utf-8")
 
 

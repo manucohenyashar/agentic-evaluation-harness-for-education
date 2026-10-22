@@ -77,13 +77,23 @@ from aeh.author import (
 from aeh.author import slugify_package_id
 from aeh.author import check_gap_answer, missing_points
 from aeh.author.report import draft_filename
-from aeh.pipeline.packages import PackageSpecError, build_package, read_package_spec
+from aeh.pipeline.packages import (
+    PLACEHOLDER_SENTINEL,
+    PackageSpecError,
+    build_package,
+    read_package_spec,
+)
 from aeh.pipeline.runtime import _open_store, _provider_for
 
 from .html import _now
 from .authoring_reads import _load_draft, _walk_placeholders, find_draft_for
 from .authoring_reads import owner_qid
 from .records import ControlOutcome
+from .version_labels import (
+    PackageVersionLabel,
+    UnknownPackageVersion,
+    read_version_label,
+)
 from .settings import author_doc_max_bytes
 from .spa_reads import _strip_exception_name
 from .write_rows import _rows_for
@@ -643,40 +653,54 @@ def _approve_draft_package(app: Any, params: Mapping[str, Any]) -> ControlOutcom
                 "documents.")
         marker = approval_of(text)
         if marker is not None and marker[2] == content_digest(text):
-            return ControlOutcome(
-                rows_written=(), refused=False, dispatched=False,
-                detail=(
-                    f"the draft was already approved as {marker[0]} {marker[1]}: that "
-                    "package version is published, and approving the unchanged draft "
-                    "again changes nothing. Edit the draft and approve again to build "
-                    "a new version."))
+            # FR-CONSOLE-73: a second press is not a refusal — the same success outcome,
+            # prefixed, and nothing is built again.
+            return _published_outcome(
+                _version_label_from(data_dir, marker[1]), marker[0], already=True)
         store = None
+        label: PackageVersionLabel | None = None
         try:
             store = _open_store(data_dir)
             spec = read_package_spec(path)
             built = build_package(store, spec)
+            # The new version's teacher label, read while the store is open
+            # (FR-CONSOLE-74): its number and the approval record's date.
+            try:
+                label = read_version_label(store, built.package_version)
+            except UnknownPackageVersion:
+                label = None
         except PackageSpecError as incomplete:
-            # M-PKG's own refusal (`FR-PKG-28`), surfaced with its field, line and reason
-            # — exactly the review screen's job list. The server-side draft path is
-            # projected out of the message (the teacher never meets a server path,
-            # `CT-CONSOLE-31`; `CT-CONSOLE-33` bans what it would read as), and the
-            # console adds only the way back.
+            # M-PKG's own refusal (`FR-PKG-28`) names the field, its line and the draft
+            # file — engineering detail. The teacher is told in their words instead
+            # (FR-UI-25, the console clarity delta): what was not published, why, and the
+            # way back. A refusal that is not about unanswered pieces keeps M-PKG's
+            # sentence as its why, with the server path projected out (`CT-CONSOLE-31`).
             message = str(incomplete).replace(str(path), path.name)
             if "already exists" in message:
                 # An edited draft of a published package: `M-PKG` refuses the build, and
                 # the console cannot rename a package for the teacher. The honest way
                 # back, not a promised new version.
-                return _refused(
-                    message,
+                what = f"{package_id} was not published again."
+                why = ("A published test is never changed, and this draft was edited "
+                       "after it was published.")
+                return ControlOutcome(
+                    rows_written=(), refused=True, dispatched=False,
+                    detail=f"{what} {why}", what=what, why=why,
                     next_action=(
-                        "a built package is never changed: keep the published version, "
-                        "and start a new draft from the documents under a new package "
-                        "id."))
-            return _refused(
-                message,
+                        "Keep the published version, and start a new draft from the "
+                        "documents under a new test name."))
+            open_pieces = text.count(PLACEHOLDER_SENTINEL)
+            what = f"{package_id} was not published."
+            why = (f"The draft still has {open_pieces} unanswered "
+                   f"{'piece' if open_pieces == 1 else 'pieces'}, and a test is "
+                   "published only when every piece is answered."
+                   if open_pieces else message)
+            return ControlOutcome(
+                rows_written=(), refused=True, dispatched=False,
+                detail=f"{what} {why}", what=what, why=why,
                 next_action=(
-                    "resolve the draft's remaining review items on the review screen, "
-                    "then approve again."))
+                    "Answer the remaining questions on the review screen, then press "
+                    "Approve again."))
         except Exception as error:  # noqa: BLE001 - a failed build is a refusal, not a 500
             return _refused(
                 f"the package could not be built ({_strip_exception_name(error)}); the "
@@ -692,14 +716,55 @@ def _approve_draft_package(app: Any, params: Mapping[str, Any]) -> ControlOutcom
         approved = with_approval_marker(
             text, built.package_id, built.package_version, content_digest(text))
         commit_artifacts(path.parent, [(path, approved)])
-        return ControlOutcome(
-            rows_written=(), refused=False, dispatched=True,
-            next_action="start a run with the new package version.",
-            detail=(
-                f"the package {built.package_id} {built.package_version} was built and "
-                "published from the draft; the approval is recorded in the draft itself."))
+        return _published_outcome(label, built.package_id, approved_by=built.approved_by)
 
     return _with_draft_lock(app, path, data_dir, "approve", run)
+
+
+#: Where the teacher goes after a test is published (FR-CONSOLE-73, FR-UI-27).
+LOAD_PAPERS_NEXT = {"label": "Load papers", "route": "/papers"}
+_LOAD_PAPERS_SENTENCE = "Next: load the students' papers."
+
+
+def _version_label_from(data_dir: str, version_id: str) -> PackageVersionLabel | None:
+    """The label of an already-published version, read through a store opened and closed
+    here; `None` when the store cannot name it (the outcome then names the package only)."""
+    store = None
+    try:
+        store = _open_store(data_dir)
+        return read_version_label(store, version_id)
+    except Exception:  # noqa: BLE001 — a label is a courtesy; the outcome still stands
+        return None
+    finally:
+        if store is not None:
+            try:
+                store.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def _published_outcome(label: PackageVersionLabel | None, package_id: str, *,
+                       approved_by: str | None = None,
+                       already: bool = False) -> ControlOutcome:
+    """FR-CONSOLE-73's approve outcome, in teacher words: *"Published ENG7-READ-01,
+    version 1. Approved by <name> on 20 Oct 2026. Next: load the students' papers."* — or,
+    for a press on the unchanged, already-published draft, *"Already published —"* and
+    the same outcome. Never the version hash; always the link to Load papers. The replay
+    dispatches nothing (nothing was built)."""
+    named = f"{package_id}, {label.version}" if label is not None else package_id
+    approver = (label.approved_by if label is not None and label.approved_by
+                else approved_by)
+    approved = ""
+    if approver and label is not None and label.approved_on:
+        approved = f" Approved by {approver} on {label.approved_on}."
+    elif approver:
+        approved = f" Approved by {approver}."
+    outcome = f"{named}.{approved} {_LOAD_PAPERS_SENTENCE}"
+    detail = f"Already published — {outcome}" if already else f"Published {outcome}"
+    return ControlOutcome(
+        rows_written=(), refused=False, dispatched=not already,
+        detail=detail, next_action="Load the students' papers.",
+        next=dict(LOAD_PAPERS_NEXT))
 
 
 # --- cancel (FR-CONSOLE-57) ------------------------------------------------------------------------

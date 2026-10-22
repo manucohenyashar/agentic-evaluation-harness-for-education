@@ -45,6 +45,7 @@ from aeh.author import gap_question, missing_points
 from aeh.author.report import draft_filename
 from aeh.author.validation import PLACEHOLDER_PREFIX, validate_draft
 
+from .package_summary import answered_items, package_summary
 from .settings import author_doc_max_bytes
 
 
@@ -279,9 +280,10 @@ def authoring_draft_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     # empty list and the editor and review outline would render a draft with no entries.
     questions = [item for item in (spec.get("question") or ()) if isinstance(item, dict)]
     criteria = [item for item in (spec.get("criterion") or ()) if isinstance(item, dict)]
+    package_id = path.name.removesuffix(".package.draft.toml")
     return {
         "draft": {
-            "package_id": path.name.removesuffix(".package.draft.toml"),
+            "package_id": package_id,
             "file_name": path.name,
             "package": spec.get("package"),
             "approved_by": spec.get("approved_by"),
@@ -292,6 +294,8 @@ def authoring_draft_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
             "points_questions": points_questions,
             "issues": issue_rows,
             "missing_pieces": len(placeholders),
+            # FR-CONSOLE-72: the package as it would be published, answers merged in.
+            "summary": package_summary(spec, answered_items(path, package_id)),
         },
         "doc_max_bytes": doc_max_bytes,
         "projected": {

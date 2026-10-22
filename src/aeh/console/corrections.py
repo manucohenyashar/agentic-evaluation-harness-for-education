@@ -77,13 +77,19 @@ def _listed_name(store: Any, cohort_id: str, student_ref: str) -> str:
 
 
 def rename_student_effect(store: Any, params: Mapping[str, Any]) -> tuple[str, bool]:
+    before = ""
     try:
         cohort_id = check_cohort_id(params.get("cohort_id"))
         student_ref = str(params.get("student_ref") or "")
         before = _listed_name(store, cohort_id, student_ref)
         rename_on_roster(store, cohort_id, student_ref, params.get("full_name"))
     except (CohortSetupError, sqlite3.DatabaseError) as error:
-        return _refused(RENAME_STUDENT_ACTION, error)
+        detail, ok = _refused(RENAME_STUDENT_ACTION, error)
+        # FR-UI-22: the refusal names the student as the teacher knows them — never by
+        # their ref, which `_listed_name` falls back to only when no name is listed.
+        if before and before != str(params.get("student_ref") or ""):
+            detail = f"{before} was not renamed: {detail}"
+        return detail, ok
     return (f"{before} is now listed as {_listed_name(store, cohort_id, student_ref)}; "
             "their papers stay theirs", True)
 
