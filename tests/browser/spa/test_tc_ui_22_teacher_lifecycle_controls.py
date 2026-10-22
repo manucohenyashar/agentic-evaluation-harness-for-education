@@ -129,12 +129,18 @@ def test_tc_ui_22_class_papers_parked_and_run_start_from_the_browser(
             page.get_by_role("button", name="Start a new grading run").click()
             dialog = page.get_by_role("dialog")
             dialog.wait_for()
-            assert "ps9-class" in dialog.inner_text() and version in dialog.inner_text()
+            # FR-UI-23: the confirmation names the settings profile it runs under (the
+            # preview read's banner), never the raw version id; the class was already
+            # named by the screen the run starts from.
+            assert "dev-ci" in dialog.inner_text(), dialog.inner_text()
             assert not re.search(r"HARNESS_|\"\w+\":", dialog.inner_text()), \
                 "the start confirmation shows raw settings"
             dialog.get_by_role("button", name=re.compile(r"^start$", re.I)).click()
+            # The monitor opens the started run: its own heading and the run's state
+            # sentence (FR-UI-23: no "Run run-…" id) — and the journey's world pauses the
+            # run at composition (its judges are not staged), which the monitor renders.
             _wait(lambda: spa.main_text(page).startswith("Monitor run")
-                  and re.search(r"Run run-", spa.main_text(page)) is not None,
+                  and "The grading run" in spa.main_text(page),
                   "the console to open the started run's monitor",
                   detail=lambda: spa.main_text(page))
 

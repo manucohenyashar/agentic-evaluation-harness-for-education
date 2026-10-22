@@ -1338,9 +1338,11 @@ def _serve_and_drive(store, console_dir: Path, scratch: Path, cfg: Any,
             before = spa.store_digest(console_dir)
             _goto(page, f"/run?class={spec.cohort_id}")
             banner_text = spa.main_text(page)
-            assert spec.run_id in banner_text, (
-                f"{label}: the run-start screen does not name the bound run "
-                f"{spec.run_id!r}: {banner_text!r}")
+            # FR-UI-23: the screen names the run the way a teacher reads it — the class
+            # and the test's own name (FR-CONSOLE-70/74), never the run's id.
+            assert spec.cohort_id in banner_text and "grading run for class" in banner_text, (
+                f"{label}: the run-start screen does not name the bound run as the "
+                f"class's own: {banner_text!r}")
             after = spa.store_digest(console_dir)
             assert not spa.changed_tables(before, after), (
                 f"{label}: opening the run-start screen wrote rows — a no-op until "

@@ -548,7 +548,10 @@ export function versionName(
     return "no test yet";
   }
   const label = known?.find((entry) => entry.published_version_id === versionId)?.published_version;
-  if (label) {
+  // A `pkg-…` package's served label still carries the internal prefix after the
+  // boundary's rewrite ("pkg-x version 1") — never shown (FR-UI-23): the id's own
+  // teacher name applies.
+  if (label && !/^pkg-/.test(label)) {
     return label;
   }
   return packageName(versionId.split("@")[0] ?? "");

@@ -174,9 +174,14 @@ def test_tc_ui_02_the_hub_shows_every_destination_with_live_state_and_no_dead_li
                 problems.append(f"the hub has {n} card link(s) for {destination!r} "
                                 f"({spa.HUB_DESTINATIONS[destination].pattern}); FR-UI-02 wants one")
         text = spa.main_text(page)
-        if s.world.package_version_id not in text:
-            problems.append(f"the hub does not show the current package version "
-                            f"{s.world.package_version_id!r}")
+        # FR-UI-23: the hub names the store's facts the teacher's way — the current test
+        # by its own name ("test: this test" for an internal-id package) and the last
+        # run's state ("last run: pending"), never a version id.
+        if not re.search(r"test: \S", text):
+            problems.append("the hub does not name the current test in its package card "
+                            "(the context read's live state)")
+        if not re.search(r"last run: \S", text):
+            problems.append("the hub does not name the last run's state in its run card")
         if not re.search(rf"\b{re.escape(s.run_status)}\b", text, re.I):
             problems.append(f"the hub does not show the last run's status {s.run_status!r}")
         engine_cards = [d for d in spa.HUB_DESTINATIONS
@@ -220,12 +225,15 @@ def test_tc_ui_03_the_seven_lifecycle_screens_render_the_seeded_store(tmp_data_d
         w = s.world
         refs = [f"ref-{sub}" for sub in w.submissions]
         expected: dict[str, list[str]] = {
-            "package": [s.setup_package_id or "", w.package_version_id],
+            # FR-UI-23: the screens name the store's entities the teacher's way — the
+            # test's own name (an internal-id package reads "this test"), the class's
+            # name, the run's state words (FR-CONSOLE-70/74, FR-UI-22) — never the ids.
+            "package": ["this test"],
             "class": [w.cohort_id, *refs],
             "papers": [w.cohort_id, *refs],
-            "run_start": [w.cohort_id, w.package_version_id],
-            "monitor": [w.run_id, s.run_status],
-            "review": [w.run_id],
+            "run_start": ["this test", "waiting"],
+            "monitor": ["The grading run", "Waiting"],
+            "review": ["Nothing is flagged for review"],
             "results": refs,
         }
         problems = []
@@ -558,6 +566,16 @@ def test_tc_ui_05_publish_start_and_finalize_are_no_ops_until_confirmed(tmp_data
         for destination, action, names, owned in _ACTIONS:
             _, found = _screen_problems(page, log, destination)
             problems += found
+            # The finalize arm's no-op, now rendered (FR-UI-33): a completed run settles
+            # its own grades (ADR-3, the docstring's reading of this arm) — the results
+            # screen answers "All grades are final." and offers no approve-all control at
+            # all. Pin that settled sentence against the grades' own ledger state, and
+            # leave the confirm's no-op check above to the world where the grades stand.
+            if destination == "results" and "All grades are final." in spa.main_text(page):
+                if not _grades_already_final(s):
+                    problems.append("results: the screen reads the grades final but the "
+                                    "ledger does not hold them final")
+                continue
             buttons = page.locator("main").get_by_role("button", name=action)
             enabled = [buttons.nth(i) for i in range(buttons.count()) if buttons.nth(i).is_enabled()]
             if not enabled:
@@ -792,8 +810,12 @@ def test_tc_ui_c04_an_api_error_renders_a_named_recoverable_message_on_every_scr
         page.route(f"{s.origin}/api/**", handler)
         w = s.world
         recovered_data = {"class": f"ref-{w.submissions[0]}", "papers": f"ref-{w.submissions[0]}",
-                          "results": f"ref-{w.submissions[0]}", "monitor": w.run_id,
-                          "run_start": w.cohort_id, "package": w.package_version_id}
+                          "results": f"ref-{w.submissions[0]}",
+                          # FR-UI-23: the recovered screens show the store's facts as a
+                          # teacher reads them — the run's state words and the test's own
+                          # name ("this test" for an internal-id package).
+                          "monitor": "The grading run", "run_start": w.cohort_id,
+                          "package": "this test"}
         spa.open_hub(page, s.origin)
         problems = _health(page, log, "hub (API failing)")
         for destination in spa.HUB_DESTINATIONS:
