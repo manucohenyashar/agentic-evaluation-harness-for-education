@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from aeh.prov import CALL_KINDS, CALL_OUTCOMES, iter_call_records, journal_files
 
@@ -137,6 +137,7 @@ class _Lookups:
         self._listed: dict[str, dict[str, str]] = {}
         self._runs: dict[tuple[str, str], tuple[str, str] | None] = {}
         self._questions: dict[tuple[str, str], dict[str, str]] = {}
+        self._gates: dict[tuple[str, str], float | None] = {}
 
     def _existing(self, path_of: str, key: str) -> bool:
         locate = getattr(self._store, path_of, None)
@@ -225,8 +226,56 @@ class _Lookups:
         self._questions[key] = found
         return found
 
+    def confidence_gate(self, cohort_id: str, run_id: str) -> str | None:
+        """The run's decision-confidence threshold (FR-UI-34's "needed above …"), read from
+        the engine the run recorded at start (`run.provider_config` →
+        `decision_engine.threshold`, per `orch/run_records.py`'s record — the frozen
+        canonical value, never a re-resolution against today's settings). `None` when the
+        run recorded no engine or an unreadable one: no threshold is invented."""
+        key = (cohort_id, run_id)
+        if key in self._gates:
+            return self._gates[key]
+        gate = None
+        if run_id and self._existing("cohort_path", cohort_id):
+            try:
+                rows = list(self._store.cohort(cohort_id).query(
+                    "SELECT provider_config FROM run WHERE run_id = :run_id", run_id=run_id))
+                recorded = json.loads(str(rows[0]["provider_config"] or "{}"))
+                engine = recorded.get("decision_engine")
+                if isinstance(engine, Mapping) and engine.get("threshold") is not None:
+                    gate = str(engine["threshold"])
+            except Exception:  # noqa: BLE001 — a missing gate omits the line, never a 500
+                gate = None
+        self._gates[key] = gate
+        return gate
+
 
 # --- the read ---------------------------------------------------------------------------------------
+
+
+def _confidence_block(record: dict[str, Any], lookups: _Lookups) -> dict[str, Any] | None:
+    """A Jev decision's confidence line, as the read serves it (FR-UI-34): the gate's own
+    value — the lesser of the band answer's confidence and the sufficiency answer's, the
+    rule `gate_decision` applies — beside the threshold the run recorded at start. `None`
+    when the response holds no such answers: no number is invented."""
+    if str(record.get("kind") or "") != "jev_decision":
+        return None
+    response = record.get("response")
+    if not isinstance(response, Mapping):
+        return None
+    values: list[float] = []
+    for key in ("band", "evidence_sufficient"):
+        answer = response.get(key)
+        if isinstance(answer, Mapping) and isinstance(answer.get("confidence"), (int, float)):
+            values.append(float(answer["confidence"]))
+    if not values:
+        return None
+    cohort_id = str(record.get("cohort_id") or "")
+    run_id = str(record.get("run_id") or "")
+    return {
+        "value": min(values),
+        "threshold": lookups.confidence_gate(cohort_id, run_id),
+    }
 
 
 def _item(record: dict[str, Any], lookups: _Lookups) -> dict[str, Any]:
@@ -275,6 +324,8 @@ def _item(record: dict[str, Any], lookups: _Lookups) -> dict[str, Any]:
         "cost": record.get("cost"),
         "request": record.get("request"),
         "response": record.get("response"),
+        # FR-UI-34: the confidence line's numbers, for a Jev decision only.
+        "confidence": _confidence_block(record, lookups),
     }
 
 

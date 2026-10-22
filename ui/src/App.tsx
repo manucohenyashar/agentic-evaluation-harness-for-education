@@ -172,9 +172,19 @@ export function App() {
     [threadedQuery],
   );
 
-  /** One navigation: set the fragment, keeping the selection threaded through it. */
+  /** One navigation: set the fragment, keeping the selection threaded through it. A
+   * route string may carry its own query (" /logs?tab=ai-calls&student=…") — those keys
+   * merge over the selection's, so a screen can open another at a filtered view while
+   * the class/package/run refs thread as always (`CT-UI-07`: opaque refs, nothing else). */
   const goTo = (path: string, patch?: SelectionPatch): void => {
+    const mark = path.indexOf("?");
+    const base = mark === -1 ? path : path.slice(0, mark);
     const params = new URLSearchParams(address.params);
+    if (mark !== -1) {
+      for (const [key, value] of new URLSearchParams(path.slice(mark + 1))) {
+        params.set(key, value);
+      }
+    }
     if (patch !== undefined) {
       for (const key of SELECTION_KEYS) {
         const value = patch[key];
@@ -187,7 +197,7 @@ export function App() {
       }
     }
     const query = params.toString();
-    window.location.hash = `#${path}${query === "" ? "" : `?${query}`}`;
+    window.location.hash = `#${base}${query === "" ? "" : `?${query}`}`;
   };
 
   const student = STUDENT_ROUTE.exec(address.path);
@@ -223,7 +233,7 @@ export function App() {
   } else if (address.path === "/issues") {
     screen = <Issues runId={selection.runId} />;
   } else if (address.path === "/logs") {
-    screen = <Logs runId={selection.runId} />;
+    screen = <Logs runId={selection.runId} params={address.params} />;
   } else if (address.path === "/parked") {
     screen = <Parked />;
   } else if (address.path === "/past") {

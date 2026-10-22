@@ -5,6 +5,7 @@ import { ReadScreen } from "../components/ReadScreen";
 import { OverrideForm, type OverrideChange } from "../components/Override";
 import { useToast } from "../state/StateDisplay";
 import { NOT_FINAL_REASON_TEXT } from "../wizard/vocabulary";
+import { useNavigate } from "../navigate";
 import { flagLabel, flagTone, scoreStateLabel } from "../state/model";
 import { useScreenRead } from "../useScreenRead";
 import { studentName } from "../studentNames";
@@ -156,6 +157,7 @@ function CriterionCard({ criterion, doc, setShowDetails, logs, afterOverride }: 
 }
 
 export function StudentDetail({ submissionId }: { submissionId: string }) {
+  const navigate = useNavigate();
   const read = useScreenRead<DetailDoc>(
     "/api/v1/results/student-detail",
     { submission_id: submissionId, ...useRunParams() },
@@ -222,6 +224,24 @@ export function StudentDetail({ submissionId }: { submissionId: string }) {
                           <span> Check</span>
                         </span>
                       )}
+                      <a
+                        href="#/logs?tab=ai-calls"
+                        className="stage-action"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          // The AI-call log for exactly this student, question and run
+                          // (FR-UI-35) — the same view, whatever kind of class, with no
+                          // consent filter and no extra confirmation.
+                          navigate(
+                            `/logs?tab=ai-calls&student=${
+                              encodeURIComponent(doc.student_ref ?? "")
+                            }&question=${encodeURIComponent(question.question_id)}`,
+                            { run: doc.run_id },
+                          );
+                        }}
+                      >
+                        How was this graded?
+                      </a>
                     </h3>
                     <ul className="criterion-cards">
                       {doc.criteria
