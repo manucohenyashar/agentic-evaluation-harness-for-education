@@ -213,11 +213,15 @@ def _favourable_signals() -> Any:
 
 
 def seed_jev_final(store: Any, *, consent_class: str = "synthetic",
-                   package: tuple[str, str] | None = None) -> JevFinalSeed:
+                   package: tuple[str, str] | None = None,
+                   kinds: dict[str, str] | None = None,
+                   jev_final_on_accept: bool | None = None) -> JevFinalSeed:
     """Seed one ENG7 cohort with the Jev-final cells (the module docstring's table).
 
     `package` reuses an ENG7 version an earlier call built (a second administration);
-    otherwise the shipped spec is built. Deterministic: every id is derived from the
+    otherwise the shipped spec is built. `kinds` replaces `CELL_KINDS` (line -> kind) for a
+    variant seed, e.g. every line an accepted decision (TC-AGG-30's all-Jev-final student);
+    `jev_final_on_accept` passes FR-AGG-20's knob to `aggregate` (default: its own default). Deterministic: every id is derived from the
     consent class and the student name, and every timestamp the seed writes is `STAMP`."""
     from aeh.agg import aggregate, write_score
     from aeh.conf import CohortRef, resolve_run_config
@@ -244,7 +248,9 @@ def seed_jev_final(store: Any, *, consent_class: str = "synthetic",
         cohort_id, version, resolved, run_id=f"run-{cohort_id}")
 
     catalog = PackageCatalog(store.package(package_id), package_id=package_id)
-    criteria = {cid: _criterion(catalog, version, cid) for cid in CELL_KINDS}
+    cell_kinds = dict(CELL_KINDS if kinds is None else kinds)
+    criteria = {cid: _criterion(catalog, version, cid) for cid in cell_kinds}
+    knob = {} if jev_final_on_accept is None else {"jev_final_on_accept": jev_final_on_accept}
     signals = _favourable_signals()
     with cohort.transaction() as tx:
         tx.execute(
@@ -253,7 +259,7 @@ def seed_jev_final(store: Any, *, consent_class: str = "synthetic",
             b=f"brk-{run_id}-C3", r=run_id, t=STAMP,
             d=json.dumps({"seeded": "the clarity seed's breaker-tripped criterion"}))
         for name, submission_id in submissions.items():
-            for criterion_id, kind in CELL_KINDS.items():
+            for criterion_id, kind in cell_kinds.items():
                 criterion = criteria[criterion_id]
                 band = SEED_BANDS[name][criterion_id]
                 verdicts = _cell_verdicts(kind, submission_id, criterion, band)
@@ -267,7 +273,7 @@ def seed_jev_final(store: Any, *, consent_class: str = "synthetic",
                             w=verdict.work_id, r=run_id, s=submission_id, c=criterion_id,
                             b=JEV_BUILD, g=JEV_GATE, band=band, th=JEV_THRESHOLD)
                 score = aggregate(verdicts, criterion, signals,
-                                  breaker_tripped=kind == "breaker_tripped")
+                                  breaker_tripped=kind == "breaker_tripped", **knob)
                 write_score(tx, run_id, submission_id, score, signals)
     return JevFinalSeed(cohort_id=cohort_id, consent_class=consent_class, run_id=run_id,
                         package_id=package_id, package_version_id=version,
