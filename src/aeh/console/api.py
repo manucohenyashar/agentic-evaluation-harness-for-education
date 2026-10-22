@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 from .vocabulary import (
+    AI_CALLS_READ,
     AUTHORING_DRAFT_READ,
     AUTHORING_PREVIEW_READ,
     BLIND_SEATS_READ,
@@ -190,6 +191,8 @@ def _build_routes() -> tuple[ApiRoute, ...]:
         ApiRoute("GET", f"{API_PREFIX}/jobs/{{job_id}}", None, JOB_READ),
         ApiRoute("GET", f"{API_PREFIX}/issues", None, ISSUES_READ),
         ApiRoute("GET", f"{API_PREFIX}/logs", None, LOGS_READ),
+        # FR-CONSOLE-78: the AI-call read over M-PROV's journal files. A read; writes nothing.
+        ApiRoute("GET", f"{API_PREFIX}/ai-calls", None, AI_CALLS_READ),
         ApiRoute("GET", f"{API_PREFIX}/parked", None, PARKED_READ),
         ApiRoute("GET", f"{API_PREFIX}/config", None, CONFIG_READ),
         ApiRoute("POST", f"{API_PREFIX}/authoring/preview", AUTHORING_PREVIEW_READ,

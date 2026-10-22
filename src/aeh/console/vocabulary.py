@@ -148,6 +148,8 @@ JOBS_READ = "jobs"
 JOB_READ = "job"
 ISSUES_READ = "issues"
 LOGS_READ = "logs"
+#: The AI-call read (FR-CONSOLE-78): the journal's records, newest first, filterable.
+AI_CALLS_READ = "ai calls"
 PARKED_READ = "parked"
 CONFIG_READ = "config"
 AUTHORING_PREVIEW_READ = "authoring preview"
