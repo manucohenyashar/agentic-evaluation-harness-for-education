@@ -28,7 +28,9 @@ export function useToast(): (toast: Toast) => void {
   return useContext(ToastContext);
 }
 
-/** The host: stacks the toasts top-right and dismisses each after five seconds. */
+/** The host: stacks the toasts top-right and dismisses each after five seconds. The host is
+ * the live region; the outcome banner (FR-UI-24) is the one `status` a screen reader and a
+ * test find for an action's outcome, so a toast repeating it is not a second one. */
 export function ToastHost({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<{ key: number; toast: Toast }[]>([]);
   const nextKey = useRef(0);
@@ -40,7 +42,7 @@ export function ToastHost({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={raise}>
       {children}
-      <div className="toast-host">
+      <div className="toast-host" aria-live="polite">
         {toasts.map(({ key, toast }) => (
           <ToastItem key={key} toast={toast} onDone={() =>
             setToasts((current) => current.filter((entry) => entry.key !== key))
@@ -58,7 +60,7 @@ function ToastItem({ toast, onDone }: { toast: Toast; onDone: () => void }) {
   }, [onDone]);
   const Glyph = toast.kind === "success" ? CircleCheck : CircleX;
   return (
-    <div role="status" className={`toast toast-${toast.kind}`}>
+    <div className={`toast toast-${toast.kind}`}>
       <Glyph size={16} aria-hidden="true" />
       <span>{toast.text}</span>
     </div>

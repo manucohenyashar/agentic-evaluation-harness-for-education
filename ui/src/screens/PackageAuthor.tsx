@@ -11,7 +11,8 @@ import {
   type JobRecord,
   type PreviewDocument,
 } from "../api";
-import { ActionOutcome, ConfirmDialog, useActionState } from "../components/Confirm";
+import { ConfirmDialog, useActionState } from "../components/Confirm";
+import { FormatLine, formatIdFor } from "../components/Field";
 import { Screen } from "../components/Screen";
 import { useNavigate } from "../navigate";
 import { durationLabel, missingPiecesLabel, placeholderLocationLabel } from "../wizard/vocabulary";
@@ -525,7 +526,6 @@ export function PackageAuthor({ packageId }: { packageId: string | null }) {
 
   return (
     <Screen title="Author the package">
-      <ActionOutcome outcome={action.outcome} />
       {phase === "drafting" && job !== null && (
         <>
           <DraftingView
@@ -603,18 +603,23 @@ export function PackageAuthor({ packageId }: { packageId: string | null }) {
               }}
             >
               <p>Drag your test files here, or choose them below.</p>
-              <label>
-                <input
-                  type="file"
-                  multiple
-                  accept=".docx,.txt,.pdf"
-                  aria-label="Choose files to upload"
-                  onChange={(event) => {
-                    accept(event.target.files);
-                    event.target.value = "";
-                  }}
-                />
-              </label>
+              <label htmlFor="author-files">Choose files to upload</label>{" "}
+              <input
+                id="author-files"
+                type="file"
+                multiple
+                accept=".docx,.txt,.pdf"
+                aria-label="Choose files to upload"
+                aria-describedby={formatIdFor("author-files")}
+                onChange={(event) => {
+                  accept(event.target.files);
+                  event.target.value = "";
+                }}
+              />
+              <FormatLine
+                id={formatIdFor("author-files")}
+                spec="Word (.docx), PDF or plain text (.txt) files: the test and its marking guide"
+              />
             </div>
             {files.length > 0 && (
               <ul className="upload-list">
@@ -688,8 +693,14 @@ export function PackageAuthor({ packageId }: { packageId: string | null }) {
             <input
               id="scratch-title"
               type="text"
+              aria-describedby={formatIdFor("scratch-title")}
+              placeholder="e.g. ENG7-READ-01"
               value={scratchTitle}
               onChange={(event) => setScratchTitle(event.target.value)}
+            />
+            <FormatLine
+              id={formatIdFor("scratch-title")}
+              spec="The test's name as it is printed on the papers, for example ENG7-READ-01"
             />{" "}
             <button
               type="button"

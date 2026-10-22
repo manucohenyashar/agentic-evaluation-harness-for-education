@@ -295,6 +295,9 @@ export type ActionResult = {
   job_id?: string;
   /** The next step a refusal or an outcome names (`CT-CONSOLE-33`), when one is set. */
   next_action?: string;
+  /** A refusal's first two sentences (FR-UI-25): what happened, and why. */
+  what?: string;
+  why?: string;
 };
 
 /**
@@ -723,6 +726,14 @@ export interface DraftPlaceholder {
   location: string;
   reason: string;
   supply: string;
+  /** The teacher's side of the gap (FR-AUTHOR-31): the plain question, the form of the
+   * answer in words, and the answer's kind with its limits — the one definition the
+   * field's format line and its check read. */
+  question?: string;
+  answer_hint?: string;
+  answer_kind?: string;
+  answer_min?: number | null;
+  answer_max?: number | null;
 }
 
 /** One question in the draft, as the structure read projects it. `options` is the letters

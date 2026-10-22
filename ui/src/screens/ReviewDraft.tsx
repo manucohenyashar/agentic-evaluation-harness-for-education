@@ -5,12 +5,17 @@ import {
   type AuthoringDraftDoc,
   type DraftPlaceholder,
 } from "../api";
-import { ActionOutcome, ConfirmDialog, useActionState } from "../components/Confirm";
+import { ConfirmDialog, useActionState } from "../components/Confirm";
+import { describedBy, errorIdFor, FieldError, FormatLine, formatIdFor } from "../components/Field";
+import { BusyButton, DisabledReason, useOutcome } from "../components/Outcome";
 import { ReadScreen } from "../components/ReadScreen";
 import { useScreenRead } from "../useScreenRead";
 import { useNavigate } from "../navigate";
 import {
+  checkField,
   criterionLabel,
+  FORMAT_FREE_TEXT,
+  type FieldSpec,
   entryFieldLabel,
   missingPiecesLabel,
   placeholderLocationLabel,
@@ -163,8 +168,13 @@ function AnswerForm({
 }) {
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
+  const { clear } = useOutcome();
+  const spec = answerSpec(placeholder);
+  const error = checkField(spec, value);
+  const id = "answer-value";
   const send = (): void => {
     setBusy(true);
+    clear();
     performAction("answer authoring review", {
       package_id: draft.package_id,
       item_id: placeholder.item_id,
@@ -183,29 +193,73 @@ function AnswerForm({
       },
     );
   };
+  const label = placeholder.question
+    ? placeholder.question
+    : `Your answer for ${placeholderLocationLabel(placeholder.location, draft.items)}`;
+  const reason =
+    value.trim() === "" ? "Type your answer first."
+      : error !== null ? "Fix your answer first." : null;
+  const control = {
+    id,
+    "aria-describedby": describedBy(id, error),
+    "aria-invalid": error !== null || undefined,
+    value,
+    onChange: (event: { target: { value: string } }) => setValue(event.target.value),
+  };
   return (
     <div className="answer-form">
-      <label htmlFor="answer-value">
-        Your answer for {placeholderLocationLabel(placeholder.location, draft.items)}
-      </label>
-      {placeholder.supply !== "" && <p className="answer-supply">{placeholder.supply}</p>}
-      <textarea
-        id="answer-value"
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-      />
+      <label htmlFor={id}>{label}</label>
+      {!placeholder.question && placeholder.supply !== "" && (
+        <p className="answer-supply">{placeholder.supply}</p>
+      )}
+      {spec.kind === "whole_number" ? (
+        <input {...control} type="text" inputMode="numeric" placeholder="e.g. 6" />
+      ) : (
+        <textarea {...control} />
+      )}
+      <FormatLine id={formatIdFor(id)} spec={spec} />
+      <FieldError id={errorIdFor(id)} error={error} />
       <p>
-        <button
-          type="button"
+        <BusyButton
           className="button button-primary"
-          disabled={busy || value.trim() === ""}
+          disabled={reason !== null}
+          busy={busy}
           onClick={send}
         >
           Send the answer
-        </button>
+        </BusyButton>
+        <DisabledReason reason={busy ? null : reason} />
       </p>
     </div>
   );
+}
+
+/** The answer's one definition (FR-UI-36, FR-AUTHOR-31): the kind and limits the read
+ * serves beside the gap, so the format line and the field's check say the same range the
+ * server re-checks. A gap the read gives no kind for is free text. */
+function answerSpec(placeholder: DraftPlaceholder): FieldSpec {
+  const hint = (placeholder.answer_hint ?? "").replace(/\.\s*$/, "");
+  if (
+    placeholder.answer_kind === "whole_number" &&
+    typeof placeholder.answer_min === "number" &&
+    typeof placeholder.answer_max === "number"
+  ) {
+    return {
+      kind: "whole_number",
+      min: placeholder.answer_min,
+      max: placeholder.answer_max,
+      format: hint || undefined,
+    };
+  }
+  if (placeholder.answer_kind === "yes_no") {
+    return { kind: "text", format: hint || "Yes or no", pattern: /^(yes|no)$/i };
+  }
+  return {
+    kind: "text",
+    format: hint || FORMAT_FREE_TEXT,
+    minLength: placeholder.answer_min ?? undefined,
+    maxLength: placeholder.answer_max ?? undefined,
+  };
 }
 
 export function ReviewDraft({ packageId }: { packageId: string | null }) {
@@ -248,7 +302,6 @@ export function ReviewDraft({ packageId }: { packageId: string | null }) {
         const missing = draft.missing_pieces;
         return (
           <>
-            <ActionOutcome outcome={action.outcome} />
             <DraftOutline draft={draft} />
             <section aria-label="Missing pieces" className="missing-section">
               <h2>Missing pieces</h2>
@@ -301,9 +354,10 @@ export function ReviewDraft({ packageId }: { packageId: string | null }) {
             <section aria-label="Approval" className="approve-section">
               <h2>Approve the package</h2>
               {missing > 0 ? (
-                <p>
-                  {missingPiecesLabel(missing)} still stand in the draft, so the package
-                  cannot be approved yet.
+                <p className="refusal-shape">
+                  <strong>The package cannot be approved yet.</strong>{" "}
+                  {missingPiecesLabel(missing)} still stand in the draft.{" "}
+                  Answer them under Missing pieces above, then approve.
                 </p>
               ) : (
                 <button

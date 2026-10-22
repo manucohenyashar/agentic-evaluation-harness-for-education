@@ -1,5 +1,6 @@
 import { fetchRead, type MonitorState as MonitorDoc } from "../api";
 import { ReadScreen } from "../components/ReadScreen";
+import { entityStateLabel } from "../wizard/vocabulary";
 import { useScreenRead } from "../useScreenRead";
 import { useRunParams } from "../selection";
 
@@ -41,7 +42,7 @@ export function Monitor() {
           <p className="hub-state">
             {data.run_id === null
               ? "The console serves no run."
-              : `Run ${data.run_id} — ${data.status ?? "unknown"}` +
+              : `The grading run — ${(data.status ? entityStateLabel(data.status) : "Not known yet")}` +
                 (data.pause_reason ? ` (paused: ${data.pause_reason})` : "") +
                 "."}
           </p>

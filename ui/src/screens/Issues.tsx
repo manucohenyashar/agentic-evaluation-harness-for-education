@@ -1,6 +1,6 @@
 import { CircleHelp, Info, TriangleAlert } from "lucide-react";
 import type { IssuesDoc } from "../api";
-import { ActionOutcome, ConfirmDialog, useActionState } from "../components/Confirm";
+import { ConfirmDialog, useActionState } from "../components/Confirm";
 import { Screen } from "../components/Screen";
 import { ReadScreen } from "../components/ReadScreen";
 import { useNavigate } from "../navigate";
@@ -104,7 +104,6 @@ export function Issues({ runId }: { runId: string | null }) {
     <ReadScreen title="Issues" read={read}>
       {(data) => (
         <>
-          <ActionOutcome outcome={action.outcome} />
           {data.issues.length === 0 ? (
             <p>Nothing went wrong in this run.</p>
           ) : (

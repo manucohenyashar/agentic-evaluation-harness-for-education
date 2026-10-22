@@ -37,6 +37,7 @@ import { Sidebar } from "./wizard/Sidebar";
 import { WizardHome } from "./wizard/WizardHome";
 import { useWizardReads } from "./wizard/useWizardReads";
 import { ToastHost } from "./state/StateDisplay";
+import { OutcomeHost } from "./components/Outcome";
 
 /**
  * The console's shell (FR-CONSOLE-47). Hash-based routing: the server answers only `/` and
@@ -256,6 +257,7 @@ export function App() {
     <Navigate.Provider value={goTo}>
       <SelectionContext.Provider value={selection}>
       <ToastHost>
+      <OutcomeHost route={address.path}>
         <div className="shell">
           <ContextHeader
             context={context}
@@ -284,6 +286,7 @@ export function App() {
             />
           )}
         </div>
+      </OutcomeHost>
       </ToastHost>
       </SelectionContext.Provider>
     </Navigate.Provider>

@@ -7,7 +7,7 @@ import {
   CircleX,
 } from "lucide-react";
 import { fetchJob, type JobDetailDoc, type JobRecord, type JobsDoc } from "../api";
-import { ActionOutcome, ConfirmDialog, useActionState } from "../components/Confirm";
+import { ConfirmDialog, useActionState } from "../components/Confirm";
 import { ReadScreen } from "../components/ReadScreen";
 import { useScreenRead } from "../useScreenRead";
 import {
@@ -225,7 +225,6 @@ export function Jobs({ pausedRunIds }: { pausedRunIds: string[] }) {
     <ReadScreen title="Jobs" read={read}>
       {(data) => (
         <>
-          <ActionOutcome outcome={action.outcome} />
           {data.jobs.length === 0 ? (
             <p>No jobs have run yet.</p>
           ) : (

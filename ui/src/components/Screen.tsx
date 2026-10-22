@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { OutcomeBanner } from "./Outcome";
 
 /**
  * One routed screen's content: the level-1 heading that names it and what the screen shows.
@@ -9,6 +10,7 @@ export function Screen({ title, children }: { title: string; children?: ReactNod
   return (
     <>
       <h1>{title}</h1>
+      <OutcomeBanner />
       {children}
     </>
   );

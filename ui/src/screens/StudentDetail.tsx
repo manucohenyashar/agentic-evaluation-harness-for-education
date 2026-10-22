@@ -26,7 +26,6 @@ export function StudentDetail({ submissionId }: { submissionId: string }) {
   );
   const raiseToast = useToast();
   const [showDetails, setShowDetails] = useState(false);
-  const [outcome, setOutcome] = useState<string | null>(null);
   const [remount, setRemount] = useState(0);
   // The log panel rides the Details expander: it reads nothing until the teacher opens
   // the trail, and only with the run the drill-down's own read named.
@@ -36,10 +35,9 @@ export function StudentDetail({ submissionId }: { submissionId: string }) {
     data === null ? undefined : { run_id: data.run_id },
   );
 
-  const afterOverride = (text: string, changes: OverrideChange[], final: boolean): void => {
+  const afterOverride = (_text: string, changes: OverrideChange[], final: boolean): void => {
     read.retry();
     setRemount((n) => n + 1);
-    setOutcome(text);
     if (changes.length > 0) {
       raiseToast({
         kind: "success",
@@ -61,7 +59,6 @@ export function StudentDetail({ submissionId }: { submissionId: string }) {
               : ""}
             .
           </p>
-          {outcome !== null && <p role="status" className="action-outcome">{outcome}</p>}
           <section className="drilldown">
             <h2>Grades and justifications</h2>
             {doc.criteria.length === 0 ? (

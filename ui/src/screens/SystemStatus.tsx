@@ -1,5 +1,6 @@
 import { fetchRead, type SystemStatus as StatusDoc } from "../api";
 import { ReadScreen } from "../components/ReadScreen";
+import { entityStateLabel, versionName } from "../wizard/vocabulary";
 import { useScreenRead } from "../useScreenRead";
 
 /**
@@ -15,8 +16,8 @@ export function SystemStatus() {
           <p className="hub-state">
             {data.run_id === null
               ? "The console serves no run."
-              : `Run ${data.run_id} — ${data.run_status ?? "unknown"}, package version ` +
-                `${data.package_version_id ?? "none"}.`}
+              : `The grading run — ${(data.run_status ? entityStateLabel(data.run_status) : "Not known yet")}, test ` +
+                `${versionName(data.package_version_id)}.`}
           </p>
           <section className="panel">
             <h2>The store this console serves</h2>

@@ -10,7 +10,8 @@ import { useScreenRead } from "../useScreenRead";
 import type { StageRow } from "./derivation";
 import { STAGE_ROUTES } from "./derivation";
 import { StageBadge } from "./StateBadge";
-import { stageStateLabel } from "./vocabulary";
+import { OutcomeBanner } from "../components/Outcome";
+import { stageStateLabel, versionName } from "./vocabulary";
 
 export interface WizardHomeProps {
   rows: StageRow[];
@@ -42,7 +43,7 @@ function Destinations({ stageHref }: { stageHref: (route: string) => string }) {
     {
       label: "Set up a test package",
       route: "/package",
-      fact: fact(hub === null ? null : `version ${hub.package_version_id ?? "none yet"}`),
+      fact: fact(hub === null ? null : `test: ${versionName(hub.package_version_id)}`),
     },
     { label: "Load papers", route: "/papers", fact: "" },
     {
@@ -81,6 +82,7 @@ export function WizardHome({ rows, next, impact, stageHref, failed, retry }: Wiz
   return (
     <section className="wizard">
       <h1>Your grading day</h1>
+      <OutcomeBanner />
       {failed && (
         <p role="alert" className="hub-alert">
           The console could not read its state. It will keep trying.{" "}

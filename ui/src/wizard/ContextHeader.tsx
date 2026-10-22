@@ -8,6 +8,7 @@
 
 import { CircleHelp } from "lucide-react";
 import type { ContextDoc } from "../api";
+import { FormatLine, formatIdFor } from "../components/Field";
 import { runLabel } from "../screens/PastTests";
 import { ledgerEntries, newestRunFirst, type Selection } from "./derivation";
 import { EntityBadge } from "./StateBadge";
@@ -52,6 +53,7 @@ function Switcher({
       <select
         id={id}
         className="switcher"
+        aria-describedby={formatIdFor(id)}
         value={value}
         disabled={disabled || options.length === 0}
         onChange={(event) => onChange(event.target.value)}
@@ -63,6 +65,7 @@ function Switcher({
           </option>
         ))}
       </select>
+      <FormatLine id={formatIdFor(id)} spec={`Choose the ${label.toLowerCase()} to work with`} />
     </>
   );
 }

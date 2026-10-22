@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { performAction } from "../api";
 import { InlineNote } from "../state/StateDisplay";
+import { FormatLine } from "./Field";
+import { BusyButton, textOutcome, useOutcome } from "./Outcome";
 
 /**
  * The override (FR-UI-17, RS-09): "Change a final grade" opens a band selection — the same
@@ -61,6 +63,9 @@ export function OverrideForm({
   const [reason, setReason] = useState("");
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const { report, clear } = useOutcome();
+  const formId = useId();
+  const reasonId = `${formId}-reason`;
 
   const save = async (): Promise<void> => {
     const changes: OverrideChange[] = criteria
@@ -82,6 +87,7 @@ export function OverrideForm({
     }
     setBusy(true);
     setNote(null);
+    clear();
     let outcome = "";
     let failure: string | null = null;
     if (final) {
@@ -140,11 +146,14 @@ export function OverrideForm({
     setBusy(false);
     if (failure !== null) {
       setNote(`Refused: ${failure}`);
+      report(textOutcome(failure, true));
       onDone(`Refused: ${failure}`, [], final);
       return;
     }
     setNote(null);
     setReason("");
+    // The screen raises its own success toast; the banner carries the render-back.
+    report(textOutcome(outcome), { toast: false });
     onDone(outcome, changes, final);
   };
 
@@ -157,6 +166,7 @@ export function OverrideForm({
             <span>{criterion.label}</span>
             <select
               name={`criterion-band-${criterion.criterion_id}`}
+              aria-describedby={`${formId}-${criterion.criterion_id}-format`}
               value={values[criterion.criterion_id] ?? criterion.criterion_band}
               onChange={(event) =>
                 setValues((current) => ({
@@ -171,21 +181,34 @@ export function OverrideForm({
                 </option>
               ))}
             </select>
+            <FormatLine
+              id={`${formId}-${criterion.criterion_id}-format`}
+              spec={{ kind: "choice", format: "Choose the score level this answer earns" }}
+            />
           </label>
         ))}
         <label className="override-field">
           <span>{final ? "Reason (required)" : "Reason"}</span>
           <textarea
             name="override-reason"
+            aria-describedby={`${reasonId}-format`}
             value={reason}
             onChange={(event) => setReason(event.target.value)}
             rows={2}
           />
+          <FormatLine
+            id={`${reasonId}-format`}
+            spec={
+              final
+                ? "Say in a sentence why the grade is changing; it is kept with the change"
+                : "Optional: a sentence on why, kept with the change"
+            }
+          />
         </label>
         {note !== null && <InlineNote message={{ tier: "inline", what: note, why: "", next_action: null, kind: "failure" }} />}
-        <button type="button" className="button button-primary" onClick={save} disabled={busy}>
+        <BusyButton className="button button-primary" onClick={() => void save()} busy={busy}>
           Save
-        </button>
+        </BusyButton>
       </div>
     </details>
   );

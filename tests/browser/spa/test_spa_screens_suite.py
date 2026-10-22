@@ -1383,7 +1383,7 @@ def test_tc_ui_13_every_failure_renders_its_template_and_every_success_a_toast(
             if not _wait_for(problems, "arm (iii)", page, error.is_visible,
                              "the inline field error to render"):
                 pass
-            if error.inner_text() != "Enter a number.":
+            if error.inner_text() != "Please enter a whole number from 1 to 26.":
                 problems.append(f"arm (iii): the field error reads {error.inner_text()!r}")
             if page.get_by_role("button", name="Save the changes").is_enabled():
                 problems.append("arm (iii): the save stays enabled with an invalid value")
@@ -2268,7 +2268,7 @@ def test_tc_ui_19_no_select_or_toggle_posts_until_an_explicit_confirm(
             _change_select(page, problems, "results", "select[name='flag-filter']")
             _change_select(page, problems, "results", "select[name='student-sort']")
             page.locator("input[name='student-search']").fill("ref")
-            finalize = page.get_by_role("button", name="Finalize the batch")
+            finalize = page.get_by_role("button", name="Approve all grades")
             if finalize.count() == 1:
                 finalize.click()
                 dialog = _dialog(page)

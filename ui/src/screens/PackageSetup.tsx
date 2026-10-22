@@ -5,8 +5,10 @@ import {
   type ContextDoc,
   type PackageSetup as PackageSetupDoc,
 } from "../api";
-import { ActionOutcome, ConfirmDialog, useActionState } from "../components/Confirm";
+import { ConfirmDialog, useActionState } from "../components/Confirm";
+import { FormatLine, formatIdFor } from "../components/Field";
 import { ReadScreen } from "../components/ReadScreen";
+import { packageName, versionName } from "../wizard/vocabulary";
 import { useScreenRead } from "../useScreenRead";
 import { useNavigate } from "../navigate";
 
@@ -36,8 +38,8 @@ export function PackageSetup({ context }: { context: ContextDoc | null }) {
     action.open({
       title: "Publish this package",
       description:
-        `Publishing locks the draft of package ${draft.package_id} — version ` +
-        `${draft.version_id} — in a single step, and records you as ` +
+        `Publishing locks the draft of ${packageName(draft.package_id)} in a single ` +
+        "step, and records you as " +
         "the approver. The run then grades against this version.",
       confirm: "Publish",
       action: "publish package",
@@ -51,7 +53,7 @@ export function PackageSetup({ context }: { context: ContextDoc | null }) {
         <>
           <p className="hub-state">
             {data.current_version_id
-              ? `The run grades against package version ${data.current_version_id}.`
+              ? `The run grades against ${versionName(data.current_version_id)}.`
               : "No run names a package version yet."}
           </p>
           {published.length > 0 && (
@@ -60,14 +62,13 @@ export function PackageSetup({ context }: { context: ContextDoc | null }) {
               <ul className="rows-list">
                 {published.map((p) => (
                   <li key={p.package_id}>
-                    <span className="step-name">{p.package_id}</span>
+                    <span className="step-name">{packageName(p.package_id)}</span>
                     <span className="step-note">{p.published_version}</span>
                   </li>
                 ))}
               </ul>
             </section>
           )}
-          <ActionOutcome outcome={action.outcome} />
           {data.draft === null ? (
             <p className="panel">
               No package's setup holds a draft right now. Every stored package is published.
@@ -75,7 +76,7 @@ export function PackageSetup({ context }: { context: ContextDoc | null }) {
           ) : (
             <section className="panel">
               <h2>
-                Draft {data.draft.package_id} — version {data.draft.version_id}
+                The draft of {packageName(data.draft.package_id)}
               </h2>
               <ul className="steps">
                 {data.draft.steps.map((step) => (
@@ -156,7 +157,12 @@ function ImportBackup({ onDone }: { onDone: () => void }) {
             id="import-backup"
             type="file"
             accept=".aehpkg"
+            aria-describedby={formatIdFor("import-backup")}
             onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+          />
+          <FormatLine
+            id={formatIdFor("import-backup")}
+            spec="A test's backup file, ending in .aehpkg"
           />
         </div>
         <div className="settings-actions">
@@ -172,7 +178,6 @@ function ImportBackup({ onDone }: { onDone: () => void }) {
           </button>
         </div>
       </div>
-      <ActionOutcome outcome={action.outcome} />
       {action.pending !== null && (
         <ConfirmDialog pending={action.pending} onClose={action.close} onDone={action.finish} />
       )}

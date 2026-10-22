@@ -1,7 +1,16 @@
 import { useMemo, useState } from "react";
 import { TriangleAlert } from "lucide-react";
 import type { ResultsScreen as ResultsDoc, ResultStudent } from "../api";
-import { ActionOutcome, ConfirmDialog, useActionState } from "../components/Confirm";
+import { ConfirmDialog, useActionState } from "../components/Confirm";
+import {
+  describedBy,
+  errorIdFor,
+  FieldError,
+  FormatLine,
+  formatIdFor,
+} from "../components/Field";
+import { DisabledReason } from "../components/Outcome";
+import { checkField, fixFieldFirst, FORMAT_CHOOSE_ONE, type FieldSpec } from "../wizard/vocabulary";
 import { OverrideForm, type OverrideChange } from "../components/Override";
 import { ReadScreen } from "../components/ReadScreen";
 import { useNavigate } from "../navigate";
@@ -109,7 +118,6 @@ export function Results() {
   const navigate = useNavigate();
   const finalize = useActionState(read.retry);
   const raiseToast = useToast();
-  const [outcome, setOutcome] = useState<string | null>(null);
   const [remount, setRemount] = useState(0);
   const [search, setSearch] = useState("");
   const [levelFilter, setLevelFilter] = useState("");
@@ -164,10 +172,9 @@ export function Results() {
     return items;
   }, [data]);
 
-  const afterOverride = (text: string, changes: OverrideChange[], final: boolean): void => {
+  const afterOverride = (_text: string, changes: OverrideChange[], final: boolean): void => {
     read.retry();
     setRemount((n) => n + 1);
-    setOutcome(text);
     if (changes.length > 0) {
       raiseToast({
         kind: "success",
@@ -182,23 +189,22 @@ export function Results() {
     if (doc.run_id === null || doc.students.length === 0) {
       return;
     }
-    // The confirmation names what it does out of the API's own document (FR-UI-05): the
-    // run it settles and how many of its stored grades are not yet final — a run whose
-    // grades are all final settles nothing (FR-CONSOLE-02), and the dialog says that.
+    // The confirmation names what it does out of the API's own document (FR-UI-05): how
+    // many of the class's grades are not yet final — when every grade already is, the
+    // dialog says there is nothing left to approve.
     const not_final = doc.students.filter((s) => s.state !== "final").length;
     finalize.open({
-      title: "Finalize this batch",
+      title: "Approve all grades",
       description:
         not_final === 0
-          ? `Every stored grade of run ${doc.run_id} is already final; finalizing ` +
-            "settles nothing — a confirm whose work is done is a no-op (FR-CONSOLE-02). " +
-            "Afterward a correction is an amendment, recorded."
-          : `Finalizing settles the ${not_final} not-yet-final grade(s) of run ` +
-            `${doc.run_id}: the batch's grades stop being provisional. ` +
-            "Afterward a correction is an amendment, recorded.",
-      confirm: "Finalize",
+          ? "Every grade in these results is already final, so there is nothing left " +
+            "to approve. A later correction is recorded as a change to the grade."
+          : `This makes the ${not_final} grade(s) not yet final into final grades. ` +
+            "A later correction is recorded as a change to the grade.",
+      confirm: "Approve all",
       action: "finalize batch",
       body: { run_id: doc.run_id, actor: "operator" },
+      said: "Every grade in these results is now final.",
     });
   };
 
@@ -217,7 +223,6 @@ export function Results() {
           doc.scales.find((scale) => scale.criterion_id === criterionId)?.levels ?? [];
         return (
           <>
-            <ActionOutcome outcome={outcome ?? finalize.outcome} />
             {doc.students.length === 0 ? (
               <p className="panel">The run holds no computed grades.</p>
             ) : (
@@ -275,6 +280,7 @@ export function Results() {
                     Score level{" "}
                     <select
                       name="level-filter"
+                      aria-describedby={formatIdFor("level-filter")}
                       value={levelFilter}
                       onChange={(event) => setLevelFilter(event.target.value)}
                     >
@@ -285,11 +291,13 @@ export function Results() {
                         </option>
                       ))}
                     </select>
+                    <FormatLine id={formatIdFor("level-filter")} spec="Show only the students at this score level" />
                   </label>
                   <label>
                     Flag{" "}
                     <select
                       name="flag-filter"
+                      aria-describedby={formatIdFor("flag-filter")}
                       value={flagFilter}
                       onChange={(event) => setFlagFilter(event.target.value)}
                     >
@@ -298,17 +306,20 @@ export function Results() {
                       <option value="low_confidence">Low confidence</option>
                       <option value="not_final">Not final yet</option>
                     </select>
+                    <FormatLine id={formatIdFor("flag-filter")} spec="Show only the students with this flag" />
                   </label>
                   <label>
                     Sort students{" "}
                     <select
                       name="student-sort"
+                      aria-describedby={formatIdFor("student-sort")}
                       value={sort}
                       onChange={(event) => setSort(event.target.value)}
                     >
                       <option value="az">A to Z</option>
                       <option value="za">Z to A</option>
                     </select>
+                    <FormatLine id={formatIdFor("student-sort")} spec="The order the students are listed in" />
                   </label>
                 </section>
                 <ul className="result-list" key={remount}>
@@ -369,7 +380,7 @@ export function Results() {
               onClick={() => openFinalize(doc)}
               disabled={doc.run_id === null || doc.students.length === 0}
             >
-              Finalize the batch
+              Approve all grades
             </button>
             {finalize.pending !== null && (
               <ConfirmDialog
@@ -401,6 +412,9 @@ function exportHref(path: string, params: Record<string, string>): string {
  * given; a later version holds only the students whose final mark was changed that many
  * times (the export reads one revision, `export_grade_artifacts`).
  */
+/** The marks version an export reads: 1 is the marks as first given. */
+const MARKS_VERSION: FieldSpec = { kind: "whole_number", min: 1, max: 99 };
+
 function Downloads({ doc }: { doc: ResultsDoc }) {
   const runId = doc.run_id ?? "";
   const [revision, setRevision] = useState("1");
@@ -412,7 +426,8 @@ function Downloads({ doc }: { doc: ResultsDoc }) {
     }));
   const firstRef = named[0]?.student_ref ?? "";
   const [student, setStudent] = useState(firstRef);
-  const rev = /^[1-9][0-9]*$/.test(revision) ? revision : "1";
+  const revisionError = checkField(MARKS_VERSION, revision);
+  const rev = revisionError === null && revision.trim() !== "" ? revision.trim() : "1";
   const version = doc.package_version_id ?? "";
   return (
     <section className="panel" aria-label="Download the results">
@@ -422,10 +437,15 @@ function Downloads({ doc }: { doc: ResultsDoc }) {
           <label htmlFor="export-revision">Marks version</label>
           <input
             id="export-revision"
+            aria-describedby={describedBy("export-revision", revisionError)}
+            aria-invalid={revisionError !== null || undefined}
             inputMode="numeric"
+            placeholder="e.g. 1"
             value={revision}
             onChange={(event) => setRevision(event.target.value)}
           />
+          <FormatLine id={formatIdFor("export-revision")} spec={MARKS_VERSION} />
+          <FieldError id={errorIdFor("export-revision")} error={revisionError} />
           <p className="step-note">
             1 is every student's marks as first given. 2 lists only the students whose final
             mark was changed, with the changed mark (3 the next change, and so on).
@@ -435,6 +455,7 @@ function Downloads({ doc }: { doc: ResultsDoc }) {
           <label htmlFor="export-student">Student for the report</label>
           <select
             id="export-student"
+            aria-describedby={formatIdFor("export-student")}
             value={student}
             onChange={(event) => setStudent(event.target.value)}
           >
@@ -444,8 +465,15 @@ function Downloads({ doc }: { doc: ResultsDoc }) {
               </option>
             ))}
           </select>
+          <FormatLine
+            id={formatIdFor("export-student")}
+            spec="Choose the student whose report to download"
+          />
         </div>
       </div>
+      {revisionError !== null ? (
+        <DisabledReason reason={fixFieldFirst("Marks version")} />
+      ) : (
       <ul className="rows-list">
         <li>
           <a
@@ -503,6 +531,7 @@ function Downloads({ doc }: { doc: ResultsDoc }) {
           </>
         )}
       </ul>
+      )}
     </section>
   );
 }
@@ -531,6 +560,7 @@ function KeyCorrection({ doc, onDone }: { doc: ResultsDoc; onDone: () => void })
           <label htmlFor="key-question">Question</label>
           <select
             id="key-question"
+            aria-describedby={formatIdFor("key-question")}
             value={criterion}
             onChange={(event) => {
               setCriterion(event.target.value);
@@ -543,10 +573,16 @@ function KeyCorrection({ doc, onDone }: { doc: ResultsDoc; onDone: () => void })
               </option>
             ))}
           </select>
+          <FormatLine id={formatIdFor("key-question")} spec="Choose the question whose key was wrong" />
         </div>
         <div className="settings-row">
           <label htmlFor="key-answer">Right answer</label>
-          <select id="key-answer" value={letter} onChange={(event) => setLetter(event.target.value)}>
+          <select
+            id="key-answer"
+            aria-describedby={formatIdFor("key-answer")}
+            value={letter}
+            onChange={(event) => setLetter(event.target.value)}
+          >
             <option value="">Choose…</option>
             {(chosen?.options ?? []).map((option) => (
               <option key={option.option_id} value={option.option_id}>
@@ -555,6 +591,7 @@ function KeyCorrection({ doc, onDone }: { doc: ResultsDoc; onDone: () => void })
               </option>
             ))}
           </select>
+          <FormatLine id={formatIdFor("key-answer")} spec={FORMAT_CHOOSE_ONE} />
         </div>
         <div className="settings-actions">
           <button
@@ -570,6 +607,7 @@ function KeyCorrection({ doc, onDone }: { doc: ResultsDoc; onDone: () => void })
                 confirm: "Correct the key",
                 action: "correct an answer key after a run",
                 body: { run_id: doc.run_id, criterion_id: criterion, answer_key: [letter] },
+                said: `The key is corrected, and the marks for ${chosen?.label ?? "that question"} are worked out again.`,
               })
             }
           >
@@ -577,7 +615,6 @@ function KeyCorrection({ doc, onDone }: { doc: ResultsDoc; onDone: () => void })
           </button>
         </div>
       </div>
-      <ActionOutcome outcome={action.outcome} />
       {action.pending !== null && (
         <ConfirmDialog pending={action.pending} onClose={action.close} onDone={action.finish} />
       )}
@@ -589,26 +626,35 @@ function KeyCorrection({ doc, onDone }: { doc: ResultsDoc; onDone: () => void })
  * The review window (FR-CONSOLE-22): how many hours the grades stay open for review before
  * finalizing settles them — the "set review window" control, behind its confirmation.
  */
+/** The review window's hours, as the form checks them (four digits, as the server takes). */
+const REVIEW_HOURS: FieldSpec = { kind: "whole_number", min: 0, max: 9999 };
+
 function ReviewWindow({ runId, onDone }: { runId: string; onDone: () => void }) {
   const [hours, setHours] = useState("");
   const action = useActionState(onDone);
-  const valid = /^[0-9]{1,4}$/.test(hours);
+  const hoursError = checkField(REVIEW_HOURS, hours);
+  const valid = hoursError === null && hours.trim() !== "";
   return (
     <section className="panel" aria-label="Review window">
       <h2>Review window</h2>
       <p className="step-note">
         Keep the grades open for review for a number of hours before they become final (0
-        means finalizing settles them at once).
+        means they become final as soon as you approve them).
       </p>
       <div className="settings-form">
         <div className="settings-row">
           <label htmlFor="review-hours">Hours</label>
           <input
             id="review-hours"
+            aria-describedby={describedBy("review-hours", hoursError)}
+            aria-invalid={hoursError !== null || undefined}
             inputMode="numeric"
+            placeholder="e.g. 24"
             value={hours}
             onChange={(event) => setHours(event.target.value)}
           />
+          <FormatLine id={formatIdFor("review-hours")} spec={REVIEW_HOURS} />
+          <FieldError id={errorIdFor("review-hours")} error={hoursError} />
         </div>
         <div className="settings-actions">
           <button
@@ -618,18 +664,24 @@ function ReviewWindow({ runId, onDone }: { runId: string; onDone: () => void }) 
             onClick={() =>
               action.open({
                 title: "Set the review window",
-                description: `The grades stay open for review for ${hours} hour(s) before finalizing settles them.`,
+                description: `The grades stay open for review for ${hours} hour(s) before they become final.`,
                 confirm: "Set it",
                 action: "set review window",
                 body: { run_id: runId, review_window_hours: Number(hours) },
+                said: `The grades stay open for review for ${hours} hour(s).`,
               })
             }
           >
             Set the review window
           </button>
+          <DisabledReason
+            reason={
+              hoursError !== null ? fixFieldFirst("Hours")
+                : hours.trim() === "" ? "Fill in “Hours” first." : null
+            }
+          />
         </div>
       </div>
-      <ActionOutcome outcome={action.outcome} />
       {action.pending !== null && (
         <ConfirmDialog pending={action.pending} onClose={action.close} onDone={action.finish} />
       )}

@@ -5,11 +5,13 @@ import {
   type Papers as PapersDoc,
   type RunStartState as RunStartDoc,
 } from "../api";
-import { ActionOutcome, ConfirmDialog, useActionState } from "../components/Confirm";
+import { ConfirmDialog, useActionState } from "../components/Confirm";
 import { ReadScreen } from "../components/ReadScreen";
 import { useNavigate } from "../navigate";
 import { useScreenRead } from "../useScreenRead";
 import { newestRunFirst, type Selection } from "../wizard/derivation";
+import { formatIdFor, FormatLine } from "../components/Field";
+import { entityStateLabel, versionName } from "../wizard/vocabulary";
 
 /**
  * The run-start screen (FR-UI-03d): what would start — the class, the test version and the
@@ -92,6 +94,7 @@ export function RunStart({
         confirm: "Start",
         action: "start run",
         body,
+        said: "The grading run has started. It keeps going if you close the browser.",
       });
     } catch (failure: unknown) {
       action.open({
@@ -100,6 +103,7 @@ export function RunStart({
         confirm: "Start",
         action: "start run",
         body,
+        said: "The grading run has started. It keeps going if you close the browser.",
       });
     }
   };
@@ -115,10 +119,10 @@ export function RunStart({
             <p className="hub-state">
               {data.run_id === null
                 ? "No grading run has started for this class yet."
-                : `Run ${data.run_id} — class ${data.cohort_id}, test version ` +
-                  `${data.package_version_id}, currently ${data.status ?? "unknown"}.`}
+                : `The grading run for class ${data.cohort_id}, test ` +
+                  `${versionName(data.package_version_id, context?.packages)}, is ` +
+                  `${(data.status ? entityStateLabel(data.status) : "Not known yet").toLowerCase()}.`}
             </p>
-            <ActionOutcome outcome={action.outcome} />
             {data.run_id !== null && (
               <button
                 type="button"
@@ -203,15 +207,20 @@ export function RunStart({
                     <label htmlFor="run-version">Test version</label>
                     <select
                       id="run-version"
+                      aria-describedby={formatIdFor("run-version")}
                       value={version}
                       onChange={(event) => setVersion(event.target.value)}
                     >
                       {versions.map((v) => (
                         <option key={v} value={v}>
-                          {v}
+                          {versionName(v, context?.packages)}
                         </option>
                       ))}
                     </select>
+                    <FormatLine
+                      id={formatIdFor("run-version")}
+                      spec="Choose the published test these papers are graded against"
+                    />
                   </div>
                   {classRuns.length > 0 && (
                     <p className="step-note">
