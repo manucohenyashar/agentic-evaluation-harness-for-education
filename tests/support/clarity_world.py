@@ -335,6 +335,63 @@ def eng7_grade_gaps(grades: dict[str, float | None]) -> list[Any]:
     return [gap for gap in assembly.gaps if gap.item_id.startswith("grades")]
 
 
+def _eng7_spec() -> dict[str, Any]:
+    import tomllib
+
+    return tomllib.loads(ENG7_SPEC.read_text(encoding="utf-8"))
+
+
+def eng7_inventory(*, points: dict[str, int | None] | None = None) -> list[dict[str, Any]]:
+    """The ENG7 questions as the drafter's inventory states them, with text and model answer
+    copied from the shipped spec; `points` overrides a question's points (`None`: the paper
+    states none — TC-AUTHOR-47's missing-points draft)."""
+    overrides = dict(points or {})
+    return [{"id": q["id"], "type": q["type"],
+             "points": overrides.get(q["id"], q["points"]),
+             "text": q["text"], "model_answer": q["model_answer"]}
+            for q in _eng7_spec()["question"]]
+
+
+def eng7_rubric_values() -> dict[str, dict[str, Any]]:
+    """The accepted rubric proposals for ENG7, from the shipped spec: Q1 an evidence
+    checklist (two 1-point aspects), Q2 four bands, Q3 bands derived from the teacher's
+    words (`general`)."""
+    criteria = {c["id"]: c for c in _eng7_spec()["criterion"]}
+    return {
+        "Q1": {"aspects": [{"description": criteria[cid]["bands"][1]["descriptor"],
+                            "points": 1} for cid in ("C1a", "C1b")]},
+        "Q2": {"bands": [dict(band) for band in criteria["C2"]["bands"]]},
+        "Q3": {"bands": [dict(band) for band in criteria["C3"]["bands"]],
+               "derivation_description": criteria["C3"]["derivation_description"]},
+    }
+
+
+def eng7_assembly(grades: dict[str, float | None], *,
+                  points: dict[str, int | None] | None = None) -> Any:
+    """The ENG7 draft as the shipped assembler (`aeh.author.spec.assemble`) builds it from
+    the ENG7 inventory and rubric, with the grade table the documents state — AF-22 `{}`,
+    AF-23 `{"pass": None, "not yet": None}`. No model call: this is the drafter's last,
+    deterministic step over the steps' outputs. A disclosed stand-in for the recorded
+    AF-22/AF-23 drafts, whose replies are not captured yet (`F-AUTHOR/README.md`)."""
+    from aeh.author.spec import assemble
+
+    return assemble("ENG7-READ-01", eng7_inventory(points=points), eng7_rubric_values(),
+                    {}, {}, grades)
+
+
+def write_eng7_draft(directory: Path, grades: dict[str, float | None], *,
+                     points: dict[str, int | None] | None = None) -> Path:
+    """Render `eng7_assembly(...)` with the shipped `render_draft` into
+    `<directory>/ENG7-READ-01.package.draft.toml` (the console's authoring folder layout)."""
+    from aeh.author.report import draft_filename
+    from aeh.author.spec import render_draft
+
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / draft_filename("ENG7-READ-01")
+    path.write_text(render_draft(eng7_assembly(grades, points=points)), encoding="utf-8")
+    return path
+
+
 # --- the written-ahead probes (`WRITTEN_AHEAD_BLOCKERS`, `command` kind) --------------------
 # Behavioural, not name-based: each exits 0 exactly when the behaviour its marked cases
 # assert has shipped, so the gate fires the moment they can be unmarked.
@@ -368,4 +425,5 @@ __all__ = [
     "JEV_THRESHOLD", "JevFinalSeed", "JevFinalWorld", "SEED_BANDS", "STUDENTS", "STUDENT_A",
     "STUDENT_B", "build_eng7_package", "canonical_snapshot", "roster_names", "score_rows",
     "seed_jev_final", "seed_jev_final_world",
+    "eng7_assembly", "eng7_inventory", "eng7_rubric_values", "write_eng7_draft",
 ]
