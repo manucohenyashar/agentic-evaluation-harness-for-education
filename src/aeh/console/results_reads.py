@@ -23,9 +23,17 @@ def results_class_read(app: Any, query: Any) -> dict[str, Any]:
     for a run no ledger holds (the caller's mistake, the same refusal the export read
     answers with)."""
     try:
-        return run_class_view(app._store, _run_id_of(query, "results class"))
+        view = run_class_view(app._store, _run_id_of(query, "results class"))
     except GradeError as refusal:
         raise ValueError(str(refusal)) from refusal
+    # FR-CONSOLE-74 (#808): each segment's version id rides under an `_id` name; the
+    # `rubric_version` field reads as the teacher label once the boundary has named it.
+    rollup = view.get("rollup") if isinstance(view, dict) else None
+    segments = rollup.get("segments") if isinstance(rollup, dict) else None
+    for segment in segments or ():
+        if isinstance(segment, dict) and "rubric_version" in segment:
+            segment["rubric_version_id"] = segment["rubric_version"]
+    return view
 
 
 def results_student_read(app: Any, query: Any) -> dict[str, Any]:

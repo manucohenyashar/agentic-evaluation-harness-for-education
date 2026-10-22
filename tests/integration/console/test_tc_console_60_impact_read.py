@@ -56,7 +56,7 @@ def test_tc_console_60a_a_version_two_runs_covered_reads_two_runs_and_forty_eigh
 
     impact = _get_json(port, f"/api/v1/impact?package_version={version}")
 
-    assert impact["package_version"] == version
+    assert impact["package_version_id"] == version  # the id; `package_version` is the label (#808)
     assert impact["runs"] == 2, (
         f"the read counted {impact['runs']} run(s) under {version}; two "
         "administrations used it")
@@ -91,7 +91,7 @@ def test_tc_console_60a_a_version_nothing_used_answers_a_measured_zero(served_co
     impact = _get_json(port,
                        f"/api/v1/impact?package_version={unused_version}")
 
-    assert impact["package_version"] == unused_version
+    assert impact["package_version_id"] == unused_version
     assert impact["runs"] == 0
     assert impact["students"] == 0
     assert impact["run_records"] == []

@@ -15,6 +15,7 @@ Test plan §5.5, written from design delta §3.1 (Security) and its Technical no
 | reply payloads | the canary is absent from every recorded completion the provider hands back |
 | log lines | the canary is absent from every record the run emits at ANY level, including `DEBUG` (`FR-AUTHOR-19`) |
 | artifacts | the canary is absent from every byte the run writes (the draft, the report, and anything else) |
+| AI-call journal | the canary, the real key and the credential shapes are absent from every journal line the run writes, and so are TC-PROV-67's needles: `Authorization`, `Bearer`, `HTTP-Referer` and any base64 run over 200 characters (TC-PROV-67's FR-PROV-46/CT-PROV-31 sweep joins this one, console clarity test plan §4.4; issue #820). A `JsonlCallJournal` is installed for each fixture's draft, outside the artifact folder, and each fixture must journal at least one line per provider request |
 | exception messages | the canary is absent from anything `draft()` raises — exercised non-vacuously by the `CT-AUTHOR-09` fail-fast arm this file drives itself (an unreadable document path, refused before any step runs) alongside the thirteen recorded runs |
 | egress | the socket guard records zero outbound attempts across all thirteen runs — `SEC-26` doubles as the no-other-egress assertion |
 
@@ -73,6 +74,7 @@ import urllib.parse
 
 import pytest
 
+from aeh.prov import JsonlCallJournal, journal_installed, journal_root
 from tests.support.author_vocabulary import (
     AUTHOR_MODULE,
     CORPUS_ISSUE,
@@ -183,6 +185,24 @@ def _files_text(out_dir) -> str:
     return "\n".join(parts)
 
 
+#: TC-PROV-67's journal needles (FR-PROV-46, CT-PROV-31), over and above the credential
+#: shapes: no HTTP header name and no binary payload is journaled.
+JOURNAL_NEEDLES = {
+    "Authorization header": re.compile(r"Authorization"),
+    "Bearer scheme": re.compile(r"Bearer"),
+    "HTTP-Referer header": re.compile(r"HTTP-Referer"),
+    "base64 run over 200 characters": re.compile(r"[A-Za-z0-9+/]{201,}={0,2}"),
+}
+
+
+def _journal_text(data_dir) -> tuple[str, int]:
+    """The AI-call journal channel: every journal file's text, and how many lines it holds."""
+    root = journal_root(data_dir)
+    texts = [path.read_bytes().decode("utf-8", errors="replace")
+             for path in sorted(root.rglob("*")) if path.is_file()]
+    return "\n".join(texts), sum(len(text.splitlines()) for text in texts)
+
+
 def _squeeze(text: str) -> str:
     return re.sub(r"\s+", "", text)
 
@@ -248,13 +268,16 @@ def test_sec_26_the_seeded_canary_reaches_no_channel_of_any_of_the_thirteen_fixt
         providers.append(provider)
         caplog.clear()
         exc_text = ""
+        journal_dir = tmp_path / "journal" / af_id
         try:
-            make_service(author, chain_from_config(), provider).draft(
-                documents=sorted(af(af_id).glob("*.pdf")), output_dir=tmp_path / af_id
-            )
+            with journal_installed(JsonlCallJournal(journal_dir)):
+                make_service(author, chain_from_config(), provider).draft(
+                    documents=sorted(af(af_id).glob("*.pdf")), output_dir=tmp_path / af_id
+                )
         except Exception as exc:  # noqa: BLE001 — the sweep owns every failure text
             exc_text = f"{type(exc).__name__}: {exc}"
         runs += 1
+        journal_text, journal_lines = _journal_text(journal_dir)
         records_seen += len(caplog.records)
 
         channels = {
@@ -262,6 +285,7 @@ def test_sec_26_the_seeded_canary_reaches_no_channel_of_any_of_the_thirteen_fixt
             "log lines": _records_text(caplog.records),
             "artifacts": _files_text(tmp_path / af_id),
             "exception messages": exc_text,
+            "AI-call journal": journal_text,
         }
 
         for form, needle in _canary_forms().items():
@@ -273,9 +297,12 @@ def test_sec_26_the_seeded_canary_reaches_no_channel_of_any_of_the_thirteen_fixt
                 if real_key in text:
                     leaked.append(f"{af_id}: the real environment key in {channel}")
         for shape, pattern in CREDENTIAL_PATTERNS.items():
-            for channel in ("artifacts", "exception messages"):
+            for channel in ("artifacts", "exception messages", "AI-call journal"):
                 if pattern.search(channels[channel]):
                     leaked.append(f"{af_id}: {shape} shape in {channel}")
+        for needle, pattern in JOURNAL_NEEDLES.items():
+            if pattern.search(journal_text):
+                leaked.append(f"{af_id}: {needle} in AI-call journal")
 
         # Non-vacuousness: the payload channel existed for this fixture — a request was
         # assembled and handed to M-PROV whether its recording answered it or not — or the
@@ -287,6 +314,11 @@ def test_sec_26_the_seeded_canary_reaches_no_channel_of_any_of_the_thirteen_fixt
             + (f" (the run raised: {_redact(exc_text, CANARY, real_key or '')!r})"
                if exc_text else "")
         )
+        # The journal channel, non-vacuously: one line per attempt, so at least one per request.
+        assert journal_lines >= len(provider.calls), (
+            f"SEC-26 swept {af_id}'s AI-call journal with {journal_lines} line(s) for "
+            f"{len(provider.calls)} provider request(s): the journal was not written for every "
+            f"call, so its absence assertions proved nothing")
 
     # The exception-message channel, non-vacuously: the thirteen valid fixtures are
     # designed never to raise on the recorded tier (`CT-AUTHOR-10`), so the sweep drives

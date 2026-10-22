@@ -336,6 +336,9 @@ def _package_rows(app: Any, data_dir: Any) -> list[dict[str, Any]]:
             "package_id": package_id,
             "state": state,
             "published_version": published,
+            # FR-CONSOLE-74 (#808): the id the SPA sends back; `published_version` reads as
+            # the teacher label once the boundary has named it.
+            "published_version_id": published,
             "version_count": len(versions),
             "draft_missing_pieces": missing,
             "wizard": [
@@ -464,6 +467,7 @@ def impact_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
             continue
     return {
         "package_version": version,
+        "package_version_id": version,  # the id; `package_version` is the label (#808)
         "runs": len(run_rows),
         "students": students,
         "run_records": [

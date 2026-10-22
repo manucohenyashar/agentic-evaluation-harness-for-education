@@ -2322,16 +2322,8 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         ("tests/unit/author/test_tc_author_32_42_intake_suite.py",),
     ),
 
-    # #815 (T4): teacher_text() and the console census (TC-CONSOLE-87/88/92), ahead of #808.
-    "#808 teacher-text boundary": (
-        "symbol",
-        "aeh.console.teacher_text:teacher_text",
-        ("tests/unit/console/test_tc_console_88_teacher_text.py",
-         "tests/integration/console/test_tc_console_87_92_teacher_text_census.py"),
-    ),
-
     # #806 landed: its three entries (#814 TC-AGG-27/28/31 and TC-JUDGE-46, #812 the Jev-final
-    # seed) were dropped and their cases run unmarked.
+    # seed) were dropped and their cases run unmarked. #808 landed too (PR #843).
 }
 
 def blocker_is_resolved(kind: str, target: str, repo_root: Any) -> bool:

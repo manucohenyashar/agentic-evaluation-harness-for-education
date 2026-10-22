@@ -116,10 +116,10 @@ def test_tc_console_71_the_authoring_refusals_speak_teacher_language(served_auth
     approval = _refusal_of(port, "approve draft package",
                            {"package_id": af09_package})
     _scan_body("unfinished approval", approval)
-    assert "the draft is not complete" in approval["detail"]
+    # #808 (FR-UI-25): the approve refusal speaks the teacher's three parts.
+    assert approval["detail"].startswith(f"{af09_package} was not published.")
     assert approval["next_action"] == (
-        "resolve the draft's remaining review items on the review screen, then "
-        "approve again.")
+        "Answer the remaining questions on the review screen, then press Approve again.")
 
     # The finished job's cancel (TC-CONSOLE-70's arm): the AF-02 job already succeeded.
     cancel = _refusal_of(port, "cancel job", {"job_id": record["job_id"]})

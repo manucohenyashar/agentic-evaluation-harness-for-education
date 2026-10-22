@@ -446,8 +446,8 @@ def _version_of(served: Served, package_id: str | None = None) -> str:
     """The published version id the context read names — the same value the wizard's impact
     read is fetched with."""
     context = crw._get_json(served.port, "/api/v1/context")
-    published = [pkg["published_version"] for pkg in context["packages"]
-                 if pkg.get("published_version")
+    published = [pkg["published_version_id"] for pkg in context["packages"]
+                 if pkg.get("published_version_id")
                  and (package_id is None or pkg["package_id"] == package_id)]
     assert published, f"no published version in the context read: {context!r}"
     return str(published[0])

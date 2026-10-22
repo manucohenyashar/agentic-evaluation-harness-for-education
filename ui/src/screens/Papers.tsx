@@ -76,9 +76,9 @@ export function Papers({
     const run = (context?.runs ?? []).find((r) => r.run_id === selection.runId);
     if (run !== undefined) preferred.add(run.package_version_id);
     const pkg = (context?.packages ?? []).find((p) => p.package_id === selection.packageId);
-    if (pkg?.published_version) preferred.add(pkg.published_version);
+    if (pkg?.published_version_id) preferred.add(pkg.published_version_id);
     const all = (context?.packages ?? [])
-      .map((p) => p.published_version)
+      .map((p) => p.published_version_id)
       .filter((v): v is string => v !== null);
     return [...preferred, ...all.filter((v) => !preferred.has(v))];
   }, [context, selection.runId, selection.packageId]);

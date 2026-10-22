@@ -207,8 +207,8 @@ def _console(tmp_data_dir: Path, network_guard: Any, monkeypatch: Any) -> Iterat
         raise
     host, port = server.socket.getsockname()[:2]
     context = json.loads(_fetch(f"http://{host}:{port}", "/api/v1/context"))
-    published = [pkg["published_version"] for pkg in context["packages"]
-                 if pkg.get("published_version")]
+    published = [pkg["published_version_id"] for pkg in context["packages"]
+                 if pkg.get("published_version_id")]
     assert published, f"the walk's world carries no published version: {context!r}"
     try:
         yield Served(tmp_data_dir, store, server, f"http://{host}:{port}", port,

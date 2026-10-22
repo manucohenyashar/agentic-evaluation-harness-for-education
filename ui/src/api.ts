@@ -428,7 +428,10 @@ export interface PackageWizardRow {
 export interface PackageEntry {
   package_id: string;
   state: string;
+  /** The teacher label, "ENG7-READ-01 version 1" (FR-CONSOLE-74). */
   published_version: string | null;
+  /** The version id the reads and actions take. */
+  published_version_id: string | null;
   version_count: number;
   draft_missing_pieces: number | null;
   wizard: PackageWizardRow[];
@@ -460,7 +463,9 @@ export async function fetchContext(signal?: AbortSignal): Promise<ContextDoc> {
 /** What editing a package version would touch (FR-CONSOLE-49) — the wizard's IMPACT line,
  * and the editor's banner's list of the runs already graded under it. */
 export interface ImpactDoc {
+  /** The teacher label; `package_version_id` is the id (FR-CONSOLE-74). */
   package_version: string;
+  package_version_id: string;
   runs: number;
   students: number;
   run_records: { run_id: string; cohort_id: string; state: string }[];

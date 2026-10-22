@@ -36,7 +36,7 @@ export function useWizardReads(
   const jobs = useScreenRead<JobsDoc>("/api/v1/jobs", undefined, POLL_MS);
   const publishedVersion =
     context?.packages.find((entry) => entry.package_id === selection.packageId)
-      ?.published_version ?? null;
+      ?.published_version_id ?? null;
   const impact = useScreenRead<ImpactDoc>(
     publishedVersion === null ? null : "/api/v1/impact",
     publishedVersion === null ? undefined : { package_version: publishedVersion },
