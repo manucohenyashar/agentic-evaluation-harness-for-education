@@ -28,7 +28,6 @@ from aeh.setup import setup_service_for_store
 
 from .question_results import (
     cell_not_final_reason,
-    grade_name,
     not_final_count,
     question_stats,
     student_questions,
@@ -625,19 +624,18 @@ def _grading_point_labels(app: Any, run_row: Any) -> dict[str, str]:
 
 def _question_shape(
     app: Any, run_row: Any, scales: dict[str, list[tuple[str, Any]]],
-) -> tuple[list[dict[str, Any]], dict[str, str], list[tuple[str, float]]]:
+) -> tuple[list[dict[str, Any]], dict[str, str]]:
     """The run's test as the by-question roll-up reads it (FR-CONSOLE-76): its questions in
     paper order (`{question_id, label, points_max}`), each scored rubric line's question — a
-    composite has no score row of its own (FR-PKG-25), so only its aspects are listed — and
-    the grade table. An unreadable catalog answers no questions, never invented ones."""
+    composite has no score row of its own (FR-PKG-25), so only its aspects are listed. An
+    unreadable catalog answers no questions, never invented ones."""
     try:
         package = app._store.package(str(run_row["package_id"]))
         version = str(run_row["package_version_id"])
         question_rows = package.query(PKG_STATEMENTS["select_questions"], v=version)
         criterion_rows = package.query(PKG_STATEMENTS["select_criteria"], v=version)
-        boundary_rows = package.query(PKG_STATEMENTS["select_boundaries"], v=version)
     except Exception:  # noqa: BLE001 — an unreadable catalog is not the grades'
-        return [], {}, []
+        return [], {}
     line_question = {
         str(row["criterion_id"]): str(row["question_id"])
         for row in criterion_rows if not is_composite(row) and row["question_id"]
@@ -654,8 +652,7 @@ def _question_shape(
                 for line, owner in line_question.items() if owner == question_id))
         questions.append(
             {"question_id": question_id, "label": question_id, "points_max": points_max})
-    boundaries = [(str(row["grade"]), float(row["scaled_floor"])) for row in boundary_rows]
-    return questions, line_question, boundaries
+    return questions, line_question
 
 
 def _level_of(scale: list[tuple[str, Any]], points: Any) -> str | None:
@@ -821,6 +818,10 @@ def results_screen_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
             "full_name": None,
             "total": record["total"],
             "state": str(record["state"] or ""),
+            # FR-CONSOLE-76's `grade`: the ledger's own, which M-GRADE resolved after its policy
+            # (weights, scale, gate) — the boundary floors are in that scaled space, so a
+            # lookup on the raw question sum could disagree with the grade the export holds.
+            "grade": record.get("grade"),
             "criteria": [],
         }
     handle = app._store.cohort(cohort_id)
@@ -904,13 +905,12 @@ def results_screen_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
                 seen_levels[name] = rank
     score_levels = [name for name, _rank in sorted(seen_levels.items(), key=lambda item: item[1])]
     # FR-CONSOLE-76: results by question — points per question, the total and its grade.
-    questions, line_question, boundaries = _question_shape(app, run_row, scales)
+    questions, line_question = _question_shape(app, run_row, scales)
     for submission_id, student in by_submission.items():
         student["questions"] = student_questions(
             questions, line_question, roll_cells.get(submission_id, {}),
             grade_final=student["state"] == "final")
         student["total_points"], student["total_max"] = totals(student["questions"])
-        student["grade"] = grade_name(student["total_points"], boundaries)
     students = list(by_submission.values())
     return {
         "run_id": run_id,

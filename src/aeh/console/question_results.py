@@ -23,8 +23,6 @@ import json
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
-from aeh.grade import resolve_grade
-
 #: A question's displayed states: settled, waiting for the teacher, or not graded at all.
 QUESTION_FINAL = "final"
 QUESTION_NOT_FINAL = "not_final"
@@ -76,16 +74,6 @@ def cell_not_final_reason(state: Any, routing: Any, *, judge_count: Any, caps_fi
     if judge_count is not None and int(judge_count) == 0:
         return None
     return "graders_disagree"
-
-
-def grade_name(total_points: float | None,
-               boundaries: Iterable[tuple[str, float]] | None) -> str | None:
-    """The grade table's name for a total (FR-CONSOLE-76): the grade with the greatest
-    floor at or below it, through M-GRADE's own boundary rule. `None` for a missing total or
-    a test with no grade table — never an invented grade."""
-    if total_points is None:
-        return None
-    return resolve_grade(total_points, list(boundaries or ()))
 
 
 def student_questions(
@@ -185,6 +173,6 @@ def not_final_count(students: Iterable[Mapping[str, Any]]) -> int:
 
 __all__ = [
     "NOT_FINAL_REASON_CODES", "QUESTION_FINAL", "QUESTION_NOT_FINAL", "QUESTION_NOT_GRADED",
-    "cell_not_final_reason", "grade_name", "is_settled", "not_final_count", "question_stats",
+    "cell_not_final_reason", "is_settled", "not_final_count", "question_stats",
     "student_questions", "totals",
 ]
