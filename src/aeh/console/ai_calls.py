@@ -375,6 +375,16 @@ def ai_calls_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     return select_ai_calls(store, getattr(store, "data_dir", None), filters, page=page)
 
 
+def with_verbatim_calls(shown: dict[str, Any], raw: dict[str, Any]) -> dict[str, Any]:
+    """`shown` (the answer after the teacher-text boundary) with each item's `request` and
+    `response` put back exactly as the journal holds them: the boundary tidies display text,
+    and these two are the record of what the AI was asked and answered (FR-CONSOLE-78)."""
+    for shown_item, raw_item in zip(shown.get("items") or [], raw.get("items") or []):
+        shown_item["request"] = raw_item["request"]
+        shown_item["response"] = raw_item["response"]
+    return shown
+
+
 # --- the CLI's text (FR-CONSOLE-79) ---------------------------------------------------------------
 
 
@@ -428,4 +438,5 @@ __all__ = [
     "parse_outcomes",
     "select_ai_calls",
     "summary_line",
+    "with_verbatim_calls",
 ]

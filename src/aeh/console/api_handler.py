@@ -67,7 +67,7 @@ from .screen_reads import (
     student_detail_read,
     system_status_read,
 )
-from .ai_calls import ai_calls_read
+from .ai_calls import ai_calls_read, with_verbatim_calls
 from .history_reads import past_tests_read
 from .spa_reads import (
     context_read,
@@ -353,7 +353,11 @@ class ApiRequestsMixin:
         if isinstance(answer, FileAnswer):
             self._respond(200, answer.body, answer.content_type)
             return
-        self._respond(200, json.dumps(teacher_payload(answer, self._version_label())).encode("utf-8"), JSON_TYPE)
+        payload = teacher_payload(answer, self._version_label())
+        if route.read == AI_CALLS_READ:
+            # FR-CONSOLE-78: what the AI was asked and answered is shown in full, verbatim.
+            payload = with_verbatim_calls(payload, answer)
+        self._respond(200, json.dumps(payload).encode("utf-8"), JSON_TYPE)
 
     def _help_ask(self, query: dict[str, str]) -> None:
         """The grounded Q&A ask (`M-HELP`, `CT-HELP-01`): one read-only GET whose only write
