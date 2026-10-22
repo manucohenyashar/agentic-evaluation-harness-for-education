@@ -281,10 +281,13 @@ class SpaLog:
 
 
 @contextmanager
-def spa_page(origin: str) -> Iterator[tuple[Any, SpaLog]]:
+def spa_page(origin: str, viewport: dict[str, int] | None = None,
+             ) -> Iterator[tuple[Any, SpaLog]]:
     """One browser context on the console's origin, recording requests, page errors, console
-    messages and unhandled rejections. Skips naming the missing piece when E6 is unavailable —
-    the TS-49 rule: a visibly skipped browser case, never a silently passing one."""
+    messages and unhandled rejections. `viewport` pins the context's viewport (the censuses
+    oracle is the outcome inside 1280×720); the default keeps Playwright's own. Skips naming
+    the missing piece when E6 is unavailable — the TS-49 rule: a visibly skipped browser
+    case, never a silently passing one."""
     import pytest
 
     try:
@@ -305,7 +308,7 @@ def spa_page(origin: str) -> Iterator[tuple[Any, SpaLog]]:
         if browser is None:
             pytest.skip("E6 unavailable: no Chromium-family browser launched: " + "; ".join(reasons))
         try:
-            context = browser.new_context()
+            context = browser.new_context(viewport=viewport)
             context.add_init_script(_INIT_SCRIPT)
             log = SpaLog(origin=origin)
             context.on("request", lambda request: log.requests.append(request.url))

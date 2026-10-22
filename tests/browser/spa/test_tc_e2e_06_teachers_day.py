@@ -422,9 +422,11 @@ def _serve_and_drive(store, console_dir: Path, cfg: dict, version: str,
                     f"(found {card.count()}); the hub is the journey's map")
             # -- setup ----------------------------------------------------------
             _go(page, origin, "package")
-            assert version in spa.main_text(page), (
-                "TC-E2E-06: the package screen does not show the published version — "
-                "the live-state read (#634) is not on the setup screen")
+            # FR-UI-23: the screen names the published test the teacher's way — the
+            # boundary's rewrite of the version id ("<test> version 1"), never the id.
+            assert f"{version.split('@')[0]} version" in spa.main_text(page), (
+                "TC-E2E-06: the package screen does not show the published version's "
+                "teacher name — the live-state read (#634) is not on the setup screen")
             # The setup screen shows the published test (asserted just above, from the
             # context feed's published versions). `SetupService.current_proposal()` is the
             # DRAFT version's proposal by its own contract — a published package has none,

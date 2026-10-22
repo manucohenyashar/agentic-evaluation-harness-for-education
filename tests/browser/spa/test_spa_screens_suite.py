@@ -903,48 +903,43 @@ def test_tc_ui_11_the_review_walk_answers_survives_and_names_the_carry_over(
         missing = int(document["missing_pieces"])
         _ensure_ledger(served.store, package_id)
         before_digest = spa.store_digest(served.data_dir)
-        approved_by_index = next(
-            index for index, placeholder in enumerate(document["placeholders"])
-            if placeholder["item_id"] == "approved_by")
 
         with spa.spa_page(served.origin) as (page, log):
             problems: list[str] = []
             _goto(page, served.origin, "/package/review")
             main = page.locator("main")
-            if f"{missing} missing pieces stand in the draft" not in main.inner_text():
-                problems.append(f"arm (a): the blocked-approval copy does not name the draft's "
-                                f"own count ({missing})")
+            # FR-AUTHOR-31: the review screen asks the gaps one plain question at a time
+            # under its own heading, and approval is blocked while any stands.
+            if "A few questions before you approve" not in main.inner_text():
+                problems.append("arm (a): the questions section is missing its heading")
+            if f"Question 1 of {missing}." not in main.inner_text():
+                problems.append(f"arm (a): the count copy does not name the draft's own "
+                                f"count ({missing})")
             if "cannot be approved yet" not in main.inner_text():
                 problems.append("arm (a): approval is not stated as blocked")
-            rows = page.locator("ul.placeholder-list li.placeholder-row")
-            if rows.count() != missing:
-                problems.append(f"arm (a): {rows.count()} placeholder rows render, not the "
-                                f"read's {missing}")
             if page.locator("span.placeholder-chip").count() != missing:
                 problems.append(f"arm (a): the outline does not highlight every missing piece "
                                 f"in place ({page.locator('span.placeholder-chip').count()} "
                                 f"marks for {missing})")
 
-            # (b) answer the approved_by item through its own row, then reload.
-            rows.nth(approved_by_index).get_by_role("button", name="Answer").click()
+            # (b) answer the current question (the draft's first gap), then reload.
             page.locator("#answer-value").fill("Prof. Dana Whitfield")
             page.get_by_role("button", name="Send the answer").click()
             if not any("answer-authoring-review" in url for url in _action_urls(log)):
                 problems.append(f"arm (b): the answer did not go through the enumerated review "
                                 f"control ({_action_urls(log)!r})")
             _wait_for(problems, "arm (b)", page,
-                      lambda: page.locator("ul.placeholder-list li.placeholder-row").count()
-                      == missing - 1,
-                      "the answered piece to leave the list (the read's next poll)")
+                      lambda: f"Question 1 of {missing - 1}." in main.inner_text(),
+                      "the next question to become the current one (the read's next poll)")
             if crw.draft_read(served.port)["draft"]["missing_pieces"] != missing - 1:
                 problems.append("arm (b): the draft read still counts the answered piece")
             page.reload(wait_until="networkidle")
             spa.wait_for_screen(page)
-            if page.locator("ul.placeholder-list li.placeholder-row").count() != missing - 1:
-                problems.append("arm (b): the answer did not survive the browser's reload")
-            if f"{missing - 1} missing pieces stand in the draft" not in \
+            if f"Question 1 of {missing - 1}." not in \
                     page.locator("main").inner_text():
-                problems.append("arm (b): the count copy did not survive the reload")
+                problems.append("arm (b): the answer did not survive the browser's reload")
+            if "cannot be approved yet" not in page.locator("main").inner_text():
+                problems.append("arm (b): the blocked-approval copy did not survive the reload")
             if spa.store_digest(served.data_dir) != before_digest:
                 problems.append("arm (b): the store moved — an answer lives in the draft file, "
                                 "never in the ledgers")
@@ -1255,9 +1250,11 @@ def test_tc_ui_12_the_editor_stages_saves_and_warns_before_editing_a_published_p
                 if expected not in text:
                     problems.append(f"arm (c): the impact banner does not name {expected!r}")
             listed = banner.locator("ul.change-list li").all_inner_texts()
-            for run_id in ("r-ui12-a", "r-ui12-b"):
-                if not any(run_id in entry for entry in listed):
-                    problems.append(f"arm (c): the banner's run list does not name {run_id}")
+            # FR-UI-23/FR-CONSOLE-70: the runs are named the teacher's way — class, test,
+            # date — never the run's id.
+            for cohort in ("c-ui12-a", "c-ui12-b"):
+                if not any(cohort in entry for entry in listed):
+                    problems.append(f"arm (c): the banner's run list does not name {cohort}")
             problems += _health(page, log, "arm (c)")
             problems += _egress_problems(log, "arm (c)")
             _fail_with(problems)
@@ -1513,10 +1510,6 @@ def test_tc_ui_14_results_render_the_distribution_drilldown_and_the_amendment(
 
     with _console(tmp_data_dir, network_guard, monkeypatch, seed=_seed) as served:
         doc = crw._get_json(served.port, "/api/v1/results/screen")
-        levels = doc["score_levels"]
-        bands = [criterion["criterion_band"] for student in doc["students"]
-                 for criterion in student["criteria"]]
-        counts = [sum(1 for band in bands if band == level) for level in levels]
         flagged = [(student["submission_id"], student["student_ref"], criterion)
                    for student in doc["students"] for criterion in student["criteria"]
                    if criterion["flag"] is not None]
@@ -1524,29 +1517,42 @@ def test_tc_ui_14_results_render_the_distribution_drilldown_and_the_amendment(
 
         with spa.spa_page(served.origin) as (page, log):
             problems: list[str] = []
-            # (a) the overview.
+            # (a) the overview: the per-question average bars and the grade-count chart
+            # (FR-UI-31 — the pooled rubric-level histogram is gone), each rendered from
+            # the read's own stats; and the flagged links.
             _goto(page, served.origin, "/results")
-            figure = page.locator("figure.distribution")
-            svg = figure.locator("svg[role='img']")
-            expected = "Papers per score level. " + ", ".join(
-                f"{level}: {count}" for level, count in zip(levels, counts, strict=True))
-            name = svg.get_attribute("aria-label") or ""
-            if name != expected:
-                problems.append(f"arm (a): the distribution reads {name!r}, not the read's own "
-                                f"counts ({expected!r})")
-            # SVG elements have no `innerText` (Playwright answers None for them) — read
-            # the bars' text content.
-            bar_counts = svg.locator("text.bar-count").all_text_contents()
-            bar_labels = svg.locator("text.bar-label").all_text_contents()
-            if bar_counts != [str(count) for count in counts] or \
-                    bar_labels != list(levels):
-                problems.append(f"arm (a): the bars read {list(zip(bar_labels, bar_counts))!r}, "
-                                f"not the read's own {list(zip(levels, counts))!r}")
-            caption = [text.strip() for text in
-                       figure.locator("figcaption span").all_inner_texts()]
-            if caption != [f"{level}: {count}" for level, count in
-                           zip(levels, counts, strict=True)]:
-                problems.append(f"arm (a): the caption reads {caption!r}, not the counts")
+            stats = doc["question_stats"]
+            bars = page.locator("li.question-stat")
+            if bars.count() != len(stats):
+                problems.append(f"arm (a): {bars.count()} question bars render, not the "
+                                f"read's {len(stats)}")
+            for stat in stats:
+                row = page.locator("li.question-stat").filter(has_text=stat["label"]).first
+                if not row.count():
+                    problems.append(f"arm (a): no bar for {stat['label']!r}")
+                    continue
+                # The label line mirrors the design's own format (FR-UI-31): the mean to
+                # one decimal half-up from the unrounded mean, the percentage the
+                # unrounded mean / max * 100 half-up to a whole number.
+                from decimal import ROUND_HALF_UP, Decimal
+
+                mean = stat["mean_points"]
+                shown_mean = "0.0" if mean is None else str(
+                    Decimal(repr(mean)).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
+                percent = "0" if mean is None or stat["points_max"] == 0 else str(
+                    (Decimal(repr(mean)) / Decimal(str(stat["points_max"])) * 100)
+                    .quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+                expected_label = (f"{stat['label']} — average {shown_mean} / "
+                                  f"{stat['points_max']} ({percent}%)")
+                if expected_label not in row.inner_text():
+                    problems.append(f"arm (a): {stat['label']}'s bar reads "
+                                    f"{row.inner_text()[:120]!r}, not {expected_label!r}")
+                expected_note = (f"full marks: {stat['full_marks']} of {stat['graded']} "
+                                 f"{'student' if stat['graded'] == 1 else 'students'}; "
+                                 f"no marks: {stat['zero_marks']}")
+                if expected_note not in row.inner_text():
+                    problems.append(f"arm (a): {stat['label']}'s note reads against the "
+                                    f"read's own counts ({expected_note!r})")
             links = page.locator("ul.flagged-list a").all_inner_texts() if \
                 page.locator("ul.flagged-list").count() else []
             hrefs = [link.get_attribute("href") or ""
@@ -1958,7 +1964,8 @@ def test_tc_ui_16_the_parked_cards_and_the_jobs_table_render_the_reads_own_figur
                 if progress_text not in auth_row.inner_text():
                     problems.append(f"arm (b): the row does not read the record's own progress "
                                     f"({progress_text!r}): {auth_row.inner_text()!r}")
-                if not re.search(r"\d+m \d+s", auth_row.inner_text()):
+                # FR-UI-29's duration format: under an hour "N min N s" (was "Nm Ns").
+                if not re.search(r"\d+ min \d+ s", auth_row.inner_text()):
                     problems.append(f"arm (b): the row carries no elapsed time: "
                                     f"{auth_row.inner_text()!r}")
                 if "$1.25" not in auth_row.inner_text():
@@ -2268,7 +2275,13 @@ def test_tc_ui_19_no_select_or_toggle_posts_until_an_explicit_confirm(
             _change_select(page, problems, "results", "select[name='flag-filter']")
             _change_select(page, problems, "results", "select[name='student-sort']")
             page.locator("input[name='student-search']").fill("ref")
+            # FR-UI-33: the finalize control lives in the not-final banner, and only when
+            # answers stand to approve — the settled world reads "All grades are final."
+            # and offers nothing (the action's no-op is the absence).
             finalize = page.get_by_role("button", name="Approve all grades")
+            settled = "All grades are final." in page.locator(
+                ".results-banner").inner_text() if \
+                page.locator(".results-banner").count() else False
             if finalize.count() == 1:
                 finalize.click()
                 dialog = _dialog(page)
@@ -2281,6 +2294,8 @@ def test_tc_ui_19_no_select_or_toggle_posts_until_an_explicit_confirm(
                     _wait_for(problems, "results", page,
                               lambda: dialog.count() == 0 or not dialog.first.is_visible(),
                               "the finalize confirmation to close on cancel")
+            elif settled:
+                pass
             else:
                 problems.append("results: the finalize-batch control is missing")
 

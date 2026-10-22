@@ -342,7 +342,9 @@ def test_tc_req_128_the_spa_session_starts_the_run_like_the_cli(tmp_path, monkey
             spa.open_hub(page, origin)
             spa.go_to(page, origin, "run_start")
             text = spa.main_text(page)
-            for value in (world["run_id"], world["cohort"], world["version"]):
+            # FR-UI-23: the screen names the run the teacher's way — the class and the
+            # test's own name (an internal-id package reads "this test"), never the ids.
+            for value in (world["cohort"], "this test"):
                 if value not in text:
                     problems.append(
                         f"run start: the screen does not show the served run's {value!r} — "

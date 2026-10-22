@@ -76,7 +76,12 @@ import aeh.pkg  # noqa: F401
 import aeh.review  # noqa: F401
 import aeh.synth  # noqa: F401
 
-from aeh.conf import CohortRef, resolve_run_config
+from aeh.conf import (
+    CohortRef,
+    environment_snapshot,
+    resolve_orch_knobs,
+    resolve_run_config,
+)
 from aeh.conf.sources import select_profile_config
 from aeh.ingest import Ingestor, PdfiumRasterizer, PypdfSanitizer, ResidencySlot
 from aeh.orch import (
@@ -1152,7 +1157,11 @@ def _serve_and_drive(store, console_dir: Path, scratch: Path, cfg: Any,
             _badge_becomes(page, 1, "Done", "still, after the draft leg")
 
             # -- the review walk: the declared answers, one at a time ------------------
-            _goto(page, "/package/review")
+            # FR-AUTHOR-31: the screen asks one plain question at a time — the read's
+            # first answerable gap (a gap whose question waits on another answer first
+            # opens only when its wait clears). The walk drives the same queue: fill the
+            # current field with the item's declared value, send it, and let the read's
+            # poll ask the next one, until the screen says the draft is ready.
             declared = spec.declared_answers()
             placeholders = list(document["placeholders"])
             listed_ids = [str(row["item_id"]) for row in placeholders]
@@ -1163,33 +1172,52 @@ def _serve_and_drive(store, console_dir: Path, scratch: Path, cfg: Any,
                 "the corpus's declared contract disagree (recorded, a capture "
                 "divergence; live, a model the corpus does not declare for — a "
                 "finding either way, never scripted around)")
-            for item_id in listed_ids:
-                # The list is the draft read's own placeholders, re-rendered after every
-                # answer — answered rows leave it and the rest close ranks. When the
-                # reason sentence is unique (one placeholder kind), the row is targeted
-                # by its text; when several placeholders SHARE one reason sentence
-                # (AF-21's four grade boundaries all read "The grade table — the
-                # document names the grade but states no boundary for it"), the walk
-                # answers the head of that group: the rows render in the draft read's
-                # own order, the walk answers in that same order, and the group closes
-                # ranks after every answer — so the head is always the item being
-                # answered, and the leave-the-list wait counts the group down by one.
-                # (The declared values are distinct across each fixture's group, so a
-                # mis-targeted answer could not still satisfy the later fills.)
-                piece = next(row for row in placeholders
-                             if str(row["item_id"]) == item_id)
-                reason = str(piece.get("reason") or "")
-                rows = page.locator("ul.placeholder-list li.placeholder-row")
-                matching = rows.filter(has_text=reason) if reason else rows
-                _wait_for(page, lambda: matching.count() > 0,
-                          f"a row for {item_id!r} ({reason!r}) to render")
-                standing = matching.count()
-                target = matching.first
-                target.get_by_role("button", name="Answer").click()
-                page.locator("#answer-value").fill(declared[item_id])
+            _goto(page, "/package/review")
+            for _step in range(len(listed_ids) + 2):
+                served_doc = crw.draft_read(port)["draft"] or {}
+                gaps = (list(served_doc.get("placeholders") or [])
+                        + list(served_doc.get("points_questions") or []))
+                askable = [g for g in gaps if not g.get("waiting_on")]
+                if not askable:
+                    break
+                item_id = str(askable[0]["item_id"])
+                assert item_id in declared, (
+                    f"{label}: the review screen asks {item_id!r}, which the corpus's "
+                    "declared answers do not name")
+                # The screen reads on its own cadence; a RELOAD pins it to the state the
+                # API read just answered for, so the field the walk fills is the question
+                # the walk names (a same-hash navigation would not re-mount the screen,
+                # and the stale form would send the previous item's answer — the
+                #TC-UI-26-style refusal the first instrumented run showed).
+                page.reload(wait_until="networkidle")
+                spa.wait_for_screen(page)
+                if os.environ.get("HARNESS_JOURNEY_DEBUG"):
+                    print(f"JOURNEY-WALK {label}: asking {item_id!r} kind="
+                          f"{askable[0].get('answer_kind')} "
+                          f"min={askable[0].get('answer_min')} "
+                          f"max={askable[0].get('answer_max')} "
+                          f"waiting={askable[0].get('waiting_on')} "
+                          f"declared={declared[item_id]!r}")
+                field = page.locator("#answer-value")
+                _wait_for(page, lambda: field.count() > 0 and field.first.is_visible(),
+                          f"the answer field for {item_id!r} to render")
+                field.fill(declared[item_id])
                 page.get_by_role("button", name="Send the answer").click()
-                _wait_for(page, lambda: matching.count() == standing - 1,
-                          f"the answered piece {item_id!r} to leave the list")
+                try:
+                    _wait_for(page,
+                              lambda: (crw.draft_read(port)["draft"] or {}).get(
+                                  "missing_pieces", 0)
+                              < len(gaps),
+                              f"the answered piece {item_id!r} to leave the queue")
+                except AssertionError:
+                    # The answer did not land: the screen's own outcome names why —
+                    # the console's refusal is the finding, not a script failure.
+                    banner = page.locator(".outcome-banner")
+                    said = banner.first.inner_text() if banner.count() else "(no banner)"
+                    raise AssertionError(
+                        f"{label}: the answer for {item_id!r} "
+                        f"({declared[item_id]!r}) did not land. The screen said: {said!r}"
+                    ) from None
             if spec.survival:
                 # RS-05's positive twin, mid-review: the reload re-attaches to the
                 # store's own review state — the answer already sent stays sent, and
@@ -1324,12 +1352,22 @@ def _serve_and_drive(store, console_dir: Path, scratch: Path, cfg: Any,
             # that id — a start of an existing row resumes under the run's own frozen
             # configuration (FR-CONF-15). So the orchestrator creates the row here,
             # freezing the same resolved config both twins resolve, and the console
-            # re-serves bound to it — the restart idiom the survival probes use.
+            # re-serves bound to it — the restart idiom the survival probes use. The
+            # orch knobs are recorded the way `aeh run`'s own create records them
+            # (FR-CONF-36): resolved over the environment-wins composition (the env
+            # snapshot lifted, exactly `effective_config`'s orch keys), not the raw
+            # file — the twins' run rows must carry the same frozen snapshot or the
+            # store comparison reads a divergence that is the harness's, not the
+            # console's.
+            composed = select_profile_config(dict(cfg), "dev-ci")
             resolved = resolve_run_config(
-                select_profile_config(dict(cfg), "dev-ci"),
-                CohortRef(cohort_id=spec.cohort_id, consent_class="synthetic"))
+                composed, CohortRef(cohort_id=spec.cohort_id, consent_class="synthetic"))
             Orchestrator(store).create_run(
-                spec.cohort_id, version, resolved, run_id=spec.run_id)
+                spec.cohort_id, version, resolved, run_id=spec.run_id,
+                orch_knobs=resolve_orch_knobs({
+                    **composed,
+                    **environment_snapshot(include_orch=True),
+                }))
             server.terminate()
             server = serve_console(store=store, cfg=cfg, run_id=spec.run_id)
             port = int(server.port)
@@ -1338,9 +1376,11 @@ def _serve_and_drive(store, console_dir: Path, scratch: Path, cfg: Any,
             before = spa.store_digest(console_dir)
             _goto(page, f"/run?class={spec.cohort_id}")
             banner_text = spa.main_text(page)
-            assert spec.run_id in banner_text, (
-                f"{label}: the run-start screen does not name the bound run "
-                f"{spec.run_id!r}: {banner_text!r}")
+            # FR-UI-23: the screen names the run the way a teacher reads it — the class
+            # and the test's own name (FR-CONSOLE-70/74), never the run's id.
+            assert spec.cohort_id in banner_text and "grading run for class" in banner_text, (
+                f"{label}: the run-start screen does not name the bound run as the "
+                f"class's own: {banner_text!r}")
             after = spa.store_digest(console_dir)
             assert not spa.changed_tables(before, after), (
                 f"{label}: opening the run-start screen wrote rows — a no-op until "
