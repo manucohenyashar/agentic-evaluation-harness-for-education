@@ -45,7 +45,7 @@ import pytest
 
 from tests.support.impl import NotImplementedYet
 
-pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.contract]
 
 BLOCKER = "#806"
 JEV_BUILD = "/models/jev-fixture/model.safetensors@sha256:" + "fe" * 32

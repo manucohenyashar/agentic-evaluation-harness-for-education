@@ -32,7 +32,6 @@ import pytest
 from tests.support.impl import NotImplementedYet
 from tests.unit.pipe.test_live_escalation_seats import _config, physics  # noqa: F401 -- the fixture
 
-pytestmark = pytest.mark.writtenahead
 
 LINE = re.compile(r"^(?P<sub>[^/\s]+)/(?P<crit>\S+): .* -> escalation wanted, no real judge for seats 2-3")
 

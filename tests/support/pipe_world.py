@@ -252,6 +252,11 @@ class PipeWorld(SynthWorld):
             "HARNESS_JEV_BUILD": CORPUS_DECISION_BUILD,
             "HARNESS_JEV_QUANTIZATION": "bf16",
             "HARNESS_FIXTURE_DIR": self._fixture_dir_for_cfg,
+            # FR-AGG-20 / FR-JUDGE-39 (#806): the decision worlds' recordings predate the
+            # confirming judge call and the Jev-final rule, so they keep the pre-delta rule
+            # (accepted decisions provisional, no confirmation call) unless a world opts in.
+            "HARNESS_JEV_FINAL_ON_ACCEPT": (
+                "true" if getattr(self, "jev_final_on_accept", False) else "false"),
         }
 
     def _make_provider(self, fixture_dir: Any) -> Any:

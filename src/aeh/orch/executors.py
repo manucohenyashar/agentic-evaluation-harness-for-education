@@ -251,6 +251,9 @@ class RunHandle:
     #: `()` when the row carries no `model_pins` key — a pre-feature row, or a run
     #: started without pins.
     model_pins: "tuple[tuple[str, str, str, str | None], ...]" = ()
+    #: FR-AGG-20: the run's frozen Jev-final rule, from its persisted provider config. `True`
+    #: when the row carries none (engine off, or a row written before the rule).
+    jev_final_on_accept: bool = True
 
 
 class PackageCatalogProtocol(Protocol):

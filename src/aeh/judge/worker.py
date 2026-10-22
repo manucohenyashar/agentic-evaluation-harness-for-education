@@ -36,6 +36,10 @@ from .replies import _amended_payload, _refuse_unverified_citations, _verdict_of
 from .decision_engine import (
     Accepted,
     BelowGate,
+    CONFIRMED_BY,
+    prescreen_confirmation,
+    UNCONFIRMED,
+    UNCONFIRMED_BY,
     decision_eligibility,
     decision_request,
     gate_decision,
@@ -311,9 +315,13 @@ class ScoringWorker:
             if stored["outcome"] != "accepted":
                 return stored["outcome"]
             outcome = gate_decision(self._decision_from_row(stored), request, engine, judge_id=judge_id)
-            if isinstance(outcome, Accepted):
-                return outcome.result
-            return "below_gate"
+            if not isinstance(outcome, Accepted):
+                return "below_gate"
+            confirmation = prescreen_confirmation(stored["reason"])
+            if confirmation is not None:
+                kind, _judge, _band = confirmation
+                return outcome.result if kind == CONFIRMED_BY else UNCONFIRMED
+            return self._confirm(request, judge, outcome.result)
         capabilities = self._decision_provider.decision_capabilities(engine.model)
         eligibility = decision_eligibility(request, engine, capabilities)
         if isinstance(eligibility, Ineligible):
@@ -358,7 +366,74 @@ class ScoringWorker:
             return "below_gate"
         self._write_prescreen(request, engine, "accepted", decision=decision, gate=outcome.gate,
                               argmax_band=outcome.result.band)
-        return outcome.result
+        return self._confirm(request, judge, outcome.result)
+
+    # -- FR-JUDGE-39: one LLM judge confirms a confident decision ---------------------------------
+
+    def _jev_final_on_accept(self, request: ScoringRequest) -> bool:
+        """The run's frozen FR-AGG-20 rule: read from the run row the unit belongs to (recorded at
+        creation), so a resumed run confirms by the rule it started with. An engine-on row with
+        no recorded value reads `True`, as M-ORCH's run handle does; the bound run config's value
+        when there is no store, no row, or a row that froze no engine."""
+        fallback = bool(getattr(self._run_config, "jev_final_on_accept", True))
+        if self._store is None:
+            return fallback
+        try:
+            keys = self._unit_keys(request.work_id)
+            cohort = _find_cohort(self._store, request.work_id)
+            rows = cohort.query(JUDGE_STATEMENTS["select_judge_run"], run_id=keys["run_id"])
+        except (ValueError, IndexError, KeyError):
+            return fallback
+        if not rows:
+            return fallback
+        try:
+            recorded = json.loads(rows[0]["provider_config"] or "{}")
+        except (TypeError, ValueError):
+            return fallback
+        if not isinstance(recorded, dict) or "decision_engine" not in recorded:
+            # The row froze no engine, so it froze no rule either: the bound config's.
+            return fallback
+        value = recorded.get("jev_final_on_accept")
+        # An engine-on row with no recorded value (written before the rule) reads as the
+        # default, exactly as the aggregate hook's run handle reads it
+        # (`orch._jev_final_on_accept_of`), so the two never disagree.
+        return value if isinstance(value, bool) else True
+
+    def _confirm(self, request: ScoringRequest, judge: Any,
+                 decision: ScoringResult) -> "ScoringResult | str":
+        """FR-JUDGE-39. With the knob on, the seat's LLM judge answers the same unit with exactly
+        the engine-off request (CT-JUDGE-22). Same band: the decision verdict stands, and the
+        judge is recorded as `confirmed_by`. Different band: the judge's verdict is the unit's,
+        marked `unconfirmed`, and takes the ordinary single-LLM path. A judge call that fails
+        raises as any LLM-path unit does, so a decision is never final unconfirmed. Knob off:
+        no confirmation call, and the decision verdict is provisional by FR-AGG-07."""
+        if not self._jev_final_on_accept(request):
+            return decision
+        llm = self._dispatch_llm(request, judge)
+        kind = CONFIRMED_BY if llm.band == decision.band else UNCONFIRMED_BY
+        if not self._record_confirmation(request, kind, _judge_id_of(judge), llm.band):
+            # Another delivery of this unit recorded its confirmation first: that one decides.
+            stored = self._stored_prescreen(request.work_id)
+            recorded = prescreen_confirmation(stored["reason"]) if stored is not None else None
+            if recorded is not None:
+                kind = recorded[0]
+        if kind == CONFIRMED_BY:
+            return decision
+        return dataclasses.replace(llm, scoring_engine="llm", engine_build=llm.resolved_build,
+                                   prescreen_outcome=UNCONFIRMED)
+
+    def _record_confirmation(self, request: ScoringRequest, kind: str, judge_id: str,
+                             band: str) -> bool:
+        """Record the confirming judge and its band on the unit's accepted pre-screen row. False
+        when another delivery recorded first (the row's `reason` was no longer NULL)."""
+        if self._store is None:
+            return True
+        cohort = _find_cohort(self._store, request.work_id)
+        reason = json.dumps({kind: {"judge_id": judge_id, "band": band}}, sort_keys=True)
+        with cohort.transaction() as tx:
+            tx.execute(JUDGE_STATEMENTS["record_prescreen_confirmation"],
+                       work_id=request.work_id, reason=reason)
+            return bool(int(tx.execute(ORCH_STATEMENTS["select_changes"])[0]["n"]))
 
     def _record_contract_violations(
         self, request: ScoringRequest, judge: Any, violations: int

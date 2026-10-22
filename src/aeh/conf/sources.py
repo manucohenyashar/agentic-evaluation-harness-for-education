@@ -55,6 +55,8 @@ DECISION_KEYS: tuple[str, ...] = (
     "HARNESS_JEV_TOKEN_BYTES_RATIO",
     # FR-CONF-30: the Q&A assistant's model on the cloud profiles, lifted the same way.
     "HARNESS_QA_MODEL",
+    # FR-AGG-20: whether a lone accepted decision is final, frozen into `RunConfig`.
+    "HARNESS_JEV_FINAL_ON_ACCEPT",
 )
 
 
@@ -334,6 +336,30 @@ def resume_profile_conflict(
         f"{which} was created under {_echo('HARNESS_PROFILE', persisted)}; the environment now "
         f"selects {_echo('HARNESS_PROFILE', requested)}. A resumed run keeps its persisted "
         f"profile (FR-CONF-15): set HARNESS_PROFILE back to resume it, or start a new run."
+    )
+
+
+#: FR-AGG-20's knob: a lone accepted decision-engine verdict is final unless this says `false`.
+JEV_FINAL_ON_ACCEPT_KEY = "HARNESS_JEV_FINAL_ON_ACCEPT"
+
+
+def parse_jev_final_on_accept(value: Any) -> bool:
+    """Read `HARNESS_JEV_FINAL_ON_ACCEPT` (FR-AGG-20), which defaults to True: absent or blank is
+    the production rule, `false` restores FR-AGG-07's single-judge clause. Anything else is
+    refused at resolution rather than read as a truthy string."""
+    if value is None:
+        return True
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        token = value.strip().lower()
+        if not token or token in _TRUE_TOKENS:
+            return True
+        if token in _FALSE_TOKENS:
+            return False
+    raise ConfigurationError(
+        f"{JEV_FINAL_ON_ACCEPT_KEY} is not a recognized boolean: "
+        f"{_echo(JEV_FINAL_ON_ACCEPT_KEY, value)}. Use 'true' or 'false'."
     )
 
 

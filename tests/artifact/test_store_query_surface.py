@@ -261,19 +261,19 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # as before, and the re-pin is line drift only. `run_lifecycle.py` is unchanged on
     # main, so #664's numbers hold; `enumeration.py` is #597's SQL-ready rewrite, whose
     # sites are main's re-pin.
-    "aeh.orch.run_lifecycle:108",
+    "aeh.orch.run_lifecycle:112",
     "aeh.orch.enumeration:103",
     "aeh.orch.enumeration:112",
-    "aeh.orch.run_lifecycle:269",
-    "aeh.orch.run_lifecycle:264",
-    "aeh.orch.run_lifecycle:258",
-    "aeh.orch.run_lifecycle:290",
-    "aeh.orch.run_lifecycle:302",
-    "aeh.orch.run_lifecycle:330",
-    "aeh.orch.run_lifecycle:450",
-    "aeh.orch.run_lifecycle:432",
-    "aeh.orch.run_lifecycle:474",
-    "aeh.orch.run_lifecycle:482",
+    "aeh.orch.run_lifecycle:273",
+    "aeh.orch.run_lifecycle:268",
+    "aeh.orch.run_lifecycle:262",
+    "aeh.orch.run_lifecycle:294",
+    "aeh.orch.run_lifecycle:306",
+    "aeh.orch.run_lifecycle:334",
+    "aeh.orch.run_lifecycle:454",
+    "aeh.orch.run_lifecycle:436",
+    "aeh.orch.run_lifecycle:478",
+    "aeh.orch.run_lifecycle:486",
     "aeh.orch.leasing:234",
     "aeh.orch.leasing:253",
     "aeh.orch.leasing:265",
@@ -318,7 +318,7 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # so a run recovery REFUSED to resume - a profile switch, FR-CONF-15 - would keep a
     # stale reason that answers a different question. Declared statement,
     # keyword-parameterized, in the caller's transaction (FR-STORE-08).
-    "aeh.orch.run_lifecycle:570",
+    "aeh.orch.run_lifecycle:574",
     "aeh.orch.leasing:672",
     "aeh.orch.leasing:674",
     "aeh.orch.dispatch:461",
@@ -326,7 +326,7 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # keyword parameters) lands above `record_run_metrics`, which moves 369 -> 389.
     "aeh.orch.reporting:381",
     "aeh.orch.reporting:402",
-    "aeh.orch.run_records:210",
+    "aeh.orch.run_records:221",
     # #612 (live OpenRouter enablement): cohort creation and roster widening write the
     # roster through ORCH_STATEMENTS, and ingest marks interrupted submissions
     # not_reached through INGEST_STATEMENTS - declared statements, keyword parameters,
@@ -393,13 +393,17 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # statements are the same three. Re-read from the walker, never hand-unioned.)
     # #361's durable write: `_record_contract_violations`' `tx.execute` of the declared
     # `JUDGE_STATEMENTS["add_contract_violations"]` upsert (FR-JUDGE-21).
-    "aeh.judge.worker:383",
-    "aeh.judge.worker:423",
-    "aeh.judge.worker:438",
-    "aeh.judge.worker:428",
+    "aeh.judge.worker:458",
+    # #806 FR-JUDGE-39: the confirming judge recorded on the accepted pre-screen row
+    # (`record_prescreen_confirmation`), and the changed-row count that tells it it won.
+    "aeh.judge.worker:434",
+    "aeh.judge.worker:436",
+    "aeh.judge.worker:498",
+    "aeh.judge.worker:513",
+    "aeh.judge.worker:503",
     # #448 (Jev design delta FR-JUDGE-34): the decision-seat pre-screen row, one declared
     # JUDGE_STATEMENTS["insert_prescreen"] with keyword parameters, INSERT OR IGNORE on the work id.
-    "aeh.judge.worker:252",
+    "aeh.judge.worker:256",
     # The ingest sites are #220's line numbers (the transcription strike loop
     # and the honest-quarantine catch shifted the module; every statement
     # verified unchanged against the prior baseline, the tripwire diff being

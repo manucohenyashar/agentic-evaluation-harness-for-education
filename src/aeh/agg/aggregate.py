@@ -13,10 +13,11 @@ from .settings import (
     AGG_AUTO_THRESHOLD_HOLISTIC,
     AGG_CAP_TABLE,
     AGG_HOLISTIC_MULTIPLIER,
+    AGG_JEV_FINAL_ON_ACCEPT,
     AGG_UNCITED_MULTIPLIER,
 )
 from .rows import _AGG_FAVOURABLE, _row_field, _row_value, _signal_adverse
-from .records import CriterionScore
+from .records import CriterionScore, MORE_GRADERS_UNAVAILABLE, not_final_reason_for
 from .agreement import ordinal_alpha, _verdict_ordinal
 
 
@@ -112,6 +113,8 @@ def aggregate(
     fallback: bool = False,
     breaker_tripped: bool = False,
     deterministic_score: Any = None,
+    jev_final_on_accept: bool = AGG_JEV_FINAL_ON_ACCEPT,
+    _jev_final_allowed: bool = True,
 ) -> CriterionScore:
     """Combine a panel's verdicts into one criterion score (FR-AGG-01..04), with its confidence
     (FR-AGG-05, FR-AGG-13, NFR-AGG-04), its routing and its state (FR-AGG-07, -10, -11, -12).
@@ -135,8 +138,9 @@ def aggregate(
             "aggregate over an empty verdict set is a programming error (CT-AGG-12): "
             "it is never a zero, a lowest band, or a null score."
         )
-    # FR-AGG-18: the only place aggregation reads a verdict's engine. Everything below is
-    # engine-blind (FR-AGG-19, CT-AGG-23): a decision-engine verdict is a verdict.
+    # FR-AGG-18: aggregation reads a verdict's engine here and in FR-AGG-20's one-verdict rule
+    # below. Everything else is engine-blind (FR-AGG-19, CT-AGG-23): a decision-engine verdict
+    # is a verdict.
     decision_verdicts = sum(
         1 for verdict in verdicts if _row_field(verdict, "scoring_engine") == "decision")
     if decision_verdicts > 1:
@@ -154,12 +158,16 @@ def aggregate(
             # verdicts disagree is a coin flip a rule would present as a
             # judgement (R48). The base single-judge band is kept and the score
             # is provisional — never a rounded verdict, never a settled panel.
+            # FR-AGG-20 holds only for a cell whose verdicts are exactly one; a panel cut to
+            # one by the discard is still a provisional single-judge band.
             single = aggregate(
                 verdicts[:1],
                 criterion,
                 signals,
                 config=config,
                 breaker_tripped=breaker_tripped,
+                jev_final_on_accept=jev_final_on_accept,
+                _jev_final_allowed=False,
             )
             return replace(
                 single,
@@ -278,10 +286,26 @@ def aggregate(
         notes += (
             "criterion breaker tripped: ungradeable_by_panel (FR-AGG-11, CT-ORCH-16)",
         )
+    elif (len(verdicts) == 1 and jev_final_on_accept and _jev_final_allowed
+          and _row_field(verdicts[0], "scoring_engine") == "decision"):
+        # FR-AGG-20 (ADR-50): a lone decision-engine verdict exists only because the engine
+        # accepted — its gate exceeded the threshold (FR-JUDGE-27) and its citations verified
+        # (FR-JUDGE-30) — so it is final. The recorded confidence is the gate value that made
+        # it final, so a consumer comparing confidence with the threshold agrees with the route.
+        routing = "auto"
+        state = "final"
+        # The gate replaces the single-judge prior as the base too, so `recompute_confidence`
+        # re-derives the stored figure from the row alone (NFR-AGG-04).
+        gate = _decision_gate(verdicts[0])
+        if gate is not None:
+            confidence = confidence_base = gate
+        notes += (JEV_FINAL_NOTE,)
     elif len(verdicts) == 1:
-        # A single-judge band is provisional by construction (§3.12): it awaits
-        # its panel — FR-AGG-09's escalation to three is M-ORCH's to enqueue —
-        # and one judge's word alone is never sufficient to auto-accept.
+        # A single LLM judge's band is provisional by construction (§3.12, FR-AGG-07
+        # as amended by FR-AGG-20): it awaits its panel — FR-AGG-09's escalation to
+        # three is M-ORCH's to enqueue — and one LLM judge's word alone is never
+        # sufficient to auto-accept. With the FR-AGG-20 knob off, a lone decision
+        # verdict lands here too.
         routing = "provisional"
         state = "provisional_unreviewed"
         notes += ("single-judge band: provisional by construction (FR-AGG-07, FR-AGG-11)",)
@@ -312,7 +336,30 @@ def aggregate(
         described_evidence=getattr(signals, "described_evidence", None),
         extractor_disagreement=getattr(signals, "extractor_disagreement", None),
         caps_fired=tuple(caps_fired),
+        not_final_reason=not_final_reason_for(
+            state, routing, judge_count=len(verdicts), caps_fired=caps_fired),
     )
+
+
+#: FR-AGG-20: the note a Jev-final cell carries, in the words the design gives it.
+JEV_FINAL_NOTE = "decided by the decision engine above its confidence threshold"
+
+
+def is_jev_final(score: Any) -> bool:
+    """Whether a score is final under FR-AGG-20: one verdict, settled `final`/`auto`. No other
+    path settles a one-verdict cell (FR-AGG-07), so the shape names the rule. M-PIPE reads it to
+    keep the cell out of escalation (FR-ORCH-45)."""
+    return (int(getattr(score, "judge_count", 0) or 0) == 1
+            and getattr(score, "state", None) == "final"
+            and getattr(score, "routing", None) == "auto")
+
+
+def _decision_gate(verdict: Any) -> float | None:
+    """The accepted decision's gate value, `min(c_band, c_sufficient)` (FR-JUDGE-27), as the
+    verdict carries it (`gate_confidence`, read from the decision pre-screen row by
+    `verdicts_for`). `None` when the verdict does not carry one."""
+    raw = _row_value(verdict, "gate_confidence")
+    return None if raw is None else float(raw)
 
 
 def _passthrough_score(row: Any, criterion: Any) -> CriterionScore:
@@ -403,6 +450,7 @@ def aggregate_even_panel_after_quarantine(
         routing="provisional",
         state="ungradeable_by_panel",
         state_reason=EVEN_PANEL_AFTER_QUARANTINE,
+        not_final_reason=MORE_GRADERS_UNAVAILABLE,
         notes=base.notes + (
             "even panel after quarantine, replacement arm refused: ungradeable_by_panel, "
             "routed to review; band shown is the panel's lower median (FR-PIPE-18)",

@@ -109,7 +109,10 @@ EXPECTED_ROLLUP: dict[str, tuple[tuple[tuple[str, int, int], ...], int, str]] = 
 EXPECTED_REASONS: dict[str, str | None] = {
     "decision_accepted": None,
     "llm_single": "one_grader_unsure",
-    "panel_agreeing": None,
+    # #806: C2 is holistic, so even a unanimous panel scores 1.0 x 0.85 = 0.85, below the 0.90
+    # holistic bar, and is routed `queued` (unchanged by FR-AGG-20). FR-AGG-20 gives a queued
+    # cell a code, and the closed set's code for a panel is `graders_disagree`.
+    "panel_agreeing": "graders_disagree",
     "breaker_tripped": "graders_refused",
 }
 
@@ -194,7 +197,10 @@ def _cell_verdicts(kind: str, submission_id: str, criterion: Any, band: str) -> 
             work_id=_work_id(submission_id, criterion.criterion_id, seat),
             judge_id="jev-seat" if engine == "decision" else f"judge-{seat}",
             band=band, band_ordinal=ordinal, cited_spans=("quoted words",),
-            evidence_sufficient=True, uncited=False, scoring_engine=engine)
+            evidence_sufficient=True, uncited=False, scoring_engine=engine,
+            # #806: the accepted decision's gate, as `verdicts_for` reads it from the
+            # pre-screen row this seed writes beside it.
+            gate_confidence=JEV_GATE if engine == "decision" else None)
         for seat, engine in enumerate(engines))
 
 

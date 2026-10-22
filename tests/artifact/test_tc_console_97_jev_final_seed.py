@@ -134,7 +134,6 @@ def test_tc_console_97_seed_points_sum_to_the_expected_rollup(seeded, cohort) ->
         assert grade == ("pass" if total >= 6 else "not yet")
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("cohort", ["synthetic", "real"])
 def test_tc_console_97_seed_cells_route_as_fr_agg_20_says(seeded, cohort) -> None:
     """Written ahead of #806 (FR-AGG-20): the accepted decision is `final` / `auto` with the
@@ -147,7 +146,12 @@ def test_tc_console_97_seed_cells_route_as_fr_agg_20_says(seeded, cohort) -> Non
             f"{CASE}: {student}'s accepted decision is {jev['state']}/{jev['routing']}")
         assert jev["confidence"] == pytest.approx(JEV_GATE), (
             f"{CASE}: a Jev-final cell's confidence is its gate value")
+        # #806: the stored code is read the way consumers read it. No migration carries a
+        # reason column, and an engine-off row stays byte-identical (TC-REG-08), so every code
+        # but `more_graders_unavailable` is re-derived from the row's own columns.
+        from aeh.agg import stored_not_final_reason
+
         for criterion_id, kind in CELL_KINDS.items():
-            assert rows[(student, criterion_id)]["state_reason"] == EXPECTED_REASONS[kind], (
-                f"{CASE}: {student} {criterion_id} ({kind}) reason "
-                f"{rows[(student, criterion_id)]['state_reason']!r}")
+            stored = stored_not_final_reason(rows[(student, criterion_id)])
+            assert stored == EXPECTED_REASONS[kind], (
+                f"{CASE}: {student} {criterion_id} ({kind}) reason {stored!r}")

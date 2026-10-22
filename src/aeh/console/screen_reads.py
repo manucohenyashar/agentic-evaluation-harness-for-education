@@ -667,16 +667,36 @@ def _grader_label(registry: dict[str, str], judge_id: str) -> str:
     return label
 
 
-def _state_reason_text(raw: str) -> str:
+#: FR-AGG-20's not-final reason codes (M-AGG's `NOT_FINAL_REASONS`), spelled here because the
+#: console's import edges are frozen (TC-CONSOLE-36).
+_NOT_FINAL_REASON_CODES = frozenset({
+    "one_grader_unsure", "graders_disagree", "evidence_not_found", "quote_not_verified",
+    "more_graders_unavailable", "graders_refused",
+})
+
+
+def _state_reason_text(raw: str, *, routing: str = "", state: str = "") -> str:
     """The aggregate's stored state reason in the teacher's words (`CT-CONSOLE-31`): the
     reasons the store carries are codes, and a snake_case code is not plain language.
     An unknown code passes through unchanged — an unmapped code names its value rather
-    than inventing a story for it."""
+    than inventing a story for it. A not-final reason (FR-AGG-20) on a cell that has since
+    been settled — the teacher reviewed it — no longer applies and reads as nothing."""
     reasons = {
         "even_panel_after_quarantine":
             "the graders were split on this grading point, so the panel's verdict was "
             "held for the teacher's review",
+        # FR-AGG-20's not-final reasons.
+        "one_grader_unsure": "The AI grader was not sure.",
+        "graders_disagree": "The AI graders did not agree.",
+        "evidence_not_found":
+            "The AI grader could not find the evidence this grading point asks for.",
+        "quote_not_verified":
+            "The AI grader's quote could not be found in the student's answer.",
+        "more_graders_unavailable": "More AI graders were needed, but none were available.",
+        "graders_refused": "The AI graders could not grade this grading point.",
     }
+    if raw in _NOT_FINAL_REASON_CODES and state == "final" and routing != "queued":
+        return ""
     return reasons.get(raw, raw)
 
 
@@ -791,7 +811,9 @@ def results_screen_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
             "stored_band": stored_band,
             "routing": str(row["routing"] or ""),
             "state": str(row["state"] or ""),
-            "state_reason": _state_reason_text(str(row["state_reason"] or "")),
+            "state_reason": _state_reason_text(
+                str(row["state_reason"] or ""), routing=str(row["routing"] or ""),
+                state=str(row["state"] or "")),
             "flag": _cell_flag(str(row["routing"] or ""), str(row["state"] or ""),
                                (str(row["submission_id"]), criterion_id) in escalated),
         })
@@ -941,7 +963,9 @@ def student_detail_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
             "stored_band": stored_band,
             "routing": str(row["routing"] or ""),
             "state": str(row["state"] or ""),
-            "state_reason": _state_reason_text(str(row["state_reason"] or "")),
+            "state_reason": _state_reason_text(
+                str(row["state_reason"] or ""), routing=str(row["routing"] or ""),
+                state=str(row["state"] or "")),
             "flag": _cell_flag(str(row["routing"] or ""), str(row["state"] or ""),
                                (submission_id, criterion_id) in escalation_pairs),
             "levels": [name for name, _points in scale],

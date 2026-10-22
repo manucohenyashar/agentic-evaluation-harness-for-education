@@ -112,12 +112,14 @@ def test_tc_judge_c07_decision_confidence_is_only_the_weighted_concern() -> None
     assert not escalation(0.81, 0.05).escalate
     assert escalation(0.81, 0.03).reasons == (), "confidence shapes the concern, never a reason"
     # The engine label carries no extra weight: decision- and LLM-labelled twins aggregate alike.
+    # #806 (CT-JUDGE-07 amended, FR-AGG-20): a lone ACCEPTED decision now selects the route, so
+    # the twins are compared under FR-AGG-07's rule (the knob off), where the label is still blind.
     for confidence in (0.99, 0.81):
         twins = []
         for engine in ("decision", "llm"):
             v = verdict("E", 3, self_confidence=confidence)
             v.scoring_engine = engine
-            twins.append(aggregate([v], crit, favourable_signals()))
+            twins.append(aggregate([v], crit, favourable_signals(), jev_final_on_accept=False))
         assert twins[0] == twins[1]
     for fn in (aggregate, should_escalate):
         params = set(inspect.signature(fn).parameters)

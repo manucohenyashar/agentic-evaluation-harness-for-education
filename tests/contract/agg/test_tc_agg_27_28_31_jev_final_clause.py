@@ -34,7 +34,7 @@ import pytest
 from tests.support.agg_vocabulary import band, criterion, favourable_signals, signals, verdict
 from tests.support.impl import NotImplementedYet
 
-pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.contract]
 
 BLOCKER = "#806"
 GATE = 0.91

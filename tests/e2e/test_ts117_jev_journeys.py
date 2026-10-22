@@ -313,8 +313,13 @@ def test_adv_15_a_maximally_confident_decision_is_never_auto_routed_alone() -> N
     crit = criterion([band("B", 0, 0.0), band("D", 1, 1.0), band("P", 2, 2.0), band("E", 3, 3.0)])
     v = verdict("E", 3, self_confidence=0.99)
     v.scoring_engine = "decision"
-    score = aggregate([v], crit, favourable_signals())
+    # #806 (FR-AGG-20 / FR-JUDGE-39): with the knob on, a lone decision verdict reaches
+    # aggregation only once an LLM judge has confirmed its band, and is then final by design
+    # (TC-AGG-27(a), TC-JUDGE-46/47). The "never alone" property holds under FR-AGG-07's rule.
+    score = aggregate([v], crit, favourable_signals(), jev_final_on_accept=False)
     assert score.routing != "auto"
+    confirmed = aggregate([v], crit, favourable_signals(), jev_final_on_accept=True)
+    assert confirmed.routing == "auto", "the knob-on route is FR-AGG-20's, not FR-AGG-07's"
     decision = should_escalate(score, crit, criterion_history(), expected_distribution())
     assert decision.escalate and decision.reasons, "escalation reads the observables (an edge band here)"
 

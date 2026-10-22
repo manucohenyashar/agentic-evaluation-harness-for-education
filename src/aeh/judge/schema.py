@@ -225,6 +225,12 @@ JUDGE_STATEMENTS: dict[str, Statement] = {
         ":sufficiency_p, :argmax_band, :band_probabilities, :band_score, :cite_probabilities, "
         ":threshold, :tokens_in, :latency_ms, :cost)"
     ),
+    # FR-JUDGE-39 (#806): the confirming judge's answer on an accepted pre-screen row, in its
+    # `reason` (NULL on an accepted row until then; no migration). Written once per unit.
+    "record_prescreen_confirmation": Statement(
+        "UPDATE decision_prescreen SET reason = :reason "
+        "WHERE work_id = :work_id AND outcome = 'accepted' AND reason IS NULL"
+    ),
     # FR-JUDGE-36: one run's pre-screen rows, for `decision_engine_metrics`.
     "select_run_prescreens": Statement(
         "SELECT criterion_id, outcome, reason, gate_confidence, latency_ms "
@@ -233,8 +239,11 @@ JUDGE_STATEMENTS: dict[str, Statement] = {
     # FR-JUDGE-18 / CT-JUDGE-20: one run's verdicts for one cell, in work_id order.
     "select_cell_verdicts": Statement(
         "SELECT v.work_id, v.judge_id, v.band, v.band_ordinal, v.cited_spans, "
-        "v.evidence_sufficient, v.uncited, v.scoring_engine FROM verdict v "
+        "v.evidence_sufficient, v.uncited, v.scoring_engine, p.gate_confidence FROM verdict v "
         "JOIN work_unit w ON w.work_id = v.work_id "
+        # FR-AGG-20: an accepted decision's gate value, which a Jev-final cell records as its
+        # confidence. NULL for an LLM verdict (no accepted pre-screen row).
+        "LEFT JOIN decision_prescreen p ON p.work_id = v.work_id AND p.outcome = 'accepted' "
         "WHERE w.run_id = :run_id AND w.submission_id = :submission_id "
         "AND w.criterion_id = :criterion_id ORDER BY v.work_id"
     ),
