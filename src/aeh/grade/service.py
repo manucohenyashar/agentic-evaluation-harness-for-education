@@ -485,7 +485,7 @@ class GradingService(
 
     def _grade_one(self, cohort: Any, surface: dict[str, Any], run: Any,
                    submission_id: str) -> None:
-        """The write half of grading one submission, shared by `compute_one` and `amend`: compute,
+        """The write half of grading one submission behind `compute_one`: compute,
         compare, insert or settle, and queue missing inputs. Stored amendments are applied first,
         so an unchanged re-run of an amended submission writes nothing."""
         rows = cohort.query(
@@ -584,7 +584,7 @@ class GradingService(
                     tx.execute(
                         GRADE_STATEMENTS["insert_review_row"],
                         queue_id=queue_id,
-                        run_id=run_id,
+                        run_id=run["run_id"],
                         submission_id=queued_submission,
                         criterion_id=criterion_id,
                         reason=_RESCAN_DIRECTIVE,
@@ -593,7 +593,7 @@ class GradingService(
                 tx.execute(
                     GRADE_STATEMENTS["delete_review_rows"],
                     submission_id=submission_id,
-                    run_id=run_id,
+                    run_id=run["run_id"],
                 )
 
     # -- helpers -------------------------------------------------------------------
