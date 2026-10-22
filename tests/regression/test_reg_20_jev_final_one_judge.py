@@ -41,7 +41,18 @@ def test_tc_reg_20_a_jev_accepted_eng7_cell_is_final_with_the_shipped_one_judge_
 
     store = open_store(tmp_path / "data")
     try:
+        from aeh.orch import Orchestrator
+
+        # The rule the aggregate hook reads is the run row's: a run created with the shipped
+        # config must freeze `jev_final_on_accept=True` for the hook's run handle to read.
+        shipped = resolve_run_config(
+            effective_config(cli._load_config_file(str(DEV_CI_CONFIG))),
+            CohortRef(cohort_id="eng7-clarity-synthetic", consent_class="synthetic"))
         seed = seed_jev_final(store, jev_final_on_accept=resolved.jev_final_on_accept)
+        orch = Orchestrator(store)
+        run_id = orch.create_run(seed.cohort_id, seed.package_version_id, shipped,
+                                 run_id="run-reg-20-shipped")
+        assert orch.run_handle(run_id).jev_final_on_accept is True
         rows = score_rows(store, seed)
     finally:
         store.close()

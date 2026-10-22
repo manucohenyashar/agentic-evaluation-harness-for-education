@@ -171,7 +171,7 @@ def test_tc_orch_61_a_jev_final_cell_is_not_escalated_and_consumes_no_budget(tmp
     assert (x["score"][2], x["score"][3], x["score"][4]) == ("final", "auto", 1)
     assert x["score"][5] == pytest.approx(ACCEPTED["gate"])
     assert x["units"] == [(x["units"][0][0], "base", "done")], "X: no escalation unit"
-    assert X not in seen.enqueued, "X: enqueue_escalation never called, so no budget consumed"
+    assert X not in seen.enqueued, "X: no escalation admitted, so no budget consumed"
     # Y escalates on the ordinary path.
     assert y["prescreen"][0] == "below_gate"
     assert seen.enqueued[Y][0][0] == "admitted" and len(y["units"]) == 3
