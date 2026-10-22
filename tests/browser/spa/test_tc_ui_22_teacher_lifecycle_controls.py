@@ -137,8 +137,13 @@ def test_tc_ui_22_class_papers_parked_and_run_start_from_the_browser(
                 "the start confirmation shows raw settings"
             dialog.get_by_role("button", name=re.compile(r"^start$", re.I)).click()
             # The monitor opens the started run: its own heading and the run's state
-            # sentence (FR-UI-23: no "Run run-…" id) — and the journey's world pauses the
-            # run at composition (its judges are not staged), which the monitor renders.
+            # sentence (FR-UI-23: no "Run run-…" id). DEFECT FINDING (recorded on #827's
+            # PR; the world here is byte-identical to main's): this journey's monitor
+            # shows the run paused with "paused: composition fault: KeyError:
+            # 'source_blob_hash'" — a raw exception class in a teacher-facing pause
+            # reason, which no FR-UI-23 census catches because `STACK_TRACE_PATTERNS`
+            # does not know it. The pause itself is the seeded world's staged shape; the
+            # wording is the defect.
             _wait(lambda: spa.main_text(page).startswith("Monitor run")
                   and "The grading run" in spa.main_text(page),
                   "the console to open the started run's monitor",
