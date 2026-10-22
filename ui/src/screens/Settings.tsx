@@ -1,6 +1,14 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { performAction, type ConfigDoc, type SettingRow } from "../api";
-import { ActionOutcome, ConfirmDialog, useActionState } from "../components/Confirm";
+import { ConfirmDialog, useActionState } from "../components/Confirm";
+import { describedBy, FormatLine, formatIdFor } from "../components/Field";
+import { DisabledReason } from "../components/Outcome";
+import {
+  checkField,
+  FORMAT_CHOOSE_ONE,
+  pleaseEnter,
+  type FieldSpec,
+} from "../wizard/vocabulary";
 import { ReadScreen } from "../components/ReadScreen";
 import { useScreenRead } from "../useScreenRead";
 
@@ -16,27 +24,45 @@ import { useScreenRead } from "../useScreenRead";
 
 type Edits = Record<string, string>;
 
-/** The client-side shape checks, worded for the teacher; the write path re-validates every
- * edit against the loader's own rules, and its refusal is the outcome the page shows. */
+/** A setting's one definition (FR-UI-36): the format line shown under its field and the
+ * client-side check read the same spec. The write path re-validates every edit against the
+ * loader's own rules, and its refusal is the outcome the page shows. */
+function settingSpec(row: SettingRow): FieldSpec {
+  if (row.type === "choice") {
+    return { kind: "choice", format: FORMAT_CHOOSE_ONE };
+  }
+  if (row.type === "number") {
+    if (row.field === "cost_ceiling") {
+      return { kind: "decimal", format: "An amount in US dollars, for example 5 or 12.50", min: 0 };
+    }
+    if (row.field.endsWith("_gate")) {
+      return { kind: "decimal", format: "A number from 0 to 1, for example 0.8", min: 0, max: 1 };
+    }
+    if (row.field === "decision_citation_question_limit") {
+      return { kind: "whole_number", min: 1, max: 26 };
+    }
+    if (row.field === "decision_token_bytes_ratio") {
+      return { kind: "whole_number", min: 1, max: 8 };
+    }
+    return { kind: "decimal", format: "A number, for example 3 or 0.5" };
+  }
+  if (row.field.endsWith("_model")) {
+    return {
+      kind: "text",
+      format: "One model, written as provider|build",
+      pattern: /^[^;|]*\S[^;|]*(\|[^;|]*\S[^;|]*)+$/,
+    };
+  }
+  return { kind: "text", format: "Plain text" };
+}
+
+/** An edit's refusal at the field: an unchanged value is never refused, an emptied one is. */
 function validateEdit(row: SettingRow, value: string): string | null {
   if (value === row.value) {
     return null;
   }
-  if (row.type === "number") {
-    return value.trim() === "" || Number.isNaN(Number(value))
-      ? "Enter a number."
-      : null;
-  }
-  if (row.type === "text" && row.field.endsWith("_model")) {
-    const parts = value.split("|");
-    return parts.length < 2 || parts.some((part) => part.trim() === "") || value.includes(";")
-      ? "Use one model, written as provider|build."
-      : null;
-  }
-  if (value.trim() === "") {
-    return "Enter a value, or leave the setting as it is.";
-  }
-  return null;
+  const spec = settingSpec(row);
+  return value.trim() === "" ? pleaseEnter(spec) : checkField(spec, value);
 }
 
 function EditRow({
@@ -52,11 +78,12 @@ function EditRow({
 }) {
   const id = `setting-${row.field}`;
   const invalid = error !== null;
+  const linked = describedBy(id, error);
   return (
     <div className={`settings-row${invalid ? " settings-row-error" : ""}`}>
       <label htmlFor={id}>{row.label}</label>
       {row.type === "choice" && row.choices.length > 0 ? (
-        <select id={id} value={draft} onChange={(event) => onChange(event.target.value)}>
+        <select id={id} aria-describedby={linked} value={draft} onChange={(event) => onChange(event.target.value)}>
           {row.choices.map((choice) => (
             <option key={choice} value={choice}>
               {choice}
@@ -68,6 +95,7 @@ function EditRow({
           id={id}
           type="text"
           inputMode="decimal"
+          aria-describedby={linked}
           value={draft}
           aria-invalid={invalid || undefined}
           onChange={(event) => onChange(event.target.value)}
@@ -76,13 +104,15 @@ function EditRow({
         <input
           id={id}
           type="text"
+          aria-describedby={linked}
           value={draft}
           aria-invalid={invalid || undefined}
           onChange={(event) => onChange(event.target.value)}
         />
       )}
+      <FormatLine id={formatIdFor(id)} spec={settingSpec(row)} />
       {error !== null && (
-        <p className="settings-error" role="alert">
+        <p id={`${id}-error`} className="settings-error field-invalid" role="alert">
           {error}
         </p>
       )}
@@ -144,7 +174,6 @@ export function Settings() {
 
         return (
           <>
-            <ActionOutcome outcome={action.outcome} />
             {editable.length === 0 ? (
               <p>No setting can be changed here.</p>
             ) : (
@@ -176,6 +205,12 @@ export function Settings() {
                     >
                       Discard the changes
                     </button>
+                    <DisabledReason
+                      reason={
+                        anyError ? "Fix the settings marked in red first."
+                          : changed.length === 0 ? "Change a setting first." : null
+                      }
+                    />
                   </div>
                 </fieldset>
               </form>

@@ -7,13 +7,16 @@ import {
   type Papers as PapersDoc,
   type Student,
 } from "../api";
-import { ActionOutcome, ConfirmDialog, useActionState } from "../components/Confirm";
+import { ConfirmDialog, useActionState } from "../components/Confirm";
 import { ReadScreen } from "../components/ReadScreen";
 import { sharedNames, studentLabel } from "../studentNames";
 import { useNavigate } from "../navigate";
 import { ProgressBar, useToast } from "../state/StateDisplay";
 import { useScreenRead } from "../useScreenRead";
 import type { Selection } from "../wizard/derivation";
+import { FormatLine, formatIdFor } from "../components/Field";
+import { BusyButton, DisabledReason, textOutcome, useOutcome } from "../components/Outcome";
+import { FORMAT_PDF_PER_STUDENT, OUTCOME_FALLBACK_WHAT, versionName } from "../wizard/vocabulary";
 
 /**
  * The papers screen (FR-UI-03c, live-test blocker B4): the selected class's students, what
@@ -69,6 +72,7 @@ export function Papers({
     selection.classId === null ? undefined : { cohort_id: selection.classId },
   );
   const fix = useActionState(read.retry);
+  const { report, clear } = useOutcome();
 
   // The published test versions, the selected package's (or this class's last run's) first.
   const versions = useMemo(() => {
@@ -151,9 +155,12 @@ export function Papers({
   const send = async (classId: string, needsTestPaper: boolean): Promise<void> => {
     setConfirming(false);
     setProblem(null);
+    clear();
     const queue: { file: File; kind: "assessment" | "sheet" }[] = [];
     if (needsTestPaper && testPaper !== null) queue.push({ file: testPaper, kind: "assessment" });
     for (const file of sheets) queue.push({ file, kind: "sheet" });
+    let failed: string | null = null;
+    let sent = 0;
     for (const { file, kind } of queue) {
       setSending(file.name);
       try {
@@ -168,18 +175,34 @@ export function Papers({
           job_id?: string;
         };
         if (!response.ok || answer.dispatched !== true) {
-          setProblem(`${file.name} was not accepted: ${answer.detail ?? "the upload failed."}`);
+          const said = `${file.name} was not accepted: ${answer.detail ?? "the upload failed."}`;
+          setProblem(said);
+          failed = said;
           break;
         }
         if (answer.job_id) setJobId(answer.job_id);
+        sent += 1;
       } catch (failure: unknown) {
-        setProblem(
-          `${file.name} could not be sent (${failure instanceof Error ? failure.message : String(failure)}). Check that the console is still running.`,
-        );
+        const said =
+          `${file.name} could not be sent (${failure instanceof Error ? failure.message : String(failure)}). Check that the console is still running.`;
+        setProblem(said);
+        failed = said;
         break;
       }
     }
     setSending(null);
+    report(
+      failed !== null
+        ? {
+            ...textOutcome(failed, true),
+            what: sent === 0 ? OUTCOME_FALLBACK_WHAT : `Only ${sent} of ${queue.length} files were sent.`,
+            next: "Check the file named here, then send it again.",
+          }
+        : textOutcome(
+            `${queue.length === 1 ? "1 file was" : `${queue.length} files were`} sent. ` +
+              "Reading the papers has started.",
+          ),
+    );
     setTestPaper(null);
     setSheets([]);
     if (paperInput.current) paperInput.current.value = "";
@@ -223,15 +246,20 @@ export function Papers({
                     <label htmlFor="papers-version">Test these papers answer</label>
                     <select
                       id="papers-version"
+                      aria-describedby={formatIdFor("papers-version")}
                       value={version}
                       onChange={(event) => setVersion(event.target.value)}
                     >
                       {versions.map((v) => (
                         <option key={v} value={v}>
-                          {v}
+                          {versionName(v, context?.packages)}
                         </option>
                       ))}
                     </select>
+                    <FormatLine
+                      id={formatIdFor("papers-version")}
+                      spec="Choose the published test the students sat"
+                    />
                   </div>
                   <div className="settings-row">
                     <label htmlFor="papers-test">The test paper (PDF)</label>
@@ -239,10 +267,15 @@ export function Papers({
                       <>
                         <input
                           id="papers-test"
+                          aria-describedby={formatIdFor("papers-test")}
                           ref={paperInput}
                           type="file"
                           accept="application/pdf,.pdf"
                           onChange={(event) => setTestPaper(event.target.files?.[0] ?? null)}
+                        />
+                        <FormatLine
+                          id={formatIdFor("papers-test")}
+                          spec="One PDF file of the blank test paper"
                         />
                         <p className="step-note">
                           Needed once for this class: every answer sheet is checked against it.
@@ -288,8 +321,10 @@ export function Papers({
                       type="file"
                       accept="application/pdf,.pdf"
                       multiple
+                      aria-describedby={formatIdFor("papers-sheets")}
                       onChange={(event) => setSheets(Array.from(event.target.files ?? []))}
                     />
+                    <FormatLine id={formatIdFor("papers-sheets")} spec={FORMAT_PDF_PER_STUDENT} />
                   </div>
                   {(testPaper !== null || sheets.length > 0) && (
                     <ul className="rows-list" aria-label="Files to read">
@@ -310,13 +345,24 @@ export function Papers({
                     </ul>
                   )}
                   <div className="settings-actions">
-                    <button
+                    <BusyButton
                       type="submit"
                       className="button button-primary"
                       disabled={!canSend || busy}
+                      busy={sending !== null}
                     >
                       {sending !== null ? `Sending ${sending}…` : "Read the papers"}
-                    </button>
+                    </BusyButton>
+                    <DisabledReason
+                      reason={
+                        sending !== null || canSend ? null
+                          : busy ? "Wait until the papers already sent have been read."
+                            : version === "" ? "Publish a test first."
+                              : needsTestPaper && testPaper === null
+                                ? "Choose the test paper first."
+                                : "Choose the answer sheets first."
+                      }
+                    />
                   </div>
                   {problem !== null && (
                     <p role="alert" className="settings-error">
@@ -346,7 +392,6 @@ export function Papers({
             <section className="panel" aria-label="Students">
               <h2>Students</h2>
               <ClassCheck data={data} />
-              <ActionOutcome outcome={fix.outcome} />
               <SheetList
                 data={data}
                 onMove={(sheet, student, shared) =>
@@ -544,10 +589,13 @@ function SheetFixes({
     <span className="sheet-fixes">
       {sheet.matched === true && choices.length > 0 && (
         <>
-          <label htmlFor={selectId} className="visually-hidden">
-            Not theirs? Give the paper to
-          </label>
-          <select id={selectId} value={target} onChange={(event) => setTarget(event.target.value)}>
+          <label htmlFor={selectId}>Not theirs? Give the paper to</label>
+          <select
+            id={selectId}
+            aria-describedby={formatIdFor(selectId)}
+            value={target}
+            onChange={(event) => setTarget(event.target.value)}
+          >
             <option value="">Not theirs? Give it to…</option>
             {choices.map((student) => (
               <option key={student.student_ref} value={student.student_ref}>
@@ -555,6 +603,7 @@ function SheetFixes({
               </option>
             ))}
           </select>
+          <FormatLine id={formatIdFor(selectId)} spec="Choose the student this paper belongs to" />
           <button
             type="button"
             className="button button-small"

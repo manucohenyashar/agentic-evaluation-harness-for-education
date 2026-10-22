@@ -1,18 +1,13 @@
 import { useCallback, useState } from "react";
 import { performAction, type ActionResult } from "../api";
+import { BusyButton, outcomeOf, outcomeSentence, useOutcome } from "./Outcome";
 
 /**
  * The outcome's wording: a refused action is the console's own refusal, prefixed as
  * refused — the console never reports a refused action as done.
  */
 export function outcomeText(result: ActionResult): string {
-  if (result.error !== undefined && result.error !== "") {
-    return `Refused: ${result.error}`;
-  }
-  if (result.refused === true && result.detail) {
-    return `Refused: ${result.detail}`;
-  }
-  return result.detail || "done — no detail returned";
+  return outcomeSentence(outcomeOf(result));
 }
 
 /**
@@ -31,6 +26,9 @@ export interface PendingAction {
   /** The enumerated control action, verbatim (`CONTROL_SURFACE_ACTIONS`). */
   action: string;
   body: Record<string, unknown>;
+  /** The success sentence in the teacher's words, when the server's own would carry
+   * internal names (FR-UI-23). */
+  said?: string;
 }
 
 /**
@@ -48,9 +46,11 @@ export function ConfirmDialog({
   onDone: (result: ActionResult) => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const { clear } = useOutcome();
 
   const run = (): void => {
     setBusy(true);
+    clear();
     performAction(pending.action, pending.body).then(
       (result) => {
         setBusy(false);
@@ -74,9 +74,9 @@ export function ConfirmDialog({
         <button type="button" className="button" onClick={onClose} disabled={busy}>
           Cancel
         </button>
-        <button type="button" className="button button-primary" onClick={run} disabled={busy}>
+        <BusyButton className="button button-primary" onClick={run} busy={busy}>
           {pending.confirm}
-        </button>
+        </BusyButton>
       </div>
     </div>
   );
@@ -84,35 +84,27 @@ export function ConfirmDialog({
 
 /**
  * One screen's action state: the pending confirmation it opened and the outcome of the last
- * one. `open` stages the dialog, `finish` reports the result whatever it was — a refusal is
- * the console's own wording, prefixed as refused, never as done.
+ * one. `open` stages the dialog, `finish` reports the result whatever it was — in the
+ * shell's outcome banner (FR-UI-24) with its toast; a refusal is the console's own
+ * what / why / next, never reported as done (FR-UI-25).
  */
 export function useActionState(afterDone?: () => void) {
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [outcome, setOutcome] = useState<string | null>(null);
+  const { report } = useOutcome();
 
   const open = useCallback((next: PendingAction) => setPending(next), []);
   const close = useCallback(() => setPending(null), []);
   const finish = useCallback(
     (result: ActionResult) => {
+      const said = outcomeOf(result, pending?.said);
       setPending(null);
-      setOutcome(outcomeText(result));
+      setOutcome(outcomeSentence(said));
+      report(said);
       afterDone?.();
     },
-    [afterDone],
+    [afterDone, report, pending],
   );
 
   return { pending, outcome, open, close, finish };
-}
-
-/** The outcome line under the screen's content: what the last confirmed action answered. */
-export function ActionOutcome({ outcome }: { outcome: string | null }) {
-  if (outcome === null) {
-    return null;
-  }
-  return (
-    <p role="status" className="action-outcome">
-      {outcome}
-    </p>
-  );
 }

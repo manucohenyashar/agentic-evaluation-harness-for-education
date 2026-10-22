@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
 import type { PastTestRun, PastTestsDoc } from "../api";
 import { ReadScreen } from "../components/ReadScreen";
+import { FormatLine, formatIdFor } from "../components/Field";
 import { useNavigate } from "../navigate";
 import { useScreenRead } from "../useScreenRead";
-import { entityStateLabel } from "../wizard/vocabulary";
+import { entityStateLabel, versionName } from "../wizard/vocabulary";
 import { sharedNames, studentLabel } from "../studentNames";
 
 /**
@@ -28,7 +29,7 @@ export function runLabel(run: {
   package_version_id: string;
   started_at: string | null;
 }): string {
-  return `${run.cohort_id} · ${run.package_version_id} · ${shortDate(run.started_at)}`;
+  return `${run.cohort_id} · ${versionName(run.package_version_id)} · ${shortDate(run.started_at)}`;
 }
 
 function matches(text: string | null | undefined, needle: string): boolean {
@@ -95,7 +96,12 @@ function PastTestsBody({
       <div className="settings-form" role="search" aria-label="Find a past test">
         <div className="settings-row">
           <label htmlFor="past-class">Class</label>
-          <select id="past-class" value={cls} onChange={(event) => setCls(event.target.value)}>
+          <select
+            id="past-class"
+            aria-describedby={formatIdFor("past-class")}
+            value={cls}
+            onChange={(event) => setCls(event.target.value)}
+          >
             <option value="">Every class</option>
             {classes.map((name) => (
               <option key={name} value={name}>
@@ -103,6 +109,7 @@ function PastTestsBody({
               </option>
             ))}
           </select>
+          <FormatLine id={formatIdFor("past-class")} spec="Choose a class, or every class" />
         </div>
         <div className="settings-row">
           <label htmlFor="past-student">Find a student</label>
@@ -161,7 +168,7 @@ function PastTestsBody({
                     open(run);
                   }}
                 >
-                  Class {run.cohort_id} — test {run.package_version_id}
+                  Class {run.cohort_id} — test {versionName(run.package_version_id)}
                 </a>
                 <span>
                   {shortDate(run.started_at)}

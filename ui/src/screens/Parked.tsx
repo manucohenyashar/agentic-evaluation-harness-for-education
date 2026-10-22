@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ParkedDoc } from "../api";
-import { ActionOutcome, ConfirmDialog, useActionState } from "../components/Confirm";
+import { ConfirmDialog, useActionState } from "../components/Confirm";
+import { FormatLine, formatIdFor } from "../components/Field";
 import { ReadScreen } from "../components/ReadScreen";
 import { useNavigate } from "../navigate";
 import { sharedNames, studentLabel, studentName } from "../studentNames";
@@ -63,6 +64,7 @@ function ParkedCard({
               <label htmlFor={studentId}>This paper belongs to</label>
               <select
                 id={studentId}
+                aria-describedby={formatIdFor(studentId)}
                 value={student}
                 onChange={(event) => setStudent(event.target.value)}
               >
@@ -73,6 +75,10 @@ function ParkedCard({
                   </option>
                 ))}
               </select>
+              <FormatLine
+                id={formatIdFor(studentId)}
+                spec="Choose the student whose paper this is"
+              />
               {choices.length === 0 && (
                 <p className="step-note">
                   Every student on the list already has a paper. Add the student on the
@@ -85,9 +91,14 @@ function ParkedCard({
             <label htmlFor={noteId}>Your note (optional)</label>
             <input
               id={noteId}
+              aria-describedby={formatIdFor(noteId)}
               value={note}
               placeholder="For example: Q1 is C — the second tick was crossed out"
               onChange={(event) => setNote(event.target.value)}
+            />
+            <FormatLine
+              id={formatIdFor(noteId)}
+              spec="Optional: a sentence on what you decided and why, kept with the paper"
             />
           </div>
         </div>
@@ -264,7 +275,6 @@ export function Parked() {
     <ReadScreen title="Parked" read={read}>
       {(data) => (
         <>
-          <ActionOutcome outcome={action.outcome} />
           {data.parked.length === 0 ? (
             <p>No papers are parked.</p>
           ) : (

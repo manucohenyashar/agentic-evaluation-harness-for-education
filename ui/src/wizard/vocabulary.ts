@@ -367,3 +367,134 @@ function placeholderFieldLabel(field: string): string {
       return "";
   }
 }
+
+/*
+ * The outcome banner's words (FR-UI-24/25): a refusal reads as three sentences — what
+ * happened, why, and what to do next. The server sends all three (`what`/`why`/
+ * `next_action`); these are the fallbacks for a refusal that arrived without them (a
+ * dropped connection, an older answer).
+ */
+export const OUTCOME_REFUSED_PREFIX = "Refused:";
+export const OUTCOME_FALLBACK_WHAT = "Nothing was changed.";
+export const OUTCOME_FALLBACK_WHY = "The console could not do it.";
+export const OUTCOME_FALLBACK_NEXT = "Check what is named here, then try again.";
+export const OUTCOME_DONE_FALLBACK = "Done.";
+export const OUTCOME_DISMISS = "Dismiss";
+export const OUTCOME_WORKING = "Working…";
+
+/**
+ * One input's expected answer (FR-UI-36): the single definition the field's format line
+ * and its check both read, so the guidance can never state a range the check does not
+ * enforce. `whole_number` mirrors the gap questions' `answer_kind` (FR-AUTHOR-31); the
+ * other kinds carry their format line in words.
+ */
+export type FieldSpec =
+  | { kind: "whole_number"; min: number; max: number; format?: string }
+  | { kind: "decimal"; format: string; min?: number; max?: number }
+  | { kind: "text"; format: string; minLength?: number; maxLength?: number; pattern?: RegExp }
+  | { kind: "file"; format: string; accept: string }
+  | { kind: "choice"; format: string };
+
+/** The format line shown under a field, before the teacher types (no closing period). */
+export function formatLine(spec: FieldSpec): string {
+  if (spec.kind === "whole_number") {
+    return spec.format ?? `A whole number from ${spec.min} to ${spec.max}`;
+  }
+  return spec.format;
+}
+
+/** The refusal shown at the field: "Please enter " + the format line, as one sentence. */
+export function pleaseEnter(spec: FieldSpec): string {
+  const line = formatLine(spec).replace(/\.\s*$/, "");
+  return `Please enter ${line.charAt(0).toLowerCase()}${line.slice(1)}.`;
+}
+
+/**
+ * Whether `value` fits `spec`: `null` when it does, the field's refusal when it does not.
+ * An empty value is left to the submit button's own "fill this in" reason, so a field the
+ * teacher has not touched yet shows no red.
+ */
+export function checkField(spec: FieldSpec, value: string): string | null {
+  const said = value.trim();
+  if (said === "") {
+    return null;
+  }
+  switch (spec.kind) {
+    case "whole_number": {
+      if (!/^-?\d+$/.test(said)) return pleaseEnter(spec);
+      const number = Number(said);
+      return number < spec.min || number > spec.max ? pleaseEnter(spec) : null;
+    }
+    case "decimal": {
+      if (!/^-?(\d+(\.\d*)?|\.\d+)$/.test(said)) return pleaseEnter(spec);
+      const number = Number(said);
+      if (spec.min !== undefined && number < spec.min) return pleaseEnter(spec);
+      if (spec.max !== undefined && number > spec.max) return pleaseEnter(spec);
+      return null;
+    }
+    case "text":
+      if (spec.minLength !== undefined && said.length < spec.minLength) return pleaseEnter(spec);
+      if (spec.maxLength !== undefined && said.length > spec.maxLength) return pleaseEnter(spec);
+      if (spec.pattern !== undefined && !spec.pattern.test(said)) return pleaseEnter(spec);
+      return null;
+    default:
+      return null;
+  }
+}
+
+/** Why a submit button is disabled while its field refuses — said beside the button. */
+export function fixFieldFirst(label: string): string {
+  return `Fix “${label}” first.`;
+}
+
+/** Why a submit button is disabled while a field it needs is still empty. */
+export function fillFieldFirst(label: string): string {
+  return `Fill in “${label}” first.`;
+}
+
+/* The format lines the screens share (FR-UI-36's examples), one wording each. */
+export const FORMAT_FULL_NAME = "Your full name, as students know you";
+export const FORMAT_STUDENT_NAME = "The student's full name, as it appears on the class list";
+export const FORMAT_PDF_PER_STUDENT = "A PDF file, one per student";
+export const FORMAT_CHOOSE_ONE = "Choose one from the list";
+export const FORMAT_FREE_TEXT = "Plain text, in your own words";
+export const FORMAT_QUESTION_TEXT = "The question as students read it on the test";
+export const FORMAT_EXPECTED_ANSWER = "The answer you expect, in plain words";
+export const FORMAT_OPTION_LETTER = "One letter, for example E";
+export const FORMAT_OPTION_WORDS = "The option's words, as printed on the test";
+export const FORMAT_GRADED_QUESTION = "Choose the question this grading point marks";
+export const FORMAT_REUSE_LEVELS = "Choose a grading point whose score levels to reuse";
+export const FORMAT_KEY_OPTIONS = "Tick every option that is a correct answer";
+/**
+ * A package version's teacher name (FR-UI-23: the `<package>@<hash>` form is internal and
+ * never shown): the label the context read serves for it when it knows the version
+ * (FR-CONSOLE-74, "ENG7-READ-01 version 1"), otherwise the test's name alone.
+ */
+export function versionName(
+  versionId: string | null | undefined,
+  known?: { published_version_id: string | null; published_version: string | null }[],
+): string {
+  if (!versionId) {
+    return "no test yet";
+  }
+  const label = known?.find((entry) => entry.published_version_id === versionId)?.published_version;
+  if (label) {
+    return label;
+  }
+  return packageName(versionId.split("@")[0] ?? "");
+}
+
+/** A package's teacher name: a published package's id is the test's own name; an internal
+ * `pkg-…` reference is never shown. */
+export function packageName(packageId: string | null | undefined): string {
+  const id = (packageId ?? "").split("@")[0] ?? "";
+  return id === "" || id.startsWith("pkg-") ? "this test" : id;
+}
+
+/** A question's or grading point's points, as the editor checks them — the edit
+ * surface's own rule: any number of points, 0 or more. */
+export const QUESTION_POINTS: FieldSpec = {
+  kind: "decimal",
+  format: "A number of points, 0 or more, for example 2 or 2.5",
+  min: 0,
+};

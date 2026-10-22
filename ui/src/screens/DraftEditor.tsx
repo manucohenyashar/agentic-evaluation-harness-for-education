@@ -6,13 +6,34 @@ import {
   type DraftQuestion,
   type ImpactDoc,
 } from "../api";
-import { ActionOutcome, ConfirmDialog, useActionState } from "../components/Confirm";
+import { ConfirmDialog, useActionState } from "../components/Confirm";
+import { BusyButton, DisabledReason, textOutcome, useOutcome } from "../components/Outcome";
+import {
+  describedBy,
+  errorIdFor,
+  FieldError,
+  FormatLine,
+  formatIdFor,
+} from "../components/Field";
 import { ReadScreen } from "../components/ReadScreen";
 import { useNavigate } from "../navigate";
 import { useScreenRead, type ScreenRead } from "../useScreenRead";
 import {
+  checkField,
   criterionLabel,
+  entityStateLabel,
   entryFieldLabel,
+  fillFieldFirst,
+  fixFieldFirst,
+  FORMAT_CHOOSE_ONE,
+  FORMAT_EXPECTED_ANSWER,
+  FORMAT_GRADED_QUESTION,
+  FORMAT_KEY_OPTIONS,
+  FORMAT_OPTION_LETTER,
+  FORMAT_OPTION_WORDS,
+  FORMAT_QUESTION_TEXT,
+  FORMAT_REUSE_LEVELS,
+  QUESTION_POINTS,
   questionLabel,
   questionTypeLabel,
 } from "../wizard/vocabulary";
@@ -122,6 +143,7 @@ function QuestionCard({
       : "open",
   );
   const [points, setPoints] = useState(question.points === null ? "" : String(question.points));
+  const pointsError = checkField(QUESTION_POINTS, points);
   const [answer, setAnswer] = useState(question.model_answer ?? "");
   const [newLetter, setNewLetter] = useState("");
   const [newLabel, setNewLabel] = useState("");
@@ -190,13 +212,14 @@ function QuestionCard({
       ))}
       <label htmlFor={`q-text-${index}`}>The question</label>
       <textarea
-        id={`q-text-${index}`}
+        id={`q-text-${index}`} aria-describedby={formatIdFor(`q-text-${index}`)}
         value={text}
         onChange={(event) => setText(event.target.value)}
       />
+      <FormatLine id={formatIdFor(`q-text-${index}`)} spec={FORMAT_QUESTION_TEXT} />
       <label htmlFor={`q-type-${index}`}>The question type</label>
       <select
-        id={`q-type-${index}`}
+        id={`q-type-${index}`} aria-describedby={formatIdFor(`q-type-${index}`)}
         value={type}
         onChange={(event) => setType(event.target.value)}
       >
@@ -206,25 +229,32 @@ function QuestionCard({
           </option>
         ))}
       </select>
+      <FormatLine id={formatIdFor(`q-type-${index}`)} spec={FORMAT_CHOOSE_ONE} />
       <label htmlFor={`q-points-${index}`}>The points</label>
       <input
-        id={`q-points-${index}`}
-        type="number"
-        min={0}
+        id={`q-points-${index}`} aria-describedby={describedBy(`q-points-${index}`, pointsError)}
+        type="text"
+        inputMode="numeric"
+        placeholder="e.g. 6"
+        aria-invalid={pointsError !== null || undefined}
         value={points}
         onChange={(event) => setPoints(event.target.value)}
       />
+      <FormatLine id={formatIdFor(`q-points-${index}`)} spec={QUESTION_POINTS} />
+      <FieldError id={errorIdFor(`q-points-${index}`)} error={pointsError} />
       <label htmlFor={`q-answer-${index}`}>The expected answer</label>
       <textarea
-        id={`q-answer-${index}`}
+        id={`q-answer-${index}`} aria-describedby={formatIdFor(`q-answer-${index}`)}
         value={answer}
         onChange={(event) => setAnswer(event.target.value)}
       />
+      <FormatLine id={formatIdFor(`q-answer-${index}`)} spec={FORMAT_EXPECTED_ANSWER} />
       {changed && (
         <p>
-          <button type="button" className="button" onClick={save}>
+          <button type="button" className="button" onClick={save} disabled={pointsError !== null}>
             Stage the changes to this question
           </button>
+          <DisabledReason reason={pointsError !== null ? fixFieldFirst("The points") : null} />
         </p>
       )}
       {(question.options.length > 0 || question.type === "mcq" || question.type === "mixed") && (
@@ -251,20 +281,22 @@ function QuestionCard({
           </ul>
           <label htmlFor={`q-newletter-${index}`}>New option's letter</label>{" "}
           <input
-            id={`q-newletter-${index}`}
+            id={`q-newletter-${index}`} aria-describedby={formatIdFor(`q-newletter-${index}`)}
             type="text"
             maxLength={1}
             size={2}
             value={newLetter}
             onChange={(event) => setNewLetter(event.target.value)}
-          />{" "}
+          />
+          <FormatLine id={formatIdFor(`q-newletter-${index}`)} spec={FORMAT_OPTION_LETTER} />{" "}
           <label htmlFor={`q-newlabel-${index}`}>What the option says</label>{" "}
           <input
-            id={`q-newlabel-${index}`}
+            id={`q-newlabel-${index}`} aria-describedby={formatIdFor(`q-newlabel-${index}`)}
             type="text"
             value={newLabel}
             onChange={(event) => setNewLabel(event.target.value)}
-          />{" "}
+          />
+          <FormatLine id={formatIdFor(`q-newlabel-${index}`)} spec={FORMAT_OPTION_WORDS} />{" "}
           <button
             type="button"
             className="button"
@@ -344,6 +376,7 @@ function CriterionCard({
   const owner = items.find((question) => question.id === criterion.question);
   const [questionId, setQuestionId] = useState(criterion.question);
   const [points, setPoints] = useState(criterion.points === null ? "" : String(criterion.points));
+  const pointsError = checkField(QUESTION_POINTS, points);
   const [copyFrom, setCopyFrom] = useState("");
 
   const saveQuestion = (): void => {
@@ -413,7 +446,7 @@ function CriterionCard({
       ))}
       <label htmlFor={`c-question-${index}`}>The question it grades</label>{" "}
       <select
-        id={`c-question-${index}`}
+        id={`c-question-${index}`} aria-describedby={formatIdFor(`c-question-${index}`)}
         value={questionId}
         onChange={(event) => setQuestionId(event.target.value)}
       >
@@ -422,7 +455,8 @@ function CriterionCard({
             {questionLabel(question.id)}
           </option>
         ))}
-      </select>{" "}
+      </select>
+      <FormatLine id={formatIdFor(`c-question-${index}`)} spec={FORMAT_GRADED_QUESTION} />{" "}
       {questionId !== criterion.question && (
         <button type="button" className="button" onClick={saveQuestion}>
           Stage the change
@@ -432,14 +466,24 @@ function CriterionCard({
         <h4>The points it carries</h4>
         <label htmlFor={`c-points-${index}`}>The points</label>{" "}
         <input
-          id={`c-points-${index}`}
-          type="number"
-          min={0}
+          id={`c-points-${index}`} aria-describedby={describedBy(`c-points-${index}`, pointsError)}
+          type="text"
+          inputMode="numeric"
+          placeholder="e.g. 6"
+          aria-invalid={pointsError !== null || undefined}
           value={points}
           onChange={(event) => setPoints(event.target.value)}
-        />{" "}
+        />
+        <FormatLine id={formatIdFor(`c-points-${index}`)} spec={QUESTION_POINTS} />
+        <FieldError id={errorIdFor(`c-points-${index}`)} error={pointsError} />{" "}
+        <DisabledReason reason={pointsError !== null ? fixFieldFirst("The points") : null} />
         {points !== "" && Number(points) !== criterion.points && (
-          <button type="button" className="button" onClick={savePoints}>
+          <button
+            type="button"
+            className="button"
+            onClick={savePoints}
+            disabled={pointsError !== null}
+          >
             Stage the change
           </button>
         )}
@@ -459,6 +503,7 @@ function CriterionCard({
               <label>
                 <input
                   type="checkbox"
+                  aria-describedby={formatIdFor(`c-key-${index}`)}
                   checked={chosenKey.includes(letter)}
                   onChange={(event) => {
                     const next = event.target.checked
@@ -473,6 +518,7 @@ function CriterionCard({
               </label>
             </p>
           ))}
+          <FormatLine id={formatIdFor(`c-key-${index}`)} spec={FORMAT_KEY_OPTIONS} />
         </div>
       )}
       <div className="editor-options">
@@ -492,7 +538,7 @@ function CriterionCard({
         </p>
         <label htmlFor={`c-bands-${index}`}>Use the score levels of</label>{" "}
         <select
-          id={`c-bands-${index}`}
+          id={`c-bands-${index}`} aria-describedby={formatIdFor(`c-bands-${index}`)}
           value={copyFrom}
           onChange={(event) => setCopyFrom(event.target.value)}
         >
@@ -504,7 +550,8 @@ function CriterionCard({
                 {criterionLabel(entry.id)}
               </option>
             ))}
-        </select>{" "}
+        </select>
+        <FormatLine id={formatIdFor(`c-bands-${index}`)} spec={FORMAT_REUSE_LEVELS} />{" "}
         <button
           type="button"
           className="button"
@@ -568,6 +615,7 @@ function AddQuestionForm({
   const [text, setText] = useState("");
   const [type, setType] = useState("open");
   const [points, setPoints] = useState("");
+  const pointsError = checkField(QUESTION_POINTS, points);
   const [answer, setAnswer] = useState("");
   const [labels, setLabels] = useState<string[]>(["", "", "", ""]);
   const LETTERS = ["A", "B", "C", "D"];
@@ -599,32 +647,39 @@ function AddQuestionForm({
       <h3>Add a question</h3>
       <label htmlFor="add-q-text">The question</label>
       <textarea
-        id="add-q-text"
+        id="add-q-text" aria-describedby={formatIdFor("add-q-text")}
         value={text}
         onChange={(event) => setText(event.target.value)}
       />
+      <FormatLine id={formatIdFor("add-q-text")} spec={FORMAT_QUESTION_TEXT} />
       <label htmlFor="add-q-type">The question type</label>
-      <select id="add-q-type" value={type} onChange={(event) => setType(event.target.value)}>
+      <select id="add-q-type" aria-describedby={formatIdFor("add-q-type")} value={type} onChange={(event) => setType(event.target.value)}>
         {QUESTION_TYPES.map((value) => (
           <option key={value} value={value}>
             {questionTypeLabel(value)}
           </option>
         ))}
       </select>
+      <FormatLine id={formatIdFor("add-q-type")} spec={FORMAT_CHOOSE_ONE} />
       <label htmlFor="add-q-points">The points</label>
       <input
-        id="add-q-points"
-        type="number"
-        min={0}
+        id="add-q-points" aria-describedby={describedBy("add-q-points", pointsError)}
+        type="text"
+        inputMode="numeric"
+        placeholder="e.g. 6"
+        aria-invalid={pointsError !== null || undefined}
         value={points}
         onChange={(event) => setPoints(event.target.value)}
       />
+      <FormatLine id={formatIdFor("add-q-points")} spec={QUESTION_POINTS} />
+      <FieldError id={errorIdFor("add-q-points")} error={pointsError} />
       <label htmlFor="add-q-answer">The expected answer</label>
       <textarea
-        id="add-q-answer"
+        id="add-q-answer" aria-describedby={formatIdFor("add-q-answer")}
         value={answer}
         onChange={(event) => setAnswer(event.target.value)}
       />
+      <FormatLine id={formatIdFor("add-q-answer")} spec={FORMAT_EXPECTED_ANSWER} />
       {type !== "open" && (
         <div className="editor-options">
           <h4>The answer options</h4>
@@ -632,12 +687,13 @@ function AddQuestionForm({
             <p key={letter}>
               <label htmlFor={`add-q-opt-${letter}`}>{letter}</label>{" "}
               <input
-                id={`add-q-opt-${letter}`}
+                id={`add-q-opt-${letter}`} aria-describedby={formatIdFor(`add-q-opt-${letter}`)}
                 type="text"
                 value={labels[index] ?? ""}
                 onChange={(event) => setLabels(labels.map((item, i) =>
                   i === index ? event.target.value : item))}
               />
+              <FormatLine id={formatIdFor(`add-q-opt-${letter}`)} spec={FORMAT_OPTION_WORDS} />
             </p>
           ))}
         </div>
@@ -646,11 +702,17 @@ function AddQuestionForm({
         <button
           type="button"
           className="button"
-          disabled={text.trim() === ""}
+          disabled={text.trim() === "" || pointsError !== null}
           onClick={add}
         >
           Stage the new question
         </button>
+        <DisabledReason
+          reason={
+            text.trim() === "" ? fillFieldFirst("The question")
+              : pointsError !== null ? fixFieldFirst("The points") : null
+          }
+        />
       </p>
     </div>
   );
@@ -675,6 +737,7 @@ function AddCriterionForm({
 }) {
   const [questionId, setQuestionId] = useState(items[0]?.id ?? "");
   const [points, setPoints] = useState("");
+  const pointsError = checkField(QUESTION_POINTS, points);
   const [copyFrom, setCopyFrom] = useState("");
   const [keyLetters, setKeyLetters] = useState<string[]>([]);
   const owner = items.find((question) => question.id === questionId);
@@ -730,7 +793,7 @@ function AddCriterionForm({
       <h3>Add a grading point</h3>
       <label htmlFor="add-c-question">The question it grades</label>{" "}
       <select
-        id="add-c-question"
+        id="add-c-question" aria-describedby={formatIdFor("add-c-question")}
         value={questionId}
         onChange={(event) => setQuestionId(event.target.value)}
       >
@@ -740,6 +803,7 @@ function AddCriterionForm({
           </option>
         ))}
       </select>
+      <FormatLine id={formatIdFor("add-c-question")} spec={FORMAT_GRADED_QUESTION} />
       {keyPossible && owner !== undefined && (
         <div className="editor-options">
           <h4>Grade it by its answer key</h4>
@@ -748,6 +812,7 @@ function AddCriterionForm({
               <label>
                 <input
                   type="checkbox"
+                  aria-describedby={formatIdFor("add-c-key")}
                   checked={keyLetters.includes(letter)}
                   onChange={(event) =>
                     setKeyLetters(event.target.checked
@@ -758,22 +823,33 @@ function AddCriterionForm({
               </label>
             </p>
           ))}
+          <FormatLine id={formatIdFor("add-c-key")} spec={FORMAT_KEY_OPTIONS} />
           <label htmlFor="add-c-points">The points a right answer carries</label>{" "}
           <input
-            id="add-c-points"
-            type="number"
-            min={0}
+            id="add-c-points" aria-describedby={describedBy("add-c-points", pointsError)}
+            type="text"
+            inputMode="numeric"
+            placeholder="e.g. 6"
+            aria-invalid={pointsError !== null || undefined}
             value={points}
             onChange={(event) => setPoints(event.target.value)}
-          />{" "}
+          />
+          <FormatLine id={formatIdFor("add-c-points")} spec={QUESTION_POINTS} />
+          <FieldError id={errorIdFor("add-c-points")} error={pointsError} />{" "}
           <button
             type="button"
             className="button"
-            disabled={keyLetters.length === 0}
+            disabled={keyLetters.length === 0 || pointsError !== null}
             onClick={addByKey}
           >
             Stage the grading point
           </button>
+          <DisabledReason
+            reason={
+              keyLetters.length === 0 ? "Tick at least one correct option first."
+                : pointsError !== null ? fixFieldFirst("The points a right answer carries") : null
+            }
+          />
         </div>
       )}
       {withLevels.length > 0 && (
@@ -781,7 +857,7 @@ function AddCriterionForm({
           <h4>Or grade it by score levels</h4>
           <label htmlFor="add-c-bands">Use the score levels of</label>{" "}
           <select
-            id="add-c-bands"
+            id="add-c-bands" aria-describedby={formatIdFor("add-c-bands")}
             value={copyFrom}
             onChange={(event) => setCopyFrom(event.target.value)}
           >
@@ -791,7 +867,8 @@ function AddCriterionForm({
                 {criterionLabel(entry.id)}
               </option>
             ))}
-          </select>{" "}
+          </select>
+          <FormatLine id={formatIdFor("add-c-bands")} spec={FORMAT_REUSE_LEVELS} />{" "}
           <button
             type="button"
             className="button"
@@ -862,6 +939,7 @@ export function DraftEditor({
 }) {
   const navigate = useNavigate();
   const action = useActionState();
+  const { report, clear } = useOutcome();
   const read = useScreenRead<AuthoringDraftDoc>(
     "/api/v1/authoring/draft",
     packageId ? { package_id: packageId } : undefined,
@@ -918,6 +996,7 @@ export function DraftEditor({
     const draftId = read.data?.draft?.package_id ?? "";
     setSaveOpen(false);
     setApplying(true);
+    clear();
     const lines: string[] = [];
     let stopped = false;
     try {
@@ -947,6 +1026,16 @@ export function DraftEditor({
       setApplying(false);
     }
     setApplied(lines);
+    report(
+      stopped
+        ? {
+            refused: true,
+            what: "Not every change was saved.",
+            why: (lines[lines.length - 1] ?? "").replace(/^Refused: /, ""),
+            next: "Correct the change named here, then save again.",
+          }
+        : textOutcome(`Your ${ops.length === 1 ? "change is" : `${ops.length} changes are`} saved.`),
+    );
     // A save that was refused or interrupted part-way keeps the changes it never
     // sent, so the teacher can correct and save again; a complete save clears the list.
     if (!stopped) {
@@ -985,10 +1074,6 @@ export function DraftEditor({
         }
         return (
           <>
-            {/* The immediate op's answer, wherever the teacher already is: a refusal, an
-                error or a landed op all speak here, in the same outcome line every other
-                screen renders (`outcomeText`'s refused-as-refused wording). */}
-            <ActionOutcome outcome={action.outcome} />
             {publishedVersion !== null && (
               <div role="alert" className="impact-banner">
                 {impact.data !== null ? (
@@ -1019,7 +1104,7 @@ export function DraftEditor({
                     <ul className="change-list">
                       {impact.data.run_records.map((record) => (
                         <li key={record.run_id}>
-                          {record.run_id} — {record.state} (cohort {record.cohort_id})
+                          Class {record.cohort_id} — {entityStateLabel(record.state)}
                         </li>
                       ))}
                     </ul>
@@ -1100,14 +1185,13 @@ export function DraftEditor({
                     ))}
                   </ul>
                   <p>
-                    <button
-                      type="button"
+                    <BusyButton
                       className="button button-primary"
-                      disabled={applying}
+                      busy={applying}
                       onClick={() => setSaveOpen(true)}
                     >
                       Review changes ({staged.length})
-                    </button>
+                    </BusyButton>
                   </p>
                 </>
               )}

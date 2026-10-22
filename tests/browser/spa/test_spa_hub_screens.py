@@ -520,7 +520,7 @@ _ACTIONS = (
      {"package_version"}),
     ("run_start", re.compile(r"^\s*start", re.I), re.compile(r"start", re.I),
      {"run", "run_control"}),
-    ("results", re.compile(r"finali[sz]e", re.I), re.compile(r"finali[sz]e", re.I),
+    ("results", re.compile(r"approve all", re.I), re.compile(r"approve all", re.I),
      {"submission_grade"}),
 )
 _CANCEL = re.compile(r"cancel|back|no\b|keep|close|dismiss|^\s*[x×]\s*$", re.I)

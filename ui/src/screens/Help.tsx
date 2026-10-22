@@ -1,5 +1,6 @@
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { Screen } from "../components/Screen";
+import { FormatLine, formatIdFor } from "../components/Field";
 import { askHelp, fetchManuals, type HelpAnswer, type HelpContext, type ManualsIndexDoc } from "../api";
 
 type AskState =
@@ -71,11 +72,13 @@ export function QaPanel({ context, compact = false }: {
         </label>
         <textarea
           id={questionId}
+          aria-describedby={formatIdFor(questionId)}
           rows={2}
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
           placeholder="e.g. What is the blind sample in the review queue for?"
         />
+        <FormatLine id={formatIdFor(questionId)} spec="A question in your own words" />
         <button type="submit" disabled={state.kind === "waiting" || !question.trim()}>
           Ask the assistant
         </button>

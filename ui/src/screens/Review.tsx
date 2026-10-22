@@ -19,12 +19,11 @@ export function Review() {
       {(data) => (
         <>
           <p className="hub-state">
-            {`Run ${data.run_id} — ` +
-              (data.flagged_total === 0
-                ? "nothing is flagged for review."
-                : `${data.flagged_total} flagged answer(s) await review.`)}
+            {data.flagged_total === 0
+              ? "Nothing is flagged for review."
+              : `${data.flagged_total} flagged answer(s) await review.`}
             {data.residual_provisional > 0 &&
-              ` ${data.residual_provisional} provisional answer(s) remain outside the queue.`}
+              ` ${data.residual_provisional} answer(s) not yet final remain outside the queue.`}
           </p>
           <ul className="rows-list">
             {data.shown.map((item) => (
