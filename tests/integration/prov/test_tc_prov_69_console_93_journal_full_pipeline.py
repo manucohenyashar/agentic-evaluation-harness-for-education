@@ -42,6 +42,7 @@ pipeline, a real console on a loopback port):
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 import re
 import urllib.parse
 from collections import Counter
@@ -68,7 +69,9 @@ from aeh.prov import (
     JsonlCallJournal,
     UNLABELLED_KIND,
     call_context,
+    ListCallJournal,
     installed_call_journal,
+    journal_installed,
     journal_root,
 )
 from aeh.store import open_store
@@ -184,8 +187,11 @@ def journaled_day(tmp_path_factory: pytest.TempPathFactory) -> JournaledDay:
     data_dir = scratch / "data"
     data_dir.mkdir()
     assert installed_call_journal() is None, "a sink was already installed before the run"
+    # A sentinel in the slot, so "restores what it replaced" is distinguishable from "clears
+    # the slot": each entry point must put THIS back when it ends.
+    day_sentinel = ListCallJournal()
     day: dict[str, Any] = {"slot": {}, "sink_seen": {}}
-    with pytest.MonkeyPatch.context() as mp:
+    with journal_installed(day_sentinel), pytest.MonkeyPatch.context() as mp:
         mp.setenv("HARNESS_ORCH_RANDOM_ARM_RATE", "0")  # the suite root's pin (conftest)
         _pipeline_leg(day, data_dir, mp)
         world = day.pop("world")
@@ -196,6 +202,11 @@ def journaled_day(tmp_path_factory: pytest.TempPathFactory) -> JournaledDay:
                 "WHERE outcome = 'below_gate'")}
         world.store.close()
         _console_leg(day, data_dir, scratch, mp)
+    assert not day_sentinel.records, (
+        f"{len(day_sentinel.records)} record(s) reached the sentinel: an entry point did not "
+        "put its own journal in force for every call")
+    day["slot"] = {name: ("sentinel" if sink is day_sentinel else sink)
+                   for name, sink in day["slot"].items()}
     return JournaledDay(data_dir=data_dir, package_id=day["package_id"],
                         run_status=day["run_status"], cli_exit=day["cli_exit"],
                         below_gate=below_gate, slot=day["slot"], sink_seen=day["sink_seen"])
@@ -275,7 +286,8 @@ def test_tc_console_93_files_land_where_specified_and_every_line_parses(journale
             if not isinstance(document, dict):
                 problems.append(f"{rel}:{number} is not a JSON object")
                 continue
-            if path.name != f"{document['at'][:10]}.jsonl":
+            utc_day = datetime.fromisoformat(document["at"]).astimezone(timezone.utc).date()
+            if path.name != f"{utc_day.isoformat()}.jsonl":
                 problems.append(f"{rel}:{number} is dated {document['at']!r}")
             kind = document["kind"]
             if kind == "help_question":
@@ -303,12 +315,12 @@ def test_tc_console_93_files_land_where_specified_and_every_line_parses(journale
 def test_tc_console_93_both_entry_points_install_the_slot_and_restore_it(journaled_day):
     """`TC-CONSOLE-93`, the slot clause: the test installed no sink; `python -m aeh run` and the
     console each put a `JsonlCallJournal` on the data folder in force while they ran, and left
-    the slot empty again when they ended."""
+    the sink they replaced (a sentinel the fixture installed) back in the slot when they ended."""
     day = journaled_day
     root = journal_root(day.data_dir)
     for leg in ("cli", "console"):
         sink = day.sink_seen.get(leg)
         assert isinstance(sink, JsonlCallJournal), f"{leg}: no journal in force while it ran"
         assert sink.root == root, f"{leg}: the journal writes to {sink.root}, not {root}"
-    assert day.slot == {"before cli": None, "after cli": None,
-                        "before console": None, "after console": None}, day.slot
+    assert day.slot == {"before cli": "sentinel", "after cli": "sentinel",
+                        "before console": "sentinel", "after console": "sentinel"}, day.slot
