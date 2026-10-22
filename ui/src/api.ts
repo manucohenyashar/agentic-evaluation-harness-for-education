@@ -174,6 +174,8 @@ export type FlagKind = "second_opinion" | "low_confidence" | "not_final" | (stri
  * routing, state and flag the aggregation wrote. */
 export interface ResultCriterion {
   criterion_id: string;
+  /** The question this scoring line belongs to (FR-UI-31's expandable detail groups by it). */
+  question_id?: string | null;
   label: string;
   criterion_band: string;
   stored_band: string;
@@ -181,6 +183,37 @@ export interface ResultCriterion {
   state: string;
   state_reason: string;
   flag: FlagKind | null;
+}
+
+/** One question's grade for a student (FR-CONSOLE-76): the points on the question's
+ * top-level lines, the question's state, and — when it is not final — the reason code
+ * the FR-UI-32 sentences name. */
+export interface StudentQuestion {
+  question_id: string;
+  label: string;
+  points_awarded: number | null;
+  points_max: number;
+  state: string;
+  not_final_reason: string | null;
+}
+
+/** One question's class-level stats (FR-CONSOLE-76): the unrounded mean, how many
+ * students scored full marks, how many scored none, and how many were graded at all. */
+export interface QuestionStat {
+  question_id: string;
+  label: string;
+  points_max: number;
+  mean_points: number | null;
+  full_marks: number;
+  zero_marks: number;
+  graded: number;
+}
+
+/** One timed stage (FR-CONSOLE-75): the stage's teacher name and its seconds. */
+export interface StageTiming {
+  stage: string;
+  label: string;
+  seconds: number;
 }
 
 export interface ResultStudent {
@@ -191,6 +224,11 @@ export interface ResultStudent {
   total: number | null;
   state: string;
   criteria: ResultCriterion[];
+  /** FR-CONSOLE-76: the grade by question, with the total and its grade. */
+  questions?: StudentQuestion[];
+  total_points?: number | null;
+  total_max?: number;
+  grade?: string | null;
 }
 
 /** One grading point's declared score levels, in the package's own order (FR-UI-15/17). */
@@ -216,6 +254,16 @@ export interface ResultsScreen {
   score_levels: string[];
   scales: CriterionScale[];
   students: ResultStudent[];
+  /** FR-CONSOLE-76: per question, the class's mean, full and zero marks. */
+  question_stats?: QuestionStat[];
+  /** FR-UI-33: the answers still not final — the number the Results banner names. */
+  not_final_questions?: number;
+  /** FR-CONSOLE-75: how long each long step took, in run order. */
+  stage_timings?: StageTiming[];
+  /** FR-UI-29: the run's clock — its state and start/end stamps. */
+  run?: { state: string; started_at: string | null; ended_at: string | null } | null;
+  /** FR-UI-33: the date an open review window defers finality to, in teacher words. */
+  review_window_ends?: string | null;
 }
 
 export interface NarrativeRow {
@@ -236,6 +284,8 @@ export interface GraderVerdict {
  * reason text, the declared scale the override offers, and the grader trail behind it. */
 export interface CriterionDetail {
   criterion_id: string;
+  /** The question this grading point scores (FR-UI-31's per-question grouping). */
+  question_id?: string | null;
   label: string;
   criterion_band: string;
   stored_band: string;
@@ -265,6 +315,11 @@ export interface StudentDetail {
   full_name?: string | null;
   total: number | null;
   state: string | null;
+  /** FR-CONSOLE-76 on the detail: the grade by question, with the total and its grade. */
+  grade?: string | null;
+  questions?: StudentQuestion[];
+  total_points?: number | null;
+  total_max?: number;
   narrative: NarrativeRow[];
   criteria: CriterionDetail[];
   amendments: AmendmentEntry[];

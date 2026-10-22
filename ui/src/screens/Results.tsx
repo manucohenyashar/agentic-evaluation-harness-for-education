@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
-import { TriangleAlert } from "lucide-react";
+import { CircleCheck, TriangleAlert } from "lucide-react";
 import type { ResultsScreen as ResultsDoc, ResultStudent } from "../api";
 import { ConfirmDialog, useActionState } from "../components/Confirm";
+import { ElapsedClock } from "../components/Elapsed";
 import {
   describedBy,
   errorIdFor,
@@ -10,17 +11,22 @@ import {
   formatIdFor,
 } from "../components/Field";
 import { DisabledReason } from "../components/Outcome";
-import { checkField, fixFieldFirst, FORMAT_CHOOSE_ONE, type FieldSpec } from "../wizard/vocabulary";
+import {
+  NOT_FINAL_REASON_TEXT,
+  averageLabel,
+  checkField,
+  durationLabel,
+  fixFieldFirst,
+  FORMAT_CHOOSE_ONE,
+  type FieldSpec,
+} from "../wizard/vocabulary";
 import { OverrideForm, type OverrideChange } from "../components/Override";
 import { ReadScreen } from "../components/ReadScreen";
 import { useNavigate } from "../navigate";
 import { useToast } from "../state/StateDisplay";
 import {
-  countLevels,
   flagLabel,
   flagTone,
-  meanLevelPhrase,
-  mostMissed,
   scoreStateLabel,
 } from "../state/model";
 import { useScreenRead } from "../useScreenRead";
@@ -28,13 +34,13 @@ import { sharedNames, studentLabel } from "../studentNames";
 import { useRunParams } from "../selection";
 
 /**
- * The results overview (FR-UI-15): the run's distribution as hand-rolled SVG bars — the
- * declared score levels on the x-axis, the count labelled on each bar, a chart that is a
- * table with bars — beside the per-grading-point stats (the mean score level, the points
- * most papers missed) and the flagged items, each linking to its student. Every count and
- * every level comes from the rows the read served (`CT-UI-08`): the screen aggregates, it
- * never invents. Search, sort and filter by student, score level and flag ride the same
- * served rows.
+ * The results overview (FR-UI-15, FR-UI-29..33): every student's grade read by question —
+ * one cell per question ("Q1 · 2 / 2") and a "Total grade" column — with a bar per
+ * question showing the class's average and a grade-count chart, the run's "Time taken"
+ * rows, and the not-final banner that explains each reason and approves them all. Every
+ * count, mean and timing comes from the rows the read served (`CT-UI-08`): the screen
+ * formats, it never invents. Search, sort and filter by student, score level and flag
+ * ride the same served rows.
  *
  * Each student's grade shows beside an editable band control (`FR-CONSOLE-20` invariant
  * 16): the "Change a final grade" disclosure opens the override — band selection plus a
@@ -57,58 +63,79 @@ function matchesFilters(student: ResultStudent, search: string, level: string, f
   return true;
 }
 
-/** The distribution as SVG bars: one rect per declared level, its count labelled on the
- * bar, the level's name under the axis. Hand-rolled, no chart library. */
-function DistributionBars({ levels, counts }: { levels: string[]; counts: number[] }) {
-  const max = Math.max(1, ...counts);
-  const barWidth = 28;
-  const gap = 12;
-  const height = 130;
-  const width = Math.max(levels.length * (barWidth + gap) + gap, 160);
-  const plot = 92;
-  const summary = levels
-    .map((level, index) => `${level}: ${counts[index] ?? 0}`)
-    .join(", ");
+/** One bar in a stat chart, as the served stats name it: a filled share of the row, the
+ * label beside it. A chart that is a table with bars, not a pooled histogram. */
+function StatBar({ caption, share, label }: { caption: string; share: number; label: string }) {
+  const width = `${Math.round(Math.max(0, Math.min(1, share)) * 100)}%`;
   return (
-    <figure className="distribution">
-      <svg
-        role="img"
-        aria-label={`Papers per score level. ${summary}`}
-        viewBox={`0 0 ${width} ${height}`}
-        width={width}
-        height={height}
-      >
-        {levels.map((level, index) => {
-          const count = counts[index] ?? 0;
-          const barHeight = Math.round((count / max) * plot);
-          const x = gap + index * (barWidth + gap);
-          const y = plot - barHeight + 4;
-          return (
-            <g key={level}>
-              <text x={x + barWidth / 2} y={y - 4} textAnchor="middle" className="bar-count">
-                {count}
-              </text>
-              <rect
-                x={x}
-                y={y}
-                width={barWidth}
-                height={Math.max(barHeight, count > 0 ? 2 : 0)}
-                className="bar-rect"
-              />
-              <text x={x + barWidth / 2} y={plot + 24} textAnchor="middle" className="bar-label">
-                {level}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-      <figcaption>
-        {levels.map((level, index) => (
-          <span key={level}>
-            {level}: {counts[index] ?? 0}{" "}
-          </span>
-        ))}
+    <li className="stat-bar-row">
+      <span className="stat-bar-caption">{caption}</span>
+      <span className="stat-bar-track" aria-hidden="true">
+        <span className="stat-bar-fill" style={{ width }} />
+      </span>
+      <span className="stat-bar-label">{label}</span>
+    </li>
+  );
+}
+
+/** A question's class stats (FR-UI-31): one bar per question — the class's average as a
+ * share of the question's points, labelled with the design's own line — with full-marks
+ * and no-marks counts beneath, from the served stats. */
+function QuestionBars({ stats }: { stats: NonNullable<ResultsDoc["question_stats"]> }) {
+  return (
+    <figure className="question-bars">
+      <figcaption className="step-note">
+        One bar per question: the class's average against the question's points.
       </figcaption>
+      <ul>
+        {stats.map((stat) => (
+          <li key={stat.question_id} className="question-stat">
+            <StatBar
+              caption={`${stat.label} — ${averageLabel(stat.mean_points, stat.points_max)}`}
+              share={stat.mean_points === null ? 0 : stat.mean_points / stat.points_max}
+              label=""
+            />
+            <p className="stat-note">
+              full marks: {stat.full_marks} of {stat.graded}{" "}
+              {stat.graded === 1 ? "student" : "students"}; no marks: {stat.zero_marks}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </figure>
+  );
+}
+
+/** How many students got each grade (FR-UI-31's second chart): one bar per grade name
+ * the run's ledger served, counted from the students' own grades. */
+function GradeCounts({ students }: { students: ResultStudent[] }) {
+  const counts = new Map<string, number>();
+  for (const student of students) {
+    const grade = student.grade ?? "";
+    if (grade !== "") {
+      counts.set(grade, (counts.get(grade) ?? 0) + 1);
+    }
+  }
+  const names = [...counts.keys()];
+  if (names.length === 0) {
+    return null;
+  }
+  const summary = names.map((name) => `${name}: ${counts.get(name) ?? 0}`).join(", ");
+  return (
+    <figure className="question-bars">
+      <figcaption className="step-note">
+        Students per grade. {summary}
+      </figcaption>
+      <ul>
+        {names.map((name) => (
+          <StatBar
+            key={name}
+            caption={name}
+            share={(counts.get(name) ?? 0) / Math.max(1, students.length)}
+            label={`${counts.get(name) ?? 0}`}
+          />
+        ))}
+      </ul>
     </figure>
   );
 }
@@ -125,34 +152,6 @@ export function Results() {
   const [sort, setSort] = useState("az");
 
   const data = read.data;
-
-  const counts = useMemo(() => {
-    if (data === null) return [];
-    const bands = data.students.flatMap((student) =>
-      student.criteria.map((criterion) => criterion.criterion_band));
-    return countLevels(data.score_levels, bands);
-  }, [data]);
-
-  const stats = useMemo(() => {
-    if (data === null) return [];
-    return data.scales.map((scale) => {
-      const bands = data.students.flatMap((student) =>
-        student.criteria
-          .filter((criterion) => criterion.criterion_id === scale.criterion_id)
-          .map((criterion) => criterion.criterion_band));
-      return {
-        criterion_id: scale.criterion_id,
-        label: scale.label,
-        levels: scale.levels,
-        counts: countLevels(scale.levels, bands),
-      };
-    });
-  }, [data]);
-
-  // The grading points most papers landed at the bottom of (FR-UI-15's most-missed): the
-  // set the served counts name, restated beside the per-point stats — never a client-side
-  // guess at difficulty, only which served cell counts sit at the lowest declared level.
-  const missed = useMemo(() => mostMissed(stats), [stats]);
 
   const flagged = useMemo(() => {
     if (data === null) return [];
@@ -189,22 +188,26 @@ export function Results() {
     if (doc.run_id === null || doc.students.length === 0) {
       return;
     }
-    // The confirmation names what it does out of the API's own document (FR-UI-05): how
-    // many of the class's grades are not yet final — when every grade already is, the
-    // dialog says there is nothing left to approve.
-    const not_final = doc.students.filter((s) => s.state !== "final").length;
+    // FR-UI-33's confirmation names what it does out of the API's own document: how many
+    // answers were accepted as the AI graded them, and that a later change is recorded.
+    const not_final = doc.not_final_questions ?? 0;
+    const test = (doc.package_version_id ?? "").split("@")[0] ?? "";
     finalize.open({
       title: "Approve all grades",
       description:
         not_final === 0
-          ? "Every grade in these results is already final, so there is nothing left " +
-            "to approve. A later correction is recorded as a change to the grade."
-          : `This makes the ${not_final} grade(s) not yet final into final grades. ` +
-            "A later correction is recorded as a change to the grade.",
+          ? `Every grade in these results is already final, so there is nothing left ` +
+            "to approve for " +
+            `${doc.cohort_id ?? "this class"} — ${test || "this test"}. ` +
+            "You can still change a grade afterward; the change is recorded."
+          : `Approve all grades for ${doc.cohort_id ?? "this class"} — ` +
+            `${test || "this test"}? ${not_final} answers you have not checked will be ` +
+            "accepted as the AI graded them. You can still change a grade afterward; " +
+            "the change is recorded.",
       confirm: "Approve all",
       action: "finalize batch",
       body: { run_id: doc.run_id, actor: "operator" },
-      said: "Every grade in these results is now final.",
+      said: "All grades are final.",
     });
   };
 
@@ -227,25 +230,30 @@ export function Results() {
               <p className="panel">The run holds no computed grades.</p>
             ) : (
               <>
+                <FinalGradesBanner doc={doc} onApproveAll={() => openFinalize(doc)} />
                 <section className="results-overview">
-                  <h2>Distribution</h2>
-                  <DistributionBars levels={doc.score_levels} counts={counts} />
-                  <h2>Per grading point</h2>
-                  <ul className="point-stats">
-                    {stats.map((stat) => (
-                      <li key={stat.criterion_id}>
-                        <strong>{stat.label}</strong> — {meanLevelPhrase(stat.levels, stat.counts)}
-                        {" "}({stat.levels.map((level, index) =>
-                          `${level}: ${stat.counts[index] ?? 0}`).join(", ")})
+                  <h2>The run</h2>
+                  <p className="run-clock">
+                    <ElapsedClock
+                      startedAt={doc.run?.started_at ?? null}
+                      endedAt={doc.run?.ended_at ?? null}
+                      state={doc.run?.state ?? null}
+                    />
+                  </p>
+                  <h2>Average by question</h2>
+                  {doc.question_stats !== undefined && doc.question_stats.length > 0 && (
+                    <QuestionBars stats={doc.question_stats} />
+                  )}
+                  <h2>Grades</h2>
+                  <GradeCounts students={doc.students} />
+                  <h2>Time taken</h2>
+                  <ul className="time-taken">
+                    {(doc.stage_timings ?? []).map((timing) => (
+                      <li key={timing.stage}>
+                        {timing.label}: {durationLabel(timing.seconds)}
                       </li>
                     ))}
                   </ul>
-                  {missed.length > 0 && (
-                    <p className="point-stats-missed">
-                      Most missed: {missed.join(", ")} — where most papers landed on the
-                      lowest declared score level.
-                    </p>
-                  )}
                   <h2>Flagged</h2>
                   {flagged.length === 0 ? (
                     <p>No grading point is flagged.</p>
@@ -332,28 +340,94 @@ export function Results() {
                         >
                           {studentLabel(student, shared)}
                         </a>
-                        <span>Total: {student.total ?? "—"}</span>
+                        {student.total_points != null && student.total_max != null ? (
+                          <span className="total-grade">
+                            Total grade: {student.total_points} / {student.total_max}
+                            {student.grade ? ` — ${student.grade}` : ""}
+                          </span>
+                        ) : (
+                          <span>Total: {student.total ?? "—"}</span>
+                        )}
                         <span>{student.state === "" ? "—" : scoreStateLabel(student.state)}</span>
                       </div>
-                      <ul className="band-list">
-                        {student.criteria.map((criterion) => (
-                          <li key={criterion.criterion_id}>
-                            <span className="step-note">{criterion.label}</span>{" "}
-                            <span className="band-value">{criterion.criterion_band}</span>
-                            {criterion.stored_band !== criterion.criterion_band && (
-                              <span className="band-note">
-                                {" "}(amended from {criterion.stored_band})
-                              </span>
-                            )}
-                            {criterion.flag !== null && (
-                              <span className={`badge badge-${flagTone(criterion.flag)}`}>
+                      <ul className="question-cells">
+                        {(student.questions ?? []).map((question) => (
+                          <li key={question.question_id} className="question-cell">
+                            <span>
+                              {question.label} · {question.points_awarded ?? "—"} /{" "}
+                              {question.points_max}
+                            </span>
+                            {question.state === "not_final" && question.not_final_reason !== null && (
+                              <span
+                                className="badge badge-warning check-badge"
+                                title={NOT_FINAL_REASON_TEXT[question.not_final_reason] ??
+                                  "Please check this answer."}
+                              >
                                 <TriangleAlert size={12} aria-hidden="true" />
-                                <span> {flagLabel(criterion.flag)}</span>
+                                <span> Check</span>
                               </span>
                             )}
+                            <details className="question-detail">
+                              <summary>How each line was scored</summary>
+                              <ul className="band-list">
+                                {student.criteria
+                                  .filter((criterion) =>
+                                    criterion.question_id === question.question_id)
+                                  .map((criterion) => (
+                                    <li key={criterion.criterion_id}>
+                                      <span className="step-note">{criterion.label}</span>{" "}
+                                      <span className="band-value">
+                                        {criterion.criterion_band}
+                                      </span>
+                                      {criterion.stored_band !== criterion.criterion_band && (
+                                        <span className="band-note">
+                                          {" "}(amended from {criterion.stored_band})
+                                        </span>
+                                      )}
+                                      {question.state === "not_final" &&
+                                        question.not_final_reason !== null && (
+                                        <p className="band-note check-reason">
+                                          {NOT_FINAL_REASON_TEXT[question.not_final_reason] ??
+                                            "Please check this answer."}
+                                        </p>
+                                      )}
+                                      {criterion.flag !== null && (
+                                        <span className={`badge badge-${flagTone(criterion.flag)}`}>
+                                          <TriangleAlert size={12} aria-hidden="true" />
+                                          <span> {flagLabel(criterion.flag)}</span>
+                                        </span>
+                                      )}
+                                    </li>
+                                  ))}
+                              </ul>
+                            </details>
                           </li>
                         ))}
                       </ul>
+                      {/* An unreadable catalog answers no questions: the roll-up is empty,
+                          so the served lines still show — the old flat list, degraded but
+                          never vanished (FR-CONSOLE-76's contract: the rows are the truth). */}
+                      {student.questions !== undefined && student.questions.length > 0 ? null : (
+                        <ul className="band-list">
+                          {student.criteria.map((criterion) => (
+                            <li key={criterion.criterion_id}>
+                              <span className="step-note">{criterion.label}</span>{" "}
+                              <span className="band-value">{criterion.criterion_band}</span>
+                              {criterion.stored_band !== criterion.criterion_band && (
+                                <span className="band-note">
+                                  {" "}(amended from {criterion.stored_band})
+                                </span>
+                              )}
+                              {criterion.flag !== null && (
+                                <span className={`badge badge-${flagTone(criterion.flag)}`}>
+                                  <TriangleAlert size={12} aria-hidden="true" />
+                                  <span> {flagLabel(criterion.flag)}</span>
+                                </span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                       <OverrideForm
                         criteria={student.criteria.map((criterion) => ({
                           criterion_id: criterion.criterion_id,
@@ -374,14 +448,6 @@ export function Results() {
                 {shown.length === 0 && <p>No student matches the search or filters.</p>}
               </>
             )}
-            <button
-              type="button"
-              className="button button-primary"
-              onClick={() => openFinalize(doc)}
-              disabled={doc.run_id === null || doc.students.length === 0}
-            >
-              Approve all grades
-            </button>
             {finalize.pending !== null && (
               <ConfirmDialog
                 pending={finalize.pending}
@@ -396,6 +462,53 @@ export function Results() {
         );
       }}
     </ReadScreen>
+  );
+}
+
+/** The not-final banner (FR-UI-33): the answers that need a check, named in one sentence
+ * with the two ways forward — the review filtered to this run, and approving them all —
+ * or the state once every grade is final, including the open review window's automatic
+ * date. The served count names the answers; the screen never recounts. */
+function FinalGradesBanner({ doc, onApproveAll }: {
+  doc: ResultsDoc;
+  onApproveAll: () => void;
+}) {
+  const navigate = useNavigate();
+  const not_final = doc.not_final_questions ?? 0;
+  const window_ends = doc.review_window_ends ?? null;
+  return (
+    <div className="outcome-banner outcome-done results-banner" role="region" aria-label="The grades' state">
+      <p className="action-outcome">
+        {not_final > 0 ? (
+          <>
+            <strong className="outcome-what">
+              {not_final} answers need your check before the grades are final.
+            </strong>{" "}
+            <button
+              type="button"
+              className="button"
+              onClick={() => navigate("/review")}
+            >
+              Check answers
+            </button>{" "}
+            <button type="button" className="button button-primary" onClick={onApproveAll}>
+              Approve all grades
+            </button>
+          </>
+        ) : window_ends !== null ? (
+          <>
+            <strong className="outcome-what">
+              Grades become final automatically on {window_ends}, when the review window ends.
+            </strong>
+          </>
+        ) : (
+          <>
+            <CircleCheck size={18} aria-hidden="true" />
+            <strong className="outcome-what">All grades are final.</strong>
+          </>
+        )}
+      </p>
+    </div>
   );
 }
 

@@ -1837,3 +1837,116 @@ textarea:focus-visible {
   align-items: center;
   margin-left: 6px;
 }
+
+/*
+ * Results by question (FR-UI-29..33): question cells, the not-final banner, the
+ * per-question average bars and the grade-count chart, and the time-taken rows.
+ */
+
+.results-banner {
+  margin: 0 0 var(--space-md);
+}
+
+.results-banner .action-outcome {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  margin: 0;
+}
+
+.run-clock {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  margin: 0 0 var(--space-sm);
+}
+
+.question-cells {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  list-style: none;
+  padding: 0;
+  margin: 0 0 var(--space-sm);
+}
+
+.question-cell {
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  padding: var(--space-xs) var(--space-sm);
+  min-width: 9rem;
+}
+
+.question-cell details {
+  margin-top: var(--space-xs);
+  font-size: var(--font-size-sm);
+}
+
+.question-cell summary {
+  cursor: pointer;
+  color: var(--color-muted);
+}
+
+.check-reason {
+  margin: var(--space-xs) 0 0;
+}
+
+.total-grade {
+  font-weight: 700;
+}
+
+.question-bars ul,
+.time-taken {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.stat-bar-row {
+  display: grid;
+  grid-template-columns: minmax(10rem, 1fr) 6rem 3rem;
+  column-gap: var(--space-sm);
+  align-items: center;
+  margin: 0 0 var(--space-xs);
+}
+
+.stat-bar-caption {
+  font-size: var(--font-size-sm);
+}
+
+.stat-bar-track {
+  display: block;
+  height: 0.75rem;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background-color: var(--color-surface);
+}
+
+.stat-bar-fill {
+  display: block;
+  height: 100%;
+  background-color: var(--color-info);
+}
+
+.stat-bar-label {
+  font-size: var(--font-size-sm);
+  text-align: right;
+}
+
+.stat-note {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  margin: 0 0 var(--space-xs);
+}
+
+.question-group {
+  margin: 0 0 var(--space-md);
+}
+
+.question-group h3 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin: 0 0 var(--space-xs);
+}
