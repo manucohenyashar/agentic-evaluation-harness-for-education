@@ -1664,6 +1664,8 @@ textarea:focus-visible {
 .drafting-progress,
 .report-view,
 .missing-section,
+.gaps-section,
+.summary-section,
 .approve-section,
 .redraft-section,
 .pending-section,
@@ -1684,8 +1686,30 @@ textarea:focus-visible {
 
 .report-view h3,
 .missing-section h2,
+.gaps-section h2,
+.summary-section h2,
 .outline-issues h2 {
   margin-top: 0;
+}
+
+/* The package summary (FR-UI-26): one fact per line, the teacher's own answers marked. */
+.summary-line {
+  margin: 0 0 var(--space-sm);
+}
+
+.summary-line > strong {
+  display: inline-block;
+  min-width: 12rem;
+}
+
+.summary-line ul {
+  margin: var(--space-xs) 0 0;
+  padding-left: 1.25rem;
+}
+
+.summary-source {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
 }
 
 .outline {

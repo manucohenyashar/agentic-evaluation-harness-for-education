@@ -726,6 +726,24 @@ LOAD_PAPERS_NEXT = {"label": "Load papers", "route": "/papers"}
 _LOAD_PAPERS_SENTENCE = "Next: load the students' papers."
 
 
+def published_state(store: Any, text: str) -> dict[str, Any] | None:
+    """The draft read's served approved state (FR-UI-27): when `text` stands approved and
+    unchanged — its marker's hash still matches the content, the same rule the approve
+    gate applies — the FR-CONSOLE-73 sentence with the Load papers link, so a reload
+    keeps the banner. `None` when the draft carries no live marker. The plain sentence
+    (no "Already published —" prefix: that prefix is a *press's* answer, not the state)."""
+    marker = approval_of(text)
+    if marker is None or marker[2] != content_digest(text):
+        return None
+    label: PackageVersionLabel | None
+    try:
+        label = read_version_label(store, marker[1])
+    except Exception:  # noqa: BLE001 — a label is a courtesy; the state still stands
+        label = None
+    outcome = _published_outcome(label, marker[0], already=False)
+    return {"detail": outcome.detail, "next": dict(LOAD_PAPERS_NEXT)}
+
+
 def _version_label_from(data_dir: str, version_id: str) -> PackageVersionLabel | None:
     """The label of an already-published version, read through a store opened and closed
     here; `None` when the store cannot name it (the outcome then names the package only)."""

@@ -1,9 +1,11 @@
 import { useState } from "react";
+import { CircleCheck } from "lucide-react";
 import {
   performAction,
   type ActionResult,
   type AuthoringDraftDoc,
   type DraftPlaceholder,
+  type PackageSummary,
 } from "../api";
 import { ConfirmDialog, useActionState } from "../components/Confirm";
 import { describedBy, errorIdFor, FieldError, FormatLine, formatIdFor } from "../components/Field";
@@ -24,11 +26,13 @@ import {
 } from "../wizard/vocabulary";
 
 /**
- * The review screen (FR-UI-12): the draft as the teacher reads it — the outline with
- * every missing piece highlighted in place, the list of what each one needs, and the
- * answer form that takes them one at a time through the enumerated review control.
- * Approval stays blocked, with the count, while any piece stands. The read re-polls on
- * the shell's cadence, so an answer's effect shows without a reload (`ADR-47`).
+ * The review screen (FR-UI-12, FR-AUTHOR-31): the draft as the teacher reads it — the
+ * outline with every missing piece highlighted in place, then the missing pieces asked
+ * one plain question at a time ("A few questions before you approve"), the whole package
+ * as it would be published (FR-UI-26), and the approve gate. After a successful approve
+ * the screen shows FR-CONSOLE-73's banner with the Load papers link, and a reload keeps
+ * it (the read serves the approved state). The read re-polls on the shell's cadence, so
+ * an answer's effect shows without a reload (`ADR-47`).
  */
 
 /** Where a missing piece stands in the outline: its question's or grading point's index
@@ -52,7 +56,6 @@ function PlaceholderMark({
       <span className="placeholder-chip">Missing piece</span>{" "}
       {placeholderLocationLabel(placeholder.location, items)}
       {placeholder.supply ? ` — ${placeholder.supply}` : ""}
-      {placeholder.reason ? ` (${placeholder.reason})` : ""}
     </p>
   );
 }
@@ -154,9 +157,10 @@ function DraftOutline({ draft }: { draft: NonNullable<AuthoringDraftDoc["draft"]
   );
 }
 
-/** One missing piece's answer form: one at a time — the piece the teacher opened takes
- * its answer, the send goes through the enumerated review control, and the read's next
- * poll shows what the answer changed. */
+/** The current question's answer form (FR-AUTHOR-31): one question at a time, the send
+ * goes through the enumerated review control, and the read's next poll asks the next
+ * question. The field's refusal is checked before anything is sent, and the typed value
+ * stays while the refusal stands. */
 function AnswerForm({
   placeholder,
   draft,
@@ -262,10 +266,140 @@ function answerSpec(placeholder: DraftPlaceholder): FieldSpec {
   };
 }
 
+/** One summary value, as the read serves it: the display text and, when the teacher
+ * supplied it at review, the "your answer" marker (FR-UI-26). A score-levels array reads
+ * as one line ("full loop (2), broken loop (0)"); an unanswered value's text is the
+ * served "Not answered yet". */
+function SummaryValue({ piece }: { piece: { value: unknown; source: string | null } }) {
+  const value = piece.value;
+  const text = value === null || value === undefined ? "Not answered yet"
+    : Array.isArray(value)
+      ? (value.every((entry) => typeof entry === "string")
+        ? (value as string[]).join(", ")
+        : asScoreLevels(value))
+      : typeof value === "object" ? "Not answered yet"
+      : String(value);
+  return (
+    <>
+      {text}
+      {piece.source === "your answer" && <span className="summary-source"> (your answer)</span>}
+    </>
+  );
+}
+
+/** The whole package (FR-CONSOLE-72, FR-UI-26): the summary the read serves, above the
+ * Approve button and in its reading order — Test, Approved by, the grade table, the
+ * questions with their points and the total, and how each question is scored. Every
+ * value's source travels with it; an unanswered piece reads "Not answered yet" in place. */
+function PackageSummaryView({ summary }: { summary: PackageSummary }) {
+  const passRow = summary.grades.rows.find(
+    (row) => row.grade.trim().toLowerCase() === "pass" && row.answered,
+  );
+  return (
+    <section aria-label="The whole package" className="summary-section">
+      <h2>The whole package</h2>
+      <p className="summary-line">
+        <strong>Test</strong> <SummaryValue piece={summary.test} />
+      </p>
+      <p className="summary-line">
+        <strong>Approved by</strong> <SummaryValue piece={summary.approver} />
+      </p>
+      {passRow ? (
+        <p className="summary-line">
+          <strong>Passing score</strong> {String(passRow.lowest_total)} of {summary.grades.max}
+          {passRow.source === "your answer" && <span className="summary-source"> (your answer)</span>}
+        </p>
+      ) : summary.grades.rows.length > 0 ? (
+        <div className="summary-line">
+          <strong>The grades</strong>
+          <ul className="summary-grades">
+            {summary.grades.rows.map((row) => (
+              <li key={row.grade}>
+                {row.grade}: {row.answered ? `${String(row.lowest_total)} of ${summary.grades.max}` : "Not answered yet"}
+                {row.source === "your answer" && <span className="summary-source"> (your answer)</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <p className="summary-line">
+          <strong>The grades</strong> {summary.grades.value ?? "Not answered yet"}
+        </p>
+      )}
+      <div className="summary-line">
+        <strong>Questions</strong>
+        <ul className="summary-questions">
+          {summary.questions.map((question) => (
+            <li key={question.number}>
+              {question.number}. <SummaryValue piece={question.text} /> —{" "}
+              <SummaryValue piece={question.points} />
+              {question.points.answered ? " point(s)" : ""},{" "}
+              <SummaryValue piece={question.type} />
+              {question.correct_option !== undefined && question.correct_option.answered && (
+                <>
+                  {" "}
+                  — correct answer <SummaryValue piece={question.correct_option} />
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+        <p>
+          {summary.points_complete
+            ? `${summary.total_points} points in total`
+            : "Not answered yet — the total waits on a question's points"}
+        </p>
+      </div>
+      <div className="summary-line">
+        <strong>How each question is scored</strong>
+        <ul className="summary-scoring">
+          {summary.questions.map((question) => (
+            <li key={question.number}>
+              {question.number}.{" "}
+              {question.rubric.length === 0
+                ? "No grading point yet"
+                : question.rubric.map((line, index) => (
+                    <span key={line.criterion_id}>
+                      {index > 0 && "; "}
+                      {line.correct_option !== undefined && (
+                        <SummaryValue piece={line.correct_option} />
+                      )}
+                      {line.levels !== undefined && (
+                        <SummaryValue piece={line.levels} />
+                      )}
+                    </span>
+                  ))}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
+
+/** Score levels as the summary carries them — `[{name, points, descriptor}]` — read as
+ * one line: "full loop (2), broken loop (0)". A non-array reads as its served text. */
+function asScoreLevels(value: unknown): string {
+  if (!Array.isArray(value)) {
+    return typeof value === "string" ? value : "";
+  }
+  return value
+    .map((band: { name?: unknown; points?: unknown }) =>
+      `${String(band.name ?? "")}${band.points !== null && band.points !== undefined ? ` (${String(band.points)})` : ""}`)
+    .join(", ");
+}
+
+/** The gaps in one queue (FR-AUTHOR-31): the placeholder gaps, then the question-points
+ * gaps the read serves beside them — same shape, same answer action. A gap whose question
+ * waits on another answer first (FR-AUTHOR-32: a grade floor needs the questions' points)
+ * counts toward the total but takes no turn until its wait clears. */
+function questionQueue(draft: NonNullable<AuthoringDraftDoc["draft"]>): DraftPlaceholder[] {
+  return [...draft.placeholders, ...(draft.points_questions ?? [])];
+}
+
 export function ReviewDraft({ packageId }: { packageId: string | null }) {
   const navigate = useNavigate();
   const action = useActionState();
-  const [openItem, setOpenItem] = useState<string | null>(null);
   const read = useScreenRead<AuthoringDraftDoc>(
     "/api/v1/authoring/draft",
     packageId ? { package_id: packageId } : undefined,
@@ -299,66 +433,80 @@ export function ReviewDraft({ packageId }: { packageId: string | null }) {
             </p>
           );
         }
-        const missing = draft.missing_pieces;
+        const gaps = questionQueue(draft);
+        const answerable = gaps.filter((gap) => (gap.waiting_on?.length ?? 0) === 0);
+        const waiting = gaps.filter((gap) => (gap.waiting_on?.length ?? 0) > 0);
+        const current: DraftPlaceholder | null = answerable.length > 0
+          ? answerable[0] ?? null
+          : null;
+        const published = draft.published ?? null;
         return (
           <>
+            {published !== null && (
+              <div className="outcome-banner outcome-done">
+                <CircleCheck size={18} aria-hidden="true" />
+                <p role="status" className="action-outcome">
+                  <strong className="outcome-what">{published.detail}</strong>
+                </p>
+              </div>
+            )}
             <DraftOutline draft={draft} />
-            <section aria-label="Missing pieces" className="missing-section">
-              <h2>Missing pieces</h2>
-              {missing === 0 ? (
+            <section aria-label="Questions to answer" className="gaps-section">
+              <h2>A few questions before you approve</h2>
+              {current === null && gaps.length === 0 ? (
                 <p>None — the draft is ready to approve.</p>
+              ) : current === null ? (
+                <>
+                  {/* Every standing question waits on another answer first: each names
+                      itself in its own served words and opens once its wait clears (the
+                      read's next poll). No input here — the answer's range is not known
+                      yet, which the question's own hint says. */}
+                  {waiting.map((gap) => (
+                    <div key={gap.item_id} className="answer-form">
+                      <label>{gap.question}</label>
+                      <p className="answer-supply">{gap.answer_hint}</p>
+                    </div>
+                  ))}
+                </>
               ) : (
                 <>
                   <p>
-                    {missingPiecesLabel(missing)} stand in the draft. Answer them one at
-                    a time below; approval waits until every one is answered.
+                    Question {answerable.indexOf(current) + 1} of {answerable.length}.
                   </p>
-                  <ul className="placeholder-list">
-                    {draft.placeholders.map((placeholder, index) => (
-                      <li key={index} className="placeholder-row">
-                        <span>
-                          {placeholderLocationLabel(placeholder.location, draft.items)}
-                          {placeholder.reason ? ` — ${placeholder.reason}` : ""}
-                        </span>{" "}
-                        <button
-                          type="button"
-                          className="button"
-                          aria-pressed={openItem === placeholder.item_id}
-                          onClick={() =>
-                            setOpenItem(
-                              openItem === placeholder.item_id ? null : placeholder.item_id,
-                            )
-                          }
-                        >
-                          {openItem === placeholder.item_id ? "Close" : "Answer"}
-                        </button>
-                        {openItem === placeholder.item_id && (
-                          <AnswerForm
-                            placeholder={placeholder}
-                            draft={draft}
-                            onDone={(result) => {
-                              action.finish(result);
-                              // The answer either landed (the read's next poll shows
-                              // the piece gone) or was not accepted (the console's own
-                              // wording says so) — either way the form closes.
-                              setOpenItem(null);
-                            }}
-                          />
-                        )}
-                      </li>
-                    ))}
-                  </ul>
+                  <AnswerForm
+                    key={current.item_id}
+                    placeholder={current}
+                    draft={draft}
+                    onDone={(result) => {
+                      action.finish(result);
+                      // The answer either landed (the read's next poll asks the next
+                      // question) or was not accepted (the console's own wording says
+                      // so) — either way the form closes.
+                    }}
+                  />
                 </>
               )}
             </section>
+            {draft.summary !== undefined && <PackageSummaryView summary={draft.summary} />}
             <section aria-label="Approval" className="approve-section">
               <h2>Approve the package</h2>
-              {missing > 0 ? (
-                <p className="refusal-shape">
-                  <strong>The package cannot be approved yet.</strong>{" "}
-                  {missingPiecesLabel(missing)} still stand in the draft.{" "}
-                  Answer them under Missing pieces above, then approve.
-                </p>
+              {published !== null ? (
+                <button
+                  type="button"
+                  className="button button-primary"
+                  onClick={() => navigate(published.next.route)}
+                >
+                  {published.next.label}
+                </button>
+              ) : gaps.length > 0 ? (
+                <>
+                  <button type="button" className="button button-primary" disabled>
+                    Approve the package
+                  </button>
+                  <DisabledReason
+                    reason={`The package cannot be approved yet. ${missingPiecesLabel(gaps.length)} still stand in the draft. Answer them under A few questions above, then approve.`}
+                  />
+                </>
               ) : (
                 <button
                   type="button"

@@ -88,7 +88,7 @@ export function ContextHeader({ context, selection, onSelection, onHelp, helpOpe
   }));
   const packageOptions: SwitcherOption[] = packages.map((entry, index) => ({
     value: entry.package_id,
-    label: packageLabel(index, packages.length),
+    label: packageLabel(entry.package_id, entry.version_count, index, packages.length),
   }));
   const runOptions: SwitcherOption[] = runs.map((entry) => ({
     value: entry.run_id,

@@ -109,11 +109,23 @@ export function stageTone(state: StageState): "success" | "warning" | "danger" |
   }
 }
 
-/** A package's switcher line. Package ids are internal (`pkg-…` is never rendered), and no
- * teacher-facing package title exists in the stored data yet — the ordinal names it when
- * there is more than one. Later stories (the package screens) carry the naming actions. */
-export function packageLabel(index: number, count: number): string {
-  return count > 1 ? `Test package ${index + 1}` : "Test package";
+/** A package's switcher option (FR-UI-28): a published package's id is the test's own
+ * name, printed on the sheets, so it *is* the option's label — followed by
+ * " — version <n>" once the test has more than one version. The ordinal fallback
+ * ("Test package 2") applies only to an id matching the internal `pkg-` pattern; a
+ * `pkg-…` reference itself is never shown. The switcher's own label stays "Test
+ * package" (the Switcher's prop, not this). */
+export function packageLabel(
+  packageId: string,
+  versionCount: number,
+  index: number,
+  count: number,
+): string {
+  const id = (packageId ?? "").split("@")[0] ?? "";
+  if (id === "" || /^pkg-/.test(id)) {
+    return count > 1 ? `Test package ${index + 1}` : "Test package";
+  }
+  return versionCount > 1 ? `${id} — version ${versionCount}` : id;
 }
 
 /** The tone an entity state's badge takes (the same token groups the stage badges use).
@@ -403,9 +415,16 @@ export function formatLine(spec: FieldSpec): string {
   return spec.format;
 }
 
-/** The refusal shown at the field: "Please enter " + the format line, as one sentence. */
+/** The refusal shown at the field: "Please enter " + the format line, as one sentence.
+ * A whole number's refusal is the canonical range sentence (FR-AUTHOR-31: the field-level
+ * refusal restates the range), not the format hint's tail — a hint like "A whole number
+ * from 1 to 8. The test is out of 8 points." refuses as "Please enter a whole number
+ * from 1 to 8." */
 export function pleaseEnter(spec: FieldSpec): string {
-  const line = formatLine(spec).replace(/\.\s*$/, "");
+  const line = (spec.kind === "whole_number"
+    ? `A whole number from ${spec.min} to ${spec.max}`
+    : formatLine(spec)
+  ).replace(/\.\s*$/, "");
   return `Please enter ${line.charAt(0).toLowerCase()}${line.slice(1)}.`;
 }
 
