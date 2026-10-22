@@ -792,6 +792,100 @@ def _stage_timings(app: Any, run_id: str) -> list[dict[str, Any]]:
     ]
 
 
+def _run_clock(app: Any, cohort_id: str, run_id: str) -> dict[str, Any] | None:
+    """The run's clock (FR-UI-29): its status and its start/end stamps, so the SPA's
+    elapsed clock ticks from the ledger's own times — a clock the read derives, never one
+    the SPA re-derives from a state copy. `None` when the row cannot be read."""
+    try:
+        rows = app._store.cohort(cohort_id).query(
+            "SELECT status, started_at, completed_at FROM run WHERE run_id = :run_id",
+            run_id=run_id)
+    except Exception:  # noqa: BLE001 — the clock is a courtesy to the grades
+        return None
+    if not rows:
+        return None
+    row = rows[0]
+    return {
+        "state": str(row["status"] or ""),
+        "started_at": row["started_at"],
+        "ended_at": row["completed_at"],
+    }
+
+
+def _review_window_ends(app: Any, run_row: Any, started_at: Any) -> str | None:
+    """The date an open review window defers finality to (FR-UI-33): the package
+    version's stored window (FR-PKG-19) counted from the run's start, in teacher words.
+    `None` when no window is stored or the run's start is unknown — no date is invented.
+
+    A window whose end is in the past still reads as its date: the same known limit the
+    finalize path documents (`effects.py`, reported on #398/#385) — after a lapse the
+    grades settle at M-GRADE's next pass, and until then the date is what the ledger
+    holds, not a claim that they are already final."""
+    if started_at is None:
+        return None
+    try:
+        from aeh.pkg import PackageCatalog
+
+        catalog = PackageCatalog(app._store.package(str(run_row["package_id"])),
+                                 package_id=str(run_row["package_id"]))
+        hours = int(catalog.grade_policy(
+            str(run_row["package_version_id"])).review_window_hours or 0)
+    except Exception:  # noqa: BLE001 — a missing window is the ordinary case
+        return None
+    if hours <= 0:
+        return None
+    from datetime import datetime, timedelta
+
+    try:
+        start = datetime.fromisoformat(str(started_at).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    from .version_labels import teacher_date
+
+    return teacher_date(start + timedelta(hours=hours))
+
+
+def _roll_cells(
+    cells: Any,
+    amendments: dict[str, list[dict[str, Any]]],
+    scales: dict[str, list[tuple[str, Any]]],
+    submission_id: str | None = None,
+) -> dict[str, dict[str, dict[str, Any]]]:
+    """FR-CONSOLE-76: the cell rows as the by-question roll-up reads them — per student,
+    per criterion, the points (the amended figure when one was recorded; `None` for a
+    triage row, FR-GRADE-04's missing class) beside the state and the not-final reason.
+    `submission_id` keeps one student's rows only; `None` keeps every row's."""
+    roll: dict[str, dict[str, dict[str, Any]]] = {}
+    for row in cells:
+        row_submission = str(row["submission_id"])
+        if submission_id is not None and row_submission != submission_id:
+            continue
+        criterion_id = str(row["criterion_id"])
+        scale = scales.get(criterion_id, [])
+        routing = str(row["routing"] or "")
+        # The stored figure; a triage row delivered none (FR-GRADE-04's missing class).
+        figure = None if routing == "triage" else row["awarded_points"]
+        criterion_band = str(row["band"])
+        for points in [entry.get("points") for entry in amendments.get(
+                row_submission, []) if entry.get("criterion_id") == criterion_id]:
+            if points is not None:
+                figure = points
+            amended_level = _level_of(scale, points)
+            if amended_level is not None:
+                criterion_band = amended_level
+        roll.setdefault(row_submission, {})[criterion_id] = {
+            "points": None if figure is None else float(figure),
+            "band": criterion_band,
+            "stored_band": str(row["band"]),
+            "state": str(row["state"] or ""),
+            "routing": routing,
+            "not_final_reason": cell_not_final_reason(
+                str(row["state"] or ""), routing, judge_count=row["judge_count"],
+                caps_fired=row["caps_fired"], state_reason=row["state_reason"]),
+        }
+    return roll
+
+
 def results_screen_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     """The results screen's document (FR-UI-03g, extended by FR-UI-15): every student's
     grade record (M-GRADE's own, the ledger's) beside the run's per-criterion score levels,
@@ -806,7 +900,7 @@ def results_screen_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     if run_row is None:
         return {"run_id": None, "cohort_id": None, "score_levels": [], "scales": [],
                 "students": [], "question_stats": [], "not_final_questions": 0,
-                "stage_timings": []}
+                "stage_timings": [], "run": None, "review_window_ends": None}
     run_id = str(run_row["run_id"])
     cohort_id = str(run_row["cohort_id"])
     records = run_grade_records(app._store, run_id)
@@ -828,6 +922,8 @@ def results_screen_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     scales = _declared_scales(app, run_row)
     labels = _grading_point_labels(app, run_row)
     amendments = _amendments_of_run(handle, run_id)
+    # The paper's question shape first: the criteria rows and the roll-up both read it.
+    questions, line_question = _question_shape(app, run_row, scales)
     escalated: set[tuple[str, str]] = set()
     try:
         escalated = {
@@ -841,38 +937,20 @@ def results_screen_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     except Exception:  # noqa: BLE001 — a cohort ledger without the rows answers grades alone
         cells = ()
     # FR-CONSOLE-76: each student's cells as the by-question roll-up reads them.
-    roll_cells: dict[str, dict[str, dict[str, Any]]] = {}
+    roll_cells = _roll_cells(cells, amendments, scales)
     for row in cells:
         student = by_submission.get(str(row["submission_id"]))
         if student is None:
             continue
         criterion_id = str(row["criterion_id"])
-        scale = scales.get(criterion_id, [])
-        stored_band = str(row["band"])
-        criterion_band = stored_band
-        routing = str(row["routing"] or "")
-        # The stored figure; a triage row delivered none (FR-GRADE-04's missing class).
-        figure = None if routing == "triage" else row["awarded_points"]
-        for points in [entry.get("points") for entry in amendments.get(
-                str(row["submission_id"]), []) if entry.get("criterion_id") == criterion_id]:
-            if points is not None:
-                figure = points
-            amended_level = _level_of(scale, points)
-            if amended_level is not None:
-                criterion_band = amended_level
-        roll_cells.setdefault(str(row["submission_id"]), {})[criterion_id] = {
-            "points": None if figure is None else float(figure),
-            "state": str(row["state"] or ""),
-            "routing": routing,
-            "not_final_reason": cell_not_final_reason(
-                str(row["state"] or ""), routing, judge_count=row["judge_count"],
-                caps_fired=row["caps_fired"], state_reason=row["state_reason"]),
-        }
+        cell = roll_cells.get(str(row["submission_id"]), {}).get(criterion_id, {})
         student["criteria"].append({
             "criterion_id": criterion_id,
+            # FR-UI-31: the line's question — the row's expandable detail groups by it.
+            "question_id": line_question.get(criterion_id),
             "label": labels.get(criterion_id, criterion_id),
-            "criterion_band": criterion_band,
-            "stored_band": stored_band,
+            "criterion_band": str(cell.get("band") or row["band"]),
+            "stored_band": str(cell.get("stored_band") or row["band"]),
             "routing": str(row["routing"] or ""),
             "state": str(row["state"] or ""),
             "state_reason": _state_reason_text(
@@ -904,14 +982,18 @@ def results_screen_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
             if name not in seen_levels or rank < seen_levels[name]:
                 seen_levels[name] = rank
     score_levels = [name for name, _rank in sorted(seen_levels.items(), key=lambda item: item[1])]
-    # FR-CONSOLE-76: results by question — points per question, the total and its grade.
-    questions, line_question = _question_shape(app, run_row, scales)
+    # FR-CONSOLE-76: results by question — points per question, the total and its grade
+    # (the shape was read above, before the criteria rows used it).
     for submission_id, student in by_submission.items():
         student["questions"] = student_questions(
             questions, line_question, roll_cells.get(submission_id, {}),
             grade_final=student["state"] == "final")
         student["total_points"], student["total_max"] = totals(student["questions"])
     students = list(by_submission.values())
+    # FR-UI-29: the run's clock, and FR-UI-33: the date an open review window defers
+    # finality to — both additive; the students and the stats above are unchanged.
+    clock = _run_clock(app, cohort_id, run_id)
+    started_at = clock["started_at"] if clock is not None else None
     return {
         "run_id": run_id,
         "cohort_id": cohort_id,
@@ -932,6 +1014,8 @@ def results_screen_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
         "not_final_questions": not_final_count(students),
         # FR-CONSOLE-75: how long each long step of this run took, in run order.
         "stage_timings": _stage_timings(app, run_id),
+        "run": clock,
+        "review_window_ends": _review_window_ends(app, run_row, started_at),
     }
 
 
@@ -979,7 +1063,12 @@ def student_detail_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
         pass
     scales = _declared_scales(app, run_row)
     labels = _grading_point_labels(app, run_row)
-    amendment_entries = _amendments_of_run(handle, run_id).get(submission_id, [])
+    # FR-CONSOLE-76: the grade by question rides the detail too, so the screen lists each
+    # question with its points and the rubric level per line. The roll-up reads the same
+    # cell rows the overview's does, kept to this submission.
+    questions, line_question = _question_shape(app, run_row, scales)
+    amendments_all = _amendments_of_run(handle, run_id)
+    amendment_entries = amendments_all.get(submission_id, [])
     escalation_pairs: set[tuple[str, str]] = set()
     try:
         escalation_pairs = {
@@ -1034,6 +1123,8 @@ def student_detail_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
             })
         criteria.append({
             "criterion_id": criterion_id,
+            # FR-UI-31: the line's question — the detail groups the lines under it.
+            "question_id": line_question.get(criterion_id),
             "label": labels.get(criterion_id, criterion_id),
             "criterion_band": criterion_band,
             "stored_band": stored_band,
@@ -1064,13 +1155,31 @@ def student_detail_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
             "reason": str(entry.get("reason") or ""),
             "at": str(entry.get("at") or ""),
         })
+    # FR-CONSOLE-76 on the detail: the same by-question roll-up the overview reads, kept
+    # to this submission, so the screen lists each question with its points.
+    detail_roll: dict[str, dict[str, dict[str, Any]]] = {}
+    try:
+        detail_roll = _roll_cells(
+            handle.query(_CELL_ROWS_SQL, run_id=run_id, cohort_id=cohort_id),
+            amendments_all, scales, submission_id=submission_id)
+    except Exception:  # noqa: BLE001 — a ledger without the rows answers grades alone
+        detail_roll = {}
+    grade_state = None if record is None else str(record["state"] or "")
+    detail_questions = student_questions(
+        questions, line_question, detail_roll.get(submission_id, {}),
+        grade_final=grade_state == "final")
+    detail_points, detail_max = totals(detail_questions)
     return {
         "run_id": run_id,
         "submission_id": submission_id,
         "student_ref": student_ref,
         "full_name": _roster_names(handle).get(student_ref) if student_ref else None,
         "total": None if record is None else record["total"],
-        "state": None if record is None else str(record["state"] or ""),
+        "state": grade_state,
+        "grade": None if record is None else record.get("grade"),
+        "questions": detail_questions,
+        "total_points": detail_points,
+        "total_max": detail_max,
         "narrative": narrative,
         "criteria": criteria,
         "amendments": amendment_history,

@@ -216,20 +216,71 @@ export function jobCostLabel(costUsd: number | null): string {
   return costUsd === null ? "—" : `$${costUsd.toFixed(2)}`;
 }
 
-/** A duration in seconds as the jobs table shows it, in whole clock units. */
+/** A duration in teacher words (FR-UI-29): under a minute "45 s", under an hour
+ * "2 min 14 s", otherwise "1 h 5 min" — spaces before each unit, no seconds in the
+ * hour form. */
 export function durationLabel(seconds: number | null): string {
   if (seconds === null) {
     return "—";
   }
   const whole = Math.max(0, Math.round(seconds));
   if (whole < 60) {
-    return `${whole}s`;
+    return `${whole} s`;
   }
   const minutes = Math.floor(whole / 60);
   if (minutes < 60) {
-    return `${minutes}m ${whole % 60}s`;
+    return `${minutes} min ${whole % 60} s`;
   }
-  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  return `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
+}
+
+/** Round half-up to `places` decimals, from the unrounded value — JS `toFixed` rounds
+ * half-to-even on some values, and the design pins half-up (FR-UI-31's rounding rule).
+ * The shift-and-round reads a decimal in the double's favour: the shift's representation
+ * error sits at the 16th digit, far from the half-way digit a 1-decimal label needs. */
+export function roundHalfUp(value: number, places: number): string {
+  const scale = Math.pow(10, places);
+  return (Math.round(value * scale) / scale).toFixed(places);
+}
+
+/** One question's average line (FR-UI-31): "average 1.8 / 3 (58%)" — the mean to one
+ * decimal half-up, the percentage the unrounded mean ÷ max × 100 half-up to a whole
+ * number. A question with no marks reads "0.0 / 3 (0%)". */
+export function averageLabel(mean: number | null, max: number): string {
+  if (mean === null || max <= 0) {
+    return `average 0.0 / ${max} (0%)`;
+  }
+  const percent = Math.max(0, Math.min(100, Math.round(mean / max * 100)));
+  return `average ${roundHalfUp(mean, 1)} / ${max} (${percent}%)`;
+}
+
+/** One not-final grade's reason, in the design's own words (FR-UI-32): the sentence the
+ * Check badge shows on hover and when the cell expands — keyed by the code the results
+ * read serves in `not_final_reason`. */
+export const NOT_FINAL_REASON_TEXT: Record<string, string> = {
+  one_grader_unsure: "The AI grader was not sure. Please check this answer.",
+  graders_disagree: "The AI graders gave different marks. Please choose the right one.",
+  evidence_not_found: "The grader could not find the answer in the student's writing. Please check the page.",
+  quote_not_verified: "The grader quoted words that are not on the page. Please check this answer.",
+  more_graders_unavailable: "A second opinion was needed but no other grader is set up. Please check this answer.",
+  graders_refused: "The AI could not grade this question for the class. Please grade it yourself.",
+};
+
+/** The clock line for a long operation (FR-UI-29): "Working — 1 min 12 s" while it runs,
+ * "Done in 2 min 14 s" (or "Stopped after …" / "Failed after …") when it ends. */
+export function elapsedLabel(state: "working" | "done" | "stopped" | "failed",
+                             seconds: number | null): string {
+  const time = durationLabel(seconds);
+  switch (state) {
+    case "working":
+      return `Working — ${time}`;
+    case "done":
+      return `Done in ${time}`;
+    case "stopped":
+      return `Stopped after ${time}`;
+    case "failed":
+      return `Failed after ${time}`;
+  }
 }
 
 /** An issue card's severity tone, derived from the server's own source word (FR-UI-18's
