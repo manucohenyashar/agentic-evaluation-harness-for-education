@@ -23,8 +23,16 @@ from pathlib import Path
 from typing import Any
 
 from aeh.grade import GRADE_STATEMENTS, run_grade_records
-from aeh.pkg import PKG_STATEMENTS, points_for_band
+from aeh.pkg import PKG_STATEMENTS, is_composite, points_for_band
 from aeh.setup import setup_service_for_store
+
+from .question_results import (
+    cell_not_final_reason,
+    not_final_count,
+    question_stats,
+    student_questions,
+    totals,
+)
 
 
 def _data_dir(app: Any) -> Path:
@@ -499,7 +507,10 @@ def blind_seats_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
 #: second rule about which rows exist. (`TC-STORE-15`'s banned shape is a search, never a
 #: keyed select.)
 _CELL_ROWS_SQL = (
-    "SELECT cs.criterion_id, cs.submission_id, cs.band, cs.routing, cs.state, cs.state_reason "
+    "SELECT cs.criterion_id, cs.submission_id, cs.band, cs.routing, cs.state, cs.state_reason, "
+    # FR-CONSOLE-76: the stored figure (aliased — the band-to-points mapping stays M-PKG's,
+    # CT-PKG-05) and the two columns FR-AGG-20's not-final code is re-derived from.
+    "cs.points AS awarded_points, cs.judge_count, cs.caps_fired "
     "FROM criterion_score cs "
     "JOIN submission s ON cs.submission_id = s.submission_id "
     "WHERE cs.run_id = :run_id AND s.cohort_id = :cohort_id "
@@ -609,6 +620,39 @@ def _grading_point_labels(app: Any, run_row: Any) -> dict[str, str]:
         str(row["criterion_id"]): str(row["question_id"] or "") or str(row["criterion_id"])
         for row in rows
     }
+
+
+def _question_shape(
+    app: Any, run_row: Any, scales: dict[str, list[tuple[str, Any]]],
+) -> tuple[list[dict[str, Any]], dict[str, str]]:
+    """The run's test as the by-question roll-up reads it (FR-CONSOLE-76): its questions in
+    paper order (`{question_id, label, points_max}`), each scored rubric line's question — a
+    composite has no score row of its own (FR-PKG-25), so only its aspects are listed. An
+    unreadable catalog answers no questions, never invented ones."""
+    try:
+        package = app._store.package(str(run_row["package_id"]))
+        version = str(run_row["package_version_id"])
+        question_rows = package.query(PKG_STATEMENTS["select_questions"], v=version)
+        criterion_rows = package.query(PKG_STATEMENTS["select_criteria"], v=version)
+    except Exception:  # noqa: BLE001 — an unreadable catalog is not the grades'
+        return [], {}
+    line_question = {
+        str(row["criterion_id"]): str(row["question_id"])
+        for row in criterion_rows if not is_composite(row) and row["question_id"]
+    }
+    questions = []
+    for row in question_rows:
+        question_id = str(row["question_id"])
+        points_max = float(row["max_points"] or 0)
+        if not points_max:
+            # A question stored without its points: the sum of its lines' top levels.
+            points_max = float(sum(
+                max((float(p) for _name, p in scales.get(line, []) if p is not None),
+                    default=0.0)
+                for line, owner in line_question.items() if owner == question_id))
+        questions.append(
+            {"question_id": question_id, "label": question_id, "points_max": points_max})
+    return questions, line_question
 
 
 def _level_of(scale: list[tuple[str, Any]], points: Any) -> str | None:
@@ -761,7 +805,8 @@ def results_screen_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     run_row = _run_row_of(console, app, query)
     if run_row is None:
         return {"run_id": None, "cohort_id": None, "score_levels": [], "scales": [],
-                "students": [], "stage_timings": []}
+                "students": [], "question_stats": [], "not_final_questions": 0,
+                "stage_timings": []}
     run_id = str(run_row["run_id"])
     cohort_id = str(run_row["cohort_id"])
     records = run_grade_records(app._store, run_id)
@@ -773,6 +818,10 @@ def results_screen_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
             "full_name": None,
             "total": record["total"],
             "state": str(record["state"] or ""),
+            # FR-CONSOLE-76's `grade`: the ledger's own, which M-GRADE resolved after its policy
+            # (weights, scale, gate) — the boundary floors are in that scaled space, so a
+            # lookup on the raw question sum could disagree with the grade the export holds.
+            "grade": record.get("grade"),
             "criteria": [],
         }
     handle = app._store.cohort(cohort_id)
@@ -791,6 +840,8 @@ def results_screen_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
         cells = handle.query(_CELL_ROWS_SQL, run_id=run_id, cohort_id=cohort_id)
     except Exception:  # noqa: BLE001 — a cohort ledger without the rows answers grades alone
         cells = ()
+    # FR-CONSOLE-76: each student's cells as the by-question roll-up reads them.
+    roll_cells: dict[str, dict[str, dict[str, Any]]] = {}
     for row in cells:
         student = by_submission.get(str(row["submission_id"]))
         if student is None:
@@ -799,11 +850,24 @@ def results_screen_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
         scale = scales.get(criterion_id, [])
         stored_band = str(row["band"])
         criterion_band = stored_band
+        routing = str(row["routing"] or "")
+        # The stored figure; a triage row delivered none (FR-GRADE-04's missing class).
+        figure = None if routing == "triage" else row["awarded_points"]
         for points in [entry.get("points") for entry in amendments.get(
                 str(row["submission_id"]), []) if entry.get("criterion_id") == criterion_id]:
+            if points is not None:
+                figure = points
             amended_level = _level_of(scale, points)
             if amended_level is not None:
                 criterion_band = amended_level
+        roll_cells.setdefault(str(row["submission_id"]), {})[criterion_id] = {
+            "points": None if figure is None else float(figure),
+            "state": str(row["state"] or ""),
+            "routing": routing,
+            "not_final_reason": cell_not_final_reason(
+                str(row["state"] or ""), routing, judge_count=row["judge_count"],
+                caps_fired=row["caps_fired"], state_reason=row["state_reason"]),
+        }
         student["criteria"].append({
             "criterion_id": criterion_id,
             "label": labels.get(criterion_id, criterion_id),
@@ -840,6 +904,14 @@ def results_screen_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
             if name not in seen_levels or rank < seen_levels[name]:
                 seen_levels[name] = rank
     score_levels = [name for name, _rank in sorted(seen_levels.items(), key=lambda item: item[1])]
+    # FR-CONSOLE-76: results by question — points per question, the total and its grade.
+    questions, line_question = _question_shape(app, run_row, scales)
+    for submission_id, student in by_submission.items():
+        student["questions"] = student_questions(
+            questions, line_question, roll_cells.get(submission_id, {}),
+            grade_final=student["state"] == "final")
+        student["total_points"], student["total_max"] = totals(student["questions"])
+    students = list(by_submission.values())
     return {
         "run_id": run_id,
         "cohort_id": cohort_id,
@@ -853,7 +925,11 @@ def results_screen_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
              "levels": [name for name, _points in entries]}
             for criterion, entries in sorted(scales.items())
         ],
-        "students": list(by_submission.values()),
+        "students": students,
+        # FR-CONSOLE-76: per question, the class's mean, full and zero marks.
+        "question_stats": question_stats(questions, students),
+        # FR-UI-33: the answers still not final — the number the Results banner names.
+        "not_final_questions": not_final_count(students),
         # FR-CONSOLE-75: how long each long step of this run took, in run order.
         "stage_timings": _stage_timings(app, run_id),
     }
