@@ -252,6 +252,21 @@ def authoring_draft_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
         raw_text = path.read_text(encoding="utf-8")
     except OSError:
         raw_text = ""
+    # The served approved state (FR-UI-27): the draft that stands approved and unchanged
+    # carries the FR-CONSOLE-73 sentence, so a reload keeps the banner. The marker check
+    # reads the file the way the approve gate does (`utf-8-sig`: the digest is taken over
+    # the content without the BOM), and the label lookup uses the store already attached
+    # — the read opens nothing of its own.
+    published_block = None
+    marker_text = ""
+    try:
+        marker_text = path.read_text(encoding="utf-8-sig")
+    except OSError:
+        marker_text = ""
+    if marker_text and getattr(app._store, "data_dir", None) is not None:
+        from .authoring_actions import published_state  # deferred: actions import reads
+
+        published_block = published_state(app._store, marker_text)
     placeholders = [
         {
             "item_id": item_id,
@@ -296,6 +311,7 @@ def authoring_draft_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
             "missing_pieces": len(placeholders),
             # FR-CONSOLE-72: the package as it would be published, answers merged in.
             "summary": package_summary(spec, answered_items(path, package_id)),
+            "published": published_block,
         },
         "doc_max_bytes": doc_max_bytes,
         "projected": {

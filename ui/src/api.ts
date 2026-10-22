@@ -734,6 +734,58 @@ export interface DraftPlaceholder {
   answer_kind?: string;
   answer_min?: number | null;
   answer_max?: number | null;
+  /** The item ids this question waits on before its own range is known (FR-AUTHOR-32:
+   * a grade floor needs the questions' points first) — empty when it can be answered. */
+  waiting_on?: string[];
+}
+
+/** One value in the package summary, as the read serves it (FR-CONSOLE-72): the display
+ * text, whether it is answered at all, and where it came from — the teacher's own answer
+ * or the documents. An unanswered value's text is the served "Not answered yet". */
+export interface SummaryPiece {
+  value: unknown;
+  answered: boolean;
+  source: string | null;
+}
+
+/** One question in the summary, in paper order, with its rubric lines under it. */
+export interface SummaryQuestion {
+  number: string;
+  text: SummaryPiece;
+  points: SummaryPiece;
+  type: SummaryPiece;
+  rubric: Array<{
+    criterion_id: string;
+    part_of?: string | null;
+    correct_option?: SummaryPiece;
+    levels?: SummaryPiece;
+    points?: number | null;
+  }>;
+  expected_answer?: SummaryPiece;
+  correct_option?: SummaryPiece;
+}
+
+/** The grade table in the summary: each grade and the lowest total that earns it, with
+ * the test's maximum. A whole-table placeholder arrives with no rows and its own piece. */
+export interface SummaryGrades {
+  rows: Array<{ grade: string; lowest_total: unknown; answered: boolean; source: string | null }>;
+  answered: boolean;
+  max: number;
+  value?: string;
+  source?: string | null;
+}
+
+/** The package summary itself (FR-CONSOLE-72, `aeh.console.package_summary`): the whole
+ * draft as it would be published, with the approve screen's reading order riding the
+ * fields — test, approver, grade table, questions with their rubric, total points. */
+export interface PackageSummary {
+  test: SummaryPiece;
+  approver: SummaryPiece;
+  questions: SummaryQuestion[];
+  total_points: number;
+  points_complete: boolean;
+  grades: SummaryGrades;
+  unanswered: number;
 }
 
 /** One question in the draft, as the structure read projects it. `options` is the letters
@@ -781,8 +833,16 @@ export interface AuthoringDraftDoc {
     criteria: DraftCriterion[];
     grades: unknown;
     placeholders: DraftPlaceholder[];
+    /** Question-points gaps (FR-AUTHOR-32): a report-only gap stands in no sentinel, so
+     * the points questions ride beside `placeholders`, same shape, same answer action. */
+    points_questions?: DraftPlaceholder[];
     issues: DraftIssueRow[];
     missing_pieces: number;
+    /** FR-CONSOLE-72: the package as it would be published, answers merged in. */
+    summary?: PackageSummary;
+    /** FR-UI-27: the served approved state — the FR-CONSOLE-73 sentence with the Load
+     * papers link, present exactly when the draft stands approved and unchanged. */
+    published?: { detail: string; next: { label: string; route: string } };
   } | null;
   doc_max_bytes: number;
   projected: { items: number; criteria: number; placeholders: number; issues: number };

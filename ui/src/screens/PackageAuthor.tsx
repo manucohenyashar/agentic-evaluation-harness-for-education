@@ -201,7 +201,6 @@ function ReportView({
             {draft.placeholders.map((placeholder: DraftPlaceholder) => (
               <li key={placeholder.location}>
                 {placeholderLocationLabel(placeholder.location, draft.items)}
-                {placeholder.reason ? ` — ${placeholder.reason}` : ""}
               </li>
             ))}
           </ul>
