@@ -43,6 +43,8 @@ CLI_CONSOLE_PATHS: dict[str, str] = {
     # answers the same reads through two routes, and the census names one row per command.
     "results show": f"GET {API_PREFIX}/results/class",
     "results export": f"GET {API_PREFIX}/results/export",
+    # FR-CONSOLE-79: the terminal half of the AI-call read (FR-CONSOLE-78), one implementation.
+    "logs ai-calls": f"GET {API_PREFIX}/ai-calls",
 }
 
 #: The debugging-only help section: commands a teacher or operator never needs, each entry
@@ -138,6 +140,11 @@ CLI_COMMAND_PURPOSE: dict[str, str] = {
         "writes the school-facing export (the marks CSV and one PDF per student) from the "
         "terminal; the console's results screen delivers the same files, and a developer uses "
         "the command when the download must be scripted"
+    ),
+    "logs ai-calls": (
+        "prints the AI calls behind a run - what each model was asked and what it answered - "
+        "one line per call, or in full with --full; the console's Logs screen shows the same "
+        "records, and a developer reads them in the terminal or pipes --json into a script"
     ),
 }
 

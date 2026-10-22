@@ -70,6 +70,13 @@ def logs_page_size() -> int:
     return max(1, _env_int("HARNESS_CONSOLE_LOG_PAGE", 200))
 
 
+#: The AI-call read's page size (FR-CONSOLE-78): 50 journal records per page. Env-gated
+#: (seam 3) and read at call time, like every knob here.
+def ai_calls_page_size() -> int:
+    """How many AI-call records one page of the read carries (the setting is read each time)."""
+    return max(1, _env_int("HARNESS_CONSOLE_AI_CALLS_PAGE", 50))
+
+
 #: The readable package export's page depth (FR-CONSOLE-59, #762): how many text lines one
 #: page of the deterministic PDF carries before a continuation page starts. Env-gated
 #: (seam 3) and read at call time, like every knob here; the production default is the

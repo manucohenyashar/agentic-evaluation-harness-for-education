@@ -32,6 +32,11 @@ EXIT_OK = 0
 EXIT_ERROR = 1
 
 
+#: A command that cannot start because what it was pointed at is not there (FR-CONSOLE-79:
+#: `aeh logs ai-calls` with a data folder that does not exist).
+EXIT_USAGE = 2
+
+
 EXIT_PAUSED = 3
 
 
@@ -190,6 +195,28 @@ def _build_parser() -> Any:
     results_export.add_argument("--revision", type=int, default=1)
     results_export.add_argument("--out", required=True,
                                 help="the directory the export's files are written into")
+
+    # FR-CONSOLE-79: the AI-call journal (FR-CONSOLE-77) read from the terminal — the same
+    # read `GET /api/v1/ai-calls` answers (FR-CONSOLE-78), every kind unless --kind narrows it.
+    logs_parser = sub.add_parser("logs", help="read the logs the harness keeps")
+    logs_sub = logs_parser.add_subparsers(dest="logs_command", required=True)
+    ai_calls = logs_sub.add_parser(
+        "ai-calls", help="print the AI calls: what each model was asked and what it answered")
+    ai_calls.add_argument("--data-dir", required=True)
+    ai_calls.add_argument("--run", default=None, help="only this grading run's calls")
+    ai_calls.add_argument("--cohort", default=None, help="only this class's calls")
+    ai_calls.add_argument("--package", default=None, help="only this package's calls")
+    ai_calls.add_argument("--student", default=None, help="only this student's calls, by name")
+    ai_calls.add_argument("--question", default=None, help="only this question's calls, as Q2")
+    ai_calls.add_argument("--kind", default=None,
+                          help="only these kinds, comma-separated (jev_decision, ai_judge, ...)")
+    ai_calls.add_argument("--outcome", default=None,
+                          help="only these outcomes, comma-separated (ok, retried, failed, ...)")
+    output = ai_calls.add_mutually_exclusive_group()
+    output.add_argument("--full", action="store_true",
+                        help="print the request and the response under each call")
+    output.add_argument("--json", action="store_true",
+                        help="print each call's journal record as one JSON line")
     return parser
 
 
@@ -218,6 +245,58 @@ def _results_command(args: Any) -> int:
         return EXIT_OK
     finally:
         store.close()
+
+
+def _logs_ai_calls_command(args: Any) -> int:
+    """`aeh logs ai-calls` (FR-CONSOLE-79): the journal's records newest first, one summary
+    line per call, the request and response under each with `--full`, or the journal's own
+    records as JSON lines with `--json`. Nothing matching prints "No AI calls match." and
+    exits 0; a data folder that is not there exits 2 before anything is opened, so the
+    read never creates one."""
+    from pathlib import Path
+
+    from aeh.console.ai_calls import (
+        NO_MATCH, AiCallFilters, full_text, matching_calls, parse_kinds, parse_outcomes,
+        summary_line,
+    )
+
+    if not Path(args.data_dir).is_dir():
+        print("aeh logs ai-calls: there is no data folder there. Check --data-dir.",
+              file=sys.stderr)
+        return EXIT_USAGE
+    try:
+        filters = AiCallFilters(
+            run_id=args.run, cohort_id=args.cohort, package_id=args.package,
+            kinds=parse_kinds(args.kind, default=None), student=args.student,
+            question_id=args.question, outcomes=parse_outcomes(args.outcome))
+    except ValueError as refusal:
+        print(f"aeh logs ai-calls: {refusal}", file=sys.stderr)
+        return EXIT_USAGE
+    # A request or an answer can carry any text; a console that cannot encode it must not
+    # turn a read into a crash.
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if callable(reconfigure):
+        reconfigure(encoding="utf-8", errors="replace")
+    # Read-only: a read never migrates a class or package file it looks a name up in.
+    from aeh.store import open_store
+
+    store = open_store(Path(args.data_dir), read_only=True)
+    try:
+        calls, _stats = matching_calls(store, args.data_dir, filters)
+    finally:
+        store.close()
+    if not calls:
+        print(NO_MATCH)
+        return EXIT_OK
+    for record, item in calls:
+        if args.json:
+            print(json.dumps(record, ensure_ascii=False))
+        elif args.full:
+            print(full_text(item))
+            print()
+        else:
+            print(summary_line(item))
+    return EXIT_OK
 
 
 def _ingest_command(args: Any) -> int:
@@ -497,6 +576,8 @@ def _dispatch_command(args: Any) -> int:
             return _ingest_command(args)
         if args.command == "results":
             return _results_command(args)
+        if args.command == "logs":
+            return _logs_ai_calls_command(args)
         if args.command == "recover":
             # FR-PIPE-19 / TC-PIPE-35: the pins are resolved and refused BEFORE the store
             # opens — the same checked-before-the-store posture the knob checks above have,
