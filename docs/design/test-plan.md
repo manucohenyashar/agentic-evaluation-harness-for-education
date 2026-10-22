@@ -2069,6 +2069,7 @@ preserved; a complete audit record; the uniqueness index enforced; exact recompu
 | TC-GRADE-22 | FR-GRADE-07 | Integration / 3 | An `incomplete` grade whose operator resolves the ingestion failure; plus every **illegal** transition of the grade state model — final reverting to provisional in place, provisional to incomplete without a missing criterion, incomplete to final while `criteria_missing > 0` | The grade recomputes and leaves `incomplete`; every legal transition the design's state model declares succeeds and **every illegal one is refused**; `incomplete` is reachable only from ingestion failure, never from judgment uncertainty | Exhaustive state-transition matrix | P0 |
 | TC-GRADE-23 | FR-GRADE-12 | Integration / 2, negative | An attempt to update a `submission_grade` row in place | Refused; the audit table admits no update or delete either | Exact exception | P0 |
 | TC-GRADE-24 | FR-GRADE-01, FR-GRADE-10 | Observability / 2 | A run finishing with two `incomplete` grades past the window | Grades by state, `boundary_at_risk` count, coverage distribution, finalization path taken and amendment count all emitted; the outstanding-`incomplete` alert fires | Exact signal plus alert | P1 |
+| TC-GRADE-25 | FR-GRADE-07 | Regression / 3 | `compute_one` on a submission with no grade row and no prior `compute_all`: (a) every criterion scored; (b) one criterion unscored | (a) one `provisional` row, revision 1, no queue row; (b) one `incomplete` row and one review-queue row for the unscored criterion under this run. Regression for the unbound `run_id` in the write half of `compute_one` (`NameError`) | Exact rows | P0 |
 
 ### 5.15 Module: Review Queue, Sampling & Label Store (`M-REVIEW`)
 
@@ -4767,7 +4768,7 @@ python .claude/skills/create-test-plan/scripts/check_traceability.py --design do
 | FR-GRADE-04 | TC-GRADE-05, UAT-07, OBS-09 | Unit, UAT, Observability | P0 |
 | FR-GRADE-05 | TC-GRADE-06 | Unit | P0 |
 | FR-GRADE-06 | TC-GRADE-07, TC-GRADE-08, UAT-07 | Unit, Integration, UAT | P0 |
-| FR-GRADE-07 | TC-GRADE-07, TC-GRADE-22 | Unit, Integration | P0 |
+| FR-GRADE-07 | TC-GRADE-07, TC-GRADE-22, TC-GRADE-25 | Unit, Integration | P0 |
 | FR-GRADE-08 | TC-GRADE-07 | Unit, Art | P0 |
 | FR-GRADE-09 | TC-GRADE-09, TC-E2E-03 | Integration, E2E | P0 |
 | FR-GRADE-10 | TC-GRADE-10, TC-GRADE-24 | Integration, Observability | P0 |
@@ -5844,7 +5845,7 @@ rather than leaving to be inferred:
 | TS-36 Confidence inversion, routing and escalation (`M-AGG`) | TC-AGG-06, TC-AGG-07, TC-AGG-08, TC-AGG-09, TC-AGG-10, TC-AGG-11, TC-AGG-12, TC-AGG-13, TC-AGG-14, TC-AGG-15, TC-AGG-16, TC-AGG-17, TC-AGG-18 | TS-00 | yes | 1 |
 | TS-37 Two-level synthesis and the score-claim prohibition (`M-SYNTH`) | TC-SYNTH-01, TC-SYNTH-02, TC-SYNTH-03, TC-SYNTH-04, TC-SYNTH-05, TC-SYNTH-06, TC-SYNTH-07, TC-SYNTH-08, TC-SYNTH-09, TC-SYNTH-10, TC-SYNTH-11, TC-SYNTH-12, ADV-11 | TS-01 | yes | 1 |
 | TS-38 Grade policy, coverage and the no-imputation rule (`M-GRADE`) | TC-GRADE-01, TC-GRADE-02, TC-GRADE-03, TC-GRADE-04, TC-GRADE-05, TC-GRADE-06, TC-GRADE-07, TC-GRADE-08, TC-GRADE-09, TC-GRADE-10, TC-GRADE-11, TC-GRADE-12, TC-GRADE-21 | TS-01 | yes | 1 |
-| TS-39 Revisions, amendment, rollup and export (`M-GRADE`) | TC-GRADE-13, TC-GRADE-14, TC-GRADE-15, TC-GRADE-16, TC-GRADE-17, TC-GRADE-18, TC-GRADE-19, TC-GRADE-20, TC-GRADE-22, TC-GRADE-23, TC-GRADE-24 | TS-01 | yes | 1 |
+| TS-39 Revisions, amendment, rollup and export (`M-GRADE`) | TC-GRADE-13, TC-GRADE-14, TC-GRADE-15, TC-GRADE-16, TC-GRADE-17, TC-GRADE-18, TC-GRADE-19, TC-GRADE-20, TC-GRADE-22, TC-GRADE-23, TC-GRADE-24, TC-GRADE-25 | TS-01 | yes | 1 |
 | TS-40 Budgeted queue, ranking and group actions (`M-REVIEW`) | TC-REVIEW-01, TC-REVIEW-02, TC-REVIEW-03, TC-REVIEW-04, TC-REVIEW-05, TC-REVIEW-06, TC-REVIEW-07, TC-REVIEW-08, TC-REVIEW-09, TC-REVIEW-10, TC-REVIEW-17, TC-REVIEW-18, TC-REVIEW-21, TC-REVIEW-22, TC-REVIEW-23 | TS-01 | yes | 1 |
 | TS-41 Blind-sample integrity and the label store (`M-REVIEW`) | TC-REVIEW-11, TC-REVIEW-12, TC-REVIEW-13, TC-REVIEW-14, TC-REVIEW-15, TC-REVIEW-16, TC-REVIEW-19, TC-REVIEW-20, TC-REVIEW-24, ADV-10, SEC-11 | TS-01 | yes | 1 |
 | TS-42 Admissible labels and hand-computed agreement references (`M-STATS`) | TC-STATS-01, TC-STATS-02, TC-STATS-03, TC-STATS-04, TC-STATS-05, TC-STATS-06, TC-STATS-07, TC-STATS-08, TC-STATS-09, TC-STATS-24, TC-STATS-25, TC-STATS-26 | TS-01 | yes | 1 |
