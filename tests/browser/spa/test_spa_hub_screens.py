@@ -175,11 +175,11 @@ def test_tc_ui_02_the_hub_shows_every_destination_with_live_state_and_no_dead_li
                                 f"({spa.HUB_DESTINATIONS[destination].pattern}); FR-UI-02 wants one")
         text = spa.main_text(page)
         # FR-UI-23: the hub names the store's facts the teacher's way — the current test
-        # by its own name ("test: this test" for an internal-id package) and the last
-        # run's state ("last run: pending"), never a version id.
-        if not re.search(r"test: \S", text):
-            problems.append("the hub does not name the current test in its package card "
-                            "(the context read's live state)")
+        # by its own name ("test: this test" for this world's internal-id package) and
+        # the last run's state ("last run: pending"), never a version id.
+        if "test: this test" not in text:
+            problems.append("the hub does not name the current test from the context "
+                            "read's live state (the package card's 'test: …' fact)")
         if not re.search(r"last run: \S", text):
             problems.append("the hub does not name the last run's state in its run card")
         if not re.search(rf"\b{re.escape(s.run_status)}\b", text, re.I):
@@ -902,6 +902,16 @@ def test_tc_ui_c05_bands_are_editable_band_controls_and_no_screen_takes_a_numeri
                 spa.go_to(page, s.origin, destination)
             except Exception:
                 continue
+            # The results screen's rows (and their band controls) render when the read's
+            # first response lands; a content() taken before that sees the filters'
+            # level options — band-looking text with no control beside it yet. Wait for
+            # the store's own rows, bounded, before judging (this module has no
+            # `_wait_for` — a bounded poll inline, recording, not hanging).
+            if destination == "results" and not page.locator(".result-row").count():
+                deadline = time.monotonic() + 10.0
+                while time.monotonic() < deadline and \
+                        not page.locator(".result-row").count():
+                    page.wait_for_timeout(250)
             html = page.content()
             problems += [f"{destination}: numeric score entry {f!r}"
                          for f in numeric_score_entry_fields(html)]
