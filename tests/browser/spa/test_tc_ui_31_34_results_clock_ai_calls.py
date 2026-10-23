@@ -243,7 +243,12 @@ def test_tc_ui_31_rows_by_question_and_the_exact_average_label(
             if page.locator(".question-stat").count() == 0:
                 problems.append("no per-question bars render")
             if not page.locator("figure.question-bars").count():
-                problems.append("no grade-count chart figure renders")
+                problems.append("no per-question bars figure renders")
+            grade_chart = page.locator("figure.question-bars").filter(
+                has_text="Students per grade.")
+            if not grade_chart.count():
+                problems.append("no grade-count chart figure renders (the served "
+                                "caption 'Students per grade.')")
             if page.locator("figure.distribution").count():
                 problems.append("the pooled rubric-level histogram still renders")
             served = {stat["label"]: stat for stat in doc["question_stats"]}
@@ -251,6 +256,7 @@ def test_tc_ui_31_rows_by_question_and_the_exact_average_label(
                 row = page.locator("li.question-stat").filter(
                     has_text=stat["label"]).first
                 if not row.count():
+                    problems.append(f"no bar renders for {stat['label']}")
                     continue
                 from decimal import ROUND_HALF_UP, Decimal
 
@@ -335,7 +341,10 @@ def test_tc_ui_32_the_not_final_banner_and_the_approval(
                     code = question["not_final_reason"]
                     if code:
                         served_sentences.add(NOT_FINAL_TEXT[code])
-                        cell = page.locator("li.question-cell").filter(
+                        student_row = page.locator("li.result-row").filter(
+                            has_text=student["full_name"] or
+                            (student["student_ref"] or "")).first
+                        cell = student_row.locator("li.question-cell").filter(
                             has_text=question["label"]).first
                         badge = cell.locator(".check-badge").first
                         if not badge.count():
@@ -483,7 +492,7 @@ def test_tc_ui_33_the_clock_the_stage_rows_and_the_formatter(
         with cohort.transaction() as tx:
             tx.execute("UPDATE run SET status = 'complete', "
                        "completed_at = :e WHERE run_id = :r",
-                       e=ended_at, r=seed.run_id)
+                       e=(started_at + timedelta(seconds=300)).isoformat(), r=seed.run_id)
         server = serve_console(store=store, run_id=seed.run_id)
         host, port = server.socket.getsockname()[:2]
         origin = f"http://{host}:{port}"
@@ -619,13 +628,18 @@ def test_tc_ui_34_how_was_this_graded_opens_the_ai_calls_tab(
                             or "The judge's answer" not in text:
                         problems.append("the below-gate judge row's panels are missing")
                     # The Jev row, expanded, names the student and the question.
-                    row = page.locator("li.ai-call-row").filter(
-                        has_text="jev").first
+                    row = page.locator("li.ai-call-row.ai-call-jev_decision").first
                     if row.count():
                         summary = row.locator("summary").inner_text()
                         if student_name not in summary:
                             problems.append(f"the Jev row's heading does not name the "
                                             f"student ({summary[:80]!r})")
+                        # The rows were expanded above; the answer's own text rides
+                        # the open row.
+                        if "Chose: full" not in row.inner_text():
+                            problems.append("the Jev row's answer does not name the "
+                                            "argmax band (the served probabilities' own "
+                                            "argmax)")
                     # The copy arm: press the first Copy and read the page's status.
                     copy = page.get_by_role("button", name="Copy").first
                     if not copy.count():
