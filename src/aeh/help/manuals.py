@@ -54,6 +54,11 @@ MANIFEST: tuple[ManualRecord, ...] = (
         path="console-operating-tutorial.md",
     ),
     ManualRecord(
+        manual_id="logs-tutorial",
+        title="Reading the AI-call log",
+        path="logs-tutorial.md",
+    ),
+    ManualRecord(
         manual_id="deployment-tutorial",
         title="Deployment tutorial",
         path="deployment-tutorial.md",
