@@ -10,7 +10,9 @@ screen's whole-package summary and seen approval, and the package switcher's nam
   approve disabled while a piece stands, then FR-CONSOLE-73's banner inside the viewport
   with **Load papers**, the Approve control gone, and a reload keeping the state.
 * **TC-UI-30 / TC-REG-19** — the switcher option text: exactly "ENG7-READ-01", with two
-  versions "ENG7-READ-01 — version 2", a `pkg-` id reading "Test package 1".
+  versions "ENG7-READ-01 — version 2", a `pkg-` id reading the ordinal fallback
+  ("Test package <k>", 1-based by the switcher's own sorted order — this world's pkg-
+  ledger sorts second, so "Test package 2").
 * **TC-REG-17** — the authoring screen leaks no "(FR-" and no "never invented" while the
   question text is present.
 
@@ -206,12 +208,13 @@ def test_tc_ui_29_the_whole_package_then_the_published_banner(
             text = _review_text(page)
             # The summary, in the design's order (FR-UI-26): the test, the approver,
             # the passing score, the questions with their total, the scoring.
-            for part in ("Test ENG7-READ-01", "(your answer)", "Passing score 6 of 8",
-                         "Questions", "8 points in total", "How each question is scored"):
+            for part in ("Test ENG7-READ-01", "Approved by", "(your answer)",
+                         "Passing score 6 of 8", "Questions", "8 points in total",
+                         "How each question is scored"):
                 if part not in text:
                     problems.append(f"the summary does not show {part!r}")
             order = [text.index(part) for part in
-                     ("Test ENG7-READ-01", "Passing score 6 of 8",
+                     ("Test ENG7-READ-01", "Approved by", "Passing score 6 of 8",
                       "How each question is scored")]
             if order != sorted(order):
                 problems.append(f"the summary's parts are out of order ({order})")
