@@ -215,13 +215,17 @@ def _favourable_signals() -> Any:
 def seed_jev_final(store: Any, *, consent_class: str = "synthetic",
                    package: tuple[str, str] | None = None,
                    kinds: dict[str, str] | None = None,
-                   jev_final_on_accept: bool | None = None) -> JevFinalSeed:
+                   jev_final_on_accept: bool | None = None,
+                   bands: dict[str, dict[str, str]] | None = None) -> JevFinalSeed:
     """Seed one ENG7 cohort with the Jev-final cells (the module docstring's table).
 
     `package` reuses an ENG7 version an earlier call built (a second administration);
     otherwise the shipped spec is built. `kinds` replaces `CELL_KINDS` (line -> kind) for a
     variant seed, e.g. every line an accepted decision (TC-AGG-30's all-Jev-final student);
-    `jev_final_on_accept` passes FR-AGG-20's knob to `aggregate` (default: its own default). Deterministic: every id is derived from the
+    `jev_final_on_accept` passes FR-AGG-20's knob to `aggregate` (default: its own default);
+    `bands` replaces `SEED_BANDS` (student -> criterion -> band) and names the cohort's
+    students by its own keys — the class size a stats world needs, without touching the
+    seed's own roll-up expectations. Deterministic: every id is derived from the
     consent class and the student name, and every timestamp the seed writes is `STAMP`."""
     from aeh.agg import aggregate, write_score
     from aeh.conf import CohortRef, resolve_run_config
@@ -232,11 +236,13 @@ def seed_jev_final(store: Any, *, consent_class: str = "synthetic",
 
     cohort_id = COHORTS[consent_class]
     package_id, version = package if package is not None else build_eng7_package(store)
-    refs = {name: f"ref-{name.lower()}" for name in STUDENTS}
+    cell_bands = dict(SEED_BANDS if bands is None else bands)
+    names = tuple(cell_bands)
+    refs = {name: f"ref-{name.lower()}" for name in names}
     create_cohort(store, cohort_id, consent_class,
-                  [RosterEntry(full_name=name, student_ref=refs[name]) for name in STUDENTS],
+                  [RosterEntry(full_name=name, student_ref=refs[name]) for name in names],
                   created_at=STAMP)
-    submissions = {name: f"sub-{cohort_id}-{name.lower()}" for name in STUDENTS}
+    submissions = {name: f"sub-{cohort_id}-{name.lower()}" for name in names}
     cohort = store.cohort(cohort_id)
     with cohort.transaction() as tx:
         for name, submission_id in submissions.items():
@@ -261,7 +267,7 @@ def seed_jev_final(store: Any, *, consent_class: str = "synthetic",
         for name, submission_id in submissions.items():
             for criterion_id, kind in cell_kinds.items():
                 criterion = criteria[criterion_id]
-                band = SEED_BANDS[name][criterion_id]
+                band = cell_bands[name][criterion_id]
                 verdicts = _cell_verdicts(kind, submission_id, criterion, band)
                 for verdict in verdicts:
                     if verdict.scoring_engine == "decision":
