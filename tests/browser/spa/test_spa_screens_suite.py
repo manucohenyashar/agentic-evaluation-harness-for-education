@@ -461,7 +461,7 @@ def _settings_config_toml() -> str:
     the settings screen shows is what the file holds. The recorded builds keep the profile
     resolvable; the citation question limit is the row the round-trip edits."""
     return f"""\
-prompt_template_v = "judge-prompt/3"
+prompt_template_v = "judge-prompt/4"
 
 [profiles.dev-ci]
 HARNESS_COST_CEILING = 5

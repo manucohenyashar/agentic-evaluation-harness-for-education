@@ -84,6 +84,9 @@ DECLARED_VERDICT_COLUMNS: tuple[str, ...] = (
     # Still no points column.
     "scoring_engine",
     "engine_build",
+    # CT-JUDGE-32 (statistical-validity delta FR-JUDGE-40, cohort migration 36, J1): whether a
+    # cited span was re-anchored to its quoted text. Still no points column.
+    "reanchored",
 )
 
 

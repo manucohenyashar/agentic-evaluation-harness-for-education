@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import re
 from dataclasses import dataclass
 from typing import Any
 
-from aeh.integ import verify_span
+from aeh.integ import answer_regions, clear_of_region_markup, relocate_span, verify_span
 from aeh.prov import MalformedResponseError, PromptPayload, json_from_reply
 from aeh.setup import SETUP_MAGNITUDE_PHRASES
 
 from .errors import ProseAssessmentError
-from .request import ScoringRequest, _sequence_of, _span_of
-from .prompt import REPLY_FIELDS
+from .request import ScoringRequest, _sequence_of
+from .prompt import CITED_SPAN_KEYS, REPLY_FIELDS
 from .assembly import _canonical_document_bytes, _pseudonymize
 
 
@@ -94,6 +95,29 @@ def _prose_only(assessment: str, cited: tuple, request: ScoringRequest) -> bool:
     )
 
 
+def _cited_span_of(raw: Any, *, where: str) -> dict:
+    """Check one reply citation against the declared shape (`CITED_SPAN_FIELDS`, FR-JUDGE-42) and
+    return it unchanged: a mapping whose keys are within `CITED_SPAN_KEYS`, with integer `start`
+    and `end` and, when present, string `text`. `text` may be absent: offsets copied from an
+    offered extracted span take that span's words at the citation gate (FR-JUDGE-41). A
+    verdict-like key is refused, so no verdict can travel through the citation channel."""
+    if not isinstance(raw, dict):
+        raise TypeError(f"{where} must be a mapping of span fields, got {type(raw).__name__}")
+    unknown = sorted(set(raw) - CITED_SPAN_KEYS)
+    if unknown:
+        raise ValueError(
+            f"{where} carries key(s) {unknown} outside the declared citation shape "
+            f"{sorted(CITED_SPAN_KEYS)}"
+        )
+    for key in ("start", "end"):
+        value = raw.get(key)
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(f"{where} {key} must be an integer byte offset, got {value!r}")
+    if "text" in raw and not isinstance(raw["text"], str):
+        raise ValueError(f"{where} text must be a string, got {type(raw['text']).__name__}")
+    return raw
+
+
 def _verdict_of(text: str, request: ScoringRequest) -> _Verdict:
     """Parse one judge reply and check it against the pinned response contract.
 
@@ -125,7 +149,7 @@ def _verdict_of(text: str, request: ScoringRequest) -> _Verdict:
         )
     try:
         cited = tuple(
-            _span_of(span, where=f"reply cited_spans[{index}]")
+            _cited_span_of(span, where=f"reply cited_spans[{index}]")
             for index, span in enumerate(
                 _sequence_of(reply["cited_spans"], "cited_spans")
             )
@@ -212,28 +236,107 @@ def _verifies_as_pseudonymized(raw: bytes, span: Any, name: Any, ref: Any) -> bo
     return name in stored and _pseudonymize(stored, name, ref) == text
 
 
-def _refuse_unverified_citations(
-    cited: tuple, request: ScoringRequest, store: Any, roster_name: Any = None
-) -> None:
-    """Check every cited span, byte for byte, against the canonical document, and refuse the reply
-    if any fails (FR-JUDGE-17): a forged citation fails. It uses M-INTEG's `verify_span`, the one
-    implementation of this check (FR-INTEG-01).
+def _span_field(span: Any, key: str) -> Any:
+    """One field of a span given as a mapping or as an object; None when it has none."""
+    return span.get(key) if isinstance(span, dict) else getattr(span, key, None)
 
-    A reply that cites NOTHING passes vacuously — an uncited verdict is `FR-JUDGE-12`'s
-    marked downgrade, not a verification failure. A reply that cites anything cannot
-    become a verdict until each citation's bytes are the document's own: `verify_span`
-    demands `0 <= start <= end <= len(raw)` AND `raw[start:end] == text` — text the
-    document never carried, or offsets it does not hold, verify False. An unresolvable
-    document (no store bound, no document row, a missing blob) makes every citation
-    unverifiable and refuses the reply — fail-closed in both directions, because an
-    unverifiable citation is indistinguishable from a forged one. Every refusal here is
-    a `MalformedResponseError`, the same strike the dispatch loop already knows: the
-    obeying reply is ROUTED out (refused, re-requested, quarantined at budget
-    exhaustion — never persisted, so no verdict row and no confidence exists for
-    M-AGG's auto-accept threshold to see).
+
+def _with_fields(span: Any, **fields: Any) -> Any:
+    """A copy of the span with the given fields replaced, in the span's own form. Every other key
+    (`region_kind` among them) is kept as it was."""
+    if isinstance(span, dict):
+        return {**span, **fields}
+    if dataclasses.is_dataclass(span) and not isinstance(span, type):
+        return dataclasses.replace(span, **fields)
+    return {"start": _span_field(span, "start"), "end": _span_field(span, "end"),
+            "text": _span_field(span, "text"), **fields}
+
+
+def _offered_spans(request: Any) -> tuple:
+    """Every extracted span this unit's request offered the judge: its own evidence and its
+    dependency parents' (FR-JUDGE-41's "offered in that unit's request")."""
+    offered = list(getattr(request, "evidence", ()) or ())
+    for entry in getattr(request, "dependency_evidence", ()) or ():
+        offered.extend(getattr(entry, "spans", ()) or ())
+    return tuple(offered)
+
+
+def _with_offered_text(span: Any, request: Any) -> Any:
+    """FR-JUDGE-41: a citation with no `text` whose `(start, end)` equals an offered extracted
+    span's offsets takes that span's text (as offered, so pseudonymized when assembly rewrote
+    it). A text-less citation matching no offered span is returned as it is, and fails
+    verification. A citation that carries text is returned as it is."""
+    if isinstance(_span_field(span, "text"), str):
+        return span
+    start, end = _span_field(span, "start"), _span_field(span, "end")
+    for offered in _offered_spans(request):
+        text = _span_field(offered, "text")
+        if (_span_field(offered, "start") == start and _span_field(offered, "end") == end
+                and isinstance(text, str)):
+            return _with_fields(span, text=text)
+    return span
+
+
+def _relocated(raw: bytes, span: Any, region: Any, name: Any, ref: Any) -> Any:
+    """The citation re-anchored to the unique occurrence of its quoted words in the unit's region
+    (FR-JUDGE-40 composing `relocate_span`, FR-INTEG-13), or None.
+
+    The quote is tried as the document's own bytes first. A quote of pseudonymized evidence
+    carries the ref where the document holds the roster name (#593), so with this unit's name
+    known it is tried again with the name restored, and accepted only if the found bytes,
+    pseudonymized, are exactly the quote."""
+    found = relocate_span(raw, span, region)
+    if found is not None:
+        return _with_fields(span, start=found.start, end=found.end)
+    text = _span_field(span, "text")
+    if not (isinstance(name, str) and name and isinstance(ref, str) and ref
+            and isinstance(text, str) and ref in text):
+        return None
+    found = relocate_span(raw, {"text": text.replace(ref, name)}, region)
+    if found is None or _pseudonymize(found.text, name, ref) != text:
+        return None
+    return _with_fields(span, start=found.start, end=found.end)
+
+
+#: `question_id` default for a caller that names no unit question: relocation searches the whole
+#: document (FR-INTEG-13's `region=None`). The worker always names it.
+_NO_QUESTION_GIVEN = None
+
+
+def _refuse_unverified_citations(
+    cited: tuple, request: ScoringRequest, store: Any, roster_name: Any = None, *,
+    question_id: "str | None" = _NO_QUESTION_GIVEN,
+) -> "tuple[tuple, bool]":
+    """Accept every cited span against the canonical document, or refuse the reply (FR-JUDGE-17,
+    FR-JUDGE-40). Returns the spans to store and whether any was relocated (`reanchored`).
+
+    Per span, in order:
+
+    1. A span with no `text` whose offsets equal an offered extracted span's takes that
+       span's text (FR-JUDGE-41).
+    2. It is accepted as cited when its text is the document's own bytes at its offsets
+       (M-INTEG's `verify_span`, the one implementation of that check, FR-INTEG-01) or the
+       pseudonymized form of them (#593), and it includes no region-marker byte
+       (`clear_of_region_markup`, FR-INTEG-14).
+    3. Otherwise it is re-anchored to the unique occurrence of its quoted words within the
+       unit's answer region (`relocate_span`, FR-INTEG-13, ADR-54/63) and stored at those
+       offsets: the offsets never win over the words.
+    4. Otherwise the reply is refused, exactly as before this change.
+
+    The region: with `question_id` naming the unit's question, the answer text of the
+    document's regions tagged with it (`answer_regions`; a quote found only in another
+    question's answer is not evidence for this criterion, D7). An empty `question_id` (a
+    criterion that grades the submission directly) or none given searches the whole document.
+
+    A reply that cites NOTHING passes vacuously: an uncited verdict is `FR-JUDGE-12`'s marked
+    downgrade, not a verification failure. An unresolvable document (no store bound, no
+    document row, a missing blob) refuses every citing reply, fail-closed, because an
+    unverifiable citation is indistinguishable from a forged one. Every refusal is a
+    `MalformedResponseError`, the strike the dispatch loop already knows: the reply is routed
+    out (refused, re-requested, quarantined at budget exhaustion), never persisted.
     """
     if not cited:
-        return
+        return (), False
     raw = _canonical_document_bytes(store, request.submission.submission_id)
     if raw is None:
         raise MalformedResponseError(
@@ -243,16 +346,28 @@ def _refuse_unverified_citations(
             f"(FR-INTEG-01 fail-closed, FR-JUDGE-17)"
         )
     ref = request.submission.student_ref
+    region = answer_regions(raw, question_id) if question_id else None
+    accepted: list[Any] = []
+    reanchored = False
     for index, span in enumerate(cited):
-        if not verify_span(raw, span) and not _verifies_as_pseudonymized(
-                raw, span, roster_name, ref):
-            raise MalformedResponseError(
-                f"judge reply cites span {index} {span!r} which fails byte-exact "
-                f"verification against the canonical document — the cited text is not "
-                f"the document's own bytes at those offsets (FR-INTEG-01, FR-JUDGE-17: "
-                f"a forged citation fails span verification and the reply is refused, "
-                f"never accepted)"
-            )
+        span = _with_offered_text(span, request)
+        if ((verify_span(raw, span) or _verifies_as_pseudonymized(raw, span, roster_name, ref))
+                and clear_of_region_markup(raw, span)):
+            accepted.append(span)
+            continue
+        relocated = _relocated(raw, span, region, roster_name, ref)
+        if relocated is not None:
+            accepted.append(relocated)
+            reanchored = True
+            continue
+        raise MalformedResponseError(
+            f"judge reply cites span {index} {span!r} which fails byte-exact "
+            f"verification against the canonical document, and its quoted text has no "
+            f"unique occurrence in the unit's answer region to re-anchor to (FR-INTEG-01, "
+            f"FR-INTEG-13, FR-JUDGE-17: a forged citation fails span verification and the "
+            f"reply is refused, never accepted)"
+        )
+    return tuple(accepted), reanchored
 
 
 # --- the assessment re-request (FR-JUDGE-10's one amendment) -------------------------------------

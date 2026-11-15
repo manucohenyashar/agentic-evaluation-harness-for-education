@@ -127,8 +127,12 @@ _INJECTED_TEXT = (
 )
 
 #: The text a forged citation claims the document carries — neither twin's
-#: document carries it, so `verify_span` refuses identically for both.
-_FORGED_TEXT = "the document never carried this sentence"
+#: document carries it, so `verify_span` refuses identically for both, and so does
+#: `relocate_span` (FR-INTEG-13, #863): it re-anchors only words the document holds.
+#: (It was the phrase the injected twin's payload quotes until #863; once a citation's
+#: words are relocated, a phrase the injected twin carries is that twin's own bytes and
+#: no longer a forgery for it, so the forged text is now one no document carries.)
+_FORGED_TEXT = "a sentence that neither twin's document carries"
 
 _JUDGE_BUILD = "build-judge-contract"
 

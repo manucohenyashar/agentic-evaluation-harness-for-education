@@ -52,6 +52,10 @@ class ScoringResult:
     scoring_engine: str = "llm"
     engine_build: str | None = None
     prescreen_outcome: str | None = None
+    #: FR-JUDGE-40 (migration J1): whether any cited span was re-anchored to the unique
+    #: occurrence of its quoted text (`relocate_span`). The cited spans are always the stored,
+    #: verifying offsets; this says whether the judge's own offsets were wrong.
+    reanchored: bool = False
 
 
 @dataclass(frozen=True)
@@ -72,6 +76,8 @@ class StoredVerdict:
     #: FR-AGG-20: the accepted decision's gate value, `min(c_band, c_sufficient)`, from its
     #: pre-screen row. `None` for an LLM verdict.
     gate_confidence: float | None = None
+    #: FR-JUDGE-40 / CT-JUDGE-32: whether any stored span was re-anchored; a pre-J1 row reads False.
+    reanchored: bool = False
 
     @property
     def ordinal(self) -> int:
@@ -103,6 +109,7 @@ def verdicts_for(
             scoring_engine=row["scoring_engine"] or "llm",
             gate_confidence=(None if row["gate_confidence"] is None
                              else float(row["gate_confidence"])),
+            reanchored=bool(row["reanchored"]),
         )
         for row in rows
     )

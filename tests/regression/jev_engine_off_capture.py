@@ -40,6 +40,14 @@ JSON reply shape (`extract-prompt/3`) and the judge directive names its five rep
 The other 10 keys and every other value, the verdict rows included, are byte-identical, checked
 by diff; every recorded reply in the five corpora is byte-identical too.
 
+**Re-blessed at #863 (2026-11-15), consciously.** The judge directive now declares each cited
+span's quoted words (`{start, end, text}`, `judge-prompt/4`, FR-JUDGE-40), so the 26 judge
+fixture keys moved. They were re-keyed, not re-captured: each recording's request had the old
+declared shape replaced by the new one and its key recomputed with `request_key`, the reply left
+untouched. The 22 other keys and every other value are byte-identical, checked by diff; the 302
+re-keyed recordings' replies are byte-identical, with the sha256 manifest in
+`baselines/judge_prompt_4_rekey.json`.
+
 Every value in the snapshot is deterministic across drives (three captures at `fb12d1e` were
 byte-identical). Two things are projected. Measured latency is dropped. A wall-clock stamp
 (`*_at`) is reduced to whether it is set, because set-versus-null is behaviour and the instant

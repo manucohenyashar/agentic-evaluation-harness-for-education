@@ -50,7 +50,7 @@ from tests.support.conf_builders import (
 #: through every edit untouched.
 TOML_TEXT = """\
 # Test configuration: every comment here must survive the splice byte-for-byte.
-prompt_template_v = "judge-prompt/3"
+prompt_template_v = "judge-prompt/4"
 
 [profiles.cloud-hosted]
 HARNESS_COST_CEILING = 50

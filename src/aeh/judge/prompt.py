@@ -85,10 +85,36 @@ _ESCAPED_UNTRUSTED_CLOSE = "<\\/" + UNTRUSTED_CLOSE[2:]
 _ESCAPED_UNTRUSTED_OPEN = "<\\/" + UNTRUSTED_OPEN[1:]
 
 
+#: One cited span's fields, in order, with what each holds: the ONE definition of the citation
+#: shape (FR-JUDGE-40/42, CT-JUDGE-31). The prompt's declared `cited_spans` shape is rendered
+#: from it and the parser's accepted keys are derived from it (`CITED_SPAN_KEYS`), so the two
+#: cannot drift apart again. They did once: `a56e74c` declared `{start, end}` while the verifier
+#: needs the quoted words, and every citing live reply was refused (SV-11). `text` is the quote
+#: that `relocate_span` re-anchors a mis-counted offset to (ADR-54).
+CITED_SPAN_FIELDS: tuple[tuple[str, str], ...] = (
+    ("start", "<byte offset>"),
+    ("end", "<byte offset>"),
+    ("text", '"<the exact words quoted from the student\'s answer>"'),
+)
+
+
+#: The keys a reply's cited span may carry: the declared fields, plus `region_kind`, the
+#: evidence-span schema's one extra key. Every recorded judge reply carries `region_kind` beside
+#: the declared fields (302 of 302 at judge-prompt/4), and those replies stay byte-identical, so
+#: it is tolerated, never declared. `start` and `end` are required; `text` may be absent only
+#: for offsets copied from an offered extracted span (FR-JUDGE-41).
+CITED_SPAN_KEYS: frozenset[str] = frozenset(name for name, _ in CITED_SPAN_FIELDS) | {"region_kind"}
+
+
+def _cited_span_shape() -> str:
+    """The declared `cited_spans` shape, rendered from `CITED_SPAN_FIELDS`."""
+    return "[{" + ", ".join(f'"{name}": {holds}' for name, holds in CITED_SPAN_FIELDS) + "}]"
+
+
 #: What each reply field holds, keyed by `REPLY_FIELDS` (TC-REG-16). Numeral-free, like the
 #: rest of the invariant prefix.
 _REPLY_FIELD_SHAPES: dict[str, str] = {
-    "cited_spans": '[{"start": <byte offset>, "end": <byte offset>}]',
+    "cited_spans": _cited_span_shape(),
     "evidence_assessment": '"<which cited spans support the band, or the band condition that'
                            ' holds>"',
     "evidence_sufficient": "true or false",

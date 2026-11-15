@@ -219,6 +219,29 @@ def _rubric_of(
     )
 
 
+def _unit_question_id(store: Any, work_id: str, criterion_id: str) -> "str | None":
+    """The question the unit's criterion belongs to, read the way `_rubric_of` reads it: `""` for
+    a criterion that grades the submission directly, and None when it cannot be resolved (no
+    store, no ledger row, no run row). The citation gate scopes relocation to that question's
+    answer region (ADR-63); the request itself never carries it (the whitelist is closed)."""
+    if store is None:
+        return None
+    try:
+        cohort = _find_cohort(store, work_id)
+        run_id = cohort.query(JUDGE_STATEMENTS["select_work_unit"], work_id=work_id)[0]["run_id"]
+        run_rows = cohort.query(JUDGE_STATEMENTS["select_judge_run"], run_id=run_id)
+        if not run_rows:
+            return None
+        package_id = run_rows[0]["package_id"]
+        catalog = PackageCatalog(store.package(package_id), package_id=package_id)
+        for row in catalog.criteria(run_rows[0]["package_version_id"]):
+            if row.get("criterion_id") == criterion_id:
+                return str(row.get("question_id") or "")
+        return ""
+    except Exception:
+        return None
+
+
 def _evidence_spans(cohort: Any, run_id: str, submission_id: str, criterion_id: str) -> tuple:
     """The spans extracted for one (run, submission, criterion). Extraction has no judge dimension
     (FR-EXTRACT-02), so every judge on the panel reads exactly the same evidence (CT-EXTRACT-03).

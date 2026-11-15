@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+from dataclasses import dataclass
 from typing import Any
 
 
@@ -134,3 +136,175 @@ def verify_span(doc: Any, span: Any) -> bool:
         return raw[start:end] == text_bytes
     except Exception:
         return False
+
+
+# --- region markup and quote-anchored relocation (FR-INTEG-13/14, CT-INTEG-19/20) ------------------
+
+
+@dataclass(frozen=True)
+class Span:
+    """A byte span of the canonical document and the text it addresses: what `relocate_span` and
+    `answer_regions` return. `verify_span(doc, span)` holds for every `Span` they return."""
+
+    start: int
+    end: int
+    text: str
+
+
+#: The ingest region-marker protocol (`aeh.ingest`'s `REGION_OPEN` / `REGION_CLOSE`), restated here
+#: as bytes rather than imported: M-INTEG certifies what the extractor produced and shares no code
+#: path with the modules that produce it (CT-INTEG-05). A header is `<!-- region: ... -->` with its
+#: attributes; the close is exactly `<!-- /region -->`.
+_REGION_HEADER = re.compile(rb"<!-- region:[^>]*?-->")
+
+
+_REGION_CLOSE = b"<!-- /region -->"
+
+
+#: One whole region: its header, its answer body, its close. The body is the region's answer text.
+_REGION_BLOCK = re.compile(
+    rb"<!-- region:(?P<header>[^>]*?)-->(?P<body>.*?)" + re.escape(_REGION_CLOSE),
+    re.DOTALL,
+)
+
+
+def _marker_extents(raw: bytes) -> "list[tuple[int, int]]":
+    """The byte extents of every region marker in the document: headers and closes."""
+    extents = [(match.start(), match.end()) for match in _REGION_HEADER.finditer(raw)]
+    position = raw.find(_REGION_CLOSE)
+    while position != -1:
+        extents.append((position, position + len(_REGION_CLOSE)))
+        position = raw.find(_REGION_CLOSE, position + 1)
+    return extents
+
+
+def _overlaps_marker(raw: bytes, start: int, end: int) -> bool:
+    """Whether the byte range `[start, end)` includes any byte of a region marker. A zero-length
+    range includes no byte, so it never overlaps."""
+    return any(start < marker_end and marker_start < end
+               for marker_start, marker_end in _marker_extents(raw))
+
+
+def _offsets_of(item: Any) -> "tuple[int, int] | None":
+    """`(start, end)` from a mapping or an object with integer offsets, or None."""
+    if isinstance(item, dict):
+        start, end = item.get("start"), item.get("end")
+    else:
+        start, end = getattr(item, "start", None), getattr(item, "end", None)
+    if (isinstance(start, int) and isinstance(end, int)
+            and not isinstance(start, bool) and not isinstance(end, bool)):
+        return (start, end)
+    return None
+
+
+def clear_of_region_markup(doc: Any, span: Any) -> bool:
+    """Whether the span includes no byte of an ingest region marker (FR-INTEG-14, CT-INTEG-20).
+
+    The companion predicate to `verify_span`, which stays the strict byte-equality check
+    (FR-INTEG-01): a citation is accepted only when both hold. A span ending exactly where a
+    marker begins, or starting exactly where one ends, is clear; one byte into either side is
+    not. Pure and never raises: an unreadable document or a malformed span is not clear
+    (fail-closed, like `verify_span`)."""
+    try:
+        raw = _document_raw_bytes(doc)
+        offsets = _offsets_of(span)
+        if raw is None or offsets is None:
+            return False
+        return not _overlaps_marker(raw, *offsets)
+    except Exception:
+        return False
+
+
+def answer_regions(doc: Any, question_id: str) -> "tuple[Span, ...]":
+    """The answer text of every region tagged `question_id=<question_id>`, in document order.
+
+    Each `Span` covers the region's BODY only (the bytes between its header's `-->` and its
+    `<!-- /region -->`), so no marker byte is inside it. This is the `region` the judge hands
+    `relocate_span` (ADR-63). A document with no region tagged for the question gives the empty
+    tuple, and a relocation scoped to it finds nothing. Pure and never raises."""
+    try:
+        raw = _document_raw_bytes(doc)
+        if raw is None or not isinstance(question_id, str) or not question_id:
+            return ()
+        wanted = f"question_id={question_id}".encode("utf-8")
+        regions: list[Span] = []
+        for match in _REGION_BLOCK.finditer(raw):
+            if wanted not in match.group("header").split():
+                continue
+            start, end = match.start("body"), match.end("body")
+            try:
+                text = raw[start:end].decode("utf-8")
+            except UnicodeDecodeError:
+                continue
+            regions.append(Span(start=start, end=end, text=text))
+        return tuple(regions)
+    except Exception:
+        return ()
+
+
+def _region_extents(region: Any) -> "list[tuple[int, int]] | None":
+    """The byte extents a `region` argument names: None for no region (search the whole document),
+    one extent for an object or mapping with integer `start`/`end`, or one per member of a sequence
+    of them. A malformed member contributes nothing, so a bad region narrows the search to nothing
+    rather than widening it to the document."""
+    if region is None:
+        return None
+    single = _offsets_of(region)
+    if single is not None:
+        return [single]
+    if isinstance(region, (str, bytes, bytearray, dict)):
+        return []
+    try:
+        members = tuple(region)
+    except TypeError:
+        return []
+    return [found for found in (_offsets_of(member) for member in members) if found is not None]
+
+
+def relocate_span(doc: Any, span: Any, region: Any = None) -> "Span | None":
+    """The span over the UNIQUE occurrence of `span`'s quoted text, or None (FR-INTEG-13).
+
+    For a citation whose offsets are wrong but whose words are the document's own (a model
+    cannot count bytes, ADR-54). The search is byte-exact (no case folding, no whitespace or
+    Unicode normalization), so forgery protection is unchanged: the returned span's bytes ARE
+    the quoted text, and `verify_span(doc, result)` holds.
+
+    `region` scopes the search (ADR-63, D7). With the unit's region (a `Span`, or anything with
+    integer `start`/`end` byte offsets of its answer text, or a sequence of them) only
+    occurrences lying wholly inside it count, so a quote found only in another question's
+    answer is None. With `region=None` the whole document is searched (callers without a
+    region).
+
+    None when the text is missing or empty, occurs zero times or more than once (overlapping
+    occurrences count: a relocation is never a guess), or when the unique occurrence includes
+    region-marker bytes (FR-INTEG-14). Pure, model-free, zero-cost and never raises, like
+    `verify_span` (CT-INTEG-19); `verify_span` itself is unchanged."""
+    try:
+        raw = _document_raw_bytes(doc)
+        if raw is None:
+            return None
+        text = span.get("text") if isinstance(span, dict) else getattr(span, "text", None)
+        if not isinstance(text, str) or not text:
+            return None
+        needle = text.encode("utf-8")
+        extents = _region_extents(region)
+        if extents is None:
+            extents = [(0, len(raw))]
+        hits: set[int] = set()
+        for low, high in extents:
+            low, high = max(low, 0), min(high, len(raw))
+            position = raw.find(needle, low)
+            while position != -1 and position + len(needle) <= high:
+                hits.add(position)
+                if len(hits) > 1:
+                    return None
+                position = raw.find(needle, position + 1)
+        if len(hits) != 1:
+            return None
+        start = hits.pop()
+        end = start + len(needle)
+        if _overlaps_marker(raw, start, end):
+            return None
+        return Span(start=start, end=end, text=text)
+    except Exception:
+        return None
