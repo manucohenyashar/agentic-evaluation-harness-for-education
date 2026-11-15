@@ -37,7 +37,7 @@ import aeh.pkg, aeh.review, aeh.synth  # noqa: E401,F401
 from aeh.review import open_review
 from aeh.store import open_store
 from tests.contract.grade._drive import current_grades, graded_run, set_boundaries
-from tests.support.grade_vocabulary import write_criterion_scores
+from tests.support.grade_vocabulary import write_scored_cells
 from tests.support.orch_run import newest_run_id, ORCH_COHORT_ID, seed_run
 
 pytestmark = [pytest.mark.contract, pytest.mark.integration]
@@ -75,7 +75,7 @@ def test_tc_req_53_a_review_action_reduces_provisional_through_criterion_score_a
     store = open_store(tmp_data_dir)
     try:
         _, run_id, _ = seed_run(store, submissions=("S1", "S2"), criteria=({"criterion_id": "C1", **OPEN},))
-        write_criterion_scores(store.cohort(ORCH_COHORT_ID),
+        write_scored_cells(store.cohort(ORCH_COHORT_ID),
                                [("S1", "C1", "B2", 25.0, "provisional"), ("S2", "C1", "B3", 50.0, "provisional")])
         open_grade(store).compute_all(run_id)
     finally:
@@ -173,7 +173,7 @@ def test_tc_req_59_labels_from_the_real_flows_carry_the_columns_admissibility_re
     try:
         subs = tuple(f"S{i:02d}" for i in range(6))
         seed_run(store, submissions=subs, criteria=({"criterion_id": "C1", **OPEN},))
-        write_criterion_scores(store.cohort(ORCH_COHORT_ID),
+        write_scored_cells(store.cohort(ORCH_COHORT_ID),
                                [(s, "C1", "B2", 25.0, "provisional") for s in subs[:3]]
                                + [(s, "C1", b, 0.0, "provisional") for s, b in zip(subs[3:], ("B1", "B3", "B5"))])
     finally:
@@ -281,7 +281,7 @@ def test_tc_req_77_the_console_blind_flow_has_no_query_path_to_system_output(tmp
     store = open_store(tmp_data_dir)
     try:
         _, run_id, _ = seed_run(store, submissions=("S01", "S02"), criteria=({"criterion_id": "C1", **OPEN},))
-        write_criterion_scores(store.cohort(ORCH_COHORT_ID),
+        write_scored_cells(store.cohort(ORCH_COHORT_ID),
                                [("S01", "C1", "B4", 75.0, "provisional"), ("S02", "C1", "B2", 25.0, "provisional")])
     finally:
         store.close()
