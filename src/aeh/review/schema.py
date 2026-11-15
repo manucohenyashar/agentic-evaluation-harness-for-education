@@ -73,7 +73,7 @@ REVIEW_STATEMENTS: dict[str, Statement] = {
     # #518 review: the blind labels of a run that still lack the system band — the ones a
     # failed join left behind — so any later submit or resubmit repairs them.
     "select_unbanded_blind_labels": Statement(
-        "SELECT label_id, student_ref, criterion_id, teacher_band FROM label "
+        "SELECT label_id, score_id, student_ref, criterion_id, teacher_band FROM label "
         "WHERE run_id = :run_id AND label_type = 'blind' AND system_band IS NULL "
         "ORDER BY label_id"
     ),
@@ -90,8 +90,21 @@ REVIEW_STATEMENTS: dict[str, Statement] = {
         "WHERE run_id = :run_id AND score_id = :score_id ORDER BY rowid DESC LIMIT 1"
     ),
     "select_blind_labels_for_run": Statement(
-        "SELECT label_id, student_ref, criterion_id FROM label "
+        "SELECT label_id, score_id, student_ref, criterion_id FROM label "
         "WHERE run_id = :run_id AND label_type = 'blind' ORDER BY label_id"
+    ),
+    # FR-REVIEW-25 (#867): the label's student is the roster ref the submission belongs to,
+    # never the submission id itself. Read from the cohort file that holds the submission.
+    "select_submission_student_ref": Statement(
+        "SELECT student_ref FROM submission WHERE submission_id = :submission_id"
+    ),
+    # FR-REVIEW-25 (#867): a label's origin is derived from the cell's scoring work units —
+    # `base` only, plus `escalation`, or plus `random_arm` (FR-ORCH-11). No row means the
+    # provenance cannot be derived, and the label is refused rather than defaulted.
+    "select_cell_work_unit_origins": Statement(
+        "SELECT DISTINCT origin FROM work_unit WHERE run_id = :run_id "
+        "AND submission_id = :submission_id AND criterion_id = :criterion_id "
+        "AND stage = 'score'"
     ),
     "insert_label": Statement(
         "INSERT INTO label (label_id, run_id, student_ref, criterion_id, "

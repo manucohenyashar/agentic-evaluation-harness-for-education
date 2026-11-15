@@ -158,6 +158,21 @@ def write_criterion_scores(handle: Any, rows: Sequence[tuple]) -> None:
                 r=routing,
                 st=ROUTING_TO_STATE[routing],
             )
+            # A score row exists because its base scoring unit ran (M-ORCH enumerates it
+            # before M-AGG aggregates). The stand-in writes that unit too, so a label on the
+            # cell can derive its `origin` from the cell's work units as FR-REVIEW-25 requires
+            # (#867) — the same `base` origin M-ORCH stamps on every base-panel unit.
+            tx.execute(
+                "INSERT OR IGNORE INTO work_unit "
+                "(work_id, run_id, submission_id, criterion_id, stage, status, origin) "
+                "SELECT 'fixture-score:' || cs.run_id || ':' || cs.submission_id || ':' || "
+                "cs.criterion_id, cs.run_id, cs.submission_id, cs.criterion_id, 'score', "
+                "'done', 'base' FROM criterion_score cs "
+                "WHERE cs.submission_id = :s AND cs.criterion_id = :c "
+                "AND EXISTS (SELECT 1 FROM submission WHERE submission_id = :s)",
+                s=submission_id,
+                c=criterion_id,
+            )
 
 
 def grade_rows(handle: Any) -> list[dict]:

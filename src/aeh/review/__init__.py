@@ -53,7 +53,7 @@ from .settings import (
     SCORING_MODEL_EST_SECONDS,
     WHOLE_GRADE_SAMPLE_RANGE,
 )
-from .errors import ReviewError, StaleReviewItemError, UnknownRunError
+from .errors import LabelProvenanceError, ReviewError, StaleReviewItemError, UnknownRunError
 from .schema import REVIEW_QUEUE_STATEMENTS, REVIEW_STATEMENTS
 from .records import (
     BlindItem,
@@ -97,6 +97,7 @@ __all__ = [
     "ReviewError",
     "UnknownRunError",
     "StaleReviewItemError",
+    "LabelProvenanceError",
     "ReviewItem",
     "ReviewGroup",
     "ReviewQueue",

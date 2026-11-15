@@ -104,6 +104,9 @@ class ReviewService(ActionsMixin, BlindSamplingMixin, ObservabilityMixin):
         self._audit: list[WriteRecord] = []
         # -- observability bookkeeping (CT-REVIEW-18) -----------------------------------------------
         self._current_run_id: str | None = None
+        #: The run a store-backed service was built for (FR-REVIEW-25, #867): what a label
+        #: written before any queue build belongs to — never the cohort's id.
+        self._scope_run_id: str | None = None
         self._run_labels: dict[str, list[LabelRecord]] = {}
         self._builds: dict[str, dict[str, Any]] = {}
         self._emissions: dict[str, list[CounterEmission]] = {}
@@ -116,6 +119,9 @@ class ReviewService(ActionsMixin, BlindSamplingMixin, ObservabilityMixin):
         self._blind_drawn: dict[str, int] = {}
         self._blind_answered: dict[str, int] = {}
         self._skipped_runs: set[str] = set()
+        #: Each blind session's routing per drawn (submission, criterion), captured at draw
+        #: time (FR-REVIEW-29). Service-side, so the session itself stays identity-only.
+        self._blind_draw_routing: dict[str, dict[tuple[str, str], str]] = {}
         self._whole_grade_draws = 0
 
     # -- the queue -----------------------------------------------------------------------------------
@@ -378,6 +384,7 @@ class ReviewService(ActionsMixin, BlindSamplingMixin, ObservabilityMixin):
         store: Any,
         cohort_ids: Sequence[str] = (),
         owning_cohorts: Sequence[str] = (),
+        run_id: str | None = None,
     ) -> "ReviewService":
         """Attach the store handle (used by `open_review`), with the cohort ids, so a label written
         before any queue build can still be attributed to the only cohort, and never to an invented
@@ -387,6 +394,7 @@ class ReviewService(ActionsMixin, BlindSamplingMixin, ObservabilityMixin):
         #: The cohorts whose rows this service actually loaded — a subset of `cohort_ids`
         #: once a run scope is given, and what `FR-REVIEW-20`'s writes are addressed to.
         self._owning_cohorts = tuple(owning_cohorts)
+        self._scope_run_id = run_id
         return self
 
     #: The run's declared criteria and their scoring models, attached when the service is

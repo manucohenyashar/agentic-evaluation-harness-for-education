@@ -121,8 +121,13 @@ class StoreReadsMixin:
         except Exception:  # noqa: BLE001 — an unreadable package keeps the default scale, as before
             catalog = None
         try:
+            # The console is the teacher's surface: every label it writes, blind or
+            # operational, is the teacher's (FR-REVIEW-28). `operator` belongs to the
+            # operator-tagged paths only. `run_id` scopes the labels to the run, never to
+            # its cohort (FR-REVIEW-25).
             return review_service_over(
                 self._store, cohort_ids=list(keys), run_id=run_id, catalog=catalog,
+                actor="teacher",
             )
         except Exception:  # noqa: BLE001 — a run the service cannot open renders as the double
             return None

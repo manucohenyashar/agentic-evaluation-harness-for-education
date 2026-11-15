@@ -88,6 +88,11 @@ class BlindSamplingMixin:
             items=drawn,
         )
         self._blind_sessions[session.session_id] = session
+        # The routing each drawn cell had at draw time (FR-REVIEW-29), held by the service
+        # rather than the session, so the session still carries identity only (CT-REVIEW-09).
+        self._blind_draw_routing[session.session_id] = {
+            (ref.submission_id, ref.criterion_id): self._routing_now(ref) for ref in drawn
+        }
         return session
 
     def submit_blind(
@@ -135,16 +140,30 @@ class BlindSamplingMixin:
         # (FR-CONSOLE-02, #398): a repeated submission from a fresh console holds no
         # memory of the first, and a second blind label would be counted twice.
         recorded = self._recorded_blind_labels(session.run_id)
+        answered = [
+            (ref, band)
+            for ref in session.items
+            if (band := bands.get(ref)) is not None
+            and self._blind_score_id(ref) not in recorded
+        ]
+        # Every answered cell's provenance is settled before the first label lands: one
+        # underivable cell refuses the submission with nothing written (FR-REVIEW-25).
+        origins = {
+            ref: self._cell_origin(ref.submission_id, ref.criterion_id, self._row_for_ref(ref))
+            for ref, _band in answered
+        }
+        draw_routing = self._blind_draw_routing.get(session_id, {})
         written = [
             (ref, self._write_blind_label(
                 ref,
                 band,
                 interrupted=interrupted,
                 review_seconds=review_seconds,
+                origin=origins[ref],
+                routing=draw_routing.get((ref.submission_id, ref.criterion_id))
+                or self._routing_now(ref),
             ))
-            for ref in session.items
-            if (band := bands.get(ref)) is not None
-            and (ref.submission_id, ref.criterion_id) not in recorded
+            for ref, band in answered
         ]
         labels = [label for _ref, label in written]
         self._blind_submitted.add(session_id)
@@ -273,6 +292,20 @@ class BlindSamplingMixin:
             return None
         return self._blind_answered.get(run_id, 0) / drawn
 
+    def _routing_now(self, ref: BlindItem) -> str:
+        """The drawn cell's routing as the service's rows hold it now. Called at draw time, so the
+        blind label records the routing the cell had when it was drawn (FR-REVIEW-29)."""
+        row = self._row_for_ref(ref)
+        routing = getattr(row, "routing", None) if row is not None else None
+        return str(routing or "queued")
+
+    def _blind_score_id(self, ref: BlindItem) -> str:
+        """The score id of the cell a blind reference names (FR-REVIEW-25): the service's row's
+        own id, or the store's `<submission>:<criterion>` convention when no row is loaded."""
+        row = self._row_for_ref(ref)
+        score_id = getattr(row, "score_id", None) if row is not None else None
+        return str(score_id or f"{ref.submission_id}:{ref.criterion_id}")
+
     def _row_for_ref(self, ref: BlindItem) -> Any:
         """The score row a blind reference came from, looked up by the service for the label's
         routing and origin. The session itself never sees it."""
@@ -333,30 +366,31 @@ class BlindSamplingMixin:
         *,
         interrupted: bool,
         review_seconds: float,
+        origin: str,
+        routing: str,
     ) -> LabelRecord:
         """Write one blind label, collected by a flow that could not see the system's output.
-        `score_id`, `review_queue_action` and `system_band` are None and `saw_system_output` is 0
+        `review_queue_action` and `system_band` are None and `saw_system_output` is 0
         (CT-REVIEW-09); the band is the teacher's alone, and its points come from the pinned
         mapping (NFR-AGG-02). The score row stays flagged: a blind label is evidence about the
-        system, not a decision on the row."""
-        row = self._row_for_ref(ref)
+        system, not a decision on the row.
+
+        `score_id` names the cell the label is about (FR-REVIEW-25), resolved by the service, not
+        the session; `origin` is the one derived from the cell's work units and `routing` the
+        cell's routing at draw time (FR-REVIEW-29), both settled by the caller."""
         label = LabelRecord(
             label_id=self._mint_label_id(),
             label_type="blind",
             saw_system_output=0,
-            routing=str(getattr(row, "routing", "queued") or "queued")
-            if row is not None
-            else "queued",
-            origin=str(getattr(row, "origin", "escalation") or "escalation")
-            if row is not None
-            else "escalation",
+            routing=routing,
+            origin=origin,
             evaluation_mode=ref.evaluation_mode,
             review_seconds=review_seconds,
             system_band=None,
             teacher_band=band,
             actor=self._actor_name,
             timestamp=self._clock(),
-            score_id=None,
+            score_id=self._blind_score_id(ref),
             criterion_id=ref.criterion_id,
             review_queue_action=None,
             # The label's points derive from the band through the one pinned
@@ -415,7 +449,10 @@ class BlindSamplingMixin:
             REVIEW_STATEMENTS["select_unbanded_blind_labels"], run_id=attributed)
         updates = []
         for stored in pending:
-            row = self._rows_by_id.get(f"{stored['student_ref']}:{stored['criterion_id']}")
+            # Keyed on the label's score id (FR-REVIEW-25); a label written before #867 has
+            # none, and its `student_ref` held the submission id, which rebuilds the old key.
+            row = self._rows_by_id.get(
+                stored["score_id"] or f"{stored['student_ref']}:{stored['criterion_id']}")
             band = getattr(row, "proposed_band", None) if row is not None else None
             if band is None:
                 continue
@@ -431,11 +468,15 @@ class BlindSamplingMixin:
             for update in updates:
                 tx.execute(REVIEW_STATEMENTS["set_blind_system_band"], **update)
 
-    def _recorded_blind_labels(self, run_id: str) -> set[tuple[str, str]]:
-        """The `(submission, criterion)` references that already have a stored blind label."""
+    def _recorded_blind_labels(self, run_id: str) -> set[str]:
+        """The score ids of the cells that already have a stored blind label. A label written
+        before #867 carries no score id; its `student_ref` held the submission id, so the old
+        `<submission>:<criterion>` key is rebuilt from it."""
         if self._store is None:
             return set()
         attributed = self._attribution_run() or run_id
         rows = self._store.durable().query(
             REVIEW_STATEMENTS["select_blind_labels_for_run"], run_id=attributed)
-        return {(str(row["student_ref"]), str(row["criterion_id"])) for row in rows}
+        return {
+            str(row["score_id"] or f"{row['student_ref']}:{row['criterion_id']}") for row in rows
+        }
