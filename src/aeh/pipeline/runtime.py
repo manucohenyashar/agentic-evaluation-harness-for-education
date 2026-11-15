@@ -107,7 +107,10 @@ def _provider_for(config: Mapping[str, Any]) -> Any:
     if profile == "cloud-hosted":
         return _UnitPricedProvider(OpenRouterProvider.enforcing_zero_retention())
     if profile == "edge-local":
-        return _UnitPricedProvider(LocalServerProvider())
+        # FR-PROV-47: the server declares the run's hardware profile's concurrency.
+        hardware = getattr(config, "hardware_profile", None) or (
+            config.get("hardware_profile") if hasattr(config, "get") else None)
+        return _UnitPricedProvider(LocalServerProvider(hardware_profile=hardware))
     raise ValueError(
         f"no backend profile is configured ({profile!r}); set HARNESS_BACKEND_PROFILE or "
         f"declare backend_profile in the config file. The declared profiles are "

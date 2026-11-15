@@ -168,6 +168,7 @@ def test_tc_judge_21_the_judge_batch_shares_its_prefix_across_concurrent_calls()
         provider="ollama",
         build_id=os.environ["HARNESS_PERF_BUILD_ID"],
         quantization=os.environ.get("HARNESS_PERF_QUANTIZATION", "q4"),
+        served_as="served-model",
     )
     params = SamplingParams(temperature=0.0)  # judgment is a temperature-zero task
     payloads = _batch_payloads(CONCURRENCY)

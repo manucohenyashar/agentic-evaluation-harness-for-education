@@ -325,6 +325,18 @@ def test_tc_prov_c03_resolved_build_is_what_answered_never_what_was_requested(
     is asserted **unequal** to the requested ref — the assertion that catches the field
     silently echoing the request (RISK-22)."""
     provider, _ = _success_provider(impl, construction, tmp_path, build="served-not-requested")
+    if impl == "local":
+        # FR-PROV-47 (ADR-61) re-bases the local half: the server reports its `served_as` name,
+        # which says nothing about the weights, so `resolved_build` is the pinned `build_id`
+        # and what the server said it served is the journal's `served_model`. The
+        # differential moves there: the reported name must reach the record, not the request.
+        from aeh.prov import ListCallJournal, journal_installed
+        sink = ListCallJournal()
+        with journal_installed(sink):
+            got = provider.complete(payload(PromptPayload), model_ref(), params())
+        assert got.resolved_build == model_ref().build_id
+        assert sink.records[-1].served_model == "served-not-requested"
+        return
     got = provider.complete(payload(PromptPayload), model_ref(), params())
     assert got.resolved_build == "served-not-requested", (
         f"TC-PROV-C03 ({impl}/{construction}): resolved_build neither reported the served "

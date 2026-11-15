@@ -181,6 +181,12 @@ class CallRecord:
     tokens_out: int | None
     latency_ms: int | None
     cost: str | None
+    #: FR-PROV-47: the model name the server's response reported, verbatim, or None when it
+    #: reported none (or the attempt produced no answer). On a local server this is the
+    #: `served_as` name the server says it served, beside `resolved_build`'s pinned weights
+    #: identity; on OpenRouter it repeats `resolved_build`. Last and defaulted, so the record's
+    #: earlier fields keep their order.
+    served_model: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """The record as one JSON object, fields in declaration order."""
@@ -362,7 +368,7 @@ class AttemptJournal:
 
     def succeeded(self, *, response: Any, resolved_build: str | None, tokens_in: int | None,
                   tokens_out: int | None, cost: Decimal | None,
-                  latency_ms: int | None = None) -> None:
+                  latency_ms: int | None = None, served_model: str | None = None) -> None:
         """Journal the attempt that answered. A provider with no retry loop (the fixture)
         calls this without an `on_attempt`; it is then attempt 1."""
         if self._sink is None:
@@ -374,7 +380,7 @@ class AttemptJournal:
         self._emit(attempt=attempt, outcome="ok", error=None,
                    latency_ms=latency_ms if latency_ms is not None else held_latency,
                    response=response, resolved_build=resolved_build, tokens_in=tokens_in,
-                   tokens_out=tokens_out, cost=cost)
+                   tokens_out=tokens_out, cost=cost, served_model=served_model)
 
     def failed(self, error: BaseException) -> None:
         """Journal a call that raised before its final attempt was journaled."""
@@ -391,7 +397,7 @@ class AttemptJournal:
     def _emit(self, *, attempt: int, outcome: str, error: BaseException | None,
               latency_ms: int | None, response: Any = None, resolved_build: str | None = None,
               tokens_in: int | None = None, tokens_out: int | None = None,
-              cost: Decimal | None = None) -> None:
+              cost: Decimal | None = None, served_model: str | None = None) -> None:
         context = self._context
         if isinstance(response, str):
             response = _scrub(response, self._secrets) if self._secrets else response
@@ -406,6 +412,7 @@ class AttemptJournal:
             response=response, outcome=outcome, error=_error_text(error, self._secrets),
             tokens_in=tokens_in, tokens_out=tokens_out, latency_ms=latency_ms,
             cost=None if cost is None else str(cost),
+            served_model=served_model,
         )
         hold = _HOLD.get()
         if hold is not None:

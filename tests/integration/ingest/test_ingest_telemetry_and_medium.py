@@ -176,7 +176,7 @@ DEFAULT_PAGE_TEXTS = {
 
 def _model() -> ModelRef:
     return ModelRef(role="transcriber", provider="local",
-                    build_id="vlm@sha256:bbbb", quantization="q4")
+                    build_id="vlm@sha256:bbbb", quantization="q4", served_as="served-model")
 
 
 class ThroughSanitizer(PdfSanitizer):
@@ -1181,7 +1181,7 @@ def _live_transcriber_ref() -> ModelRef:
                     build_id=os.environ.get("HARNESS_LIVE_BUILD_ID",
                                             "local-model"),
                     quantization=os.environ.get("HARNESS_LIVE_QUANTIZATION",
-                                                "q4"))
+                                                "q4"), served_as="served-model")
 
 
 @pytest.mark.live

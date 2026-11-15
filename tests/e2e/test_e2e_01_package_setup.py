@@ -203,7 +203,7 @@ class SetupJourney:
         self.ingestor = Ingestor(
             self.handle, self.blobs, self.provider,
             ModelRef(role="transcriber", provider="local",
-                     build_id=TRANSCRIBER_BUILD, quantization="q4"),
+                     build_id=TRANSCRIBER_BUILD, quantization="q4", served_as="served-model"),
             SamplingParams(temperature=0.0), PdfiumRasterizer(),
             residency=ResidencySlot.for_policy(("transcriber",)),
             sanitizer=PypdfSanitizer(),
@@ -215,7 +215,7 @@ class SetupJourney:
         self.service = SetupService(
             self.catalog, self.ingestor, self.provider,
             ModelRef(role="extractor", provider="local", build_id=SETUP_BUILD,
-                     quantization="q4"))
+                     quantization="q4", served_as="served-model"))
 
     def upload(self, text: str, kind: str, name: str) -> str:
         """The teacher uploads one PDF through the gateway: bytes into the blob store,

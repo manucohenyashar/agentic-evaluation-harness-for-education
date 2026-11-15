@@ -9,7 +9,7 @@ from collections.abc import Mapping
 from typing import Any, Literal
 
 from .errors import ConfigurationError
-from .model_ref import ModelRef, _REF_FIELDS
+from .model_ref import ModelRef, _REF_FIELDS, _SERVED_AS
 from .checks import _echo
 from .orch_knobs import ORCH_KEYS, OrchKnobs
 from .run_config import RunConfig
@@ -138,18 +138,20 @@ _FILE_MODEL_KEYS: tuple[str, ...] = ("transcriber", "off_panel_checker")
 
 def _file_ref(raw: Any, what: str) -> ModelRef:
     """Build one `ModelRef` from a config-file table. TOML has no null, so a missing `quantization`
-    means None (a provider-pinned build); the other three fields are required."""
+    means None (a provider-pinned build), and so does a missing `served_as` (FR-CONF-40: whether
+    a local block needs it is the start check's question, in `resolve_run_config`); the other
+    three fields are required."""
     if not isinstance(raw, Mapping):
         raise ConfigurationError(
             f"{what} must be a table of {_REF_FIELDS}, got {type(raw).__name__}."
         )
-    unknown = sorted(str(name) for name in raw if name not in _REF_FIELDS)
+    unknown = sorted(str(name) for name in raw if name not in (*_REF_FIELDS, _SERVED_AS))
     if unknown:
         raise ConfigurationError(f"{what} has unknown keys: {', '.join(unknown)}.")
     missing = [name for name in _REF_FIELDS[:3] if name not in raw]
     if missing:
         raise ConfigurationError(f"{what} is missing {', '.join(missing)}.")
-    return ModelRef(**{name: raw.get(name) for name in _REF_FIELDS})
+    return ModelRef(**{name: raw.get(name) for name in _REF_FIELDS}, served_as=raw.get(_SERVED_AS))
 
 
 def _model_tables_to_refs(table: dict[str, Any], where: str) -> dict[str, Any]:

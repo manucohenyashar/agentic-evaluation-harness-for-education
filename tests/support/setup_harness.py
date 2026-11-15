@@ -166,7 +166,7 @@ def build_ingestor(store, transcript: str = ASSESSMENT_MD) -> Ingestor:
     return Ingestor(
         store.cohort("c-setup"), store.blobs(), ScriptedIngestProvider(transcript),
         ModelRef(role="transcriber", provider="local", build_id=TRANSCRIBER_BUILD,
-                 quantization="q4"),
+                 quantization="q4", served_as="served-model"),
         SamplingParams(temperature=0.0), ScriptedRasterizer(),
         residency=ResidencySlot.for_policy(("transcriber",)),
         sanitizer=ScriptedSanitizer(),
@@ -262,7 +262,7 @@ def make_setup_service(catalog, ingestor, provider):
 
     return SetupService(catalog, ingestor, provider,
                         ModelRef(role="extractor", provider="local",
-                                 build_id=SETUP_BUILD, quantization="q4"))
+                                 build_id=SETUP_BUILD, quantization="q4", served_as="served-model"))
 
 
 def stage_chain(data_dir, package_id: str = "pkg-setup"):

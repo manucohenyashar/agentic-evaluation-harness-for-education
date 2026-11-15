@@ -255,6 +255,7 @@ def _default_extractor(run_config: Any) -> Any:
         provider=transcriber.provider,
         build_id=transcriber.build_id,
         quantization=transcriber.quantization,
+        served_as=getattr(transcriber, "served_as", None),
     )
 
 
@@ -272,4 +273,5 @@ def _default_synthesizer(run_config: Any) -> Any:
         provider=transcriber.provider,
         build_id=transcriber.build_id,
         quantization=transcriber.quantization,
+        served_as=getattr(transcriber, "served_as", None),
     )

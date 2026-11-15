@@ -158,7 +158,7 @@ def test_tc_conf_04_step_2_a_backend_change_alone_is_what_refuses(run_row):
 
 # --- step 3: a different resolved build refuses -----------------------------------------------
 
-_OTHER_JUDGE = ModelRef("judge", "ollama", "/models/other-70b.gguf@sha256:9999", "q4")
+_OTHER_JUDGE = ModelRef("judge", "ollama", "/models/other-70b.gguf@sha256:9999", "q4", served_as="served-model")
 _SAME_BUILD_OTHER_PROVIDER = ModelRef(
     "transcriber", "attacker-proxy", EDGE_TRANSCRIBER.build_id, EDGE_TRANSCRIBER.quantization
 )
@@ -171,12 +171,12 @@ _SAME_BUILD_OTHER_PROVIDER = ModelRef(
         ({"panel": EDGE_PANEL_3[::-1]}, "the same judges in a different order"),
         (
             {
-                "panel": (ModelRef("judge", "ollama", EDGE_PANEL_3[0].build_id, "q8"),)
+                "panel": (ModelRef("judge", "ollama", EDGE_PANEL_3[0].build_id, "q8", served_as="served-model"),)
                 + EDGE_PANEL_3[1:]
             },
             "one judge's quantization changed",
         ),
-        ({"transcriber": ModelRef("transcriber", "ollama", "/m/other.gguf@sha256:7777", "q4")},
+        ({"transcriber": ModelRef("transcriber", "ollama", "/m/other.gguf@sha256:7777", "q4", served_as="served-model")},
          "a different transcriber build"),
         ({"transcriber": _SAME_BUILD_OTHER_PROVIDER},
          "the same transcriber build_id served by a different provider"),
@@ -425,8 +425,8 @@ def test_tc_conf_04_omitting_the_cohort_skips_the_gate_deliberately():
 
 # --- the off-panel checker --------------------------------------------------------------------
 
-_OFF_PANEL = ModelRef("off_panel", "ollama", "/models/qwen-2.5-7b.gguf@sha256:abcd", "q4")
-_OTHER_OFF_PANEL = ModelRef("off_panel", "ollama", "/models/phi-4.gguf@sha256:bcde", "q4")
+_OFF_PANEL = ModelRef("off_panel", "ollama", "/models/qwen-2.5-7b.gguf@sha256:abcd", "q4", served_as="served-model")
+_OTHER_OFF_PANEL = ModelRef("off_panel", "ollama", "/models/phi-4.gguf@sha256:bcde", "q4", served_as="served-model")
 
 
 @pytest.mark.parametrize(
@@ -437,7 +437,7 @@ _OTHER_OFF_PANEL = ModelRef("off_panel", "ollama", "/models/phi-4.gguf@sha256:bc
         (True, _OTHER_OFF_PANEL, "swapped for a different build"),
         (
             True,
-            ModelRef("off_panel", "vllm-mlx", _OFF_PANEL.build_id, _OFF_PANEL.quantization),
+            ModelRef("off_panel", "vllm-mlx", _OFF_PANEL.build_id, _OFF_PANEL.quantization, served_as="served-model"),
             "same build_id served by a different provider",
         ),
     ],

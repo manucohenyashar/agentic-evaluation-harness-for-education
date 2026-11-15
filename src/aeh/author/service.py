@@ -692,7 +692,8 @@ def _transcriber_of(section: Mapping[str, Any]) -> ModelRef | None:
                 "the profile's transcriber table is missing "
                 f"{', '.join(repr(key) for key in missing)}.")
         return ModelRef(role=raw["role"], provider=raw["provider"],
-                        build_id=raw["build_id"], quantization=raw.get("quantization"))
+                        build_id=raw["build_id"], quantization=raw.get("quantization"),
+                        served_as=raw.get("served_as"))
     raise ConfigurationError(
         "the profile's transcriber must be a model table or a ModelRef, got "
         f"{type(raw).__name__}.")

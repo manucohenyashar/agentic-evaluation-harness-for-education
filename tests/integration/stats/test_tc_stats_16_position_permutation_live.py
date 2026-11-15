@@ -197,6 +197,7 @@ def test_tc_stats_16_the_band_change_rate_under_permutation_is_reported(
             provider="ollama",
             build_id=judge_id,
             quantization=quantization,
+            served_as="served-model",
         )
         live_provider = LocalServerProvider(base_url=base_url)
         worker = ScoringWorker(store, live_provider, live_ref)

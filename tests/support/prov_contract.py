@@ -162,7 +162,7 @@ def params() -> SamplingParams:
 
 
 def model_ref() -> ModelRef:
-    return ModelRef(role="judge", provider="ollama", build_id=PANEL_BUILD, quantization="q4")
+    return ModelRef(role="judge", provider="ollama", build_id=PANEL_BUILD, quantization="q4", served_as="served-model")
 
 
 def completion(text: str = '{"band": "met"}', **overrides):

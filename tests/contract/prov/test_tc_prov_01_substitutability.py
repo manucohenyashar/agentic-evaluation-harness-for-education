@@ -170,6 +170,17 @@ def test_tc_prov_01_resolved_build_reports_what_answered_on_every_implementation
     """TC-PROV-01's metadata half: `resolved_build` is what actually answered, never what was
     requested (`FR-PROV-04`) — on every implementation, under both constructions."""
     provider, _ = _provider_for(impl, construction, tmp_path, build="the-served-build")
+    if impl == "local":
+        # FR-PROV-47 (ADR-61): on the local server `resolved_build` is the pinned `build_id`
+        # (the served name identifies no weights) and the reported name is the journal's
+        # `served_model`, which is where the local half's differential now lives.
+        from aeh.prov import ListCallJournal, journal_installed
+        sink = ListCallJournal()
+        with journal_installed(sink):
+            got = provider.complete(payload(PromptPayload), model_ref(), params())
+        assert got.resolved_build == model_ref().build_id
+        assert sink.records[-1].served_model == "the-served-build"
+        return
     got = provider.complete(payload(PromptPayload), model_ref(), params())
     assert got.resolved_build == "the-served-build", (
         f"TC-PROV-01 ({impl}/{construction}): resolved_build echoed the request instead of "

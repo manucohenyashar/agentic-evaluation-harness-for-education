@@ -64,12 +64,14 @@ EXTRACTOR_PIN = ModelRef(
     provider="ollama",
     build_id="/models/reader-x.gguf@sha256:11aa22bb",
     quantization="q8_0",
+    served_as="served-model",
 )
 SYNTHESIZER_PIN = ModelRef(
     role="synthesizer",
     provider="ollama",
     build_id="/models/summarizer-y.gguf@sha256:33cc44dd",
     quantization="q5_k",
+    served_as="served-model",
 )
 #: A DIFFERENT extractor build — same path, another digest — for the mismatch arms.
 OTHER_EXTRACTOR_PIN = ModelRef(
@@ -77,6 +79,7 @@ OTHER_EXTRACTOR_PIN = ModelRef(
     provider="ollama",
     build_id="/models/reader-x.gguf@sha256:55ee66ff",
     quantization="q8_0",
+    served_as="served-model",
 )
 #: A DIFFERENT synthesizer build, same shape — `recover`'s mismatch check is per role, and
 #: only the flag decides which role a ref is checked against, so the synthesizer arm needs
@@ -86,6 +89,7 @@ OTHER_SYNTHESIZER_PIN = ModelRef(
     provider="ollama",
     build_id="/models/summarizer-y.gguf@sha256:77aa88bb",
     quantization="q5_k",
+    served_as="served-model",
 )
 
 

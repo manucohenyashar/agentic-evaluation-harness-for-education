@@ -67,7 +67,7 @@ PDF_LIBRARY_MARKERS = ("pypdfium2", "pdfminer", "fitz", "pypdf", "pdf2image",
 
 def _model() -> ModelRef:
     return ModelRef(role="transcriber", provider="local",
-                    build_id="vlm@sha256:aaaa", quantization="q4")
+                    build_id="vlm@sha256:aaaa", quantization="q4", served_as="served-model")
 
 
 class ScriptedRasterizer(Rasterizer):

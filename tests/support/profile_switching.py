@@ -96,6 +96,8 @@ def _toml_ref(table: str, ref: ModelRef) -> str:
              f'build_id = "{ref.build_id}"']
     if ref.quantization is not None:
         lines.append(f'quantization = "{ref.quantization}"')
+    if ref.served_as is not None:
+        lines.append(f'served_as = "{ref.served_as}"')
     return "\n".join(lines)
 
 

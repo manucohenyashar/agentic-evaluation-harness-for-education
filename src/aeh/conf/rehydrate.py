@@ -9,7 +9,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from .errors import BackendMismatchError, ConfigurationError
-from .model_ref import ModelRef, _ref_from_dict, _ref_to_dict
+from .model_ref import ModelRef, _ref_from_dict, _ref_identity
 from .decision_engine import decision_engine_setting, DecisionEngine
 from .checks import _echo
 from .run_config import CohortRef, RunConfig
@@ -235,7 +235,7 @@ def _refuse_on_mismatch(persisted: RunConfig, cfg: Mapping[str, Any]) -> None:
                 "run against."
             )
         if (mine is None) != (theirs is None) or (
-            mine is not None and _ref_to_dict(mine) != _ref_to_dict(theirs)
+            mine is not None and _ref_identity(mine) != _ref_identity(theirs)
         ):
             raise BackendMismatchError(
                 f"this run was started with one {what} and current configuration names another "

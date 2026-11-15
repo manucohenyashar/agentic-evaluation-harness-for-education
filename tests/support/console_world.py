@@ -277,7 +277,7 @@ class IngestWorld:
         self.ingestor = Ingestor(
             self.handle, self.blobs, self.vlm,
             ModelRef(role="transcriber", provider="local", build_id="vlm@sha256:cccc",
-                     quantization="q4"),
+                     quantization="q4", served_as="served-model"),
             SamplingParams(temperature=0.0), _ScriptedRasterizer(),
             residency=ResidencySlot.for_policy(("transcriber",)),
             sanitizer=_ThroughSanitizer(),

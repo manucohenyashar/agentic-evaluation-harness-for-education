@@ -31,13 +31,13 @@ from tests.support.conf_builders import SYNTHETIC_COHORT, edge_cfg
 
 # A three-judge panel. Odd by contract (`CT-CONF-02`: 1, 3 or 5) and three rather than one
 # because ordering cannot be tested with a single member.
-J1 = ModelRef("judge", "ollama", "/models/llama-3.3-70b.gguf@sha256:aaaa", "q4")
-J2 = ModelRef("judge", "ollama", "/models/qwen-2.5-72b.gguf@sha256:bbbb", "q4")
-J3 = ModelRef("judge", "ollama", "/models/mistral-large.gguf@sha256:cccc", "q4")
+J1 = ModelRef("judge", "ollama", "/models/llama-3.3-70b.gguf@sha256:aaaa", "q4", served_as="served-model")
+J2 = ModelRef("judge", "ollama", "/models/qwen-2.5-72b.gguf@sha256:bbbb", "q4", served_as="served-model")
+J3 = ModelRef("judge", "ollama", "/models/mistral-large.gguf@sha256:cccc", "q4", served_as="served-model")
 
 # The same panel differing in exactly one respect, one respect at a time.
-J2_OTHER_QUANTIZATION = ModelRef("judge", "ollama", "/models/qwen-2.5-72b.gguf@sha256:bbbb", "q8")
-J2_OTHER_PROVIDER = ModelRef("judge", "vllm-mlx", "/models/qwen-2.5-72b.gguf@sha256:bbbb", "q4")
+J2_OTHER_QUANTIZATION = ModelRef("judge", "ollama", "/models/qwen-2.5-72b.gguf@sha256:bbbb", "q8", served_as="served-model")
+J2_OTHER_PROVIDER = ModelRef("judge", "vllm-mlx", "/models/qwen-2.5-72b.gguf@sha256:bbbb", "q4", served_as="served-model")
 
 #: Committed references. Computed out-of-process; see the module docstring.
 REFERENCE_PANEL_BUILD_REF = "pbr:ae9f75ccf5402f5d80003788883ffb46"

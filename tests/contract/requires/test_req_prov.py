@@ -103,7 +103,7 @@ def test_tc_req_04_ingest_makes_one_call_per_page_and_records_the_served_build(t
     transport = WireTransport(reply=distinct_page,
                               script=[TransportError("connection reset on page one")])
     requested = ModelRef(role="transcriber", provider="local", build_id="requested-build-3",
-                         quantization="q4")
+                         quantization="q4", served_as="served-model")
     store = open_store(tmp_data_dir)
     try:
         ingestor = Ingestor(store.cohort("c-setup"), store.blobs(), wire_provider(transport),
@@ -140,7 +140,7 @@ def test_tc_req_10_the_setup_proposal_payload_is_dispatched_as_assembled(tmp_dat
         transport = WireTransport(reply=lambda fields: INVENTORY_REPLY)
         service = setup.SetupService(chain.catalog, chain.ingestor, wire_provider(transport),
                                      setup.ModelRef(role="extractor", provider="local",
-                                                    build_id="setup-build", quantization="q4"))
+                                                    build_id="setup-build", quantization="q4", served_as="served-model"))
         service.propose_inventory(assessment)
         transcript = chain.ingestor.read_document(assessment)
     finally:
@@ -486,7 +486,7 @@ def test_tc_req_71_implementations_are_substitutable_hermetic_and_text_is_never_
     with pytest.raises(prov.FixtureMissingError):
         fixture.complete(PromptPayload(fields=(("submission", "never recorded"),)),
                          ModelRef(role="judge", provider="ollama", build_id="/m/x.gguf@sha256:ab",
-                                  quantization="q4"), SamplingParams(temperature=0.0))
+                                  quantization="q4", served_as="served-model"), SamplingParams(temperature=0.0))
 
     text_equality = []
     for node in ast.walk(ast.parse(package_source(conform))):

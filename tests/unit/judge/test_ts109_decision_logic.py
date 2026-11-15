@@ -97,7 +97,7 @@ def _question_strings(request: DecisionRequest) -> list[str]:
 
 def test_tc_judge_30_the_decision_seat_is_panel_zero_only() -> None:
     def ref(build):
-        return ModelRef(role="judge", provider="local", build_id=build, quantization="q4")
+        return ModelRef(role="judge", provider="local", build_id=build, quantization="q4", served_as="served-model")
 
     three = SimpleNamespace(panel=(ref("A"), ref("B"), ref("C")))
     one = SimpleNamespace(panel=(ref("A"),))

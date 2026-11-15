@@ -199,6 +199,7 @@ def test_tc_prov_18_the_six_run_counters_match_a_hand_counted_reference(
         provider="ollama",
         build_id="/models/llama-3.3-70b.gguf@sha256:aaaa",
         quantization="q4",
+        served_as="served-model",
     )
     params = SamplingParams(temperature=0.0)
     for index in range(CALLS):

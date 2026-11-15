@@ -64,7 +64,7 @@ EXPECTED_DECLARED = [
 
 def _model() -> ModelRef:
     return ModelRef(role="transcriber", provider="local",
-                    build_id="vlm@sha256:bbbb", quantization="q4")
+                    build_id="vlm@sha256:bbbb", quantization="q4", served_as="served-model")
 
 
 class _ThroughSanitizer(PdfSanitizer):

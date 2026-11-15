@@ -8,7 +8,7 @@ from typing import Any
 
 from .vocabulary import BACKEND_PROFILES, PANEL_SIZES
 from .errors import BackendMismatchError, ConfigurationError, ConsentGateError
-from .model_ref import _ISO_4217, ModelRef, _require_model_ref
+from .model_ref import _ISO_4217, ModelRef, _missing_served_as, _require_model_ref
 from .hardware import (
     DEFAULT_HOSTED_CONCURRENCY,
     DEFAULT_HOSTED_PREFIX_TOKEN_CEILING,
@@ -280,6 +280,19 @@ def resolve_run_config(cfg: Mapping[str, Any], cohort: CohortRef) -> RunConfig:
     _check_resolved(transcriber, "transcriber", backend_profile)
     if off_panel_checker is not None:
         _check_resolved(off_panel_checker, "off_panel_checker", backend_profile)
+
+    # 4b. FR-CONF-40: on `edge-local`, every block a local model server serves names the model
+    #     the way that server lists it. Refused here, at start, rather than as a 404 from the
+    #     server on the first page: the server addresses models by `served_as`, never by the
+    #     weights path. A hosted block carrying `served_as` is accepted and ignored.
+    if backend_profile == "edge-local":
+        named = [(f"panel[{position}]", member) for position, member in enumerate(panel)]
+        named.append(("transcriber", transcriber))
+        if off_panel_checker is not None:
+            named.append(("off_panel_checker", off_panel_checker))
+        for what, ref in named:
+            if ref.is_local_server() and ref.served_as is None:
+                raise _missing_served_as(what)
 
     # 5. Budgets and ceilings.
     cost_ceiling, cost_currency = _resolve_cost(cfg, backend_profile)

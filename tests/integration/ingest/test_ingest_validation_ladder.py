@@ -98,7 +98,7 @@ FORBIDDEN_TABLE_PATTERN = re.compile(r"review|label|queue|grade|score|band")
 
 def _model() -> ModelRef:
     return ModelRef(role="transcriber", provider="local",
-                    build_id="vlm@sha256:bbbb", quantization="q4")
+                    build_id="vlm@sha256:bbbb", quantization="q4", served_as="served-model")
 
 
 class ThroughSanitizer(PdfSanitizer):
