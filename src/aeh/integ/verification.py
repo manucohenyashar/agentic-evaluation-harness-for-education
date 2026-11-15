@@ -215,21 +215,41 @@ def clear_of_region_markup(doc: Any, span: Any) -> bool:
         return False
 
 
-def answer_regions(doc: Any, question_id: str) -> "tuple[Span, ...]":
-    """The answer text of every region tagged `question_id=<question_id>`, in document order.
+def _declared_question(header: bytes) -> "bytes | None":
+    """The `question_id=` value a region header declares, or None."""
+    for token in header.split():
+        if token.startswith(b"question_id="):
+            return token[len(b"question_id="):] or None
+    return None
 
-    Each `Span` covers the region's BODY only (the bytes between its header's `-->` and its
+
+def answer_regions(doc: Any, question_id: str) -> "tuple[Span, ...]":
+    """The answer text of the question's regions, in document order.
+
+    A region belongs to the question in force, the way ingest attributes it
+    (`aeh.ingest`'s region parser): a region tagged `question_id=<question_id>` and every
+    untagged region after it (a continuation line, the described diagram), up to the next
+    region tagged with another question. Untagged regions before any tag belong to no question.
+    Ingest restarts the question in force on each page; the canonical document carries no
+    page boundary this reader can see, so an answer continuing onto the next page stays with
+    its question until another question is tagged.
+
+    Each `Span` covers a region's BODY only (the bytes between its header's `-->` and its
     `<!-- /region -->`), so no marker byte is inside it. This is the `region` the judge hands
-    `relocate_span` (ADR-63). A document with no region tagged for the question gives the empty
+    `relocate_span` (ADR-63). A document with no region for the question gives the empty
     tuple, and a relocation scoped to it finds nothing. Pure and never raises."""
     try:
         raw = _document_raw_bytes(doc)
         if raw is None or not isinstance(question_id, str) or not question_id:
             return ()
-        wanted = f"question_id={question_id}".encode("utf-8")
+        wanted = question_id.encode("utf-8")
+        in_force: "bytes | None" = None
         regions: list[Span] = []
         for match in _REGION_BLOCK.finditer(raw):
-            if wanted not in match.group("header").split():
+            declared = _declared_question(match.group("header"))
+            if declared is not None:
+                in_force = declared
+            if in_force != wanted:
                 continue
             start, end = match.start("body"), match.end("body")
             try:

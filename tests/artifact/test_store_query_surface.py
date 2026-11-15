@@ -393,17 +393,17 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # statements are the same three. Re-read from the walker, never hand-unioned.)
     # #361's durable write: `_record_contract_violations`' `tx.execute` of the declared
     # `JUDGE_STATEMENTS["add_contract_violations"]` upsert (FR-JUDGE-21).
-    "aeh.judge.worker:490",
+    "aeh.judge.worker:494",
     # #806 FR-JUDGE-39: the confirming judge recorded on the accepted pre-screen row
     # (`record_prescreen_confirmation`), and the changed-row count that tells it it won.
-    "aeh.judge.worker:466",
-    "aeh.judge.worker:468",
-    "aeh.judge.worker:530",
-    "aeh.judge.worker:545",
-    "aeh.judge.worker:535",
+    "aeh.judge.worker:470",
+    "aeh.judge.worker:472",
+    "aeh.judge.worker:534",
+    "aeh.judge.worker:549",
+    "aeh.judge.worker:539",
     # #448 (Jev design delta FR-JUDGE-34): the decision-seat pre-screen row, one declared
     # JUDGE_STATEMENTS["insert_prescreen"] with keyword parameters, INSERT OR IGNORE on the work id.
-    "aeh.judge.worker:273",
+    "aeh.judge.worker:277",
     # The ingest sites are #220's line numbers (the transcription strike loop
     # and the honest-quarantine catch shifted the module; every statement
     # verified unchanged against the prior baseline, the tripwire diff being

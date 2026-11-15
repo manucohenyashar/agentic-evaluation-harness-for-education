@@ -219,11 +219,21 @@ def _rubric_of(
     )
 
 
+#: What `_unit_question_id` answers when a bound store cannot say which question the unit's
+#: criterion belongs to (no ledger row, no run row, the criterion missing from the package
+#: version, a read that raised). The citation gate reads it as an EMPTY region: nothing
+#: relocates, so an unresolved scope narrows the search and never widens it to the document
+#: (D7, ADR-63). It contains a space, so it can never be a real question id (a region header's
+#: `question_id=` value is one whitespace-free token).
+UNRESOLVED_QUESTION = "<unresolved question>"
+
+
 def _unit_question_id(store: Any, work_id: str, criterion_id: str) -> "str | None":
     """The question the unit's criterion belongs to, read the way `_rubric_of` reads it: `""` for
-    a criterion that grades the submission directly, and None when it cannot be resolved (no
-    store, no ledger row, no run row). The citation gate scopes relocation to that question's
-    answer region (ADR-63); the request itself never carries it (the whitelist is closed)."""
+    a criterion the package declares with no question (it grades the submission directly), None
+    with no store bound, and `UNRESOLVED_QUESTION` when a bound store cannot resolve it. The
+    citation gate scopes relocation to that question's answer region (ADR-63); the request
+    itself never carries it (the whitelist is closed)."""
     if store is None:
         return None
     try:
@@ -231,15 +241,15 @@ def _unit_question_id(store: Any, work_id: str, criterion_id: str) -> "str | Non
         run_id = cohort.query(JUDGE_STATEMENTS["select_work_unit"], work_id=work_id)[0]["run_id"]
         run_rows = cohort.query(JUDGE_STATEMENTS["select_judge_run"], run_id=run_id)
         if not run_rows:
-            return None
+            return UNRESOLVED_QUESTION
         package_id = run_rows[0]["package_id"]
         catalog = PackageCatalog(store.package(package_id), package_id=package_id)
         for row in catalog.criteria(run_rows[0]["package_version_id"]):
             if row.get("criterion_id") == criterion_id:
                 return str(row.get("question_id") or "")
-        return ""
+        return UNRESOLVED_QUESTION
     except Exception:
-        return None
+        return UNRESOLVED_QUESTION
 
 
 def _evidence_spans(cohort: Any, run_id: str, submission_id: str, criterion_id: str) -> tuple:

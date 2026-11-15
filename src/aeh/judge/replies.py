@@ -15,7 +15,7 @@ from aeh.setup import SETUP_MAGNITUDE_PHRASES
 from .errors import ProseAssessmentError
 from .request import ScoringRequest, _sequence_of
 from .prompt import CITED_SPAN_KEYS, REPLY_FIELDS
-from .assembly import _canonical_document_bytes, _pseudonymize
+from .assembly import UNRESOLVED_QUESTION, _canonical_document_bytes, _pseudonymize
 
 
 # --- the reply's pinned field order (FR-JUDGE-09) ------------------------------------------------
@@ -324,9 +324,11 @@ def _refuse_unverified_citations(
     4. Otherwise the reply is refused, exactly as before this change.
 
     The region: with `question_id` naming the unit's question, the answer text of the
-    document's regions tagged with it (`answer_regions`; a quote found only in another
+    document's regions attributed to it (`answer_regions`; a quote found only in another
     question's answer is not evidence for this criterion, D7). An empty `question_id` (a
-    criterion that grades the submission directly) or none given searches the whole document.
+    criterion the package declares with no question) or none given (a caller outside the
+    worker) searches the whole document; `UNRESOLVED_QUESTION` (the worker could not resolve
+    the unit's question) relocates nothing.
 
     A reply that cites NOTHING passes vacuously: an uncited verdict is `FR-JUDGE-12`'s marked
     downgrade, not a verification failure. An unresolvable document (no store bound, no
@@ -346,7 +348,10 @@ def _refuse_unverified_citations(
             f"(FR-INTEG-01 fail-closed, FR-JUDGE-17)"
         )
     ref = request.submission.student_ref
-    region = answer_regions(raw, question_id) if question_id else None
+    if question_id == UNRESOLVED_QUESTION:
+        region: Any = ()  # the scope is unknown: nothing relocates (narrow, never widen)
+    else:
+        region = answer_regions(raw, question_id) if question_id else None
     accepted: list[Any] = []
     reanchored = False
     for index, span in enumerate(cited):

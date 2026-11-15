@@ -31,7 +31,7 @@ from .errors import JudgmentError, ProseAssessmentError
 from .request import ScoringRequest
 from .results import ScoringResult
 from .prompt import prompt_fields, _span_document
-from .assembly import assemble, _field_of, _find_cohort, _unit_question_id
+from .assembly import UNRESOLVED_QUESTION, assemble, _field_of, _find_cohort, _unit_question_id
 from .replies import _amended_payload, _refuse_unverified_citations, _verdict_of
 from .decision_engine import (
     Accepted,
@@ -92,12 +92,16 @@ class ScoringWorker:
 
     def _question_id_of(self, request: ScoringRequest) -> "str | None":
         """The unit's question, which scopes citation relocation to its answer region (ADR-63).
-        Read once per unit from the store and remembered by `work_id`; None without a store."""
+        Read from the store and remembered by `work_id` once resolved (an unresolved answer is
+        read again next time, so one failed read never sticks); None without a store."""
         cache = self.__dict__.setdefault("_question_ids", {})
-        if request.work_id not in cache:
-            cache[request.work_id] = _unit_question_id(
-                self._store, request.work_id, request.criterion.criterion_id)
-        return cache[request.work_id]
+        if request.work_id in cache:
+            return cache[request.work_id]
+        question_id = _unit_question_id(self._store, request.work_id,
+                                        request.criterion.criterion_id)
+        if question_id is not None and question_id != UNRESOLVED_QUESTION:
+            cache[request.work_id] = question_id
+        return question_id
 
     def _accept_citations(self, request: ScoringRequest, cited: tuple) -> "tuple[tuple, bool]":
         """The citation gate for this unit (FR-JUDGE-17/40): the spans to store and whether any
