@@ -66,8 +66,16 @@ def test_tc_review_c09_the_blind_session_cannot_reach_criterion_score_at_the_que
         "change away from displaying it, and a blind label collected after a glance is an "
         "acceptance label mislabeled."
     )
+    # Re-based at #875: CT-REVIEW-09 is amended (FR-REVIEW-27, breaking) — the session also
+    # reads the band set, the canonical artifact's region and the draw's own tables, and the
+    # joins it cannot make are `criterion_score`, `verdict` and `extraction`.
+    leaked = readable & vocab.BLIND_FORBIDDEN_TABLES
+    assert not leaked, (
+        f"the blind session can reach {sorted(leaked)}, which the amended CT-REVIEW-09 names as "
+        "joins it cannot make"
+    )
     assert readable == vocab.BLIND_READABLE_TABLES, (
-        f"the blind session reads {sorted(readable)}; §3.15's Data flow paragraph says "
+        f"the blind session reads {sorted(readable)}; CT-REVIEW-09 as amended says "
         f"{sorted(vocab.BLIND_READABLE_TABLES)} only. Anything else on that list is a route to "
         "the system's band that this clause has not considered."
     )

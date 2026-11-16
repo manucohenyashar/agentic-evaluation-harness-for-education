@@ -743,9 +743,10 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # items it showed, and `record_action` writes what the teacher then DID to one. Before
     # these the row said only that a cell had been flagged.
     # (#867 re-pin: the run scope and the draw-time routing bookkeeping moved these.)
-    "aeh.review.service:302",
-    "aeh.review.service:308",
-    "aeh.review.service:333",
+    # (#875 re-pin: the stored draw's bookkeeping in `__init__` moved them again.)
+    "aeh.review.service:305",
+    "aeh.review.service:311",
+    "aeh.review.service:336",
     "aeh.review.actions:408",
     # #115's collection route: the second durable write this module owns —
     # `_write_collected_label`'s single `tx.execute` in its transaction body,
@@ -754,7 +755,20 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # `insert_label` carries (27 since #368), upserted so a collected label can be re-keyed
     # into another cohort's administration. Pinned from the walker.
     "aeh.review.labels:206",
-    "aeh.review.blind:469",
+    # (#875 re-pin: the system-band join moved down; same statement.)
+    "aeh.review.blind:1077",
+    # #875 (FR-REVIEW-26/30, cohort migration 37): the stored blind draw. Each a
+    # `BLIND_DRAW_STATEMENTS` entry with keyword parameters — the draw and its seats opened in
+    # one transaction (484, 490), a skip without a draw (509), a draft upsert (521), the
+    # claimed close (542) with an open draw's drafts discarded on a skip (548), and the undo
+    # of a close whose labels failed to land (569). Pinned from the walker.
+    "aeh.review.blind:484",
+    "aeh.review.blind:490",
+    "aeh.review.blind:509",
+    "aeh.review.blind:521",
+    "aeh.review.blind:542",
+    "aeh.review.blind:548",
+    "aeh.review.blind:569",
     # The #122/#126 console sites: one — the control row `perform` writes into the
     # run's cohort ledger (`_INSERT_RUN_CONTROL`, keyword-parameterized, the row the
     # orchestrator reads on its own schedule per CT-ORCH-13; re-pinned when the
@@ -811,7 +825,9 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # and its docstring reflow shifted the pause/resume site down again; same
     # statement. Re-read from the walker, never hand-unioned.)
     "aeh.console.controls:242",
-    "aeh.console.effects:820",
+    # (#875 re-pin: the blind effect's draft wording moved the quarantine site; same
+    # statement.)
+    "aeh.console.effects:824",
     "aeh.console.key_correction:140",
     "aeh.console.driver:120",
     "aeh.console.driver:159",

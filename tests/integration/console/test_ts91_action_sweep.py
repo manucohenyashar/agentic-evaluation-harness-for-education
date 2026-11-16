@@ -435,9 +435,18 @@ def test_tc_console_44_row9_a_blind_label_is_recorded(tmp_path, monkeypatch):
             "SELECT submission_id, criterion_id FROM criterion_score WHERE criterion_id IN ('C1', 'C2')")]
         outcomes = [app.perform("blind-sample submission", run_id=world.run_id, submission_id=s,
                                 criterion_id=c, band=dev_pipe.band_at(c, 2)) for s, c in cells]
+        # Re-based at #875 (FR-REVIEW-26): a blind choice is a draft until the sample is
+        # finished, so the console's choice writes no label; the label lands at Finish. The
+        # console's own `blind-sample finish` action is S12's, so Finish runs through M-REVIEW.
+        drafted = _rows(root, "SELECT 1 FROM blind_draft WHERE run_id = ?", world.run_id)
+        labelled_before = _rows(root, "SELECT 1 FROM label WHERE label_type = 'blind'",
+                                tier="durable")
+        app._review_service(world.run_id).finish_blind(world.run_id)
     finally:
         world.store.close()
     assert any(o.dispatched for o in outcomes), [o.detail[:120] for o in outcomes]
+    assert drafted, "no console choice was stored as a draft"
+    assert not labelled_before, "a console choice wrote a blind label before Finish"
     assert _rows(root, "SELECT 1 FROM label WHERE label_type = 'blind'", tier="durable")
 
 

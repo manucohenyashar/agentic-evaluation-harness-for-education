@@ -156,6 +156,8 @@ _COHORT_PURGE_ORDER: tuple[str, ...] = (
     # #362's per-cell composition phases: swept before `run`, like every other run-scoped
     # table, so the FK graph is walked child-first.
     "cell_phase",
+    # #875 (migration R1): the blind draw, its seats and the teacher's drafts, run-scoped.
+    "blind_draft", "blind_draw_seat", "blind_draw",
     "run",
     "assessment_match_proposal", "v4_cohort_breaker",
     # B8: the operator's parked-paper decisions reference `submission` (and carry the
@@ -178,6 +180,11 @@ _PURGE_DELETES: Mapping[str, Statement] = {
     # like every other run-scoped row — a phase outliving the work it describes would tell a
     # restarted pipeline to skip a cell whose evidence is gone.
     "cell_phase": Statement("DELETE FROM cell_phase"),
+    # #875 (migration R1): the teacher's blind marks and the draw they were made in are a
+    # judgement about a student's paper, so they die with the cohort (TC-REVIEW-108).
+    "blind_draft": Statement("DELETE FROM blind_draft"),
+    "blind_draw_seat": Statement("DELETE FROM blind_draw_seat"),
+    "blind_draw": Statement("DELETE FROM blind_draw"),
     "verdict": Statement("DELETE FROM verdict"),
     # #448 (FR-JUDGE-34): the decision-seat pre-screen rows — engine answers about a
     # student's work (probabilities, cited-span labels) — die with the cohort like the verdicts.
@@ -266,6 +273,10 @@ _PURGE_BLOB_HASH_SCANS: Mapping[str, Statement] = {
     # bytes. Registered anyway, because the scan registry covers every swept name so a column
     # a later migration adds is read by the same walk without an edit here.
     "cell_phase": Statement("SELECT * FROM cell_phase"),
+    # #875: ids, band names, routings and timestamps; no blob reference.
+    "blind_draft": Statement("SELECT * FROM blind_draft"),
+    "blind_draw_seat": Statement("SELECT * FROM blind_draw_seat"),
+    "blind_draw": Statement("SELECT * FROM blind_draw"),
     "circuit_breaker": Statement("SELECT * FROM circuit_breaker"),
     # #61's control-row queue: no blob references (reason strings name conditions,
     # never student bytes), but the scan registry covers every swept name so a

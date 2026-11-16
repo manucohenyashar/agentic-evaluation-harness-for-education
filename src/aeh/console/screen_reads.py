@@ -455,7 +455,13 @@ def blind_seats_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     service = app._review_service(run_id)
     if service is None:
         raise ValueError(f"M-REVIEW cannot open run {run_id!r}")
-    session = service.blind_sample(run_id)
+    # The run's stored draw (#875). A run that has not drawn yet draws here, once: the sample
+    # is fixed the first time it is shown, so the seat the teacher sees is the seat their mark
+    # lands on (a re-draw per request was #867's finding). A closed draw still lists its seats;
+    # a skipped run has none.
+    items = service.blind_draw_items(run_id)
+    if not items and service.draw_state(run_id) == "not_drawn":
+        items = service.blind_sample(run_id).items
     cohort_id = None
     run_row = _run_row_of(console, app, query)
     if run_row is not None:
@@ -494,7 +500,7 @@ def blind_seats_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
                                scales.get(str(item.criterion_id), ())] or None,
                 "evaluation_mode": str(getattr(item, "evaluation_mode", "") or ""),
             }
-            for item in session.items
+            for item in items
         ],
     }
 

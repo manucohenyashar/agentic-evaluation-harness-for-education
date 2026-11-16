@@ -75,6 +75,7 @@ class ReviewService(ActionsMixin, BlindSamplingMixin, ObservabilityMixin):
         administration_id: str | None = None,
         previous_administration: Any = None,
         store: Any = None,
+        review_window_hours: float | None = None,
     ) -> None:
         self._rows = tuple(rows)
         self._rows_by_id = {_score_id_of(row): row for row in self._rows}
@@ -119,9 +120,11 @@ class ReviewService(ActionsMixin, BlindSamplingMixin, ObservabilityMixin):
         self._blind_drawn: dict[str, int] = {}
         self._blind_answered: dict[str, int] = {}
         self._skipped_runs: set[str] = set()
-        #: Each blind session's routing per drawn (submission, criterion), captured at draw
-        #: time (FR-REVIEW-29). Service-side, so the session itself stays identity-only.
-        self._blind_draw_routing: dict[str, dict[tuple[str, str], str]] = {}
+        #: The storeless service's blind draws by run (#875). A store-backed service keeps
+        #: none: its draw, seats, draw-time routing and drafts are read from the cohort file,
+        #: so every console request sees the same draw.
+        self._draws: dict[str, Any] = {}
+        self._review_window_hours = review_window_hours
         self._whole_grade_draws = 0
 
     # -- the queue -----------------------------------------------------------------------------------

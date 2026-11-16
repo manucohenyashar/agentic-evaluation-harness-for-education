@@ -43,6 +43,7 @@ def build_review(
     seed: int | None = None,
     administration_id: str | None = None,
     previous_administration: Any = None,
+    review_window_hours: float | None = None,
 ) -> ReviewService:
     """Build a review service over score rows, or, given a store, over the whole store.
 
@@ -60,7 +61,7 @@ def build_review(
     so the skip report's ``current_figure=None`` is an honest None rather than
     an uninformed one (`FR-REVIEW-13`'s no-carry-forward clause)."""
     if scores is not None and hasattr(scores, "cohort"):
-        return _service_from_store(
+        service = _service_from_store(
             scores,
             actor=actor,
             clock=clock,
@@ -74,6 +75,8 @@ def build_review(
             administration_id=administration_id,
             previous_administration=previous_administration,
         )
+        service._review_window_hours = review_window_hours
+        return service
     return ReviewService(
         scores or (),
         actor=actor,
@@ -97,6 +100,7 @@ def build_review(
         seed=seed,
         administration_id=administration_id,
         previous_administration=previous_administration,
+        review_window_hours=review_window_hours,
     )
 
 

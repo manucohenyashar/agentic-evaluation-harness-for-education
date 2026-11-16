@@ -427,7 +427,11 @@ def test_tc_e2e_03_review_morning_shows_its_residual_and_collects_its_evidence(
     # boundary is the session type's own (CT-REVIEW-09).
     session = service.blind_sample(E2E_COHORT_ID, n=BLIND_DRAW_N)
     assert 15 <= len(session.items) <= 25
-    assert session.readable_tables() == frozenset({"submission", "criterion"})
+    # CT-REVIEW-09 as amended by FR-REVIEW-27 (#875): the band set, the canonical artifact and
+    # the draw's own tables join the readable set; no table holding system output does.
+    from tests.support.review_vocabulary import BLIND_READABLE_TABLES
+
+    assert session.readable_tables() == BLIND_READABLE_TABLES
     # The sitting answers the whole draw - a complete sitting is the ordinary
     # shape (CT-REVIEW-15's interrupted half is the contract tier's case) - so
     # the blind population is the draw itself. The teacher's bands vary across

@@ -295,11 +295,25 @@ ADVERSARIAL_OVERRIDE_LABEL_TYPE = "override"
 
 #: §3.15's Data flow paragraph: *"The blind session is a separate flow reading `submission` and
 #: `criterion` only — it deliberately cannot join to `criterion_score`."*
-BLIND_READABLE_TABLES: frozenset[str] = frozenset({"submission", "criterion"})
+BLIND_BASE_READABLE_TABLES: frozenset[str] = frozenset({"submission", "criterion"})
+
+#: CT-REVIEW-09 as amended (breaking) by FR-REVIEW-27 (#875, statistical-validity delta §4): the
+#: session now also reads the package's band set (`band`, for the descriptors), the canonical
+#: artifact's region (`document`, `document_region`), the student's name (`roster`), the run's
+#: package link (`run`) and review window (`grade_policy`, read when a draw opens) and the
+#: draw's own bookkeeping (`blind_draw`, `blind_draw_seat`, `blind_draft`, cohort migration 37).
+#: Still never a table holding the system's output.
+BLIND_READABLE_TABLES: frozenset[str] = BLIND_BASE_READABLE_TABLES | frozenset({
+    "band", "document", "document_region", "roster", "run", "grade_policy",
+    "blind_draw", "blind_draw_seat", "blind_draft",
+})
 
 #: The table the blind session must not reach. Named separately because `CT-REVIEW-09`'s
 #: assertion is about this one join, not about tables in general.
 BLIND_FORBIDDEN_TABLE = "criterion_score"
+
+#: The amended clause's full list of joins the session cannot make (FR-REVIEW-27).
+BLIND_FORBIDDEN_TABLES: frozenset[str] = frozenset({"criterion_score", "verdict", "extraction"})
 
 #: `FR-REVIEW-11`'s five absences, swept individually. Five separate assertions rather than one
 #: "no system output" check, because the plausible defect is one of the five surviving a
