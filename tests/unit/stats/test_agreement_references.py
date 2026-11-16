@@ -150,9 +150,12 @@ def test_tc_stats_04_row2_a_single_label_is_an_absence_carrying_what_was_measure
     buy (`NFR-STATS-01`, `FR-STATS-04`).
 
     The interval is the worst-case band: ±1.96·√(0.25/n) = ±0.98 at n = 1,
-    centred on zero because no coefficient is computable over one pair."""
+    centred on zero because no coefficient is computable over one pair.
+
+    The reason is `too_few_labels` (FR-STATS-31, #874): one label was drawn, so
+    `no_blind_labels` — reserved for n = 0 — would tell the reader nothing was."""
     figure = _figure({(3, 3): 1}, band_count=4, prefix="row2")
-    assert figure.reason == "no_blind_labels"
+    assert figure.reason == "too_few_labels"
     assert figure.n == 1
     assert figure.excluded_count == 0
     assert figure.interval_low == pytest.approx(-0.98)

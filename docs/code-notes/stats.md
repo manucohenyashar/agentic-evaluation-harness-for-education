@@ -48,7 +48,8 @@ and this implementation chose; all are reported on the PR):
 
 * *The figure-vs-absence boundary.* ``agreement`` returns a figure when the
   admissible population holds at least two labels carrying both sides of the
-  agreement pair; below that the answer is ``no_blind_labels`` — a first-class
+  agreement pair; below that the answer is ``too_few_labels`` (``n`` ≥ 1,
+  `FR-STATS-31`) or ``no_blind_labels`` (``n`` = 0 only) — a first-class
   absence that still carries what *was* measured (``n``, ``excluded_count``,
   and, where a statistic could not be computed, the achievable-precision
   interval) so a reader can tell "one label, no claim" from "never
@@ -148,10 +149,12 @@ interpretation its clause fixes inside the value it returns:
   the verdict is ``failing`` — the finding about `M-AGG`'s constants, not an
   absence of one. The arms are read off the label's ``routing`` column through
   ``ROUTING_POLICY_ARM_SOURCES``: the column carries the queue's admission
-  routing (`CT-AGG-06`'s closed set), so the escalated-and-reviewed arm is the
-  ``reviewed`` rows — the one value `aeh.agg` never assigns, because it names
-  a review that has happened — and the auto-accepted arm is the ``auto`` rows;
-  still-queued, triage and provisional rows join neither. The tolerance is an
+  routing at draw time (`CT-AGG-06`'s closed set), so the escalated arm is the
+  ``queued``, ``reviewed`` and ``provisional`` rows — every judgment the policy
+  did not auto-accept — and the auto-accepted arm is the ``auto`` rows; triage
+  rows join neither (`FR-STATS-30`, `CT-STATS-27`). The report also carries the
+  random-arm estimate (HLD §7.1): the same error rate over the admissible
+  labels whose ``origin`` is ``random_arm`` and no others. The tolerance is an
   environment knob whose default is the declared 0.05, and arms without a
   computable rate return ``no_data`` as a value (`CT-STATS-16`), never an
   exception.

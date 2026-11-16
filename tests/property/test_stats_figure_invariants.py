@@ -130,7 +130,10 @@ def test_tc_stats_24_kappa_and_alpha_stay_in_the_domain_or_refuse(table, declare
 
     figure = stats.agreement(**vocab.EMPTY_DATA_CALL["agreement"])
     if isinstance(figure, no_validation):
-        assert figure.reason in vocab.NO_VALIDATION_DATA_REASONS, (
+        declared_reasons = (
+            vocab.NO_VALIDATION_DATA_REASONS + vocab.AMENDED_NO_VALIDATION_DATA_REASONS
+        )
+        assert figure.reason in declared_reasons, (
             f"the absence carries reason {figure.reason!r}; it is one of the "
             "declared literals, not a message (FR-STATS-04)"
         )

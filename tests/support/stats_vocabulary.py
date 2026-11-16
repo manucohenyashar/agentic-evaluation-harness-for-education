@@ -167,6 +167,12 @@ NO_VALIDATION_DATA_REASONS: tuple[str, ...] = (
     "no_blind_labels", "no_data_for_population", "no_data_for_backend",
 )
 
+#: The reasons later amendments added beside §3.16's `Literal`: `below_min_n` (FR-STATS-28, #433)
+#: and `too_few_labels` (FR-STATS-31, #874 — a non-empty population with too few pairs for any
+#: coefficient; `no_blind_labels` is reserved for n = 0). Kept apart from the transcription above,
+#: which the Literal check parses, so that check still pins the base design's block.
+AMENDED_NO_VALIDATION_DATA_REASONS: tuple[str, ...] = ("below_min_n", "too_few_labels")
+
 
 # --- CT-STATS-04 / FR-STATS-03, FR-STATS-17: what may never be merged ----------------------
 

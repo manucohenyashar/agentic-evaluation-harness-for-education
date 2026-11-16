@@ -88,6 +88,9 @@ NO_DATA_REASONS: tuple[str, ...] = (
     "no_blind_labels",
     # FR-STATS-24 (amended) / FR-STATS-28 (#433): labels exist, but fewer than the minimum n.
     "below_min_n",
+    # FR-STATS-31 (#874): admissible labels exist, but too few pairs for any agreement
+    # coefficient. `no_blind_labels` is reserved for n = 0.
+    "too_few_labels",
     "no_data_for_population",
     "no_data_for_backend",
 )

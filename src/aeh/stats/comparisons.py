@@ -20,6 +20,7 @@ from .settings import (
     ROUTING_POLICY_FAILING_VERDICT,
     _ROUTING_POLICY_INTERPRETATION,
     ROUTING_POLICY_NO_DATA_VERDICT,
+    ROUTING_POLICY_RANDOM_ARM_ORIGIN,
     _routing_policy_tolerance,
     _subgroup_analysis_enabled,
     SURFACE_FEATURES,
@@ -324,7 +325,10 @@ def routing_policy_validity(
     """Whether the routing policy works for one cohort (FR-STATS-08, CT-STATS-11): compare the
     error rate among escalated-and-reviewed judgments with the error rate among auto-accepted ones.
     Both groups are admissible labels, split by their `routing` column through
-    `ROUTING_POLICY_ARM_SOURCES`: `reviewed` for escalated-and-reviewed, `auto` for auto-accepted.
+    `ROUTING_POLICY_ARM_SOURCES` (FR-STATS-30, CT-STATS-27): `queued`, `reviewed` and `provisional`
+    for the escalated arm, `auto` for the auto-accepted one; `triage` is in neither. The report
+    also carries the random-arm estimate (HLD §7.1): the same error rate over the admissible labels
+    whose `origin` is `random_arm`, and only those.
 
     Both arms read the same filter's population — an operational label on
     either side would compare the review with itself, and the escalated arm's
@@ -350,19 +354,16 @@ def routing_policy_validity(
     arms: dict[str, RoutingArm] = {}
     for arm in ROUTING_POLICY_ARMS:
         sources = ROUTING_POLICY_ARM_SOURCES[arm]
-        population = [
+        arms[arm] = _routing_arm([
             label
             for label in admissible
             if getattr(label, "routing", None) in sources
-        ]
-        paired = _paired_sides(population)
-        errors = sum(1 for system, teacher in paired if system != teacher)
-        arms[arm] = RoutingArm(
-            n=len(population),
-            paired=len(paired),
-            errors=errors,
-            error_rate=errors / len(paired) if paired else None,
-        )
+        ])
+    random_arm = _routing_arm([
+        label
+        for label in admissible
+        if getattr(label, "origin", None) == ROUTING_POLICY_RANDOM_ARM_ORIGIN
+    ])
     rates = [arms[arm].error_rate for arm in ROUTING_POLICY_ARMS]
     if any(rate is None for rate in rates):
         verdict = ROUTING_POLICY_NO_DATA_VERDICT
@@ -384,6 +385,20 @@ def routing_policy_validity(
         tolerance=tolerance,
         stated_interpretation=_ROUTING_POLICY_INTERPRETATION,
         n=len(admissible),
+        random_arm=random_arm,
+    )
+
+
+def _routing_arm(population: Sequence[Any]) -> RoutingArm:
+    """One arm's error rate: the judgment's band against the blind teacher's, over the labels that
+    carry both sides; ``n`` is the arm's whole admissible population."""
+    paired = _paired_sides(population)
+    errors = sum(1 for system, teacher in paired if system != teacher)
+    return RoutingArm(
+        n=len(population),
+        paired=len(paired),
+        errors=errors,
+        error_rate=errors / len(paired) if paired else None,
     )
 
 
