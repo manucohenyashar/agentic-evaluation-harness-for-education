@@ -357,14 +357,18 @@ class ActionsMixin:
         if self._store is not None:
             run_id = self._attribution_run()
             cohort_id = self._writable_cohort()
-            origins: list[Any] = []
-            if run_id is not None and cohort_id is not None:
-                origins = [
-                    _row_mapping(unit).get("origin")
-                    for unit in self._store.cohort(cohort_id).query(
-                        REVIEW_STATEMENTS["select_cell_work_unit_origins"], run_id=run_id,
-                        submission_id=submission_id, criterion_id=criterion_id)
-                ]
+            if run_id is None or cohort_id is None:
+                raise ReviewError(
+                    "this service holds a store but no run context: build a queue for "
+                    "the run (or open the service for one run) before labelling — a label "
+                    "is not attributed to an invented run"
+                )
+            origins = [
+                _row_mapping(unit).get("origin")
+                for unit in self._store.cohort(cohort_id).query(
+                    REVIEW_STATEMENTS["select_cell_work_unit_origins"], run_id=run_id,
+                    submission_id=submission_id, criterion_id=criterion_id)
+            ]
             return derive_label_origin(origins, cell)
         units = getattr(row, "work_units", None) if row is not None else None
         if units is not None:

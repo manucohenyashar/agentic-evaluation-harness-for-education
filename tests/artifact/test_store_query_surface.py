@@ -746,7 +746,7 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.review.service:302",
     "aeh.review.service:308",
     "aeh.review.service:333",
-    "aeh.review.actions:404",
+    "aeh.review.actions:408",
     # #115's collection route: the second durable write this module owns —
     # `_write_collected_label`'s single `tx.execute` in its transaction body,
     # passing `REVIEW_STATEMENTS["upsert_label"]`, a declared statement with
