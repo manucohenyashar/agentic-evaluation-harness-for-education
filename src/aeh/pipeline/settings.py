@@ -62,3 +62,43 @@ UNIT_TOKENS_OUT_ENV = "HARNESS_PIPE_UNIT_TOKENS_OUT"
 
 
 UNIT_TOKENS_OUT_DEFAULT = 1500
+
+
+# --- the reading job (FR-CONSOLE-97) --------------------------------------------------------
+
+#: The most one reading job may spend between its start (or a Resume) and its pause. Unset, the
+#: run cost ceiling the profile resolves (`cost_ceiling`) applies; a profile with no ceiling
+#: reads uncapped. Read at each check, so a raised limit takes effect at once.
+READ_COST_CEILING_ENV = "HARNESS_READ_COST_CEILING"
+
+
+#: Seam 3: the token budget one page read is priced at for the Papers confirmation's estimate
+#: (pages x the transcriber's per-page `estimate_cost`). A page image plus the reading
+#: instruction is a couple of thousand input tokens; a page's transcript rarely more than one.
+READ_TOKENS_IN_PER_PAGE_ENV = "HARNESS_READ_TOKENS_IN_PER_PAGE"
+
+
+READ_TOKENS_IN_PER_PAGE_DEFAULT = 2000
+
+
+READ_TOKENS_OUT_PER_PAGE_ENV = "HARNESS_READ_TOKENS_OUT_PER_PAGE"
+
+
+READ_TOKENS_OUT_PER_PAGE_DEFAULT = 1000
+
+
+def _decimal_knob(name: str) -> "Decimal | None":
+    """Read one non-negative decimal knob at call time; unset or blank is `None`. An invalid
+    value raises naming the knob, before anything is sent."""
+    from decimal import Decimal, InvalidOperation
+
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return None
+    try:
+        value = Decimal(raw.strip())
+    except InvalidOperation as error:
+        raise ValueError(f"{name}={raw!r} is not a number.") from error
+    if not value.is_finite() or value < 0:
+        raise ValueError(f"{name}={raw!r} must be a number of zero or more.")
+    return value

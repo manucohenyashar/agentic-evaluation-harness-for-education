@@ -179,6 +179,9 @@ def test_the_write_field_map_covers_every_declared_control_action():
         "draft package from scratch",
         "answer authoring review",
         "edit draft package",
+        # #872 (FR-CONSOLE-97): Resume restarts the class's reading worker on the queue its
+        # pause kept — console memory (ADR-47); the read itself writes through M-INGEST.
+        "resume reading",
     ], (
         f"the rowless control actions changed: {empty}. An action writing no store row is a "
         "design decision to cite here, not a gap to shrug at."

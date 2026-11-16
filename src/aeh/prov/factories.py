@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any
+from decimal import Decimal
+from typing import Any, Sequence
 
 from aeh.conf import ConfigurationError, ModelRef
 
+from .settings import retention_precheck_on
 from .errors import ProviderUnavailableError
 from .interface import InferenceProvider
 from .live import _LOCAL_SERVER_PROVIDER_NAMES, LocalServerProvider, OpenRouterProvider
@@ -67,3 +69,28 @@ def describe_provider(provider: Any) -> str:
     if isinstance(inner, RecordedFixtureProvider):
         return f"recordings in {getattr(inner, 'fixture_dir', '?')} (no network)"
     return type(inner).__name__
+
+
+def retention_precheck_skipped(provider: Any) -> bool:
+    """Whether the retention probe before dispatch is skipped for this provider (FR-PROV-48):
+    only when `HARNESS_RETENTION_PRECHECK` is off AND the provider is the recorded tier. A live
+    provider is probed whatever the knob says. Lives in M-PROV because telling a recording
+    from a live backend is M-PROV's knowledge alone (CT-PROV-15)."""
+    inner = getattr(provider, "_inner", provider)
+    return not retention_precheck_on() and isinstance(inner, RecordedFixtureProvider)
+
+
+def retention_probe_cost(provider: Any, model_refs: Sequence[ModelRef]) -> Decimal:
+    """What probing `model_refs` for zero retention cost, for the run's record (FR-PROV-48).
+
+    The shipped probes send no billed request: OpenRouter's is answered by its own
+    zero-retention routing or a GET of its retention listing, a decision provider's by its
+    confirmation source, and a recording's or a local server's by the fact that nothing leaves
+    the machine. So the figure is zero unless the provider declares its own
+    `retention_probe_cost(model_refs)` — the seam for a probe that does bill (a one-token
+    completion where an API has no listing; the probe's shape per provider is delta §10 Q12)."""
+    declared = getattr(getattr(provider, "_inner", provider), "retention_probe_cost", None)
+    if callable(declared):
+        figure = declared(tuple(model_refs))
+        return Decimal(str(figure)) if figure is not None else Decimal(0)
+    return Decimal(0)

@@ -19,6 +19,7 @@ from .run_records import (
     _refuse_profile_switch,
 )
 from .package_checks import validate_grade_policy
+from .settings import REMOTE_PROFILES
 
 
 class RunLifecycleMixin:
@@ -35,6 +36,7 @@ class RunLifecycleMixin:
         run_id: str | None = None,
         model_pins: "Mapping[str, Any] | None" = None,
         orch_knobs: Any = None,
+        escalation_refs: "tuple[Any, ...]" = (),
     ) -> str:
         """Create the run row and its audit record, and return the run id.
 
@@ -53,6 +55,11 @@ class RunLifecycleMixin:
         recorded in `provider_config`, and the run's budget and random-arm reads use them
         whenever the environment does not set the knob. Absent, nothing is recorded and the
         row is byte-identical to its pre-feature shape.
+
+        `escalation_refs` (FR-PROV-48) are the real models the run's escalation seats past the
+        panel dispatch to; the retention gate probes them with the panel, before the run row
+        exists. When a probe ran, its cost is recorded in `provider_config` as
+        `retention_probe_cost` beside `retention_verified`.
         """
         package_id = self._package_id_for(package_version)
         # FR-ORCH-31: the version's own declarations must hang together before the run row
@@ -68,16 +75,18 @@ class RunLifecycleMixin:
             run_id = f"run-{uuid.uuid4().hex}"
         decision_engine = getattr(cfg, "decision_engine", None)
         panel_config = panel_config_json(cfg.panel, decision_engine=decision_engine)
-        # A `cloud-hosted` run starts only once zero-retention routing is confirmed for every
-        # panel member (`FR-PROV-14`, `NFR-SYS-03`, `SEC-03`): verified here, before the run
-        # row exists, so a refusal leaves nothing behind.
-        retention = self._verify_retention_at_start(cfg)
+        # A remote run starts only once zero-retention routing is confirmed for every build it
+        # dispatches to (`FR-PROV-14`, `FR-PROV-48`, `NFR-SYS-03`, `SEC-03`): verified here,
+        # before the run row exists, so a refusal leaves nothing behind.
+        retention, probe_cost = self._verify_retention_at_start(cfg, tuple(escalation_refs))
         provider_fields: dict[str, Any] = {}
         if retention is not None:
-            # "Recorded per run": the confirmed build ids, in the run's frozen snapshot.
+            # "Recorded per run": the confirmed build ids, in the run's frozen snapshot, and
+            # what the probe cost (FR-PROV-48).
             provider_fields["retention_verified"] = sorted(
                 ref.build_id for ref in retention.confirmed
             )
+            provider_fields["retention_probe_cost"] = str(probe_cost)
         provider_fields.update(_pin_records(model_pins))
         if orch_knobs is not None:
             provider_fields.update(orch_knobs.to_record())
@@ -147,56 +156,88 @@ class RunLifecycleMixin:
                          recorded_at=self._wall_now())
         return run_id
 
-    def _verify_retention_at_start(self, cfg: Any) -> Any:
-        """Check the provider's data-retention setting at run start, and refuse if it cannot be
-        confirmed (FR-PROV-14).
+    def _verify_retention_at_start(
+        self, cfg: Any, escalation_refs: "tuple[Any, ...]" = (),
+    ) -> "tuple[Any, Any]":
+        """Check zero retention for every build the run will dispatch to, at run start, and
+        refuse if any cannot be confirmed (FR-PROV-14, widened by FR-PROV-48).
 
-        `None` for a profile that sends nothing off the machine. For `cloud-hosted`, the
-        provider seam's `RetentionReport`, confirmed for every panel member. A missing seam,
-        a seam without `verify_retention`, or a report that leaves any member unconfirmed
-        raises `RetentionPolicyError` — the gate is never skipped, because a skipped check
-        reads as a kept privacy promise.
+        Answers `(report, probe_cost)`. `(None, None)` for a profile that sends nothing off the
+        machine, and when no probe ran (below). On a remote profile (`cloud-hosted`, `dev-ci`)
+        every distinct build is probed once, before the run row exists: the panel and the
+        escalation judges through the provider seam, the decision model through its own
+        provider. A seam without `verify_retention`, or a report that leaves any build
+        unconfirmed, raises `RetentionPolicyError` naming the model — the gate is never skipped
+        on live traffic, because a skipped check reads as a kept privacy promise.
+
+        Two declared skips. `HARNESS_RETENTION_PRECHECK=0` skips the probe for a provider that
+        is the recorded tier (M-PROV decides which, `retention_precheck_skipped`). And a
+        `dev-ci` orchestrator bound to no `InferenceProvider` — no seam, or only a pricing
+        seam with no `verify_retention`, as a headless or test caller binds — has nothing to
+        ask; every shipped provider has it. `cloud-hosted` still refuses that.
         """
-        if cfg.backend_profile != "cloud-hosted":
-            return None
-        from aeh.prov import RetentionPolicyError
+        profile = cfg.backend_profile
+        if profile not in REMOTE_PROFILES:
+            return None, None
+        from aeh.prov import (
+            RetentionPolicyError, RetentionReport, retention_precheck_skipped,
+            retention_probe_cost,
+        )
 
         verify = getattr(self._provider, "verify_retention", None)
+        if verify is None and profile != "cloud-hosted":
+            return None, None
         if verify is None:
             raise RetentionPolicyError(
-                "a cloud-hosted run cannot start: the orchestrator was given no provider "
+                f"a {profile} run cannot start: the orchestrator was given no provider "
                 "able to verify zero-retention routing (FR-PROV-14), so retention for the "
                 f"{len(cfg.panel)} panel members is unconfirmed and nothing was created."
             )
-        report = verify(tuple(cfg.panel))
-        confirmed = {ref.build_id for ref in getattr(report, "confirmed", ())}
-        unconfirmed = [ref for ref in cfg.panel if ref.build_id not in confirmed]
-        unconfirmed += list(getattr(report, "unconfirmed", ()) or ())
-        if unconfirmed:
-            names = "; ".join(f"{ref.provider}:{ref.build_id}" for ref in unconfirmed)
-            raise RetentionPolicyError(
-                f"zero-retention routing unconfirmed for panel members: {names}. A "
-                "cloud-hosted run does not start until every member is confirmed."
-            )
+        # Once per distinct build: a build named twice is asked about once.
+        judges: dict[str, Any] = {}
+        for ref in (*cfg.panel, *escalation_refs):
+            judges.setdefault(ref.build_id, ref)
+        confirmed: list[Any] = []
+        cost = None
+        if not retention_precheck_skipped(self._provider):
+            asked = tuple(judges.values())
+            report = verify(asked)
+            confirmed_ids = {ref.build_id for ref in getattr(report, "confirmed", ())}
+            unconfirmed = [ref for ref in asked if ref.build_id not in confirmed_ids]
+            unconfirmed += list(getattr(report, "unconfirmed", ()) or ())
+            if unconfirmed:
+                names = "; ".join(f"{ref.provider}:{ref.build_id}" for ref in unconfirmed)
+                raise RetentionPolicyError(
+                    f"zero-retention routing unconfirmed for the run's models: {names}. A "
+                    f"{profile} run does not start until every member is confirmed."
+                )
+            confirmed.extend(getattr(report, "confirmed", ()))
+            cost = retention_probe_cost(self._provider, asked)
         engine = getattr(cfg, "decision_engine", None)
-        if engine is None:
-            return report
-        # FR-ORCH-40 / FR-PROV-28: the decision model sends student work off the machine too,
-        # so it passes the same fail-closed gate before anything is created. Its own provider
-        # answers when one is bound; otherwise the provider seam must speak for it.
-        engine_verify = getattr(self._decision_provider, "verify_retention", None) or verify
-        engine_report = engine_verify((engine.model,))
-        engine_confirmed = {ref.build_id for ref in getattr(engine_report, "confirmed", ())}
-        if engine.model.build_id not in engine_confirmed or getattr(engine_report, "unconfirmed", ()):
-            raise RetentionPolicyError(
-                f"zero-retention routing unconfirmed for the decision model "
-                f"{engine.model.provider}:{engine.model.build_id}. A cloud-hosted run does not "
-                f"start until it is confirmed (FR-PROV-28), and nothing was created."
-            )
-        from aeh.prov import RetentionReport
-
-        return RetentionReport(
-            confirmed=tuple(getattr(report, "confirmed", ())) + (engine.model,), unconfirmed=())
+        if engine is not None and engine.model.build_id not in judges:
+            # FR-ORCH-40 / FR-PROV-28: the decision model sends student work off the machine
+            # too, so it passes the same fail-closed gate before anything is created. Its own
+            # provider answers when one is bound; otherwise the provider seam speaks for it.
+            engine_provider = (self._decision_provider
+                               if getattr(self._decision_provider, "verify_retention", None)
+                               else self._provider)
+            if not retention_precheck_skipped(engine_provider):
+                engine_report = engine_provider.verify_retention((engine.model,))
+                engine_confirmed = {
+                    ref.build_id for ref in getattr(engine_report, "confirmed", ())}
+                if (engine.model.build_id not in engine_confirmed
+                        or getattr(engine_report, "unconfirmed", ())):
+                    raise RetentionPolicyError(
+                        f"zero-retention routing unconfirmed for the decision model "
+                        f"{engine.model.provider}:{engine.model.build_id}. A {profile} run "
+                        f"does not start until it is confirmed (FR-PROV-28), and nothing was "
+                        f"created."
+                    )
+                confirmed.append(engine.model)
+                cost = (cost or 0) + retention_probe_cost(engine_provider, (engine.model,))
+        if cost is None:
+            return None, None
+        return RetentionReport(confirmed=tuple(confirmed), unconfirmed=()), cost
 
     # -- resume (FR-ORCH-02) --------------------------------------------------------------------
 

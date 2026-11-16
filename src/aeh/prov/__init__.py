@@ -24,6 +24,7 @@ Files:
     openjev_local.py    OpenJev and OpenJevSmall served on loopback
     fixtures.py         `RecordedFixtureProvider`, the network-free provider used by tests
     factories.py        choosing the provider a model reference names
+    metering.py         `MeteredProvider`, a wrapper that adds up what completions cost
     journal.py          the AI-call journal: call context, `CallRecord`, the process-wide sink
 
 Detailed design notes (the full original module description): `docs/code-notes/prov.md`.
@@ -50,6 +51,7 @@ from .settings import (
     OPENROUTER_API_KEY_ENV,
     OPENROUTER_BASE_URL_ENV,
     RETRY_AFTER_CEILING_S_ENV,
+    RETENTION_PRECHECK_ENV,
     RETRY_MAX_ENV,
 )
 from .errors import (
@@ -163,7 +165,14 @@ from .openjev_local import (
     OpenJevSmallLocalProvider,
 )
 from .fixtures import FIXTURE_SCHEMA, RecordedFixtureProvider
-from .factories import decision_provider_for, describe_provider, provider_for
+from .factories import (
+    decision_provider_for,
+    describe_provider,
+    provider_for,
+    retention_precheck_skipped,
+    retention_probe_cost,
+)
+from .metering import MeteredProvider
 from .replies import json_from_reply
 from .journal import (
     CALL_KINDS,
@@ -232,6 +241,10 @@ __all__ = [
     "request_key",
     "RetentionPolicyError",
     "RetentionReport",
+    "MeteredProvider",
+    "RETENTION_PRECHECK_ENV",
+    "retention_precheck_skipped",
+    "retention_probe_cost",
     "SamplingParams",
     "TransportError",
     # the decision surface (Jev design delta §3.1)

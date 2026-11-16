@@ -92,7 +92,18 @@ def test_tc_reg_09_engine_off_run_rows_are_byte_equal_to_fb12d1e(head_snapshot) 
     """The run row `create_run` writes for each fixed config, captured in the same drive."""
     golden = _golden()["serialization"]
     for name in ("cloud-hosted", "edge-local"):
-        assert head_snapshot["serialization"][name]["run_row"] == golden[name]["run_row"], (
+        row = dict(head_snapshot["serialization"][name]["run_row"])
+        # #872 (FR-PROV-48): a remote run records what its retention probe cost beside
+        # `retention_verified`. Additive and engine-independent: asserted (the shipped
+        # probes bill nothing), then projected like the verdict columns in TC-REG-08.
+        provider_config = json.loads(row["provider_config"])
+        if name == "cloud-hosted":
+            assert provider_config.pop("retention_probe_cost") == "0", provider_config
+        else:
+            assert "retention_probe_cost" not in provider_config, provider_config
+        row["provider_config"] = json.dumps(provider_config, separators=(",", ":"),
+                                            sort_keys=True)
+        assert row == golden[name]["run_row"], (
             f"TC-REG-09: the {name} run row (panel_config / provider_config) is not byte-equal "
             f"to its fb12d1e capture")
     assert "retention_verified" in golden["cloud-hosted"]["run_row"]["provider_config"]

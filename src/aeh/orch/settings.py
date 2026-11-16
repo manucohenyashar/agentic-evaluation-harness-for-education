@@ -199,6 +199,12 @@ OOM_DROP_THRESHOLD_DEFAULT = 2
 BACKEND_EDGE_LOCAL = "edge-local"
 
 
+#: The profiles that send student work off the machine, where run start (and the console's
+#: reading job) verify zero retention for every build before anything is sent (FR-PROV-48
+#: widens FR-PROV-14 from `cloud-hosted`).
+REMOTE_PROFILES: tuple[str, ...] = ("cloud-hosted", "dev-ci")
+
+
 #: The worker identity the dispatch loop leases under (`#62`): the dispatch pass is a
 #: lease holder like any worker — at-least-once, sweepable — so its in-flight batch is
 #: visible on the ledger as exactly what it is, and an interrupted pass's leases are

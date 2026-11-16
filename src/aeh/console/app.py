@@ -91,6 +91,9 @@ class ConsoleApp(StoreReadsMixin, ScreenRenderingMixin, SetupScreensMixin, RunSc
         self._intake_queues: dict[str, Any] = {}
         self._intake_jobs: dict[str, str] = {}
         self._intake_attempts: dict[str, int] = {}
+        #: FR-CONSOLE-97: a reading job paused at its cost limit keeps its file tallies here,
+        #: by job id, so the job that Resume continues reports every file it read.
+        self._intake_tallies: dict[str, dict[str, Any]] = {}
         self._intake_guard = threading.Lock()
         #: The run configuration "start run" resolves from, set by the serving layer from
         #: its cfg (`ConsoleServer`); `None` resolves from the environment alone.

@@ -121,8 +121,14 @@ def start_run_in_background(
         else:
             # FR-CONF-36 / CT-CONF-25: the same resolved budget and random-arm rate `aeh run`
             # records, so a run started here grades by the config file's values.
-            run_id = orchestrator.create_run(cohort_id, package_version_id, run_config,
-                                             orch_knobs=resolve_orch_knobs(config))
+            # FR-PROV-48: the escalation seats' models are probed for retention with the
+            # panel, before the run exists; the worker then does not probe the decision model
+            # a second time.
+            run_id = orchestrator.create_run(
+                cohort_id, package_version_id, run_config,
+                orch_knobs=resolve_orch_knobs(config),
+                escalation_refs=tuple((drive_keywords["judge_refs"] or {}).values()))
+            drive_keywords["retention_checked"] = True
     else:
         status = orchestrator.run_handle(run_id).status
         if status != "pending" and not (allow_running and status == "running"):
@@ -268,6 +274,149 @@ def read_uploaded_paper(
             assessment=path if kind == "assessment" else None,
             sheets=() if kind == "assessment" else (path,),
             provider=provider if provider is not None else _provider_for(run_config))
+
+
+# --- the reading job priced, capped and retention-checked (FR-CONSOLE-97, FR-PROV-48) ---------
+
+
+#: What the Papers confirmation says on a profile whose page reader runs on this computer.
+NO_COST_LOCAL = "no cost: local models"
+
+
+def _model_name(ref: Any) -> str:
+    """A model's name for a teacher: the build without its date pin."""
+    return str(getattr(ref, "build_id", "") or "").split("@", 1)[0]
+
+
+def reading_estimate(store: Any, config: Mapping[str, Any], cohort_id: str,
+                     pages: int) -> dict[str, Any]:
+    """The Papers confirmation's figure (FR-CONSOLE-97): reading `pages` pages costs pages x the
+    transcriber's per-page `estimate_cost` (FR-PROV-09). Sends nothing.
+
+    Answers `{"estimate": <decimal string or None>, "currency", "text"}`. On `edge-local` the
+    page reader runs on this computer, so there is no figure and the text says so; a remote
+    reader that declares no price answers no figure and says that instead. The configuration is
+    resolved as the read itself resolves it, so a class whose papers may not leave the machine
+    is refused here too (`FR-CONF-08`)."""
+    from aeh.prov import CallPlan
+
+    from .settings import (
+        READ_TOKENS_IN_PER_PAGE_DEFAULT, READ_TOKENS_IN_PER_PAGE_ENV,
+        READ_TOKENS_OUT_PER_PAGE_DEFAULT, READ_TOKENS_OUT_PER_PAGE_ENV, _int_knob,
+    )
+
+    if pages < 0:
+        raise ValueError("the number of pages is a whole number of zero or more.")
+    run_config = resolve_intake_config(store, config, cohort_id)
+    currency = getattr(run_config, "cost_currency", None) or "USD"
+    if run_config.backend_profile == "edge-local":
+        return {"estimate": None, "currency": None, "pages": pages, "text": NO_COST_LOCAL}
+    plan = CallPlan(
+        pages,
+        _int_knob(READ_TOKENS_IN_PER_PAGE_ENV, READ_TOKENS_IN_PER_PAGE_DEFAULT, minimum=0),
+        _int_knob(READ_TOKENS_OUT_PER_PAGE_ENV, READ_TOKENS_OUT_PER_PAGE_DEFAULT, minimum=0),
+    )
+    # Looked up on this module at call time: the reading job builds its reader the same way.
+    cost = getattr(_reader_for(run_config).estimate_cost(plan), "cost", None)
+    if cost is None:
+        return {"estimate": None, "currency": currency, "pages": pages,
+                "text": "the page reader declares no price, so the cost of reading these "
+                        "papers cannot be estimated."}
+    return {"estimate": str(cost), "currency": currency, "pages": pages,
+            "text": f"Reading {pages} page(s) is estimated to cost about {cost} {currency} "
+                    f"(the page reader's price per page x {pages})."}
+
+
+def _reader_for(run_config: Any) -> Any:
+    """The page reader a run configuration names: this module's `_provider_for`, looked up at
+    call time, so the estimate and the reading job always build the same reader."""
+    return _provider_for(run_config)
+
+
+class ReadingSession:
+    """One reading job's page reader, between its start (or a Resume) and its end or pause.
+
+    Built on the worker before the first file: it resolves the configuration as the read does,
+    builds the reader once and, on a remote profile, verifies zero retention for the
+    transcriber before a page leaves (FR-PROV-48) — a reader with no zero-retention host refuses
+    the job naming the model, and nothing was sent. `HARNESS_RETENTION_PRECHECK=0` skips that
+    probe for the recorded tier only.
+
+    Every file of the job is read through M-PROV's `MeteredProvider` over that reader, which
+    adds up each completion's reported cost: `spent` is the job's whole spend (carried across a
+    Resume), `spent_here` what this session spent. `ceiling_reached()` compares `spent_here`
+    with `HARNESS_READ_COST_CEILING` (default: the run cost ceiling), so each Resume is the
+    teacher's approval of up to one more ceiling's worth (FR-CONSOLE-97)."""
+
+    def __init__(self, store: Any, config: Mapping[str, Any], cohort_id: str, *,
+                 spent: Any = 0) -> None:
+        from aeh.prov import MeteredProvider
+
+        self.run_config = resolve_intake_config(store, config, cohort_id)
+        self._reader = _reader_for(self.run_config)
+        self._store = store
+        self._config = config
+        self._cohort_id = cohort_id
+        self.probe_cost = self._verify_retention()
+        self._meter = MeteredProvider(self._reader, spent=spent)
+
+    @property
+    def spent(self) -> Any:
+        """The job's whole spend, the part before a Resume included."""
+        return self._meter.spent
+
+    @property
+    def spent_here(self) -> Any:
+        """What this session's reading cost."""
+        return self._meter.spent_here
+
+    def _verify_retention(self) -> Any:
+        from aeh.orch import REMOTE_PROFILES
+        from aeh.prov import RetentionPolicyError, retention_precheck_skipped, retention_probe_cost
+
+        if self.run_config.backend_profile not in REMOTE_PROFILES:
+            return None
+        if retention_precheck_skipped(self._reader):
+            return None
+        transcriber = self.run_config.transcriber
+        refusal = (f"the page reader {_model_name(transcriber)} could not be confirmed to keep "
+                   f"no copy of students' work, so no page was sent. Choose a page reader "
+                   f"that is served with zero data retention in the settings, then press "
+                   f"Resume or upload the papers again.")
+        verify = getattr(self._reader, "verify_retention", None)
+        if verify is None:
+            raise RetentionPolicyError(refusal)
+        try:
+            report = verify((transcriber,))
+        except RetentionPolicyError as error:
+            raise RetentionPolicyError(refusal) from error
+        confirmed = {ref.build_id for ref in getattr(report, "confirmed", ())}
+        if transcriber.build_id not in confirmed or getattr(report, "unconfirmed", ()):
+            raise RetentionPolicyError(refusal)
+        return retention_probe_cost(self._reader, (transcriber,))
+
+    # -- the ceiling ---------------------------------------------------------------------------
+
+    def ceiling(self) -> Any:
+        """`HARNESS_READ_COST_CEILING`, read now, else the run cost ceiling; `None` is uncapped."""
+        from .settings import READ_COST_CEILING_ENV, _decimal_knob
+
+        knob = _decimal_knob(READ_COST_CEILING_ENV)
+        return knob if knob is not None else getattr(self.run_config, "cost_ceiling", None)
+
+    def ceiling_reached(self) -> bool:
+        ceiling = self.ceiling()
+        return ceiling is not None and self.spent_here >= ceiling
+
+    @property
+    def currency(self) -> str:
+        return getattr(self.run_config, "cost_currency", None) or "USD"
+
+    def read(self, package_version: str, *, kind: str, filename: str, data: bytes) -> Any:
+        """Read one uploaded file through this session's metered reader."""
+        return read_uploaded_paper(self._store, self._config, self._cohort_id, package_version,
+                                   kind=kind, filename=filename, data=data,
+                                   provider=self._meter)
 
 
 # --- the operator's decision on a parked paper (live-test blocker B8) ---------------------------

@@ -111,6 +111,21 @@ def _int_env(name: str, default: int) -> int:
     return value
 
 
+#: FR-PROV-48: the retention probe before dispatch, on by default on every remote profile. Set
+#: to `0` it turns the probe off for the recorded tier (`RecordedFixtureProvider`) only: replay
+#: sends nothing anywhere, so a test box may skip it; a live provider is probed whatever the
+#: knob says, because a knob that silenced the check on live traffic would read as a kept
+#: privacy promise.
+RETENTION_PRECHECK_ENV = "HARNESS_RETENTION_PRECHECK"
+
+
+def retention_precheck_on() -> bool:
+    """`HARNESS_RETENTION_PRECHECK`, read at call time: off only for an explicit `0`, `false`,
+    `no` or `off`; anything else, unset included, leaves the probe on."""
+    raw = (os.environ.get(RETENTION_PRECHECK_ENV) or "").strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
 def _float_env(name: str, default: float) -> float:
     raw = os.environ.get(name)
     if raw is None or not raw.strip():

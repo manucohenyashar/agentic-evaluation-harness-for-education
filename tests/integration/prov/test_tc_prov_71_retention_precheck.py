@@ -1,8 +1,7 @@
 """`TC-PROV-71` — retention checked before anything is sent (FR-PROV-48, CT-PROV-09; RSV-33).
 
-Statistical-validity test plan r2 §3.23, story T21 (issue #905). **Written ahead of S30 (#872)**,
-which is open: these cases carry `writtenahead` and are registered in `WRITTEN_AHEAD_BLOCKERS`
-under "#872". Remove the marker — never the test — when #872 lands, and re-check them green.
+Statistical-validity test plan r2 §3.23, story T21 (issue #905). Written ahead of S30 (#872),
+which has landed: the `writtenahead` marker and its blocker entry are gone.
 
 SV-33: zero retention was verified only for the decision engine before dispatch and for the
 panel at the first call, and only on `cloud-hosted`. FR-PROV-48 widens FR-PROV-14 to every
@@ -61,7 +60,7 @@ from tests.support.reading_world import (
     wait_settled,
 )
 
-pytestmark = [pytest.mark.writtenahead, pytest.mark.integration]
+pytestmark = [pytest.mark.integration]
 
 _BLOCKER = "S30 (#872) has not landed"
 
@@ -194,7 +193,8 @@ def test_tc_prov_71_run_start_probes_every_distinct_build_once_before_any_reques
 
         # The probe's cost appears on the run.
         handle = store.cohort(cohort)
-        metrics = {row["metric"]: row["value"] for row in handle.query(
+        # `run_metrics` lives in the durable tier (store migration 1), not the cohort's.
+        metrics = {row["metric"]: row["value"] for row in store.durable().query(
             "SELECT metric, value FROM run_metrics WHERE run_id = :r", r=run_id)}
         provider_config = json.loads(handle.query(
             "SELECT provider_config FROM run WHERE run_id = :r", r=run_id)[0]["provider_config"])

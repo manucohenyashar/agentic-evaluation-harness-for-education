@@ -38,14 +38,19 @@ def _decision_provider_for_run(run_config: Any, provider: Any, decision_provider
     return decision_provider_for(engine.model)
 
 
-def _decision_run_start_checks(run_config: Any, decision_provider: Any) -> None:
+def _decision_run_start_checks(run_config: Any, decision_provider: Any, *,
+                               retention_checked: bool = False) -> None:
     """Before the first lease, confirm the cloud decision model's retention setting, or probe a
     local engine's served build (FR-PIPE-12). A failure raises out of `run_to_completion` before
-    anything is dispatched."""
+    anything is dispatched.
+
+    `retention_checked` is the caller saying this same start already verified the decision
+    model's retention in `create_run`'s gate, so it is not probed a second time (FR-PROV-48:
+    once per distinct build). A run driven again in a new process is checked here as before."""
     engine = getattr(run_config, "decision_engine", None)
     if engine is None or decision_provider is None:
         return
-    if getattr(run_config, "backend_profile", None) == "cloud-hosted":
+    if getattr(run_config, "backend_profile", None) == "cloud-hosted" and not retention_checked:
         report = decision_provider.verify_retention((engine.model,))
         confirmed = {ref.build_id for ref in getattr(report, "confirmed", ())}
         if engine.model.build_id not in confirmed or getattr(report, "unconfirmed", ()):

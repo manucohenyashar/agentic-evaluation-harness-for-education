@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchJob,
+  fetchPapersEstimate,
+  performAction,
   type ContextDoc,
   type JobRecord,
   type PaperSheet,
@@ -49,6 +51,21 @@ function uploadUrl(classId: string, version: string, kind: "assessment" | "sheet
   return `/api/v1/uploads?${query.toString()}`;
 }
 
+/**
+ * About how many pages a PDF holds, for the confirmation's cost estimate (FR-CONSOLE-97): its
+ * page objects counted in the file's own bytes. A file whose pages cannot be counted this way
+ * (compressed object streams) counts as one page, and the confirmation says it is an estimate.
+ */
+async function countPages(file: File): Promise<number> {
+  try {
+    const text = new TextDecoder("latin1").decode(await file.arrayBuffer());
+    const found = text.match(/\/Type\s*\/Page(?![a-zA-Z])/g);
+    return Math.max(1, found?.length ?? 0);
+  } catch {
+    return 1;
+  }
+}
+
 /** The teacher's word for one sheet's paper-check status. */
 function sheetStatusLabel(status: string, parked: boolean): string {
   if (parked) return `parked (${status.replace(/_/g, " ")})`;
@@ -94,6 +111,11 @@ export function Papers({
   const [testPaper, setTestPaper] = useState<File | null>(null);
   const [sheets, setSheets] = useState<File[]>([]);
   const [confirming, setConfirming] = useState(false);
+  // FR-CONSOLE-97: the confirmation's cost sentence, priced once the dialog opens.
+  const [estimate, setEstimate] = useState<string | null>(null);
+  const [resuming, setResuming] = useState(false);
+  // Bumped by Resume, so the follow below restarts on the same job id.
+  const [follow, setFollow] = useState(0);
   const [sending, setSending] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
@@ -129,6 +151,10 @@ export function Papers({
           read.retry();
           if (next.state === "queued" || next.state === "running") {
             timer = window.setTimeout(poll, JOB_POLL_MS);
+          } else if (next.state === "paused") {
+            // FR-CONSOLE-97: stopped at the reading cost limit; the reason and Resume show
+            // on the screen until the teacher continues.
+            toast({ kind: "failure", text: next.progress.current ?? "Reading paused." });
           } else {
             toast({
               kind: next.state === "succeeded" ? "success" : "failure",
@@ -146,9 +172,46 @@ export function Papers({
       stopped = true;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-    // `read.retry` and `toast` are stable; the job id alone restarts the follow.
+    // `read.retry` and `toast` are stable; the job id (or a Resume) restarts the follow.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jobId]);
+  }, [jobId, follow]);
+
+  // FR-CONSOLE-97: open the confirmation and price what it would read — pages x the page
+  // reader's per-page estimate, or "no cost: local models" on a local page reader.
+  const confirm = async (classId: string, needsTestPaper: boolean): Promise<void> => {
+    setEstimate(null);
+    setConfirming(true);
+    const files = [...(needsTestPaper && testPaper !== null ? [testPaper] : []), ...sheets];
+    try {
+      const counts = await Promise.all(files.map(countPages));
+      const pages = counts.reduce((sum, n) => sum + n, 0);
+      const priced = await fetchPapersEstimate(classId, pages);
+      setEstimate(priced.estimate === null ? priced.text : `About ${pages} page(s). ${priced.text}`);
+    } catch (failure: unknown) {
+      setEstimate(
+        `The cost could not be estimated (${failure instanceof Error ? failure.message : String(failure)}).`,
+      );
+    }
+  };
+
+  // Resume (FR-CONSOLE-97): continue a reading paused at its cost limit from the next unread
+  // file; papers already read are kept and not read again.
+  const resume = async (classId: string, pausedJob: string): Promise<void> => {
+    setResuming(true);
+    const answer = await performAction("resume reading", { cohort_id: classId, job_id: pausedJob });
+    setResuming(false);
+    if (answer.dispatched === true) {
+      setJobId(answer.job_id ?? pausedJob);
+      setFollow((n) => n + 1);
+      report(textOutcome("Reading resumed with the next unread file."));
+    } else {
+      report({
+        ...textOutcome(answer.detail ?? answer.error ?? "The reading did not resume.", true),
+        next: answer.next_action ?? "Reload the screen, then press Resume again.",
+      });
+    }
+    read.retry();
+  };
 
   // With no class chosen the server's own default class answers (the run's, else the first);
   // the uploads always go to the class the screen actually shows.
@@ -239,7 +302,7 @@ export function Papers({
                   className="settings-form"
                   onSubmit={(event) => {
                     event.preventDefault();
-                    if (canSend) setConfirming(true);
+                    if (canSend) void confirm(data.cohort_id, needsTestPaper);
                   }}
                 >
                   <div className="settings-row">
@@ -371,6 +434,22 @@ export function Papers({
                   )}
                 </form>
               )}
+              {data.reading?.paused === true && (
+                <div role="status" className="screen-alert" aria-label="Reading paused">
+                  <p>{data.reading.reason ?? "Reading paused at the reading cost limit."}</p>
+                  <BusyButton
+                    type="button"
+                    className="button button-primary"
+                    busy={resuming}
+                    disabled={resuming}
+                    onClick={() => {
+                      if (data.reading) void resume(data.cohort_id, data.reading.job_id);
+                    }}
+                  >
+                    Resume
+                  </BusyButton>
+                </div>
+              )}
               {job !== null && (
                 <div className="drafting-progress" aria-label="Reading progress">
                   <ProgressBar
@@ -452,6 +531,9 @@ export function Papers({
                   {sheets.length} answer sheet(s) will be sent to the page reader set in this
                   console's settings and checked against test {version}. A paper that fails a
                   check is parked for you to look at; a paper already read is skipped.
+                </p>
+                <p aria-label="Estimated cost">
+                  {estimate ?? "Estimating what reading these papers will cost…"}
                 </p>
                 <div className="dialog-actions">
                   <button type="button" className="button" onClick={() => setConfirming(false)}>

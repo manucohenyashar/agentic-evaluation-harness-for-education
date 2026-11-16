@@ -723,6 +723,7 @@ def _run_command(
     judge_refs = _escalation_judge_refs(
         config, run_config, Orchestrator(store).cohort_ref(args.cohort), provider)
     orchestrator = Orchestrator(store, provider=provider, decision_provider=decision_provider)
+    retention_checked = False
     if existing:
         # Latest by start time. `run_id` is `run-<uuid4 hex>` and `select_all_runs` orders by
         # it, so "the last row" is an arbitrary run among several for the same cohort and
@@ -756,10 +757,12 @@ def _run_command(
             **environment_snapshot(include_orch=True),
         })
     else:
+        # FR-PROV-48: the escalation seats' models are probed for retention with the panel.
         run_id = orchestrator.create_run(
             args.cohort, args.package_version, run_config, model_pins=given or None,
-            orch_knobs=orch_knobs)
+            orch_knobs=orch_knobs, escalation_refs=tuple((judge_refs or {}).values()))
         applied = dict(given)
+        retention_checked = True
     # `create_run` leaves the run `pending`, and a pending run never reaches the completion
     # predicate: `_maybe_complete_run` fires only from `running`. Without this the command
     # dispatches every unit, spends every model call, and then returns `pending` with no
@@ -786,7 +789,8 @@ def _run_command(
     return run_to_completion(
         store, run_id, provider=provider, run_config=run_config,
         decision_provider=decision_provider, judge_refs=judge_refs,
-        extractor=applied.get("extractor"), synthesizer=applied.get("synthesizer"))
+        extractor=applied.get("extractor"), synthesizer=applied.get("synthesizer"),
+        retention_checked=retention_checked)
 
 
 def _recorded_orch_knobs(run_row: Any) -> dict[str, Any]:

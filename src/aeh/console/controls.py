@@ -168,6 +168,12 @@ class ControlActionsMixin:
             from .authoring_actions import apply_authoring_action
 
             return apply_authoring_action(self, action, params)
+        if action == "resume reading":
+            # FR-CONSOLE-97: restarts the class's reading worker — console memory, no row —
+            # and carries the job id the papers screen follows, which the row path cannot.
+            from .paper_intake import resume_reading
+
+            return resume_reading(self, params)
         rows = _rows_for(action, params)
         try:
             if not rows:

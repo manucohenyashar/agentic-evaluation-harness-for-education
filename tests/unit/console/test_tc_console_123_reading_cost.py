@@ -1,8 +1,7 @@
 """`TC-CONSOLE-123` — page reading, priced and capped (FR-CONSOLE-97, FR-PROV-09; RSV-32).
 
-Statistical-validity test plan r2 §3.23, story T21 (issue #905). **Written ahead of S30 (#872)**,
-which is open: these cases carry `writtenahead` and are registered in `WRITTEN_AHEAD_BLOCKERS`
-under "#872". Remove the marker — never the test — when #872 lands, and re-check them green.
+Statistical-validity test plan r2 §3.23, story T21 (issue #905). Written ahead of S30 (#872),
+which has landed: the `writtenahead` marker and its blocker entry are gone.
 
 SV-33: page reading ran before a run existed and counted against no ceiling (R5). FR-CONSOLE-97:
 the Papers confirmation states the estimated cost of reading the selected files (pages x the
@@ -44,8 +43,6 @@ from tests.support.reading_world import (
     upload,
     wait_settled,
 )
-
-pytestmark = pytest.mark.writtenahead
 
 _BLOCKER = "S30 (#872) has not landed"
 
