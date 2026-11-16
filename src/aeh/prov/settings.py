@@ -80,6 +80,24 @@ DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_LOCAL_INFERENCE_BASE_URL = "http://127.0.0.1:8080/v1"
 
 
+#: The hardware profile whose concurrency `LocalServerProvider.capabilities` declares
+#: (FR-PROV-47, FR-CONF-06). The same key `M-CONF` resolves an `edge-local` run from; read once
+#: at construction when the caller does not pass `hardware_profile=`.
+HARDWARE_PROFILE_ENV = "HARNESS_HARDWARE_PROFILE"
+
+
+#: Seam 3. Overrides the local server's declared `max_concurrency` outright, for a box whose
+#: server cannot keep the profile's ceiling in flight (a slower test machine, a server started
+#: with fewer parallel slots). Unset, the hardware profile's ceiling stands.
+LOCAL_MAX_CONCURRENCY_ENV = "HARNESS_LOCAL_MAX_CONCURRENCY"
+
+
+#: What a local server declares when no hardware profile is known: a provider built outside a
+#: resolved `edge-local` run (a probe, a unit test). One request at a time is the value every
+#: server can keep.
+DEFAULT_LOCAL_MAX_CONCURRENCY = 1
+
+
 def _int_env(name: str, default: int) -> int:
     raw = os.environ.get(name)
     if raw is None or not raw.strip():

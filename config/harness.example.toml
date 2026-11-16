@@ -45,12 +45,14 @@ role = "transcriber"
 provider = "local"
 build_id = "/models/qwen3-vl-8b-instruct-q4.gguf@sha256:0000000000000000000000000000000000000000000000000000000000000000"
 quantization = "q4"
+served_as = "qwen3-vl:8b-instruct-q4_K_M"
 
 [[profiles.edge-local.panel]]
 role = "judge"
 provider = "local"
 build_id = "/models/qwen3-30b-a3b-q4.gguf@sha256:0000000000000000000000000000000000000000000000000000000000000000"
 quantization = "q4"
+served_as = "qwen3:30b-a3b-q4_K_M"
 
 # --- connected configuration: Jev on OpenRouter ----------------------------------------------------
 # The Jev build is pinned: the wire slug is typesafe/jev-1.13, and the date pins what OpenRouter

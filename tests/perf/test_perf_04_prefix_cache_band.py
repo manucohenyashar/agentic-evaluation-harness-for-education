@@ -151,7 +151,7 @@ def test_perf_04_prefix_cache_is_high_stable_and_inside_its_historical_band_for_
     provider = LocalServerProvider(base_url=base_url)
     model_ref = ModelRef(role="judge", provider="ollama",
                          build_id=os.environ["HARNESS_PERF_BUILD_ID"],
-                         quantization=os.environ.get("HARNESS_PERF_QUANTIZATION", "q4"))
+                         quantization=os.environ.get("HARNESS_PERF_QUANTIZATION", "q4"), served_as="served-model")
     params = SamplingParams(temperature=0.0)
     prefix = _prefix()
 

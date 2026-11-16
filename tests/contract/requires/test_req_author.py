@@ -369,9 +369,9 @@ def test_tc_req_135_every_authoring_call_rides_m_prov(tmp_path, network_guard, m
     chain = (
         EDGE_JUDGE, EDGE_JUDGE_2, EDGE_JUDGE_3,
         ModelRef(role="judge", provider="ollama", build_id="/models/esc-1.gguf@sha256:aaaa",
-                 quantization="q4"),
+                 quantization="q4", served_as="served-model"),
         ModelRef(role="judge", provider="ollama", build_id="/models/esc-2.gguf@sha256:bbbb",
-                 quantization="q4"),
+                 quantization="q4", served_as="served-model"),
     )
     documents_dir = tmp_path / "documents"
     documents_dir.mkdir()

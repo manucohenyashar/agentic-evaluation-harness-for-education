@@ -79,6 +79,8 @@ def _live_model_ref() -> ModelRef:
         provider="ollama",
         build_id=os.environ.get("HARNESS_LIVE_BUILD_ID", "local-model"),
         quantization=os.environ.get("HARNESS_LIVE_QUANTIZATION", "q4"),
+        # FR-PROV-47: the name the live server serves the model under.
+        served_as=os.environ.get("HARNESS_LIVE_SERVED_AS", "local-model"),
     )
 
 

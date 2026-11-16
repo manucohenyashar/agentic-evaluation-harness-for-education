@@ -47,7 +47,7 @@ pytestmark = pytest.mark.integration
 
 COHORT = "c-238"
 TRANSCRIBER = ModelRef(role="transcriber", provider="local",
-                       build_id="vlm@sha256:aaaa", quantization="q4")
+                       build_id="vlm@sha256:aaaa", quantization="q4", served_as="served-model")
 SECOND = ModelRef(role="transcriber", provider="fixture-b",
                   build_id="/models/qwen-vl.gguf@sha256:bbbb", quantization="q4")
 

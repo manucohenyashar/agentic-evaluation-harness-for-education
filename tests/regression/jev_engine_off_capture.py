@@ -116,6 +116,18 @@ def _run_row(world: Any, name: str, resolved: Any) -> dict[str, Any]:
     return dict(zip(("panel_config", "provider_config", "backend_profile"), tuple(row)))
 
 
+def _without_served_as(value: Any) -> Any:
+    """`value` with every model table's `served_as` projected out. FR-CONF-40 (#871) made it
+    required on an `edge-local` local block, so the fixed `edge-local` config carries it and
+    its persisted form gains the key; it is an address, not part of the build identity
+    (ADR-61), and the only permitted difference from the fb12d1e capture it adds."""
+    if isinstance(value, dict):
+        return {k: _without_served_as(v) for k, v in value.items() if k != "served_as"}
+    if isinstance(value, (list, tuple)):
+        return [_without_served_as(v) for v in value]
+    return value
+
+
 def _serialization(config: dict[str, Any], cohort: Any, world: Any = None,
                    name: str = "") -> dict[str, Any]:
     from aeh.conf import compute_panel_build_ref, resolve_run_config
@@ -127,7 +139,8 @@ def _serialization(config: dict[str, Any], cohort: Any, world: Any = None,
         "panel_build_ref": compute_panel_build_ref(resolved.panel),
         "profile_summary": resolved.profile_summary().to_canonical_json(),
         "panel_config_json": panel_config_json(resolved.panel),
-        "persisted": json.dumps(resolved.to_persisted_dict(), sort_keys=True, default=str),
+        "persisted": json.dumps(_without_served_as(resolved.to_persisted_dict()), sort_keys=True,
+                                default=str),
     }
 
 

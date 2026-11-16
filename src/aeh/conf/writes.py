@@ -538,7 +538,8 @@ def _apply_toml(text: str, plans: tuple[_Plan, ...], has_sections: bool,
 def _to_plain(value: Any) -> Any:
     """The parsed document as plain JSON data: `ModelRef`s back to tables, tuples to lists. A
     model table's absent quantization stays absent — `_ref_to_dict` spells it `null`, which
-    would add a key the file never carried."""
+    would add a key the file never carried. `served_as` rides through when the table has it
+    (`_ref_to_dict` writes it only then), so saving a setting never drops a local server's name."""
     if isinstance(value, ModelRef):
         table = _ref_to_dict(value)
         if table.get("quantization") is None:

@@ -47,7 +47,7 @@ from .errors import (
     UnresolvedModelRefError,
 )
 from . import frozen  # noqa: F401  (imported for its registrations)
-from .model_ref import FLOATING_TAGS, ModelRef, WEIGHTS_SUFFIXES
+from .model_ref import FLOATING_TAGS, LOCAL_SERVER_PROVIDERS, ModelRef, WEIGHTS_SUFFIXES
 from .hardware import (
     DEFAULT_HOSTED_CONCURRENCY,
     DEFAULT_HOSTED_PREFIX_TOKEN_CEILING,
@@ -140,6 +140,7 @@ __all__ = [
     "EditOutcome",
     "environment_snapshot",
     "FLOATING_TAGS",
+    "LOCAL_SERVER_PROVIDERS",
     "hardware_policy_for",
     "HARDWARE_PROFILES",
     "HardwarePolicy",

@@ -183,7 +183,7 @@ def test_tc_setup_c09_overage_reported_while_fixable_and_drops_spare_the_text(
     resumed = SetupService(
         chain.catalog, chain.ingestor, chain.provider,
         ModelRef(role="extractor", provider="local", build_id=SETUP_BUILD,
-                 quantization="q4"),
+                 quantization="q4", served_as="served-model"),
         run_config=SimpleNamespace(prefix_token_ceiling=999))
     second = resumed.check_prefix_budget()
     assert second.ceiling_tokens == 999, (

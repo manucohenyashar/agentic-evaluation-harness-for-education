@@ -164,7 +164,7 @@ class _Gateway:
         self.ingestor = Ingestor(
             self.handle, self.blobs, self.provider,
             ModelRef(role="transcriber", provider="local", build_id="vlm@sha256:dddd",
-                     quantization="q4"),
+                     quantization="q4", served_as="served-model"),
             SamplingParams(temperature=0.0), self.rasterizer,
             residency=ResidencySlot.for_policy(("transcriber",)), sanitizer=PypdfSanitizer())
 

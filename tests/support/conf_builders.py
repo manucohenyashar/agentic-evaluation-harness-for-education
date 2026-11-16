@@ -29,18 +29,21 @@ EDGE_JUDGE = ModelRef(
     provider="ollama",
     build_id="/models/llama-3.3-70b.gguf@sha256:aaaa",
     quantization="q4",
+    served_as="served-model",
 )
 EDGE_TRANSCRIBER = ModelRef(
     role="transcriber",
     provider="ollama",
     build_id="/models/whisper-large-v3.gguf@sha256:bbbb",
     quantization="q4",
+    served_as="served-model",
 )
 EDGE_OFF_PANEL = ModelRef(
     role="off_panel",
     provider="ollama",
     build_id="/models/qwen-2.5-7b.gguf@sha256:cccc",
     quantization="q4",
+    served_as="served-model",
 )
 
 HOSTED_JUDGE = ModelRef(
@@ -126,12 +129,14 @@ EDGE_JUDGE_2 = ModelRef(
     provider="ollama",
     build_id="/models/qwen-2.5-72b.gguf@sha256:dddd",
     quantization="q4",
+    served_as="served-model",
 )
 EDGE_JUDGE_3 = ModelRef(
     role="judge",
     provider="vllm-mlx",
     build_id="/models/mistral-large.gguf@sha256:eeee",
     quantization="q8",
+    served_as="served-model",
 )
 EDGE_PANEL_3 = (EDGE_JUDGE, EDGE_JUDGE_2, EDGE_JUDGE_3)
 
@@ -181,6 +186,7 @@ EDGE_ESCALATION_A = ModelRef(
     provider="ollama",
     build_id="/models/deepseek-r1-distill.gguf@sha256:7777",
     quantization="q4",
+    served_as="served-model",
 )
 
 #: The edge twin of `HOSTED_ESCALATION_DUPLICATE`: equal by build identity to panel member
@@ -190,6 +196,7 @@ EDGE_ESCALATION_DUPLICATE = ModelRef(
     provider="vllm-mlx",
     build_id="/models/mistral-large.gguf@sha256:eeee",
     quantization="q8",
+    served_as="served-model",
 )
 
 
@@ -244,12 +251,14 @@ EDGE_JUDGE_4 = ModelRef(
     provider="vllm-mlx",
     build_id="/models/gemma-2-27b.gguf@sha256:ffff",
     quantization="q8",
+    served_as="served-model",
 )
 EDGE_JUDGE_5 = ModelRef(
     role="judge",
     provider="ollama",
     build_id="/models/phi-4-14b.gguf@sha256:1111",
     quantization="q4",
+    served_as="served-model",
 )
 
 #: The five distinct judges, in a fixed order, so a case can slice the panel sizes `PANEL_SIZES`
@@ -277,6 +286,7 @@ def edge_panel(size: int) -> tuple[ModelRef, ...]:
             provider="ollama",
             build_id=f"/models/filler-{i}.gguf@sha256:{i:04x}",
             quantization="q4",
+            served_as="served-model",
         )
         for i in range(size - len(EDGE_JUDGES_5))
     )

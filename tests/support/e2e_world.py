@@ -614,7 +614,7 @@ class SynthWorld:
 
     def _judge_ref(self, build_id: str) -> Any:
         return ModelRef(role="judge", provider="local", build_id=build_id,
-                        quantization="q4")
+                        quantization="q4", served_as="served-model")
 
     # -- the corpus seams ------------------------------------------------------------------------
     #
@@ -750,7 +750,7 @@ class SynthWorld:
         return Ingestor(
             self.handle, self.blobs, self.provider,
             ModelRef(role="transcriber", provider="local",
-                     build_id=TRANSCRIBER_BUILD, quantization="q4"),
+                     build_id=TRANSCRIBER_BUILD, quantization="q4", served_as="served-model"),
             SamplingParams(temperature=0.0), PdfiumRasterizer(),
             residency=ResidencySlot.for_policy(("transcriber",)),
             sanitizer=PypdfSanitizer(),
@@ -936,9 +936,9 @@ class SynthWorld:
         state a SIGKILLed worker leaves (the kill variant's injury), which only the
         lease sweeper requeues."""
         ref = ModelRef(role="extractor", provider="local", build_id=EXTRACT_BUILD,
-                       quantization="q4")
+                       quantization="q4", served_as="served-model")
         second = ModelRef(role="extractor", provider="local",
-                          build_id=EXTRACT_SECOND_BUILD, quantization="q4")
+                          build_id=EXTRACT_SECOND_BUILD, quantization="q4", served_as="served-model")
         worker = ExtractionWorker(
             self.store, self.provider, ref,
             second_family_model=second, high_risk_criteria=self.open_ids,
@@ -1174,7 +1174,7 @@ class SynthWorld:
         worker = SynthesisWorker(
             self.store, self.provider,
             ModelRef(role="synthesizer", provider="local", build_id=SYNTH_BUILD,
-                     quantization="q4"),
+                     quantization="q4", served_as="served-model"),
         )
         for sid in self.admitted_ids():
             worker.synthesize_submission(self.run_id, sid)

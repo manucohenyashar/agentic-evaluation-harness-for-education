@@ -694,7 +694,7 @@ def decision_response(request: Any, outcome: dict[str, Any], reference_ordinal: 
 
 
 def _corpus_ref(role: str, build_id: str) -> Any:
-    return ModelRef(role=role, provider="local", build_id=build_id, quantization="q4")
+    return ModelRef(role=role, provider="local", build_id=build_id, quantization="q4", served_as="served-model")
 
 
 def corpus_refs() -> dict[str, Any]:

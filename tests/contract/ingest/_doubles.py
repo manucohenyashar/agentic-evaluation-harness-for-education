@@ -104,7 +104,7 @@ SCORE_TABLES = frozenset({
 def model_ref(build: str = "vlm@sha256:cccc") -> ModelRef:
     """A transcriber `ModelRef`; `build` varies where a case varies the build."""
     return ModelRef(role="transcriber", provider="local", build_id=build,
-                    quantization="q4")
+                    quantization="q4", served_as="served-model")
 
 
 # -- the scripted seams --------------------------------------------------------------------------------

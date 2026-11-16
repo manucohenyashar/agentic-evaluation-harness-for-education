@@ -73,7 +73,7 @@ pytestmark = pytest.mark.contract
 from aeh.conf import ModelRef
 
 SETUP_MODEL_REF = ModelRef(role="extractor", provider="local",
-                           build_id="vlm@sha256:bbbb", quantization="q4")
+                           build_id="vlm@sha256:bbbb", quantization="q4", served_as="served-model")
 
 
 def _service_with_replies(chain, replies):
@@ -226,7 +226,7 @@ def test_tc_setup_c12_rubric_ingestion_failure_surfaces_not_quarantines(
         chain.store.cohort("c-rubric-fail"), chain.store.blobs(),
         ScriptedIngestProvider("unused — the sanitizer fails first"),
         ModelRef(role="transcriber", provider="local", build_id=TRANSCRIBER_BUILD,
-                 quantization="q4"),
+                 quantization="q4", served_as="served-model"),
         SamplingParams(temperature=0.0), ScriptedRasterizer(),
         residency=ResidencySlot.for_policy(("transcriber",)),
         sanitizer=FailingSanitizer(),

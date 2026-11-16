@@ -124,6 +124,14 @@ The two forms are told apart by `WEIGHTS_SUFFIXES`, not by the presence of `@sha
 alone: a hosted build pinned by content digest (`openrouter/x@sha256:abcd`) is
 provider-pinned, not a weights path.
 
+`served_as` (FR-CONF-40, ADR-61) is the name a local model server serves the build under. It
+is an **address, not an identity**: `compute_panel_build_ref` and the fixture request key read
+`provider`/`build_id`/`quantization` only, the resume comparison of transcriber and off-panel
+checker uses `_ref_identity` (which omits it), and `_ref_to_dict` writes it only when set, so a
+frozen run config without a local model serializes byte-identically to its pre-#871 form. A
+block whose `provider` is in `LOCAL_SERVER_PROVIDERS` must carry it on `edge-local`; the refusal
+is raised in `resolve_run_config` (step 4b). A hosted block carrying it is accepted and ignored.
+
 The digest is required to be hex and non-empty, but **not** 64 characters: the repository
 already commits `sha256:aaaa` as a legal judge build
 (`tests/unit/prov/test_recorded_fixture_provider.py`). Verifying that a digest matches the

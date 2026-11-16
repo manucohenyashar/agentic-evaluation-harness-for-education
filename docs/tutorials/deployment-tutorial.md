@@ -183,7 +183,7 @@ You pass one file with `--config`. It can hold a section for each profile, so on
 2. **The environment wins over the file** for these settings: `HARNESS_PROFILE`, `HARNESS_HARDWARE_PROFILE`, `HARNESS_COST_CEILING`, `HARNESS_COST_CURRENCY`, `HARNESS_CONCURRENCY`, `HARNESS_ALLOW_REMOTE_REAL_WORK`, `CONSOLE_BIND`, `CONSOLE_PORT`, and the decision-engine settings (`HARNESS_DECISION_ENGINE`, `HARNESS_DECISION_PROVIDER`, `HARNESS_JEV_BUILD`, `HARNESS_JEV_QUANTIZATION`, and three `HARNESS_JEV_...` limits).
 3. **Some settings can only live in the file:** `prompt_template_v`, the `transcriber` and `panel` models, `retention_setting`, and `allow_remote_real_work_supplied_by`.
 4. A run **keeps the profile it started with.** Resuming it under another profile is refused, and the message names the profile it expects.
-5. Model tables are written like this: `role`, `provider`, `build_id`, and (local mode only) `quantization`.
+5. Model tables are written like this: `role`, `provider`, `build_id`, and (local mode only) `quantization` and `served_as`.
 
 ### 5.3 The settings in plain words
 
@@ -268,6 +268,7 @@ role = "transcriber"
 provider = "local"
 build_id = "/models/qwen3-vl-8b-instruct-q4.gguf@sha256:<64 hex characters>"
 quantization = "q4"
+served_as = "qwen3-vl:8b-instruct-q4_K_M"
 
 # The judges. List 1, 3 or 5 of these blocks.
 [[profiles.edge-local.panel]]
@@ -275,6 +276,7 @@ role = "judge"
 provider = "local"
 build_id = "/models/qwen3-30b-a3b-q4.gguf@sha256:<64 hex characters>"
 quantization = "q4"
+served_as = "qwen3:30b-a3b-q4_K_M"
 ```
 
 Now the model line itself, part by part. This is the one place where the configuration asks you to assemble a string by hand, so every part of it is explained here.
@@ -288,6 +290,15 @@ Now the model line itself, part by part. This is the one place where the configu
 | The fingerprint | 64 hex characters | The SHA-256 hash of the weights file | `sha256sum /models/qwen3-30b-a3b-q4.gguf` (macOS / Linux) or `Get-FileHash -Algorithm SHA256 C:\models\qwen3-30b-a3b-q4.gguf` (Windows PowerShell). **The system does not check the fingerprint against the file** — the checker accepted one of all zeros. Put the real one in anyway: it is how you can later prove which exact model graded a student |
 | `quantization` (a separate line) | `q4` | How compressed the weights are | Any non-empty label works, but use the one the file's own name carries (`Q4_K_M` → `q4`), so the record later reads true. Missing or empty is refused |
 | `provider` (a separate line) | `local` | How the model is served: `local`, `local-server`, `ollama` or `vllm-mlx` | All four use the same code. Use `local` unless you want the name to describe your server |
+| `served_as` (a separate line) | `qwen3:30b-a3b-q4_K_M` | The name your model server serves this model under. The system asks the server for the model by this name; the `build_id` stays the record of which exact file graded | The name the server lists at `<address>/models` (see the table below). **Required in local mode:** without it the start is refused: *"panel[0] names a local model but not the name the server serves it under; add served_as = "..." with the name your model server lists the model under"*. It is not part of the build's identity, so renaming the model in the server is a config edit, not a new grader |
+
+Where each server gets the `served_as` name from (check it against your server's own documentation and its `<address>/models` list):
+
+| Server | The name it serves a model under |
+|---|---|
+| Ollama | The name `ollama list` shows, **tag included** (for example `qwen3:30b-a3b-q4_K_M`) |
+| llama.cpp (`llama-server`) | The `--alias` you started it with; without one, the server picks a name from the file, so set an alias |
+| vLLM | The `--served-model-name` you started it with; without one, the `--model` value |
 
 **On Windows**, write the path with forward slashes (`C:/models/x.gguf@sha256:...`) or in single quotes (`'C:\models\x.gguf@sha256:...'`). Both were accepted by the checker. In double quotes a backslash is a special character in TOML.
 
@@ -310,13 +321,15 @@ The address must **end in `/v1`**. The system adds `/chat/completions` to it (ch
 > A test against a stand-in server on this machine showed exactly what the system sends. It posts to `<address>/chat/completions` in the standard chat format, with one message per part of the prompt:
 >
 > ```json
-> {"model": "/models/x-q4.gguf@sha256:0000...0000",
+> {"model": "qwen3:30b-a3b-q4_K_M",
 >  "messages": [{"role": "user", "name": "instruction", "content": "Pick a band"},
 >               {"role": "user", "name": "submission", "content": "student text"}],
 >  "temperature": 0.0}
 > ```
 >
-> A page picture is sent as an image part (`"type": "image_url"` with a `data:image/png;base64,...` address), which is what vision models expect. One thing is still unusual: the `model` is the whole `build_id`, including the file path and the fingerprint. Servers such as Ollama, llama.cpp and vLLM usually want the name they serve the model under. **Whether your server accepts this as it is has not been checked.** Before a real test, send one real request and see. If the server refuses the model name, you will need to fix that; it is engineering work.
+> A page picture is sent as an image part (`"type": "image_url"` with a `data:image/png;base64,...` address), which is what vision models expect. The `model` is the block's `served_as` name (6.3), never the file path: the system records the `build_id` as the build that answered, and keeps the name the server reported beside it in the AI-call log. **A real server has still not been tried.** Before a real test, send one real request and see that the server accepts the `served_as` name.
+>
+> The system declares as many requests at a time as the hardware profile allows (4 on `unified-large`, 3 on `discrete-gpu`, 2 on `unified-small`). If your server was started with fewer parallel slots, set `HARNESS_LOCAL_MAX_CONCURRENCY` to the number it can take.
 
 ### 6.6 Start it
 
@@ -785,6 +798,7 @@ Every message is the system's real wording (checked unless said).
 | `HARNESS_QA_MODEL is not a resolved build identity` | The Q&A model has a moving tag (`:free`, `@latest`) or no `@` pin | Pin it, e.g. `vendor/model@2026-09-01` |
 | `panel[0] is a provider-pinned build, but ... 'edge-local' requires a edge-weights build` | An OpenRouter-style name in local mode | Use a file path ending `.gguf` (or another weights suffix), plus fingerprint and `quantization` |
 | `panel[0] is not a resolved build identity` | Missing `@...` pin or fingerprint, a moving tag, or no `quantization` (local) | Pin the model (6.3, 7.3) |
+| `panel[0] names a local model but not the name the server serves it under` | A local model block has no `served_as` | Add `served_as` with the name your server lists (6.3) |
 | `panel must hold [1, 3, 5] judges, got 2` | Even panel | Use 1, 3 or 5 judges |
 | `HARNESS_COST_CEILING is required for backend_profile ...` | OpenRouter profiles need a limit | Add the ceiling and the currency |
 | `retention_setting is required for backend_profile 'cloud-hosted'` | Privacy choice not recorded | Add `retention_setting` |

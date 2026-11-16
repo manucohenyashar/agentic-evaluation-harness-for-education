@@ -107,7 +107,10 @@ def _provider_for(config: Mapping[str, Any]) -> Any:
     if profile == "cloud-hosted":
         return _UnitPricedProvider(OpenRouterProvider.enforcing_zero_retention())
     if profile == "edge-local":
-        return _UnitPricedProvider(LocalServerProvider())
+        # FR-PROV-47: the server declares the run's hardware profile's concurrency.
+        hardware = getattr(config, "hardware_profile", None) or (
+            config.get("hardware_profile") if hasattr(config, "get") else None)
+        return _UnitPricedProvider(LocalServerProvider(hardware_profile=hardware))
     raise ValueError(
         f"no backend profile is configured ({profile!r}); set HARNESS_BACKEND_PROFILE or "
         f"declare backend_profile in the config file. The declared profiles are "
@@ -265,7 +268,10 @@ def _escalation_judge_refs(config: Mapping[str, Any], run_config: Any, cohort: A
     refs = []
     for index, entry in enumerate(raw):
         where = f"{ESCALATION_JUDGES_KEY}[{index}]"
-        fields = ("role", "provider", "build_id", "quantization")
+        # `served_as` (FR-CONF-40): a local escalation judge names the model as its server
+        # serves it, exactly as a panel judge does; the one-judge resolution below refuses a
+        # local entry without it on `edge-local`.
+        fields = ("role", "provider", "build_id", "quantization", "served_as")
         unknown = sorted(set(entry) - set(fields))
         missing = [name for name in fields[:3] if name not in entry]
         if unknown or missing:

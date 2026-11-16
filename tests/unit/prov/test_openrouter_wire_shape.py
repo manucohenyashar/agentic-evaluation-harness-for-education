@@ -47,7 +47,7 @@ from tests.support.prov_contract import CountingClock
 OPENROUTER_REF = ModelRef(role="judge", provider="openrouter",
                           build_id="openrouter/qwen/qwen3-30b-a3b@2026-06-01", quantization=None)
 LOCAL_REF = ModelRef(role="judge", provider="local",
-                     build_id="/models/qwen3-30b-a3b-q4.gguf@sha256:" + "a" * 64, quantization="q4")
+                     build_id="/models/qwen3-30b-a3b-q4.gguf@sha256:" + "a" * 64, quantization="q4", served_as="served-model")
 PARAMS = SamplingParams(temperature=0.0)
 STUDENT_TEXT = "The block slides because friction is lower than gravity, ünïcode intact."
 PNG = base64.b64encode(b"\x89PNG\r\n\x1a\n-not-a-real-image-").decode("ascii")
@@ -144,11 +144,14 @@ def test_tc_prov_61_openrouter_is_sent_the_plain_slug_and_reports_what_served():
     assert completion.cost is not None and str(completion.cost) == "0.00001168"
 
 
-def test_tc_prov_61_a_local_server_is_still_sent_the_pinned_build_id():
+def test_tc_prov_61_a_local_server_is_sent_its_served_as_name_not_the_build_id():
+    """Re-based by FR-PROV-47 (ADR-61): the local server is addressed by `served_as`; the
+    weights-path `build_id` stays the identity and never goes on the wire."""
     transport = _Transport(_openrouter_ok())
     _local(transport).complete(_payload(), LOCAL_REF, PARAMS)
     (body,) = transport.bodies()
-    assert body["model"] == LOCAL_REF.build_id
+    assert body["model"] == LOCAL_REF.served_as
+    assert LOCAL_REF.build_id not in json.dumps(body)
 
 
 # --- TC-PROV-62 -------------------------------------------------------------------------------

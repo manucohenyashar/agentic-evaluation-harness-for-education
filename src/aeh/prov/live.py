@@ -10,12 +10,15 @@ from typing import Callable
 from decimal import Decimal
 from typing import Any
 
-from aeh.conf import ConfigurationError, ModelRef
+from aeh.conf import ConfigurationError, HARDWARE_PROFILES, LOCAL_SERVER_PROVIDERS, ModelRef
 
 from .settings import (
     DEFAULT_LOCAL_INFERENCE_BASE_URL,
+    DEFAULT_LOCAL_MAX_CONCURRENCY,
     DEFAULT_OPENROUTER_BASE_URL,
+    HARDWARE_PROFILE_ENV,
     LOCAL_INFERENCE_BASE_URL_ENV,
+    LOCAL_MAX_CONCURRENCY_ENV,
     _LOGGER,
     OPENROUTER_API_KEY_ENV,
     OPENROUTER_BASE_URL_ENV,
@@ -251,13 +254,16 @@ def _no_content_reason(choice: Any, message: Any) -> str:
 
 
 def _parse_completion(response: HttpResponse, model_ref: ModelRef,
-                      state: str = "") -> "Completion":
-    """Turn an OpenAI-style response into a `Completion`, or raise.
+                      state: str = "") -> tuple["Completion", str | None]:
+    """Turn an OpenAI-style response into a `Completion` and the model name it reported, or raise.
 
     A refused request raises `_status_error`'s error first. The resolved build is what the
     response *reported* (the body's `model` field, falling back to the `x-served-build` header),
-    never the requested ref (`FR-PROV-04`). `state` is the request's payload text, used only to
-    keep it out of error messages."""
+    never the requested ref (`FR-PROV-04`); a provider may then replace it with its own identity
+    (`_resolved_build`). The second value is that reported name, or None when the response
+    reported none: the `Completion` falls back to the pinned `build_id` then, the second value
+    does not, so the call journal never shows a name the server did not say (FR-PROV-47).
+    `state` is the request's payload text, used only to keep it out of error messages."""
     import json
 
     refused = _status_error(response, state)
@@ -317,19 +323,19 @@ def _parse_completion(response: HttpResponse, model_ref: ModelRef,
         raise MalformedResponseError(
             f"the response carries neither a choices list nor a text field.{said}"
         )
-    served = document.get("model")
-    if not isinstance(served, str) or not served:
-        served = response.headers.get("x-served-build", model_ref.build_id)
+    reported = document.get("model")
+    if not isinstance(reported, str) or not reported:
+        reported = response.headers.get("x-served-build") or None
 
     return Completion(
         text=text,
         tokens_in=int(usage.get("prompt_tokens", 0)),
         tokens_out=int(usage.get("completion_tokens", 0)),
         latency_ms=0,
-        resolved_build=served,
+        resolved_build=reported if reported is not None else model_ref.build_id,
         cached_prefix_tokens=int(cached or 0),
         cost=cost,
-    )
+    ), reported
 
 
 class _BaseLiveProvider:
@@ -382,12 +388,13 @@ class _BaseLiveProvider:
         with attempt_journal(model=model_ref.build_id,
                              request=lambda: payload_request(prompt.fields),
                              secrets=(self._api_key or "",)) as journal:
-            completion = self._dispatch_journaled(
+            completion, reported = self._dispatch_journaled(
                 model_ref, body, state, headers, model_key, journal)
             journal.succeeded(
                 response=completion.text, resolved_build=completion.resolved_build,
                 tokens_in=completion.tokens_in, tokens_out=completion.tokens_out,
-                cost=completion.cost, latency_ms=completion.latency_ms)
+                cost=completion.cost, latency_ms=completion.latency_ms,
+                served_model=reported)
         # CT-PROV-14's per-call DEBUG line, on the live path exactly as the fixture path
         # emits it: metadata only, never a payload value (`CT-PROV-13`).
         _LOGGER.debug(
@@ -405,13 +412,23 @@ class _BaseLiveProvider:
 
     def _dispatch_journaled(self, model_ref: ModelRef, body: Any, state: str,
                             headers: dict[str, str], model_key: str,
-                            journal: Any) -> "Completion":
-        """The retry loop, then the cost and latency this provider owns."""
+                            journal: Any) -> tuple["Completion", str | None]:
+        """The retry loop, then the cost, latency and build identity this provider owns. Returns
+        the completion and the model name the server reported (None if it reported none)."""
         started = self._clock.monotonic()
+        # The answering attempt's reported model, kept per call (a provider serves concurrent
+        # calls, so this cannot live on `self`). `BuildWatch` still checks what the server
+        # reported, inside the loop; only the returned identity is the provider's to set.
+        reported: list[str | None] = [None]
+
+        def parse(response: HttpResponse) -> "Completion":
+            completion, reported[0] = _parse_completion(response, model_ref, state)
+            return completion
+
         completion = dispatch_with_retries(
             self._transport,
             lambda: HttpRequest("POST", self._url_for(model_ref), headers, body),
-            lambda response: _parse_completion(response, model_ref, state),
+            parse,
             policy=self._policy, clock=self._clock, rng=self._rng,
             governor=self._governor, counters=self._counters,
             build_watch=self._build_watch, model_key=model_key,
@@ -440,10 +457,12 @@ class _BaseLiveProvider:
             # non-null cost on an edge-local completion — the clause violation the
             # fixture refuses at record and at read.
             completion = dataclasses.replace(completion, cost=None)
-        completion = dataclasses.replace(completion, latency_ms=elapsed_ms)
+        completion = dataclasses.replace(
+            completion, latency_ms=elapsed_ms,
+            resolved_build=self._resolved_build(model_ref, completion.resolved_build))
         self._counters.on_usage(
             completion.tokens_in, completion.tokens_out, completion.cached_prefix_tokens)
-        return completion
+        return completion, reported[0]
 
     def estimate_cost(self, plan: CallPlan) -> CostEstimate:
         """The estimated cost of a plan: its call count and per-call token budgets at this
@@ -465,6 +484,11 @@ class _BaseLiveProvider:
         """The model name the backend knows, or None to send the pinned `build_id` as it is."""
         return None
 
+    def _resolved_build(self, model_ref: ModelRef, reported: str) -> str:
+        """The build a completion records as having answered. By default what the backend
+        reported (`FR-PROV-04`)."""
+        return reported
+
     def _routing(self) -> dict[str, Any] | None:
         """The backend's routing preferences for every request, or None for none."""
         return None
@@ -481,18 +505,41 @@ class LocalServerProvider(_BaseLiveProvider):
     _billed = False
 
     def __init__(self, *, base_url: str | None = None, api_key: str = "",
-                 **seams: Any) -> None:
+                 hardware_profile: str | None = None, **seams: Any) -> None:
         super().__init__(**seams)
         self._base_url = (
             base_url if base_url is not None
             else os.environ.get(LOCAL_INFERENCE_BASE_URL_ENV,
                                 DEFAULT_LOCAL_INFERENCE_BASE_URL))
         self._api_key = api_key
+        self._max_concurrency = _local_max_concurrency(hardware_profile)
         self._cost_per_token_in = __import__("decimal").Decimal("0")
         self._cost_per_token_out = __import__("decimal").Decimal("0")
 
     def _url_for(self, model_ref: ModelRef) -> str:
         return f"{self._base_url}/chat/completions"
+
+    def _wire_model(self, model_ref: ModelRef) -> str:
+        """The name the local server serves the model under: `served_as` (FR-PROV-47, ADR-61).
+
+        Never the weights path: `build_id` (`/models/x.gguf@sha256:...`) is the identity, and no
+        local server (Ollama, llama.cpp's `llama-server`, vLLM) addresses a model by it. A ref
+        without `served_as` is refused before anything is sent rather than falling back to the
+        path. M-CONF refuses such a block at an `edge-local` start, so reaching here without
+        it means a ref built outside a resolved run, and every request would be refused alike
+        (hence `ProviderUnavailableError`, which pauses a run rather than striking one paper)."""
+        if model_ref.served_as is None:
+            raise ProviderUnavailableError(
+                f"the {model_ref.role} model names a local model but not the name the server "
+                f"serves it under; add served_as to its block in the configuration. Nothing "
+                f"was sent (FR-PROV-47).")
+        return model_ref.served_as
+
+    def _resolved_build(self, model_ref: ModelRef, reported: str) -> str:
+        """The pinned `build_id`, not the server's name for it (FR-PROV-47, R30): the server
+        reports the `served_as` name, which says nothing about which weights file and hash
+        answered. The reported name is kept beside it in the call journal (`served_model`)."""
+        return model_ref.build_id
 
     def complete(
         self, prompt: PromptPayload, model_ref: ModelRef, params: SamplingParams
@@ -500,11 +547,13 @@ class LocalServerProvider(_BaseLiveProvider):
         return self._dispatch(model_ref, prompt, params)
 
     def capabilities(self, model_ref: ModelRef) -> Capabilities:
-        """The declared capabilities; no network call is made (CT-PROV-04)."""
+        """The declared capabilities; no network call is made (CT-PROV-04). `max_concurrency`
+        is the hardware profile's ceiling (FR-PROV-47, FR-CONF-06), fixed at construction."""
         import decimal
 
         return Capabilities(
-            supports_seed=True, supports_prefix_cache=False, max_concurrency=1,
+            supports_seed=True, supports_prefix_cache=False,
+            max_concurrency=self._max_concurrency,
             deterministic_at_temperature_zero=True,
             cost_per_token=(decimal.Decimal("0"), decimal.Decimal("0")),
         )
@@ -709,7 +758,34 @@ class OpenRouterProvider(_BaseLiveProvider):
             )
 
 
-#: The provider names served by the on-premise OpenAI-compatible server. M-PROV owns the
-#: backend identities (`CT-PROV-15`: this module is the only place in the tree that names
-#: one), so the name → implementation mapping lives here and nowhere else.
-_LOCAL_SERVER_PROVIDER_NAMES = frozenset({"local", "local-server", "ollama", "vllm-mlx"})
+#: The provider names served by the on-premise OpenAI-compatible server. The set is M-CONF's
+#: (`LOCAL_SERVER_PROVIDERS`: its start check refuses a local block without `served_as`,
+#: FR-CONF-40), so the two modules cannot disagree about which blocks are local; the
+#: name → implementation mapping stays here.
+_LOCAL_SERVER_PROVIDER_NAMES = LOCAL_SERVER_PROVIDERS
+
+
+def _local_max_concurrency(hardware_profile: str | None) -> int:
+    """The local server's declared concurrency (FR-PROV-47): `HARNESS_LOCAL_MAX_CONCURRENCY`
+    when set (seam 3), else the hardware profile's `concurrency_ceiling` (FR-CONF-06), taken
+    from the profile passed or else `HARNESS_HARDWARE_PROFILE`, else
+    `DEFAULT_LOCAL_MAX_CONCURRENCY`. A profile name the table does not hold is refused rather
+    than read as 1."""
+    raw = os.environ.get(LOCAL_MAX_CONCURRENCY_ENV)
+    if raw is not None and raw.strip():
+        try:
+            value = int(raw.strip())
+        except ValueError:
+            raise ConfigurationError(
+                f"{LOCAL_MAX_CONCURRENCY_ENV} must be a positive integer, got {raw!r}.") from None
+        if value < 1:
+            raise ConfigurationError(f"{LOCAL_MAX_CONCURRENCY_ENV} must be at least 1, got {value}.")
+        return value
+    profile = hardware_profile if hardware_profile is not None else os.environ.get(HARDWARE_PROFILE_ENV)
+    if profile is None or not profile.strip():
+        return DEFAULT_LOCAL_MAX_CONCURRENCY
+    policy = HARDWARE_PROFILES.get(profile.strip())
+    if policy is None:
+        raise ConfigurationError(
+            f"{HARDWARE_PROFILE_ENV} must be one of {tuple(HARDWARE_PROFILES)}, got {profile!r}.")
+    return policy.concurrency_ceiling

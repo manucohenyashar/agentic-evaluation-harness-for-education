@@ -231,7 +231,7 @@ class RecordingProvider:
 
 def _model() -> ModelRef:
     return ModelRef(role="transcriber", provider="local", build_id="vlm@sha256:f00d",
-                    quantization="q4")
+                    quantization="q4", served_as="served-model")
 
 
 def transcript(written: str | None, student_id: str | None = None) -> str:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from .vocabulary import BuildForm, ModelRole
@@ -27,6 +27,13 @@ WEIGHTS_SUFFIXES: tuple[str, ...] = (".gguf", ".safetensors", ".bin", ".pt", ".m
 
 
 _WEIGHTS_HASH_MARKER = "@sha256:"
+
+
+#: The provider names served by a local OpenAI-compatible model server (FR-CONF-40). A block
+#: naming one of these must say, in `served_as`, the name that server serves the model under:
+#: the server addresses models by that name, never by the weights path in `build_id`. Lives in
+#: `M-CONF` because the start check reads it; `M-PROV`'s provider factory reads the same set.
+LOCAL_SERVER_PROVIDERS: frozenset[str] = frozenset({"local", "local-server", "ollama", "vllm-mlx"})
 
 
 #: Case-insensitive on purpose: `sha256:AAAA` names the same build as `sha256:aaaa`, so
@@ -84,6 +91,14 @@ class ModelRef:
     provider: str
     build_id: str
     quantization: str | None
+    #: FR-CONF-40, ADR-61: the name a local model server serves this build under (for example
+    #: `qwen3:30b-a3b-q4_K_M`). An **address**, not an identity: it is not hashed into
+    #: `panel_build_ref` and not into a fixture's request key, exactly as a base URL is not, so
+    #: renaming a model in the server is a config edit and not a new grader. None on a block
+    #: whose provider is not a local server, where it is ignored. `compare=False` for the same
+    #: reason: two refs to the same build are the same grader (equal, same hash) whatever the
+    #: server calls it.
+    served_as: str | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
         """Check field types only; whether the build id is in a valid form is `build_form`'s job.
@@ -114,6 +129,14 @@ class ModelRef:
             raise ConfigurationError(
                 "ModelRef.quantization must be a non-empty string or None, got "
                 f"{type(self.quantization).__name__}."
+            )
+        if self.served_as is not None and (
+            not isinstance(self.served_as, str) or not self.served_as.strip()
+            or any(ch in _CONTROL_CHARS for ch in self.served_as)
+        ):
+            raise ConfigurationError(
+                "ModelRef.served_as must be a non-empty string without control characters, "
+                f"or None, got {type(self.served_as).__name__}."
             )
 
         # Control characters are refused because `compute_panel_build_ref` joins these three
@@ -179,14 +202,35 @@ class ModelRef:
         CT-CONF-03)."""
         return self.build_form() is not None
 
+    def is_local_server(self) -> bool:
+        """Whether a local model server serves this build, so the block needs `served_as`
+        (FR-CONF-40)."""
+        return self.provider in LOCAL_SERVER_PROVIDERS
 
-#: The four `ModelRef` fields, in the order the persisted row carries them. One definition, used
-#: by both directions of the round trip, so `NFR-CONF-04`'s byte-identical guarantee cannot be
-#: broken by the two halves disagreeing about a field name.
+
+#: The four `ModelRef` identity fields, in the order the persisted row carries them. One
+#: definition, used by both directions of the round trip, so `NFR-CONF-04`'s byte-identical
+#: guarantee cannot be broken by the two halves disagreeing about a field name.
 _REF_FIELDS: tuple[str, ...] = ("role", "provider", "build_id", "quantization")
 
 
+#: The optional address field (FR-CONF-40). Kept out of `_REF_FIELDS` on purpose: it is written
+#: only when set, so a frozen run config persisted before it existed — or one with no local
+#: model — serializes byte-identically to what it always did, and a persisted row without it
+#: rehydrates with None.
+_SERVED_AS = "served_as"
+
+
 def _ref_to_dict(ref: ModelRef) -> dict[str, Any]:
+    table = {name: getattr(ref, name) for name in _REF_FIELDS}
+    if ref.served_as is not None:
+        table[_SERVED_AS] = ref.served_as
+    return table
+
+
+def _ref_identity(ref: ModelRef) -> dict[str, Any]:
+    """The fields that say *which grader* a ref is: everything but the `served_as` address
+    (ADR-61). Two refs equal here are the same build, however the server names it."""
     return {name: getattr(ref, name) for name in _REF_FIELDS}
 
 
@@ -198,7 +242,19 @@ def _ref_from_dict(raw: Any, what: str) -> ModelRef:
     missing = [name for name in _REF_FIELDS if name not in raw]
     if missing:
         raise ConfigurationError(f"persisted {what} is missing {', '.join(missing)}.")
-    return ModelRef(**{name: raw[name] for name in _REF_FIELDS})
+    return ModelRef(**{name: raw[name] for name in _REF_FIELDS},
+                    served_as=raw.get(_SERVED_AS))
+
+
+def _missing_served_as(what: str) -> ConfigurationError:
+    """FR-CONF-40's refusal for a local block without `served_as`, naming the block and the
+    fix. The build id is not echoed (NFR-CONF-02). ASCII only: the CLI prints it to a console
+    whose code page may not carry an ellipsis."""
+    return ConfigurationError(
+        f"{what} names a local model but not the name the server serves it under; "
+        f'add served_as = "..." with the name your model server lists the model under (for '
+        f"Ollama, the name `ollama list` shows, tag included)."
+    )
 
 
 def _require_model_ref(value: Any, what: str, expected_role: str) -> ModelRef:

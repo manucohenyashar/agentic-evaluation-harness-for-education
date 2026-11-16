@@ -138,6 +138,7 @@ def synth_ref(build_id: str = "/models/qwen3-30b-a3b.gguf@sha256:syn7h",
             provider=provider,
             build_id=build_id,
             quantization=quantization,
+            served_as="served-model",  # FR-CONF-40: the name a local server lists
         )
     except Exception as exc:
         raise NotImplementedYet(

@@ -129,6 +129,7 @@ def test_tc_prov_22_the_invariant_prefix_is_not_reallocated_across_a_concurrent_
         provider="ollama",
         build_id=os.environ["HARNESS_PERF_BUILD_ID"],
         quantization=os.environ.get("HARNESS_PERF_QUANTIZATION", "q4"),
+        served_as="served-model",
     )
     params = SamplingParams(temperature=0.0)
     prefix = _invariant_prefix()

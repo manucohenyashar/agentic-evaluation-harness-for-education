@@ -186,7 +186,7 @@ def test_tc_conf_02_the_config_is_complete_before_anything_is_written(network_gu
 # --- TC-CONF-03 -----------------------------------------------------------------------------
 
 _FRIENDLY_NAME = ModelRef("judge", "openrouter", "Llama 3.3 70B", None)
-_EDGE_NO_HASH = ModelRef("judge", "ollama", "/models/llama-3.3-70b.gguf", "q4")
+_EDGE_NO_HASH = ModelRef("judge", "ollama", "/models/llama-3.3-70b.gguf", "q4", served_as="served-model")
 _BARE_SLUG = ModelRef("judge", "openrouter", "meta-llama/llama-3.3-70b-instruct", None)
 
 #: The five inputs `TC-CONF-03` names, plus the pair that crosses a resolved ref against the
@@ -244,8 +244,8 @@ def test_tc_conf_03_every_reachable_ref_is_checked_not_just_the_panel():
     the panel would let an unresolved transcriber through — and the transcriber is what turns a
     scanned page into the text every judge then scores."""
     for position, cfg in (
-        ("transcriber", edge_cfg(transcriber=ModelRef("transcriber", "ollama", "whisper", None))),
-        ("off_panel_checker", edge_cfg(off_panel_checker=ModelRef("off_panel", "ollama", "qwen", None))),
+        ("transcriber", edge_cfg(transcriber=ModelRef("transcriber", "ollama", "whisper", None, served_as="served-model"))),
+        ("off_panel_checker", edge_cfg(off_panel_checker=ModelRef("off_panel", "ollama", "qwen", None, served_as="served-model"))),
     ):
         with pytest.raises(UnresolvedModelRefError, match=position):
             resolve_run_config(cfg, SYNTHETIC_COHORT)

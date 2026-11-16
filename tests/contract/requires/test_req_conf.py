@@ -148,7 +148,7 @@ def test_tc_req_07_no_unresolved_transcriber_ref_reaches_the_transcription_path(
     resolution, so a transcriber ref reaches ingestion only resolved. A real `Ingestor` built from
     the resolved config transcribes with exactly that ref."""
     floating = ModelRef(role="transcriber", provider="ollama", build_id="whisper-large-v3:latest",
-                        quantization="q4")
+                        quantization="q4", served_as="served-model")
     with pytest.raises(UnresolvedModelRefError):
         resolve_run_config(edge_cfg(transcriber=floating), SYNTHETIC_COHORT)
 

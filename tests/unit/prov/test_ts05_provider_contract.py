@@ -97,7 +97,10 @@ def _params() -> SamplingParams:
 
 
 def _ref(build: str = "b1") -> ModelRef:
-    return ModelRef(role="judge", provider="openrouter", build_id=build, quantization="q8")
+    # `served_as` (FR-PROV-47): `LocalServerProvider` addresses the server by it and refuses a
+    # ref without one before sending anything.
+    return ModelRef(role="judge", provider="openrouter", build_id=build, quantization="q8",
+                    served_as="served-model")
 
 
 def _ok(text: str = '{"band": "met"}', build: str = "b1", tokens_in: int = 100,
@@ -327,8 +330,13 @@ def test_tc_prov_03_the_dispatched_bytes_carry_the_payload_unchanged(tmp_data_di
 def test_tc_prov_04_resolved_build_records_what_answered_not_what_was_asked(tmp_data_dir):
     """`TC-PROV-04` — *'a substitution fixture yields resolved_build unequal to the
     request.'* Oracle: **exact value** — the differential the plan names."""
+    # Driven through OpenRouter: FR-PROV-47 makes the local server's `resolved_build` the pinned
+    # `build_id` (its reported name is the journal's `served_model`), so the FR-PROV-04
+    # differential this case pins is the hosted provider's.
+    from aeh.prov import OpenRouterProvider
     transport = _ScriptedTransport([[_ok(build="the-served-build")]])
-    provider = _provider(transport, _CountingClock())
+    provider = OpenRouterProvider(base_url="http://router/v1", api_key="k", transport=transport,
+                                  clock=_CountingClock(), rng=random.Random(20260906))
     completion = provider.complete(_payload(), _ref(build="requested-build"), _params())
     assert completion.resolved_build == "the-served-build", (
         "TC-PROV-04: resolved_build echoed the request. Every validation record and audit "
