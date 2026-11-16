@@ -16,6 +16,12 @@ import json
 from typing import Any, Mapping, Sequence
 
 from .errors import PackageError
+from .spec_criteria import (
+    JUDGED_SCORING,
+    SCORING_DEFAULT_STEP,
+    default_scoring_model,
+    defaulted_scoring,
+)
 from .statements import PKG_STATEMENTS
 from .vocabulary import SCORE_METHODS, PackageVersionId
 
@@ -134,6 +140,39 @@ class RubricMethodsMixin:
             if _row_field(row, "criterion_id") == criterion_id:
                 return _row_field(row, "scoring_model")
         return None
+
+    def scoring_model_defaulted(self, v: PackageVersionId, criterion_id: str) -> bool:
+        """Whether the criterion's scoring model is FR-PKG-29's default rather than a declared
+        one — the per-line flag the package records when the default was taken (FR-SETUP-14).
+        False for a declared line and for a version that predates the default."""
+        return criterion_id in defaulted_scoring(self.step_record(v, SCORING_DEFAULT_STEP))
+
+    def exported_scoring(self, v: PackageVersionId, criterion_id: str) -> str | None:
+        """The `scoring` the spec export (`FR-PKG-27`) writes for a judged line, or None to leave
+        it undeclared — chosen so the rebuild reproduces both the model and whether it was
+        declared or FR-PKG-29's default (FR-SETUP-14).
+
+        A line that took the default stays undeclared, so the rebuild takes it again. Where the
+        version carries the record (every spec-built version with a judged line does), every
+        other line was declared and is written. A version with no record predates the default
+        or was not built from a spec: its lines are written as they always were (any model but
+        `holistic`), plus any line the default would now give a different model — a two-band
+        line stored `holistic` — so the rebuild keeps it."""
+        record = self.step_record(v, SCORING_DEFAULT_STEP)
+        if criterion_id in defaulted_scoring(record):
+            return None
+        row = next((r for r in self.criteria(v)
+                    if _row_field(r, "criterion_id") == criterion_id), None)
+        stored = None if row is None else _row_field(row, "scoring_model")
+        if not stored:
+            return None
+        if record is not None or stored != JUDGED_SCORING:
+            return stored
+        structural = default_scoring_model(
+            score_method=_row_field(row, "score_method"),
+            band_count=_row_field(row, "band_count"),
+            component_of=_row_field(row, "component_of"))
+        return stored if stored != structural else None
 
     def _derivations(self, v: PackageVersionId) -> dict[str, dict]:
         found: dict[str, dict] = {}
