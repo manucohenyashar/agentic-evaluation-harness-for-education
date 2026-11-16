@@ -424,6 +424,8 @@ class DomainEffectsMixin:
         if service is None:
             return f"M-REVIEW cannot open run {run_id!r}; nothing was written", False
         try:
+            # The run's stored draw (#875): the same seats on every request, so the seat the
+            # teacher marked is the seat the mark lands on.
             session = service.blind_sample(run_id)
             drawn = [ref for ref in session.items
                      if ref.submission_id == submission_id and ref.criterion_id == criterion_id]
@@ -434,16 +436,18 @@ class DomainEffectsMixin:
                     "made — nothing was written",
                     False,
                 )
-            labels = service.submit_blind(session.session_id, {drawn[0]: str(band)})
+            # A choice is a draft (FR-REVIEW-26): it becomes a blind label when the sample is
+            # finished or its review window ends, never at the click (SV-18).
+            service.draft_blind(run_id, drawn[0], str(band))
         except Exception as exc:  # noqa: BLE001 — a refusal is the honest outcome
             return (
-                f"M-REVIEW refused the blind label for {submission_id}/{criterion_id}: "
+                f"M-REVIEW refused the blind mark for {submission_id}/{criterion_id}: "
                 f"{exc} — nothing was written",
                 False,
             )
         return (
-            f"blind label for {submission_id}/{criterion_id} recorded through M-REVIEW "
-            f"({', '.join(labels) or 'already recorded'})",
+            f"blind mark for {submission_id}/{criterion_id} saved as a draft through "
+            "M-REVIEW; it is recorded when the sample is finished",
             True,
         )
 

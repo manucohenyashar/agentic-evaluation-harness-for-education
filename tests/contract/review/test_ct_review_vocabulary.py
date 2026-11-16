@@ -288,20 +288,28 @@ def test_the_blind_flow_reads_two_tables_and_cannot_join_to_the_score_row(sectio
     paragraph = section[section.index("**Data flow.**") :]
     paragraph = paragraph[: paragraph.index("\n\n")]
 
-    for table in vocab.BLIND_READABLE_TABLES:
+    for table in vocab.BLIND_BASE_READABLE_TABLES:
         assert f"`{table}`" in paragraph, (
             f"§3.15's Data flow paragraph no longer says the blind session reads {table!r}"
         )
     # The forbidden table appears in this paragraph too — in the clause that forbids it — so a
     # membership loop over the readable set passes even when the readable set contains it.
     # Mutation added `criterion_score` to BLIND_READABLE_TABLES and nothing caught it.
-    assert vocab.BLIND_FORBIDDEN_TABLE not in vocab.BLIND_READABLE_TABLES, (
-        f"{vocab.BLIND_FORBIDDEN_TABLE!r} is in the readable set, so CT-REVIEW-09's primary "
-        "assertion — set equality against what the session may read — now permits the one join "
-        "the clause exists to forbid"
+    # Re-based at #875: CT-REVIEW-09 is amended (FR-REVIEW-27) to widen the base paragraph's
+    # two tables with the band set, the canonical artifact and the draw's own tables, and to
+    # name `verdict` and `extraction` beside `criterion_score` as joins it cannot make.
+    for forbidden in vocab.BLIND_FORBIDDEN_TABLES | {vocab.BLIND_FORBIDDEN_TABLE}:
+        assert forbidden not in vocab.BLIND_READABLE_TABLES, (
+            f"{forbidden!r} is in the readable set, so CT-REVIEW-09's primary assertion — set "
+            "equality against what the session may read — now permits a join the clause "
+            "exists to forbid"
+        )
+    assert len(vocab.BLIND_BASE_READABLE_TABLES) == 2, (
+        f"the base blind session reads {len(vocab.BLIND_BASE_READABLE_TABLES)} tables; "
+        "§3.15 says two"
     )
-    assert len(vocab.BLIND_READABLE_TABLES) == 2, (
-        f"the blind session reads {len(vocab.BLIND_READABLE_TABLES)} tables; §3.15 says two"
+    assert vocab.BLIND_BASE_READABLE_TABLES <= vocab.BLIND_READABLE_TABLES, (
+        "the amended readable set dropped one of §3.15's two tables"
     )
     assert f"cannot join to `{vocab.BLIND_FORBIDDEN_TABLE}`" in paragraph, (
         f"§3.15 no longer states that the blind session cannot join to "

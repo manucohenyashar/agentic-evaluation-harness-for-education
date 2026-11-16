@@ -314,3 +314,160 @@ def _queue_id_for(run_id: str, submission_id: str, criterion_id: str) -> str:
         chr(31).join([run_id, submission_id, criterion_id]).encode("utf-8")
     ).hexdigest()
     return f"rq-{digest[:24]}"
+
+
+# --- Tier C, migration 37 (#875, migration R1, FR-REVIEW-26/30): the blind draw and its drafts ---
+#
+# A console request builds a fresh `ReviewService`, so a draw held in memory was re-drawn on
+# every request: the routing a label recorded was the one at submit time, a drawn cell accepted
+# in between dropped out of the next draw and its blind answer was refused, and a re-draw might
+# not contain the seat the teacher had just seen (#867's finding). The draw is now stored:
+#
+#   * `blind_draft` is R1 exactly: the teacher's band per drawn seat, changeable any number of
+#     times until the draw closes (FR-REVIEW-26). One row per DRAFTED seat; a seat with no row
+#     is unmarked.
+#   * `blind_draw` is the run's draw state (FR-REVIEW-30): `open`, `finished`, `skipped` or
+#     `closed_by_window` (no row is `not_drawn`), when it opened and closed, the window it was
+#     drawn under, and what closing it wrote: the labels and the unmarked count the
+#     administration's record reads (FR-STATS-33).
+#   * `blind_draw_seat` is the draw's membership in seat order, with each seat's routing AT DRAW
+#     TIME (FR-REVIEW-29), read only when a label is written, never into a seat.
+#
+# None of the three holds a band, point, verdict or span the system produced (CT-REVIEW-09);
+# `blind_draw_seat.draw_routing` is the routing a label records about the cell, written at the
+# draw and read back when the labels are written, never served. Purged with the cohort.
+_COHORT_037 = Migration(
+    version=37,
+    name="review_blind_draw",
+    statements=(
+        Statement(
+            """
+            CREATE TABLE blind_draft (
+                run_id        TEXT NOT NULL,
+                submission_id TEXT NOT NULL,
+                criterion_id  TEXT NOT NULL,
+                band          TEXT NOT NULL,
+                updated_at    TEXT NOT NULL,
+                PRIMARY KEY (run_id, submission_id, criterion_id)
+            )
+            """
+        ),
+        Statement(
+            """
+            CREATE TABLE blind_draw (
+                run_id          TEXT    NOT NULL PRIMARY KEY,
+                state           TEXT    NOT NULL
+                    CHECK (state IN ('open', 'finished', 'skipped', 'closed_by_window')),
+                opened_at       TEXT,
+                window_hours    REAL,
+                closed_at       TEXT,
+                labels_written  INTEGER NOT NULL DEFAULT 0,
+                unmarked_count  INTEGER NOT NULL DEFAULT 0,
+                absence_reason  TEXT CHECK (absence_reason IN ('skipped', 'none_marked'))
+            )
+            """
+        ),
+        Statement(
+            """
+            CREATE TABLE blind_draw_seat (
+                run_id          TEXT    NOT NULL,
+                seat_no         INTEGER NOT NULL CHECK (seat_no >= 1),
+                submission_id   TEXT    NOT NULL,
+                criterion_id    TEXT    NOT NULL,
+                evaluation_mode TEXT    NOT NULL DEFAULT '',
+                draw_routing    TEXT    NOT NULL,
+                PRIMARY KEY (run_id, submission_id, criterion_id),
+                UNIQUE (run_id, seat_no)
+            )
+            """
+        ),
+    ),
+)
+
+
+TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
+    TIER_MIGRATIONS[Tier.COHORT] + (_COHORT_037,), key=lambda m: m.version
+))
+
+
+#: The blind draw's statements (#875): declared literals, keyword-parameterized (SEC-15). A
+#: seat read touches `blind_draw`, `blind_draw_seat` and `blind_draft`, the submission with its
+#: roster name and its canonical document on the cohort side, and `criterion`/`band` on the
+#: package side; never `criterion_score`, `verdict` or `extraction` (CT-REVIEW-09).
+BLIND_DRAW_STATEMENTS: dict[str, Statement] = {
+    "select_draw": Statement(
+        "SELECT run_id, state, opened_at, window_hours, closed_at, labels_written, "
+        "unmarked_count, absence_reason FROM blind_draw WHERE run_id = :run_id"
+    ),
+    "insert_draw": Statement(
+        "INSERT INTO blind_draw (run_id, state, opened_at, window_hours, closed_at, "
+        "absence_reason) VALUES (:run_id, :state, :opened_at, :window_hours, :closed_at, "
+        ":absence_reason)"
+    ),
+    # Every close names the state it leaves (`open`), so a second close racing the first
+    # changes nothing: the state machine's guard is in the statement as well as the caller.
+    # RETURNING says which of two racing closes won: only the winner writes labels.
+    "close_draw": Statement(
+        "UPDATE blind_draw SET state = :state, closed_at = :closed_at, "
+        "labels_written = :labels_written, unmarked_count = :unmarked_count, "
+        "absence_reason = :absence_reason WHERE run_id = :run_id AND state = 'open' "
+        "RETURNING run_id"
+    ),
+    # A close whose labels failed to land is undone, so the draw is open again and the close
+    # can be repeated (the labels already written are not written twice).
+    "reopen_draw": Statement(
+        "UPDATE blind_draw SET state = 'open', closed_at = NULL, labels_written = 0, "
+        "unmarked_count = 0, absence_reason = NULL "
+        "WHERE run_id = :run_id AND state = :state AND closed_at = :closed_at"
+    ),
+    "insert_seat": Statement(
+        "INSERT INTO blind_draw_seat (run_id, seat_no, submission_id, criterion_id, "
+        "evaluation_mode, draw_routing) VALUES (:run_id, :seat_no, :submission_id, "
+        ":criterion_id, :evaluation_mode, :draw_routing)"
+    ),
+    "select_seats": Statement(
+        "SELECT seat_no, submission_id, criterion_id, evaluation_mode FROM blind_draw_seat "
+        "WHERE run_id = :run_id ORDER BY seat_no"
+    ),
+    # Read when the labels are written (Finish, or the window's lapse), never into a seat.
+    "select_seat_routing": Statement(
+        "SELECT submission_id, criterion_id, draw_routing FROM blind_draw_seat "
+        "WHERE run_id = :run_id"
+    ),
+    "upsert_draft": Statement(
+        "INSERT INTO blind_draft (run_id, submission_id, criterion_id, band, updated_at) "
+        "VALUES (:run_id, :submission_id, :criterion_id, :band, :updated_at) "
+        "ON CONFLICT (run_id, submission_id, criterion_id) "
+        "DO UPDATE SET band = excluded.band, updated_at = excluded.updated_at"
+    ),
+    "select_drafts": Statement(
+        "SELECT submission_id, criterion_id, band FROM blind_draft WHERE run_id = :run_id"
+    ),
+    # A skip records no evidence, so an open draw's drafts go with it.
+    "delete_drafts": Statement("DELETE FROM blind_draft WHERE run_id = :run_id"),
+    # The seat's own facts, none derived from grading: whose paper it is.
+    "select_submission_student": Statement(
+        "SELECT s.student_ref, r.full_name FROM submission s "
+        "LEFT JOIN roster r ON r.student_ref = s.student_ref AND r.cohort_id = s.cohort_id "
+        "WHERE s.submission_id = :submission_id"
+    ),
+    # The canonical artifact: the submission's transcribed document and its regions.
+    "select_canonical_document": Statement(
+        "SELECT document_id, markdown FROM document WHERE submission_id = :submission_id "
+        "ORDER BY CASE kind WHEN 'submission' THEN 0 ELSE 1 END, document_id LIMIT 1"
+    ),
+    "select_question_regions": Statement(
+        "SELECT page_no, content FROM document_region WHERE document_id = :document_id "
+        "AND question_id = :question_id ORDER BY position, region_id"
+    ),
+    # The package side: the criterion's question and its bands with their descriptors, in the
+    # package's order (R40).
+    "select_criterion_question": Statement(
+        "SELECT question_id FROM criterion WHERE package_version_id = :package_version_id "
+        "AND criterion_id = :criterion_id"
+    ),
+    "select_criterion_bands": Statement(
+        "SELECT band, descriptor FROM band WHERE package_version_id = :package_version_id "
+        "AND criterion_id = :criterion_id ORDER BY ordinal"
+    ),
+}

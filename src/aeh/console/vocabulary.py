@@ -220,7 +220,14 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
         "label.label_type",
         "label.band",
     ),
-    "blind-sample submission": ("label.label_type", "label.band"),
+    # #875 (FR-REVIEW-26): a blind choice is a draft until the sample closes; the first
+    # choice on a run that has not drawn opens (and stores) its draw.
+    "blind-sample submission": (
+        "blind_draft.band",
+        "blind_draft.updated_at",
+        "blind_draw.state",
+        "blind_draw_seat.seat_no",
+    ),
     "correct an answer key after a run": ("criterion.answer_key",),
     "finalize batch": ("submission_grade.finalized_at", "audit_record.actor"),
     "amend a finalized grade": (

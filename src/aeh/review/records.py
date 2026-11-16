@@ -186,6 +186,62 @@ class BlindItem:
     evaluation_mode: str
 
 
+#: Every table a blind draw and its seat reads touch (CT-REVIEW-09, amended by FR-REVIEW-27,
+#: #875): the submission and its roster name; the criterion and the package's band set; the
+#: canonical artifact (the transcribed document and its regions); the run's package link and,
+#: when a draw opens, the review window its grade policy declares; and the draw's own three
+#: tables. Nothing here holds a band, points, verdict or span the system produced.
+BLIND_READABLE_TABLES: frozenset[str] = frozenset({
+    "submission", "roster",
+    "criterion", "band",
+    "document", "document_region",
+    "run", "grade_policy",
+    "blind_draw", "blind_draw_seat", "blind_draft",
+})
+
+#: FR-REVIEW-30's draw states. `not_drawn` is the absence of a draw; the other four are stored.
+DRAW_NOT_DRAWN = "not_drawn"
+DRAW_OPEN = "open"
+DRAW_FINISHED = "finished"
+DRAW_SKIPPED = "skipped"
+DRAW_CLOSED_BY_WINDOW = "closed_by_window"
+DRAW_STATES: tuple[str, ...] = (
+    DRAW_NOT_DRAWN, DRAW_OPEN, DRAW_FINISHED, DRAW_SKIPPED, DRAW_CLOSED_BY_WINDOW,
+)
+
+#: The legal transitions (FR-REVIEW-30, CT-REVIEW-27). A draw closes only by Finish, Skip or
+#: the window's lapse, and nothing leads back out of a closed state.
+DRAW_TRANSITIONS: Mapping[str, frozenset[str]] = {
+    DRAW_NOT_DRAWN: frozenset({DRAW_OPEN, DRAW_SKIPPED}),
+    DRAW_OPEN: frozenset({DRAW_FINISHED, DRAW_SKIPPED, DRAW_CLOSED_BY_WINDOW}),
+    DRAW_FINISHED: frozenset(),
+    DRAW_SKIPPED: frozenset(),
+    DRAW_CLOSED_BY_WINDOW: frozenset(),
+}
+
+#: The exact keys of a blind seat (FR-REVIEW-27, TC-REVIEW-106): its identity, the student's
+#: answer and the page(s) it is on, the criterion's bands with their descriptors, and the
+#: teacher's draft. Nothing derived from grading.
+BLIND_SEAT_KEYS: tuple[str, ...] = (
+    "seat_id", "student_name", "question", "criterion_id",
+    "answer_text", "page_refs", "bands", "draft_band",
+)
+
+
+@dataclass(frozen=True)
+class BlindCloseReport:
+    """What closing a draw did (FR-REVIEW-26/30): the state it closed into, the blind labels it
+    wrote (one per drafted seat), the seats left unmarked, and `absence_reason` (`none_marked`
+    for a close with no mark, `skipped` for a skip, else None). The administration's record
+    reads `unmarked_count` and `absence_reason` from here (FR-STATS-33)."""
+
+    run_id: str
+    state: str
+    label_ids: tuple[str, ...]
+    unmarked_count: int
+    absence_reason: str | None = None
+
+
 @dataclass(frozen=True)
 class BlindSession:
     """One blind sitting: the drawn references, and the two checks CT-REVIEW-09 makes.
@@ -198,9 +254,11 @@ class BlindSession:
     items: tuple[BlindItem, ...]
 
     def readable_tables(self) -> frozenset[str]:
-        """The tables this session's queries read: exactly `submission` and `criterion`, and never
-        `criterion_score` (design §3.15)."""
-        return frozenset({"submission", "criterion"})
+        """The tables the blind flow's queries read (CT-REVIEW-09 as amended by FR-REVIEW-27):
+        the submission and whose it is, the criterion and the package's band set with its
+        descriptors, the canonical artifact's region, and the draw's own bookkeeping, and never
+        `criterion_score`, `verdict` or `extraction`."""
+        return BLIND_READABLE_TABLES
 
     def available_data(self) -> dict[str, Any]:
         """Everything the session can reach before submission, as plain data: the identity fields

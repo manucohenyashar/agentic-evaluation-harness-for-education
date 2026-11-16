@@ -319,7 +319,11 @@ def test_tc_req_77_the_console_blind_flow_has_no_query_path_to_system_output(tmp
     assert plan.queries and not any(t in str(q).lower() for q in plan.queries for t in forbidden), plan.queries
     review.close()
     assert session.items, "fixture: the blind draw is empty"
-    assert session.readable_tables() == frozenset({"submission", "criterion"})
+    # CT-REVIEW-09 as amended by FR-REVIEW-27 (#875): the band set, the canonical artifact and
+    # the draw's own tables join the readable set; no table holding system output does.
+    from tests.support.review_vocabulary import BLIND_READABLE_TABLES
+
+    assert session.readable_tables() == BLIND_READABLE_TABLES
     assert not re.search(r"\bB[245]\b", json.dumps(session.available_data(), default=str))
 
     # Re-based (FR-CONSOLE-35): the S9 header figures ARE `build_queue`'s, at the budget S9 states.
