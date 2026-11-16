@@ -21,9 +21,23 @@ the builds each `verify_retention` call names. What is pinned is what the plan s
 distinct build, before any request reaches the model endpoint, and nothing carrying student text
 on a refusal.
 
-Interface bets: the probe's cost is recorded on the run as a `run_metrics` metric or a
-`provider_config` key whose name carries `retention` (or `probe`) and `cost`; the recorded tier
-is `RecordedFixtureProvider`, the provider the knob is scoped to.
+Interface bets (each a small reconcile when #872 lands):
+
+* the probe's cost is recorded on the run as a `run_metrics` metric or a `provider_config` leaf
+  (nested keys read by dotted path) whose name carries `retention` (or `probe`) and `cost`,
+  with a figure (not None);
+* the recorded tier is `RecordedFixtureProvider`, the provider the knob is scoped to;
+* the probe goes through `verify_retention` (and OpenRouter's `retention_answers` seam). A probe
+  sent as a one-token POST through the transport would be counted as a model request by the
+  ordering check, and the reading world's stand-in would not know how to answer it; a models
+  listing (a GET) is answered by both stand-ins;
+* the refusal is synchronous: `start_run_in_background` raises and no run row exists, the house
+  pattern of `create_run`'s cloud-hosted gate. A refusal that paused the run in the worker
+  instead would read here as "not refused".
+
+Note for the implementer: on `cloud-hosted` today the decision model is verified twice (in
+`create_run`'s gate and again in `pipeline.decision_engine._decision_run_start_checks`).
+Widening both to `dev-ci` as they stand fails "once per distinct build".
 """
 
 from __future__ import annotations
@@ -111,6 +125,17 @@ def _world(tmp_data_dir):
     return store, cohort, version
 
 
+def _flat(document, prefix: str = "") -> dict:
+    """A nested record's leaves keyed by their dotted path, so `{"retention_probe": {"cost":
+    ...}}` is found as `retention_probe.cost`."""
+    if not isinstance(document, dict):
+        return {prefix: document}
+    leaves: dict = {}
+    for key, value in document.items():
+        leaves.update(_flat(value, f"{prefix}.{key}" if prefix else str(key)))
+    return leaves
+
+
 def _probed(events: list) -> list[str]:
     return [build for event in events if event[0] == "probe" for build in event[1]]
 
@@ -139,9 +164,16 @@ def _dev_ci_cfg():
                       HARNESS_JEV_BUILD=JEV_BUILD, escalation_judge=ESCALATION)
 
 
+@pytest.mark.parametrize("knob", [None, "0"], ids=["default", "knob-off-still-probes-live"])
 def test_tc_prov_71_run_start_probes_every_distinct_build_once_before_any_request(
-        tmp_data_dir, monkeypatch, network_guard):
-    monkeypatch.delenv("HARNESS_RETENTION_PRECHECK", raising=False)
+        tmp_data_dir, monkeypatch, network_guard, knob):
+    """`HARNESS_RETENTION_PRECHECK=0` is for the recorded tier only: on the live provider the
+    census is the same with it set (a knob that silenced the check on live traffic is the
+    dangerous mutation)."""
+    if knob is None:
+        monkeypatch.delenv("HARNESS_RETENTION_PRECHECK", raising=False)
+    else:
+        monkeypatch.setenv("HARNESS_RETENTION_PRECHECK", knob)
     store, cohort, version = _world(tmp_data_dir)
     events: list = []
     bound, jev, endpoint = _live_bound(events)
@@ -167,10 +199,12 @@ def test_tc_prov_71_run_start_probes_every_distinct_build_once_before_any_reques
         provider_config = json.loads(handle.query(
             "SELECT provider_config FROM run WHERE run_id = :r", r=run_id)[0]["provider_config"])
         named = re.compile(r"(retention|probe).*cost|cost.*(retention|probe)")
-        figures = {k: v for k, v in {**provider_config, **metrics}.items() if named.search(k)}
+        figures = {k: v for k, v in {**_flat(provider_config), **metrics}.items()
+                   if named.search(k)}
         assert figures, (f"FR-PROV-48: the retention probe's cost is not on the run; "
                          f"metrics {sorted(metrics)}, provider_config {sorted(provider_config)}")
-        assert all(Decimal(str(v)) >= 0 for v in figures.values()), figures
+        assert all(v is not None and Decimal(str(v)) >= 0 for v in figures.values()), (
+            f"the probe's cost is recorded without a figure: {figures}")
     finally:
         store.close()
 
@@ -219,9 +253,11 @@ def test_tc_prov_71_the_precheck_knob_turns_the_probe_off_for_the_recorded_tier(
         assert store.cohort(cohort).query(
             "SELECT count(*) AS n FROM run WHERE run_id = :r", r=run_id)[0]["n"] == 1
         if probes_expected:
-            assert sorted(_probed(events)) == sorted(ref.build_id for ref in PANEL), (
+            census = Counter(_probed(events))
+            assert all(census[ref.build_id] == 1 for ref in PANEL), (
                 f"FR-PROV-48: the recorded tier on dev-ci probes by default ({_BLOCKER}); "
-                f"probed: {_probed(events)}")
+                f"probed: {dict(census)}")
+            assert max(census.values()) == 1, f"a build was probed twice: {dict(census)}"
         else:
             assert _probed(events) == [], "HARNESS_RETENTION_PRECHECK=0 still probed"
     finally:

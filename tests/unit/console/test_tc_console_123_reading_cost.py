@@ -23,7 +23,7 @@ when #872 lands, and the red names #872 rather than an unrelated crash):
 |---|---|
 | `GET /api/v1/papers/estimate?cohort_id=<id>&pages=<n>` answering `{"estimate": <decimal string or null>, "text": <sentence>}` | the confirmation's figure and its "no cost: local models" sentence |
 | The estimate is priced by the same reader-provider factory the reading job uses (`aeh.pipeline.background._provider_for`) | the exact figure |
-| A paused reading job reads `state == "paused"` (or `paused: true`) on `GET /api/v1/jobs/<id>`; its reason is on the job record and on `GET /api/v1/papers` | the pause and its reason |
+| A paused reading job reads `state == "paused"` (or `paused: true`) on `GET /api/v1/jobs/<id>`; its reason is a sentence (any string value) on the job record and on `GET /api/v1/papers` naming the 0.01 figure | the pause and its reason |
 | `POST /api/v1/actions/resume-reading` with `{"cohort_id", "job_id"}` is **Resume** | the resume |
 | The job record carries the spend as `spend`, or in the jobs read's existing `cost_usd` field | the recorded spend |
 """
@@ -48,6 +48,24 @@ from tests.support.reading_world import (
 pytestmark = pytest.mark.writtenahead
 
 _BLOCKER = "S30 (#872) has not landed"
+
+
+def _strings(value):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from _strings(item)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            yield from _strings(item)
+
+
+def _names_the_ceiling(document) -> bool:
+    """Some sentence in the document names the 0.01 figure and the limit it is."""
+    words = ("ceiling", "limit", "cost", "spend", "spent")
+    return any("0.01" in text and any(w in text.lower() for w in words)
+               for text in _strings(document))
 
 
 @pytest.fixture
@@ -133,12 +151,16 @@ def test_tc_console_123_the_ceiling_pauses_after_the_first_file_and_resume_rerea
     spent_requests = len([r for r in fake.requests if r.method == "POST"])
     # The job row records its spend: what the reader billed so far.
     spend = record.get("spend", record.get("cost_usd"))
-    assert spend is not None and Decimal(str(spend)) == Decimal(fake.cost) * spent_requests, record
-    # The reason is named on Jobs and on Papers.
-    reason = json.dumps(record).lower()
-    assert "cost" in reason and "0.01" in reason, record
+    assert spend is not None, record
+    # A tolerance below a thousandth of a cent: an implementation may sum the reported float
+    # costs, and that drift is not what this clause is about.
+    assert abs(Decimal(str(spend)) - Decimal(fake.cost) * spent_requests) < Decimal("0.00001"), record
+    # The reason is named on Jobs and on Papers: a sentence (a string value, not a key or a
+    # number elsewhere in the record) naming the ceiling's figure and what it limits.
+    assert _names_the_ceiling(record), f"the paused job names no ceiling reason: {record!r}"
     status, papers = request(port, "GET", "/api/v1/papers?cohort_id=ps9-class")
-    assert status == 200 and "0.01" in json.dumps(papers), papers
+    assert status == 200 and _names_the_ceiling(papers), (
+        f"the Papers read names no ceiling reason: {papers!r}")
 
     # Resume (the teacher raises the ceiling first): continues from the next unread file.
     monkeypatch.setenv("HARNESS_READ_COST_CEILING", "10")

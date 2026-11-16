@@ -200,13 +200,16 @@ def test_tc_conf_48_served_as_round_trips_the_frozen_run_config_and_rehydrates_o
 
 def test_tc_conf_48_a_resume_under_a_renamed_served_model_is_the_same_grader():
     """ADR-61: renaming a model in the server is a config edit, not a new grader — the resume
-    is not refused as a backend mismatch, and the frozen run keeps its own record."""
+    is not refused as a backend mismatch, and the build identity is the frozen one.
+
+    Which address a resumed run then uses (the frozen one or the edited one) the plan does not
+    state, so it is deliberately not pinned here."""
     frozen_text = _persisted_run_config(_resolve(_edge_file()))
     renamed = parse_config_document(
         _edge_file(judge_a="qwen3:30b-renamed", reader="vision-renamed"), "toml")
     resumed = rehydrate_run_config({"run_config": frozen_text}, renamed, SYNTHETIC_COHORT)
-    assert resumed.panel[0].build_id == _JUDGE_A
-    assert resumed.panel[0].served_as == "qwen3:30b-a3b-q4_K_M"
+    assert [ref.build_id for ref in resumed.panel] == [_JUDGE_A, _JUDGE_B, _JUDGE_C]
+    assert resumed.panel[0].served_as is not None
 
 
 def test_tc_conf_48_a_config_with_no_local_model_freezes_byte_identically_to_before():
