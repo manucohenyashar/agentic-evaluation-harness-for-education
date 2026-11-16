@@ -2324,6 +2324,33 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
 
     # #806 landed: its three entries (#814 TC-AGG-27/28/31 and TC-JUDGE-46, #812 the Jev-final
     # seed) were dropped and their cases run unmarked. #808 landed too (PR #843).
+
+    # --- T21 (#905), S30's half: TC-PROV-71 and TC-CONSOLE-123 (statistical-validity plan r2 §3.23)
+    #
+    # S30 (#872) is the last (and only) implementing story for both files; S28's half of T21
+    # (TC-CONF-48, TC-PROV-70, TC-REG-29) landed with #871 and runs unmarked. The design fixes
+    # no Python name for either surface — the console's estimate read, the pause/resume and the
+    # retention census are all bets the test files disclose — so a `symbol` key on an invented
+    # name would never fire if #872 spells it differently (the direction this registry exists
+    # to prevent). What the design DOES fix is each FR's env knob, which the implementation
+    # must read: `HARNESS_RETENTION_PRECHECK` (FR-PROV-48) and `HARNESS_READ_COST_CEILING`
+    # (FR-CONSOLE-97). Each file is keyed on its own knob appearing anywhere under `src/aeh`.
+    # Early-fire risk, stated: a comment or docstring naming the knob before the behaviour lands
+    # fires the entry — re-check the cases green before unmarking, never on the notice alone.
+    "#872 S30 TC-PROV-71 retention pre-check on every remote profile": (
+        "command",
+        "python -c \"import pathlib, sys; sys.exit(0 if any('HARNESS_RETENTION_PRECHECK' in "
+        "p.read_text(encoding='utf-8', errors='replace') for p in "
+        "pathlib.Path('src/aeh').rglob('*.py')) else 1)\"",
+        ("tests/integration/prov/test_tc_prov_71_retention_precheck.py",),
+    ),
+    "#872 S30 TC-CONSOLE-123 the reading job priced and capped": (
+        "command",
+        "python -c \"import pathlib, sys; sys.exit(0 if any('HARNESS_READ_COST_CEILING' in "
+        "p.read_text(encoding='utf-8', errors='replace') for p in "
+        "pathlib.Path('src/aeh').rglob('*.py')) else 1)\"",
+        ("tests/unit/console/test_tc_console_123_reading_cost.py",),
+    ),
 }
 
 def blocker_is_resolved(kind: str, target: str, repo_root: Any) -> bool:
