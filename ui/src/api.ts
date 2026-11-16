@@ -104,6 +104,39 @@ export interface Papers {
   summary?: ClassSummary;
   /** How many of the class's papers a run has graded — the test paper is replaceable at 0. */
   graded_papers?: number;
+  /** FR-CONSOLE-97: the class's live reading job, with the reason when it paused at its
+   * reading cost limit. `null` when no reading is under way. */
+  reading?: ReadingState | null;
+}
+
+export interface ReadingState {
+  job_id: string;
+  state: string;
+  paused: boolean;
+  done: number | null;
+  waiting: number;
+  spend: number | null;
+  reason: string | null;
+}
+
+/** FR-CONSOLE-97: what reading the chosen files would cost — `estimate` is null on a computer
+ * whose page reader is local (the text then says so) or when the reader declares no price. */
+export interface PapersEstimate {
+  estimate: string | null;
+  currency: string | null;
+  pages: number;
+  text: string;
+}
+
+export async function fetchPapersEstimate(
+  cohortId: string,
+  pages: number,
+  signal?: AbortSignal,
+): Promise<PapersEstimate> {
+  return fetchRead<PapersEstimate>("/api/v1/papers/estimate", signal, {
+    cohort_id: cohortId,
+    pages: String(pages),
+  });
 }
 
 export interface RunStartState {

@@ -149,6 +149,7 @@ def run_to_completion(
     synthesizer: Any = None,
     high_risk_criteria: Sequence[str] = (),
     decision_provider: Any = None,
+    retention_checked: bool = False,
 ) -> RunResult:
     """Drive the run pass by pass until M-ORCH says it is complete, or it pauses.
 
@@ -163,6 +164,10 @@ def run_to_completion(
     `clock` is the run's clock seam for stage timings (FR-CONSOLE-75): its `monotonic()`
     times extract, judge, aggregate and synthesis, defaulting to `time.monotonic`. Nothing
     here reads a wall clock: every deadline belongs to `M-ORCH`'s lease clock.
+
+    `retention_checked` says the caller created this run in the same start, so `create_run`'s
+    gate already verified every build's retention (FR-PROV-48) and the decision model is not
+    probed again here.
     """
     monotonic = monotonic_of(clock)
     passes_cap = (
@@ -174,7 +179,8 @@ def run_to_completion(
     # FR-PIPE-11/12: the frozen decision engine's provider, and its run-start checks before
     # anything is leased. Both are no-ops with the engine off.
     decision_provider = _decision_provider_for_run(run_config, provider, decision_provider)
-    _decision_run_start_checks(run_config, decision_provider)
+    _decision_run_start_checks(run_config, decision_provider,
+                               retention_checked=retention_checked)
     executor = ProductionStageExecutor(
         store, provider, run_config,
         high_risk_criteria=high_risk_criteria,

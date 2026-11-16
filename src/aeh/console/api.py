@@ -36,6 +36,7 @@ from .vocabulary import (
     LOGS_READ,
     MONITOR_READ,
     PACKAGE_SETUP_READ,
+    PAPERS_ESTIMATE_READ,
     PAPERS_READ,
     PARKED_READ,
     PAST_TESTS_READ,
@@ -167,6 +168,9 @@ def _build_routes() -> tuple[ApiRoute, ...]:
         ApiRoute("GET", f"{API_PREFIX}/package-setup", None, PACKAGE_SETUP_READ),
         ApiRoute("GET", f"{API_PREFIX}/class-roster", None, CLASS_ROSTER_READ),
         ApiRoute("GET", f"{API_PREFIX}/papers", None, PAPERS_READ),
+        # FR-CONSOLE-97: the Papers confirmation's reading estimate. A read: it prices the
+        # pages through the reader's `estimate_cost` and sends nothing.
+        ApiRoute("GET", f"{API_PREFIX}/papers/estimate", None, PAPERS_ESTIMATE_READ),
         ApiRoute("GET", f"{API_PREFIX}/run-start-state", None, RUN_START_STATE_READ),
         ApiRoute("GET", f"{API_PREFIX}/monitor", None, MONITOR_READ),
         ApiRoute("GET", f"{API_PREFIX}/review-queue", None, REVIEW_QUEUE_READ),

@@ -20,7 +20,8 @@ from typing import Any
 
 #: The closed state set `CT-CONSOLE-37` pins. Adding a value is additive (`CT-CONSOLE-38`):
 #: the SPA maps an unknown one to its neutral "needs attention" label rather than erroring.
-JOB_STATES: tuple[str, ...] = ("queued", "running", "succeeded", "failed", "cancelled")
+#: `paused` (FR-CONSOLE-97) is a reading job stopped at its cost limit, waiting for Resume.
+JOB_STATES: tuple[str, ...] = ("queued", "running", "succeeded", "failed", "cancelled", "paused")
 
 
 def job_record(

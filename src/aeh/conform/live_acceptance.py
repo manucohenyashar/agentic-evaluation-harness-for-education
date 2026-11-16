@@ -374,11 +374,15 @@ def _drive_live_pipeline(
     os.environ[RANDOM_ARM_RATE_ENV] = "0"
     try:
         orchestrator = Orchestrator(store, provider=provider, decision_provider=decision_provider)
-        run_id = orchestrator.create_run(cohort.cohort_id, built.package_version, run_config)
+        # FR-PROV-48: the escalation seats are probed for retention with the panel.
+        run_id = orchestrator.create_run(
+            cohort.cohort_id, built.package_version, run_config,
+            escalation_refs=tuple((judge_refs or {}).values()))
         orchestrator.start(run_id)
         result = run_to_completion(
             store, run_id, provider=provider, run_config=run_config,
-            decision_provider=decision_provider, judge_refs=judge_refs)
+            decision_provider=decision_provider, judge_refs=judge_refs,
+            retention_checked=True)
     finally:
         if previous_rate is None:
             os.environ.pop(RANDOM_ARM_RATE_ENV, None)

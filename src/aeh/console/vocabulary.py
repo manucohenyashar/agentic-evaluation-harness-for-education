@@ -88,6 +88,10 @@ CONTROL_SURFACE_ACTIONS: tuple[str, ...] = (
     "move paper to student",         # FR-CONSOLE-66
     "remove paper",                  # FR-CONSOLE-67
     "replace test paper",            # FR-CONSOLE-68
+    # The statistical-validity delta r2 (FR-CONSOLE-97): a reading job stops at its cost limit
+    # and **Resume** continues it from the next unread file. Its own row rather than a widened
+    # `pause/resume`, which addresses a run's control queue; a reading job has no run.
+    "resume reading",                # FR-CONSOLE-97
 )
 
 
@@ -126,6 +130,8 @@ CLI_HELP_READ = "CLI help"
 PACKAGE_SETUP_READ = "package setup"
 CLASS_ROSTER_READ = "class roster"
 PAPERS_READ = "papers"
+#: FR-CONSOLE-97: the Papers confirmation's estimate of what reading the selected files costs.
+PAPERS_ESTIMATE_READ = "papers estimate"
 RUN_START_STATE_READ = "run start state"
 MONITOR_READ = "monitor"
 REVIEW_QUEUE_READ = "review queue"
@@ -344,6 +350,9 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
     ),
     "remove paper": ("submission.submission_id", "document.document_id"),
     "replace test paper": ("document.document_id", "submission.submission_id"),
+    # FR-CONSOLE-97: Resume restarts the class's reading worker on the files its pause kept —
+    # console memory (`ADR-47`), no store row; the read itself writes through M-INGEST.
+    "resume reading": (),
 }
 
 

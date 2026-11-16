@@ -280,6 +280,8 @@ def papers_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     # frozen set (`TC-CONSOLE-36`) for the same door.
     from aeh.pipeline import cohort_has_test_paper, uploaded_parts
 
+    from .paper_intake import reading_state
+
     run_row = _run_row_of(console, app, query)
     cohort_id = str(query.get("cohort_id") or "")
     if not cohort_id and run_row is not None:
@@ -303,7 +305,29 @@ def papers_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
         # far with what the paper check said.
         "test_paper_read": bool(cohort_has_test_paper(app._store, cohort_id)),
         "sheets": _sheets_of(app, cohort_id),
+        # FR-CONSOLE-97: the class's live reading job — and, when it paused at the reading
+        # cost limit, the reason in the teacher's words beside the Resume it waits for.
+        "reading": reading_state(app, cohort_id),
     }
+
+
+def papers_estimate_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
+    """The Papers confirmation's estimate (FR-CONSOLE-97): what reading `pages` pages for the
+    class would cost — pages x the page reader's per-page `estimate_cost` — on a remote
+    profile, and "no cost: local models" on `edge-local`. Sends nothing; writes nothing."""
+    from aeh.pipeline import reading_estimate
+
+    from .paper_intake import _intake_config
+
+    del console
+    cohort_id = str(query.get("cohort_id") or "")
+    if cohort_id not in app._cohort_keys():
+        raise ValueError("choose the class these papers belong to, then ask for the estimate "
+                         "again.")
+    raw = str(query.get("pages") or "").strip()
+    if not raw.isdigit():
+        raise ValueError("the number of pages is a whole number of zero or more, such as 12.")
+    return reading_estimate(app._store, _intake_config(app), cohort_id, int(raw))
 
 
 def _sheets_of(app: Any, cohort_id: str) -> list[dict[str, Any]]:

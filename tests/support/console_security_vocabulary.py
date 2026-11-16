@@ -284,6 +284,8 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
     ),
     "remove paper": ("submission.submission_id", "document.document_id"),
     "replace test paper": ("document.document_id", "submission.submission_id"),
+    # #872 (FR-CONSOLE-97): Resume restarts a reading worker — console memory, no store row.
+    "resume reading": (),
 }
 
 #: The three actions §11.8 places **before any scoring exists**, inside the §6.2 lock.

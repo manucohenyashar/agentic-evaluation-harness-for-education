@@ -211,10 +211,16 @@ CORRECTIONS_CONTROL_ACTIONS: dict[str, str] = {
     "replace test paper": "FR-CONSOLE-68",
 }
 
+#: The statistical-validity delta r2's control action (#872): **Resume** on a reading job that
+#: paused at its cost limit (FR-CONSOLE-97, §3.7.7).
+VALIDITY_CONTROL_ACTIONS: dict[str, str] = {
+    "resume reading": "FR-CONSOLE-97",
+}
+
 #: The whole enumerated write surface `FR-CONSOLE-32` pins: §11.8's fifteen plus the deltas'.
 CONTROL_SURFACE_ACTIONS: tuple[str, ...] = (
     HLD_CONTROL_ACTIONS + tuple(DELTA_CONTROL_ACTIONS) + tuple(REDESIGN_CONTROL_ACTIONS)
-    + tuple(CORRECTIONS_CONTROL_ACTIONS)
+    + tuple(CORRECTIONS_CONTROL_ACTIONS) + tuple(VALIDITY_CONTROL_ACTIONS)
 )
 
 #: Design §3.19's route table, split by surface. `CT-CONSOLE-17`'s sweep needs the routes to know

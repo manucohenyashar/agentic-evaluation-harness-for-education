@@ -261,19 +261,19 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # as before, and the re-pin is line drift only. `run_lifecycle.py` is unchanged on
     # main, so #664's numbers hold; `enumeration.py` is #597's SQL-ready rewrite, whose
     # sites are main's re-pin.
-    "aeh.orch.run_lifecycle:112",
+    "aeh.orch.run_lifecycle:121",
     "aeh.orch.enumeration:103",
     "aeh.orch.enumeration:112",
-    "aeh.orch.run_lifecycle:273",
-    "aeh.orch.run_lifecycle:268",
-    "aeh.orch.run_lifecycle:262",
-    "aeh.orch.run_lifecycle:294",
-    "aeh.orch.run_lifecycle:306",
-    "aeh.orch.run_lifecycle:334",
-    "aeh.orch.run_lifecycle:454",
-    "aeh.orch.run_lifecycle:436",
-    "aeh.orch.run_lifecycle:478",
-    "aeh.orch.run_lifecycle:486",
+    "aeh.orch.run_lifecycle:314",
+    "aeh.orch.run_lifecycle:309",
+    "aeh.orch.run_lifecycle:303",
+    "aeh.orch.run_lifecycle:335",
+    "aeh.orch.run_lifecycle:347",
+    "aeh.orch.run_lifecycle:375",
+    "aeh.orch.run_lifecycle:495",
+    "aeh.orch.run_lifecycle:477",
+    "aeh.orch.run_lifecycle:519",
+    "aeh.orch.run_lifecycle:527",
     "aeh.orch.leasing:234",
     "aeh.orch.leasing:253",
     "aeh.orch.leasing:265",
@@ -318,7 +318,7 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # so a run recovery REFUSED to resume - a profile switch, FR-CONF-15 - would keep a
     # stale reason that answers a different question. Declared statement,
     # keyword-parameterized, in the caller's transaction (FR-STORE-08).
-    "aeh.orch.run_lifecycle:574",
+    "aeh.orch.run_lifecycle:615",
     "aeh.orch.leasing:672",
     "aeh.orch.leasing:674",
     "aeh.orch.dispatch:461",
@@ -824,7 +824,7 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # (Seventh re-pin, PR #794's follow-up: the widened `_write_rows` return
     # and its docstring reflow shifted the pause/resume site down again; same
     # statement. Re-read from the walker, never hand-unioned.)
-    "aeh.console.controls:242",
+    "aeh.console.controls:248",
     # (#875 re-pin: the blind effect's draft wording moved the quarantine site; same
     # statement.)
     "aeh.console.effects:824",

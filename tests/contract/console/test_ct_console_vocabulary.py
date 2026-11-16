@@ -39,6 +39,7 @@ from tests.support.console_vocabulary import (
     OPERATOR_ROUTES,
     OPTIONAL_SETUP_STEPS,
     REDESIGN_CONTROL_ACTIONS,
+    VALIDITY_CONTROL_ACTIONS,
     PILOT_QUESTIONS,
     REFERENCE_COHORT_SIZE,
     REVIEW_QUEUE_BUDGET_SECONDS,
@@ -188,7 +189,7 @@ def test_the_control_surface_transcribes_hld_11_8(repo_root):
     )
     assert CONTROL_SURFACE_ACTIONS == (
         HLD_CONTROL_ACTIONS + tuple(DELTA_CONTROL_ACTIONS) + tuple(REDESIGN_CONTROL_ACTIONS)
-        + tuple(CORRECTIONS_CONTROL_ACTIONS)
+        + tuple(CORRECTIONS_CONTROL_ACTIONS) + tuple(VALIDITY_CONTROL_ACTIONS)
     )
 
 

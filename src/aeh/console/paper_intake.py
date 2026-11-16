@@ -178,65 +178,115 @@ def _sheet_line(filename: str, result: Any) -> tuple[str, str | None]:
     return f"{filename}: not read — {detail}", "failed"
 
 
-def _intake_worker(app: Any, cohort_id: str, job_id: str, config: dict[str, Any]) -> None:
+def _tallies(app: Any, job_id: str) -> dict[str, Any]:
+    """The job's running file tallies, kept on the app so a Resume continues them."""
+    store = getattr(app, "_intake_tallies", None)
+    if store is None:
+        store = {}
+        try:
+            app._intake_tallies = store
+        except AttributeError:  # pragma: no cover - an app that refuses attributes
+            pass
+    return store.setdefault(job_id, {**dict.fromkeys(_TALLIES, 0), "last_error": None})
+
+
+def _money(value: Any) -> str:
+    """A cost as a teacher reads it: the decimal as recorded, with no trailing exponent."""
+    from decimal import Decimal
+
+    return format(Decimal(str(value)).normalize(), "f")
+
+
+def _paused_reason(session: Any, done: int, waiting: int) -> str:
+    """The sentence a paused reading job carries on Jobs and on Papers (FR-CONSOLE-97)."""
+    currency = session.currency
+    return (f"Reading paused at the reading cost limit of {_money(session.ceiling())} "
+            f"{currency}: the {done} file(s) read so far cost {_money(session.spent)} "
+            f"{currency}. {waiting} file(s) wait unread. Press Resume to read up to "
+            f"{_money(session.ceiling())} {currency} more; papers already read are kept and "
+            f"are not read again.")
+
+
+def _intake_worker(app: Any, cohort_id: str, job_id: str, config: dict[str, Any], *,
+                   done: int = 0, spent: Any = 0) -> None:
     """Drain one class's queue under one job: reassemble each file from the blob store and
-    read it through `aeh ingest`'s door, reporting each file as it is done."""
-    from aeh.pipeline import read_uploaded_paper
+    read it through `aeh ingest`'s door, reporting each file as it is done.
+
+    FR-CONSOLE-97 / FR-PROV-48: the files are read through one `ReadingSession`, built before
+    the first file — it verifies the page reader's retention on a remote profile, and meters
+    what each file cost. Before each next file the job's spend since it started (or resumed)
+    is checked against the reading cost limit; at the limit the job pauses with the files still
+    queued, and **Resume** (`resume_reading`) continues from the next unread file. `done` and
+    `spent` are what the job had already done when it is resumed."""
+    from aeh.pipeline import ReadingSession
     from aeh.pipeline.runtime import _open_store
 
     registry = app._jobs
-    done = 0
-    tally = dict.fromkeys(_TALLIES, 0)
-    last_error: str | None = None
+    tally = _tallies(app, job_id)
     worker_store = None
+    session = None
+    paused_waiting: int | None = None
     try:
         registry.update(job_id, state="running")
         worker_store = _open_store(str(app._store.data_dir))
+        session = ReadingSession(worker_store, config, cohort_id, spent=spent)
         while True:
             with app._intake_guard:
                 queue = app._intake_queues.get(cohort_id)
                 if not queue:
                     app._intake_jobs.pop(cohort_id, None)
                     break
+                if session.ceiling_reached():
+                    # Paused, not finished: the queue and the class's job stay, so a later
+                    # upload joins this job and waits with the rest for Resume.
+                    paused_waiting = len(queue)
+                    break
                 item = queue.popleft()
             filename = str(item["filename"])
             registry.update(job_id, current=f"reading {filename}")
             try:
-                result = read_uploaded_paper(
-                    worker_store, config, cohort_id, str(item["package_version"]),
-                    kind=str(item["kind"]), filename=filename,
+                result = session.read(
+                    str(item["package_version"]), kind=str(item["kind"]), filename=filename,
                     data=_reassembled(worker_store, item["chunk_refs"]))
                 line, counted = _sheet_line(filename, result)
             except Exception as error:  # noqa: BLE001 - one file's failure, never the queue's
-                last_error = _strip_exception_name(error) or "the read failed."
-                line, counted = f"{filename}: not read — {last_error}", "failed"
+                tally["last_error"] = _strip_exception_name(error) or "the read failed."
+                line, counted = f"{filename}: not read — {tally['last_error']}", "failed"
             done += 1
             if counted is not None:
                 tally[counted] += 1
-            registry.update(job_id, done=done, current=line)
+            registry.update(job_id, done=done, current=line, cost_usd=float(session.spent))
+        if paused_waiting is not None:
+            registry.update(job_id, state="paused", cost_usd=float(session.spent),
+                            current=_paused_reason(session, done, paused_waiting))
+            return
         summary = (f"{done} file(s) done: {tally['ready']} paper(s) ready to grade, "
                    f"{tally['parked']} parked, {tally['skipped']} already read, "
                    f"{tally['failed']} not read")
+        spend = float(session.spent)
         if done and tally["failed"] == done:
             registry.update(job_id, current=summary)
             registry.finish(
-                job_id, state="failed", finished_at=_now(),
-                error_detail=last_error or "no file could be read.",
+                job_id, state="failed", finished_at=_now(), cost_usd=spend,
+                error_detail=tally["last_error"] or "no file could be read.",
                 error_next_action=(
                     "check the page reader's key, credit and model name in the settings, "
                     "then upload the papers again — papers already read are skipped."))
         else:
             registry.update(job_id, current=summary)
-            registry.finish(job_id, state="succeeded", finished_at=_now())
+            registry.finish(job_id, state="succeeded", finished_at=_now(), cost_usd=spend)
     except Exception as error:  # noqa: BLE001 - recorded on the job, never swallowed
         with app._intake_guard:
             app._intake_jobs.pop(cohort_id, None)
             app._intake_queues.pop(cohort_id, None)
         registry.finish(
             job_id, state="failed", finished_at=_now(),
+            cost_usd=float(session.spent) if session is not None else None,
             error_detail=_strip_exception_name(error) or "the papers could not be read.",
             error_next_action="upload the papers again; papers already read are skipped.")
     finally:
+        if paused_waiting is None:
+            getattr(app, "_intake_tallies", {}).pop(job_id, None)
         if worker_store is not None:
             try:
                 worker_store.close()
@@ -244,10 +294,103 @@ def _intake_worker(app: Any, cohort_id: str, job_id: str, config: dict[str, Any]
                 pass
 
 
+#: The control action that continues a reading job paused at its cost limit (FR-CONSOLE-97).
+RESUME_READING_ACTION = "resume reading"
+
+
+def resume_reading(app: Any, params: Mapping[str, Any]) -> Any:
+    """**Resume** (FR-CONSOLE-97): continue the class's reading job that paused at the reading
+    cost limit, from the next unread file, under the same job — its count of files done and its
+    spend carry on, and nothing already read is read again (the files left are exactly the
+    queue the pause kept). Each Resume allows up to one more limit's worth of reading.
+
+    Refuses, in the teacher's words, a class with no paused reading job, or a job that is not
+    the class's paused reading job. Writes no store row: the queue and the job are console
+    memory (`ADR-47`); the papers' real state is the submission rows the read writes."""
+    from .records import ControlOutcome
+
+    def refused(detail: str, next_action: str) -> ControlOutcome:
+        return ControlOutcome(rows_written=(), refused=True, dispatched=False,
+                              detail=detail, next_action=next_action)
+
+    cohort_id = str(params.get("cohort_id") or "")
+    try:
+        config = _intake_config(app)
+    except Exception as error:  # noqa: BLE001 - the composition's own wording
+        return refused(f"the reading could not resume: {_strip_exception_name(error)}",
+                       "check the console's settings, then press Resume again.")
+    # The check and the flip out of `paused` happen under the one guard, so two Resume presses
+    # at once (a double click, a second tab) start one worker, never two on the same job.
+    with app._intake_guard:
+        live = app._intake_jobs.get(cohort_id)
+        job_id = str(params.get("job_id") or live or "")
+        record = app._jobs.get(job_id) if job_id else None
+        resumable = (record is not None and record.get("kind") == INTAKE_JOB_KIND
+                     and live == job_id and record.get("state") == "paused")
+        if resumable:
+            app._jobs.update(job_id, state="queued",
+                             current="reading resumes with the next unread file")
+    if not resumable:
+        return refused(
+            "there is no paused reading of papers for this class to resume.",
+            "open Load papers for the class; a reading that paused at its cost limit shows a "
+            "Resume button there.")
+    done = int((record.get("progress") or {}).get("done") or 0)
+    spent = record.get("cost_usd") or 0
+    thread = threading.Thread(
+        target=_intake_worker, name=f"aeh-papers-{job_id}-resumed", daemon=True,
+        args=(app, cohort_id, job_id, config), kwargs={"done": done, "spent": spent},
+    )
+    try:
+        thread.start()
+    except Exception as error:  # noqa: BLE001 - a worker that never ran owns nothing
+        with app._intake_guard:
+            app._intake_jobs.pop(cohort_id, None)
+            app._intake_queues.pop(cohort_id, None)
+        getattr(app, "_intake_tallies", {}).pop(job_id, None)
+        app._jobs.finish(job_id, state="failed", finished_at=_now(),
+                         error_detail=_strip_exception_name(error)
+                         or "the papers reader could not start.",
+                         error_next_action="upload the papers again; papers already read "
+                                           "are skipped.")
+        return refused("the reading could not resume: the papers reader could not start.",
+                       "upload the papers again; papers already read are skipped.")
+    return ControlOutcome(rows_written=(), refused=False, dispatched=True, job_id=job_id,
+                          detail="reading resumed with the next unread file; papers already "
+                                 "read are kept.")
+
+
+def reading_state(app: Any, cohort_id: str) -> dict[str, Any] | None:
+    """The class's live reading job for the Papers screen (FR-CONSOLE-97): its state, files
+    done and waiting, its spend and — when it paused at the cost limit — the reason, in the
+    teacher's words. `None` when no reading job is live for the class."""
+    if getattr(app, "_intake_guard", None) is None or getattr(app, "_jobs", None) is None:
+        return None
+    with app._intake_guard:
+        job_id = app._intake_jobs.get(cohort_id)
+        waiting = len(app._intake_queues.get(cohort_id) or ())
+    record = app._jobs.get(job_id) if job_id else None
+    if record is None:
+        return None
+    paused = record.get("state") == "paused"
+    return {
+        "job_id": job_id,
+        "state": record.get("state"),
+        "paused": paused,
+        "done": (record.get("progress") or {}).get("done"),
+        "waiting": waiting,
+        "spend": record.get("cost_usd"),
+        "reason": (record.get("progress") or {}).get("current") if paused else None,
+    }
+
+
 __all__ = [
     "INTAKE_JOB_KIND",
     "PAPER_KINDS",
+    "RESUME_READING_ACTION",
     "check_paper_upload",
     "queue_paper_intake",
+    "reading_state",
+    "resume_reading",
     "wants_read",
 ]

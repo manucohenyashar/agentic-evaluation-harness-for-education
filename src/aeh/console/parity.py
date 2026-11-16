@@ -245,6 +245,11 @@ CONSOLE_CAPABILITY_PARITY: dict[str, str] = {
         "console-only: M-INGEST's `remove_test_paper` (through M-PIPE) removes the class's "
         "test paper while nothing is graded; `aeh ingest --assessment` then reads the right one"
     ),
+    "resume reading": (
+        "console-only: the console's reading job pauses at its cost limit (FR-CONSOLE-97) and "
+        "Resume continues it; `aeh ingest` reads a folder in one go, and run again it skips "
+        "the papers already read"
+    ),
     "past tests": (
         "console-only: the past tests read lists every grading run with its class, test and "
         "dates, and finds a student's results across them; `aeh results class/student` "
