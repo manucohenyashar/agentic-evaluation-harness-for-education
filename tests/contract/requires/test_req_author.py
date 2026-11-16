@@ -133,7 +133,7 @@ def _tree_snapshot(root: Path) -> list:
 
 _DEV_CI_CONFIG = """\
 HARNESS_PROFILE = "dev-ci"
-prompt_template_v = "judge-prompt/3"
+prompt_template_v = "judge-prompt/4"
 
 [profiles.dev-ci.transcriber]
 role = "transcriber"

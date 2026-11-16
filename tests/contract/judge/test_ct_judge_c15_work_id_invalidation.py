@@ -83,8 +83,8 @@ pytestmark = [pytest.mark.contract]
 #: the template pin itself is #79's surface).
 ISSUE = "#78"
 
-#: The plan's pin: `JUDGE_PROMPT_TEMPLATE_V` = "judge-prompt/3" (#81's render, bumped by TC-REG-16).
-TEMPLATE_PIN = "judge-prompt/3"  # TC-REG-16: the directive names the reply fields
+#: The plan's pin: `JUDGE_PROMPT_TEMPLATE_V` = "judge-prompt/4" (#81's render, bumped by TC-REG-16, then #863).
+TEMPLATE_PIN = "judge-prompt/4"  # #863: cited_spans declare the quoted text (was /3, TC-REG-16)
 
 #: The one input varied for the invalidation differential — everything else held.
 _BUMPED = TEMPLATE_PIN + "-bumped"

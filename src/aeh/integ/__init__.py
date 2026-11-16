@@ -9,7 +9,8 @@ judges, back for another extraction attempt, or to human review. It never scores
 Files:
     schema.py        migrations, the SQL statements, and the rate metric names
     settings.py      thresholds and switches, each with its environment knob
-    verification.py  `verify_span` and the helpers that read spans, regions and document bytes
+    verification.py  `verify_span`, `relocate_span` (quote-anchored relocation, region-scoped),
+                     `clear_of_region_markup`, `answer_regions`, and the span/region/byte readers
     signals.py       computing the six signals (`IntegritySignals`)
     view.py          `StoreExtractionView`, the store-backed read the gate uses in production
     gate.py          `IntegrityGate`, which verifies a cell and routes it
@@ -27,7 +28,15 @@ from .settings import (
     INTEG_DOCUMENT_CACHE_ENTRIES_ENV,
     _verification_disabled,
 )
-from .verification import _region_items, _span_items, verify_span
+from .verification import (
+    Span,
+    _region_items,
+    _span_items,
+    answer_regions,
+    clear_of_region_markup,
+    relocate_span,
+    verify_span,
+)
 from .signals import IntegritySignals, _region_signals
 from .view import StoreExtractionView
 from .gate import IntegrityGate
@@ -39,5 +48,9 @@ __all__ = [
     "INTEG_STATEMENTS",
     "IntegrityGate",
     "IntegritySignals",
+    "Span",
+    "answer_regions",
+    "clear_of_region_markup",
+    "relocate_span",
     "verify_span",
 ]

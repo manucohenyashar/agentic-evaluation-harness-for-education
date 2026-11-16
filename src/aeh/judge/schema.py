@@ -175,6 +175,25 @@ TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
 ))
 
 
+#: Tier C, migration 36 (migration J1, statistical-validity delta FR-JUDGE-40): whether any of a
+#: verdict's cited spans was re-anchored to the unique occurrence of its quoted text
+#: (`relocate_span`, ADR-54). Stored and counted, so a judge that leans on relocation is visible.
+#: `NOT NULL DEFAULT 0`: a pre-J1 verdict re-anchored nothing, because nothing could.
+_JUDGE_VERDICT_REANCHORED: tuple[Statement, ...] = (
+    Statement(
+        "ALTER TABLE verdict ADD COLUMN reanchored INTEGER NOT NULL DEFAULT 0 "
+        "CHECK (reanchored IN (0, 1))"
+    ),
+)
+
+
+TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
+    TIER_MIGRATIONS[Tier.COHORT] + (
+        Migration(version=36, name="judge_verdict_reanchored", statements=_JUDGE_VERDICT_REANCHORED),
+    ), key=lambda m: m.version
+))
+
+
 # --- the runtime statements (declared, never assembled — FR-STORE-08, SEC-15) --------------------
 #
 # Write ownership (CT-JUDGE-12): this dict holds the module's ENTIRE write surface —
@@ -204,10 +223,10 @@ JUDGE_STATEMENTS: dict[str, Statement] = {
     "insert_verdict": Statement(
         "INSERT OR IGNORE INTO verdict (verdict_id, work_id, judge_id, band, "
         "band_ordinal, self_confidence, cited_spans, evidence_sufficient, uncited, "
-        "evidence_assessment, latency_ms, scoring_engine, engine_build) "
+        "evidence_assessment, latency_ms, scoring_engine, engine_build, reanchored) "
         "VALUES (:verdict_id, :work_id, :judge_id, :band, :band_ordinal, "
         ":self_confidence, :cited_spans, :evidence_sufficient, :uncited, "
-        ":evidence_assessment, :latency_ms, :scoring_engine, :engine_build)"
+        ":evidence_assessment, :latency_ms, :scoring_engine, :engine_build, :reanchored)"
     ),
     # FR-JUDGE-33/34: the decision-seat pre-screen, read before any engine call and written
     # once (INSERT OR IGNORE on the work id) before the verdict or the LLM fallback.
@@ -239,7 +258,8 @@ JUDGE_STATEMENTS: dict[str, Statement] = {
     # FR-JUDGE-18 / CT-JUDGE-20: one run's verdicts for one cell, in work_id order.
     "select_cell_verdicts": Statement(
         "SELECT v.work_id, v.judge_id, v.band, v.band_ordinal, v.cited_spans, "
-        "v.evidence_sufficient, v.uncited, v.scoring_engine, p.gate_confidence FROM verdict v "
+        "v.evidence_sufficient, v.uncited, v.scoring_engine, v.reanchored, p.gate_confidence "
+        "FROM verdict v "
         "JOIN work_unit w ON w.work_id = v.work_id "
         # FR-AGG-20: an accepted decision's gate value, which a Jev-final cell records as its
         # confidence. NULL for an LLM verdict (no accepted pre-screen row).

@@ -49,7 +49,10 @@ def test_tc_reg_11_the_documents_own_bytes_still_verify():
 @pytest.mark.parametrize("text, name", [
     (f"Weight acts down. Signed, {REF}. Again, P-0002.", NAME),  # two different replacements
     (f"Weight acts up. Signed, {REF}. Again, {REF}.", NAME),     # another byte changed
-    (f"Weight acts down. Signed, {REF}.", NAME),                 # shorter than the offsets hold
+    # Shorter than the offsets hold AND ambiguous: with the name restored the quote occurs
+    # twice, so it cannot re-anchor (#863, FR-INTEG-13). A shorter quote that is unique, such
+    # as "Weight acts down. Signed, P-0001.", now re-anchors to its one occurrence.
+    (f"{REF}.", NAME),
     (CLEAN, "Zelda"),                                            # not this unit's name
     (CLEAN, None),                                               # no name known: strict bytes only
 ])

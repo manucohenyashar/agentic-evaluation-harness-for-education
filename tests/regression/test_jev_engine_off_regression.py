@@ -53,6 +53,11 @@ def test_tc_reg_08_engine_off_run_equals_the_fb12d1e_baseline(head_snapshot) -> 
             f"an engine-off verdict carries scoring_engine={row.get('scoring_engine')!r}")
         for column in _NEW_VERDICT_COLUMNS:
             row.pop(column, None)
+        # #863 (FR-JUDGE-40, cohort migration 36, J1): `reanchored`. Every recorded reply's
+        # citations verify at their own offsets, so no engine-off verdict re-anchors anything:
+        # asserted 0, then projected like the columns above.
+        assert row.pop("reanchored", 0) == 0, (
+            f"an engine-off verdict re-anchored a citation: {row!r}")
     now["tables"]["verdict"].sort(key=lambda r: json.dumps(r, sort_keys=True))
     # #524 (FR-PIPE-18): cohort migration 30 adds `criterion_score.state_reason`, which is
     # NULL on every row an ordinary run writes. Asserted NULL, then projected like the verdict

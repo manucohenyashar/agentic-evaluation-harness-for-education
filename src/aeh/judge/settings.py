@@ -13,8 +13,9 @@ from __future__ import annotations
 #: fixture contract keys on it (a fixture recorded against an old render misses rather
 #: than mis-replays). Changing the render changes this string, in the same change.
 #: `judge-prompt/2` → `judge-prompt/3` by TC-REG-16: the directive now names the five reply
-#: fields, in order, as a JSON object.
-JUDGE_PROMPT_TEMPLATE_V = "judge-prompt/3"
+#: fields, in order, as a JSON object. `judge-prompt/3` → `judge-prompt/4` by #863 (FR-JUDGE-40):
+#: `cited_spans` items declare the quoted words (`{start, end, text}`), not offsets alone.
+JUDGE_PROMPT_TEMPLATE_V = "judge-prompt/4"
 
 
 #: The strike budget's env knob (`FR-JUDGE-10`): production default three, adjustable

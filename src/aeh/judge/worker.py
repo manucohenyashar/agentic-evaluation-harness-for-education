@@ -31,7 +31,7 @@ from .errors import JudgmentError, ProseAssessmentError
 from .request import ScoringRequest
 from .results import ScoringResult
 from .prompt import prompt_fields, _span_document
-from .assembly import assemble, _field_of, _find_cohort
+from .assembly import UNRESOLVED_QUESTION, assemble, _field_of, _find_cohort, _unit_question_id
 from .replies import _amended_payload, _refuse_unverified_citations, _verdict_of
 from .decision_engine import (
     Accepted,
@@ -89,6 +89,27 @@ class ScoringWorker:
     def _roster_name_of(self, request: ScoringRequest) -> Any:
         """The roster name `assemble` saw for this request's unit, or None (#593)."""
         return self.__dict__.get("_roster_names", {}).get(request.work_id)
+
+    def _question_id_of(self, request: ScoringRequest) -> "str | None":
+        """The unit's question, which scopes citation relocation to its answer region (ADR-63).
+        Read from the store and remembered by `work_id` once resolved (an unresolved answer is
+        read again next time, so one failed read never sticks); None without a store."""
+        cache = self.__dict__.setdefault("_question_ids", {})
+        if request.work_id in cache:
+            return cache[request.work_id]
+        question_id = _unit_question_id(self._store, request.work_id,
+                                        request.criterion.criterion_id)
+        if question_id is not None and question_id != UNRESOLVED_QUESTION:
+            cache[request.work_id] = question_id
+        return question_id
+
+    def _accept_citations(self, request: ScoringRequest, cited: tuple) -> "tuple[tuple, bool]":
+        """The citation gate for this unit (FR-JUDGE-17/40): the spans to store and whether any
+        was re-anchored, or a `MalformedResponseError` refusing the reply. Every seat calls it
+        with the unit's roster name and question."""
+        return _refuse_unverified_citations(cited, request, self._store,
+                                            self._roster_name_of(request),
+                                            question_id=self._question_id_of(request))
 
     def dispatch(self, request: ScoringRequest, judge: Any) -> ScoringResult:
         """Produce one verdict for one unit (FR-JUDGE-22, FR-JUDGE-31). On the decision seat, with
@@ -171,8 +192,7 @@ class ScoringWorker:
                 # MalformedResponseError like any other contract refusal, struck within
                 # the budget and never persisted (an obeying reply is routed out, not
                 # obeyed). Vacuous for an uncited reply.
-                _refuse_unverified_citations(verdict.cited_spans, request, self._store,
-                                             self._roster_name_of(request))
+                cited_spans, reanchored = self._accept_citations(request, verdict.cited_spans)
             except (RateLimitedError, ProviderUnavailableError, BuildChangedError):
                 # `FR-JUDGE-19` / `CT-JUDGE-19`: the provider taxonomy is not a refusal of the
                 # reply — no strike, no FR-JUDGE-10 amended re-request, nothing persisted. It
@@ -206,8 +226,9 @@ class ScoringWorker:
                 band=verdict.band,
                 band_ordinal=verdict.band_ordinal,
                 self_confidence=verdict.self_confidence,
-                cited_spans=verdict.cited_spans,
-                uncited=not verdict.cited_spans,
+                cited_spans=cited_spans,
+                uncited=not cited_spans,
+                reanchored=reanchored,
                 evidence_assessment=verdict.evidence_assessment,
                 evidence_sufficient=verdict.evidence_sufficient,
                 resolved_build=completion.resolved_build,
@@ -317,11 +338,19 @@ class ScoringWorker:
             outcome = gate_decision(self._decision_from_row(stored), request, engine, judge_id=judge_id)
             if not isinstance(outcome, Accepted):
                 return "below_gate"
+            try:
+                # The same gate the first delivery passed (pure, so the same answer): the
+                # redelivered verdict stores the same spans and the same `reanchored`.
+                cited_spans, reanchored = self._accept_citations(request, outcome.result.cited_spans)
+            except MalformedResponseError:
+                return "below_gate"
+            accepted = dataclasses.replace(outcome.result, cited_spans=cited_spans,
+                                           reanchored=reanchored)
             confirmation = prescreen_confirmation(stored["reason"])
             if confirmation is not None:
                 kind, _judge, _band = confirmation
-                return outcome.result if kind == CONFIRMED_BY else UNCONFIRMED
-            return self._confirm(request, judge, outcome.result)
+                return accepted if kind == CONFIRMED_BY else UNCONFIRMED
+            return self._confirm(request, judge, accepted)
         capabilities = self._decision_provider.decision_capabilities(engine.model)
         eligibility = decision_eligibility(request, engine, capabilities)
         if isinstance(eligibility, Ineligible):
@@ -357,16 +386,23 @@ class ScoringWorker:
                                   decision=decision, gate=outcome.gate, argmax_band=bands[top].band)
             return "below_gate"
         try:
-            # FR-JUDGE-30: cited spans must be the document's own bytes before the verdict exists.
-            _refuse_unverified_citations(outcome.result.cited_spans, request, self._store,
-                                         self._roster_name_of(request))
+            # FR-JUDGE-30/40: cited spans must be the document's own bytes (or re-anchor to
+            # them) before the verdict exists.
+            # Called here, in `_prescreen`, by name: the pre-screen's call is the one test seams
+            # address by frame (`tests/support/jev_final_pipe.forge_citation_on`).
+            cited_spans, reanchored = _refuse_unverified_citations(
+                outcome.result.cited_spans, request, self._store, self._roster_name_of(request),
+                question_id=self._question_id_of(request))
         except MalformedResponseError:
             self._write_prescreen(request, engine, "below_gate", reason="citation_unverified",
                                   decision=decision, gate=outcome.gate, argmax_band=bands[top].band)
             return "below_gate"
         self._write_prescreen(request, engine, "accepted", decision=decision, gate=outcome.gate,
                               argmax_band=outcome.result.band)
-        return self._confirm(request, judge, outcome.result)
+        # FR-JUDGE-40 on the decision seat: re-anchored spans stored at their true offsets.
+        accepted = dataclasses.replace(outcome.result, cited_spans=cited_spans,
+                                       reanchored=reanchored)
+        return self._confirm(request, judge, accepted)
 
     # -- FR-JUDGE-39: one LLM judge confirms a confident decision ---------------------------------
 
@@ -528,6 +564,8 @@ class ScoringWorker:
                     ),
                     evidence_sufficient=int(bool(result.evidence_sufficient)),
                     uncited=int(bool(result.uncited)),
+                    # FR-JUDGE-40 (migration J1): whether any cited span was re-anchored.
+                    reanchored=int(bool(getattr(result, "reanchored", False))),
                     evidence_assessment=result.evidence_assessment,
                     latency_ms=result.latency_ms,
                     # FR-JUDGE-35: provenance on every row this module writes.
