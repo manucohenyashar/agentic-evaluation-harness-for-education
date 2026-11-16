@@ -147,10 +147,7 @@ def test_tc_pipe_17_the_summary_equals_the_metrics(engine_on) -> None:
     from aeh.judge import decision_engine_metrics
 
     world, result = engine_on
-    # The score stage's summary: #865 (FR-AGG-23) added the aggregate stage's own report, which
-    # carries metrics too.
-    summary = next(s for s in result.stages
-                   if s.stage == "score" and getattr(s, "metrics", None)).metrics
+    summary = next(s for s in result.stages if getattr(s, "metrics", None)).metrics
     m = decision_engine_metrics(world.handle, world.run_id)
     for name, value in summary.items():
         expected = getattr(m, name)

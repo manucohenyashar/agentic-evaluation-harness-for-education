@@ -337,12 +337,13 @@ def run_to_completion(
             ))
             break
 
-    # FR-AGG-23 / CT-AGG-25: what aggregation decided over the whole run, from the stored rows,
-    # recorded into `run_metrics` as `agg.<name>` rows. Once per call, after the last pass.
-    stages.append(aggregation_report(orch, handle, run_id))
-
     if decision_provider is not None:
         stages.append(_decision_summary(handle, run_id))
+
+    # FR-AGG-23 / CT-AGG-25: what aggregation decided over the whole run, from the stored rows,
+    # recorded into `run_metrics` as `agg.<name>` rows. Once per call, after the last pass, and
+    # after the score stage's decision summary, which stays the first trace carrying metrics.
+    stages.append(aggregation_report(orch, handle, run_id))
 
     if fault is not None:
         try:
