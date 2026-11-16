@@ -448,14 +448,20 @@ def test_tc_e2e_03_review_morning_shows_its_residual_and_collects_its_evidence(
     )
 
     # The flow half of the label oracle: every blind label was written blind -
-    # earned 0, no system band, no score link, no queue action (CT-REVIEW-09
-    # step 4, #111) - and every queue label the actions took was written seen.
+    # earned 0, no system band, no queue action (CT-REVIEW-09 step 4, #111) - and
+    # every queue label the actions took was written seen. Since #867 a blind label
+    # names the cell it judged (`score_id`, FR-REVIEW-25 / CT-REVIEW-26), resolved by
+    # the service rather than the session, so it is a score id, not None.
     labels = service.labels_for(E2E_COHORT_ID)
     by_id = {label.label_id: label for label in labels}
     for label_id in blind_ids:
         label = by_id[label_id]
-        assert (label.saw_system_output, label.system_band, label.score_id,
-                label.review_queue_action) == (0, None, None, None), (
+        assert label.score_id, (
+            f"blind label {label.label_id!r} names no cell: every label carries its "
+            "score id (FR-REVIEW-25)"
+        )
+        assert (label.saw_system_output, label.system_band,
+                label.review_queue_action) == (0, None, None), (
             f"blind label {label.label_id!r} reads saw={label.saw_system_output}, "
             f"system={label.system_band!r}, score={label.score_id!r}, "
             f"action={label.review_queue_action!r} - the flow cannot reach the "

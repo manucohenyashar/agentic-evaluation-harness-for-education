@@ -160,6 +160,33 @@ def write_criterion_scores(handle: Any, rows: Sequence[tuple]) -> None:
             )
 
 
+def write_scored_cells(handle: Any, rows: Sequence[tuple]) -> None:
+    """`write_criterion_scores`, plus each written cell's base scoring unit.
+
+    A score row exists because its base scoring unit ran (M-ORCH enumerates it before M-AGG
+    aggregates). A case that writes labels on the cells needs that unit too: a label derives
+    its `origin` from the cell's work units, with no default (FR-REVIEW-25, #867). The unit
+    carries M-ORCH's `base` origin and is written only for a cell that has no scoring unit yet,
+    and only where the cohort holds the submission.
+    """
+    write_criterion_scores(handle, rows)
+    with handle.transaction() as tx:
+        for submission_id, criterion_id, *_rest in rows:
+            tx.execute(
+                "INSERT OR IGNORE INTO work_unit "
+                "(work_id, run_id, submission_id, criterion_id, stage, status, origin) "
+                "SELECT 'fixture-score:' || cs.run_id || ':' || cs.submission_id || ':' || "
+                "cs.criterion_id, cs.run_id, cs.submission_id, cs.criterion_id, 'score', "
+                "'done', 'base' FROM criterion_score cs "
+                "WHERE cs.submission_id = :s AND cs.criterion_id = :c "
+                "AND EXISTS (SELECT 1 FROM submission WHERE submission_id = :s) "
+                "AND NOT EXISTS (SELECT 1 FROM work_unit w WHERE w.run_id = cs.run_id "
+                "AND w.submission_id = :s AND w.criterion_id = :c AND w.stage = 'score')",
+                s=submission_id,
+                c=criterion_id,
+            )
+
+
 def grade_rows(handle: Any) -> list[dict]:
     """Read every `submission_grade` row back as dicts, current revision included."""
     return [

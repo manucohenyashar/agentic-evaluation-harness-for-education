@@ -65,7 +65,7 @@ import aeh.synth  # noqa: F401
 from aeh.pkg import PackageCatalog
 from aeh.review import open_review
 from aeh.store import Statement, open_store
-from tests.support.grade_vocabulary import write_criterion_scores
+from tests.support.grade_vocabulary import write_scored_cells
 from tests.support.orch_run import newest_run_id, ORCH_COHORT_ID, seed_run
 from tests.support.source_tree import package_source
 
@@ -116,7 +116,7 @@ def label_world(tmp_data_dir):
         catalog = PackageCatalog(store.package("pkg-orch"), package_id="pkg-orch")
         for ordinal, band, points in BANDS:
             catalog.add_band(version, CRITERION, ordinal, band, points)
-        write_criterion_scores(
+        write_scored_cells(
             store.cohort(ORCH_COHORT_ID),
             [(SUBMISSION, CRITERION, SYSTEM_BAND, 4.0, "provisional")],
         )

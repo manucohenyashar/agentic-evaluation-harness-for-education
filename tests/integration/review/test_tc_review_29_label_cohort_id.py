@@ -49,7 +49,7 @@ import aeh.review  # noqa: F401
 import aeh.synth  # noqa: F401
 from aeh.review import _service_from_store
 from aeh.store import Statement, open_store
-from tests.support.grade_vocabulary import write_criterion_scores
+from tests.support.grade_vocabulary import write_scored_cells
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 
 pytestmark = pytest.mark.integration
@@ -69,7 +69,7 @@ def cohort_world(tmp_data_dir):
         _orchestrator, run_id, _version = seed_run(
             store, submissions=(SUBMISSION,), criteria=CRITERIA,
         )
-        write_criterion_scores(
+        write_scored_cells(
             store.cohort(ORCH_COHORT_ID),
             [(SUBMISSION, CRITERION, "B1", 6.0, "provisional")],
         )

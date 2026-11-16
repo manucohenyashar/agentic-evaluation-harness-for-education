@@ -18,7 +18,7 @@ import pytest
 from aeh.review import review_service_over
 from aeh.store import open_store
 from tests.support.console_world import OPEN_CRITERIA, rows, seed_scored_run
-from tests.support.grade_vocabulary import write_criterion_scores
+from tests.support.grade_vocabulary import write_scored_cells
 
 pytestmark = pytest.mark.integration
 
@@ -27,7 +27,7 @@ def _queued_world(store):
     world = seed_scored_run(store, choices=[("A", "B", "C"), ("A", "D", "C")], submissions=2,
                             with_open_criteria=True)
     cohort = store.cohort(world.cohort_id)
-    write_criterion_scores(cohort, [(s, c, "B2", 2.0, "auto") for s in world.submissions
+    write_scored_cells(cohort, [(s, c, "B2", 2.0, "auto") for s in world.submissions
                                     for c, _ in OPEN_CRITERIA])
     with cohort.transaction() as tx:
         tx.execute("UPDATE criterion_score SET routing = 'queued', "

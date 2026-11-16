@@ -87,6 +87,14 @@ _INSERT_SCORE = Statement(
     ":ocr_overlap_risk)"
 )
 
+#: Each scored cell's base scoring unit, as M-ORCH enumerates it: a label derives its
+#: `origin` from the cell's work units, with no default (FR-REVIEW-25, #867).
+_INSERT_BASE_UNIT = Statement(
+    "INSERT INTO work_unit (work_id, run_id, submission_id, criterion_id, stage, status, "
+    "origin) VALUES (:work_id, :run_id, :submission_id, :criterion_id, 'score', 'done', "
+    "'base')"
+)
+
 _QUEUE_ROWS = Statement(
     "SELECT queue_id, run_id, submission_id, criterion_id, rank_score, est_seconds, "
     "shown_at, action, new_band, new_points, acted_at FROM review_queue "
@@ -127,6 +135,10 @@ def queue_world(tmp_data_dir):
                     band_spread=index,
                     spans_verified=0 if index >= 2 else 1,
                     ocr_overlap_risk=1 if index >= 1 else 0,
+                )
+                tx.execute(
+                    _INSERT_BASE_UNIT, work_id=f"unit-{submission}", run_id=run_id,
+                    submission_id=submission, criterion_id=CRITERION,
                 )
         yield tmp_data_dir, catalog, run_id
     finally:

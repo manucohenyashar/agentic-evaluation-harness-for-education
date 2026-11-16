@@ -4,13 +4,50 @@ from __future__ import annotations
 
 import uuid
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Mapping
 
 from .settings import _EDIT_VIEWS
-from .errors import ReviewError
+from .errors import LabelProvenanceError, ReviewError
 from .schema import REVIEW_STATEMENTS
 from .records import BlindItem, LabelRecord, ReviewItem, SupersededScore, WriteRecord
 from .ranking import _ACTIONS
+from .stored_rows import _newest_run_id, _row_mapping
+
+
+#: The origins a label may carry (FR-REVIEW-25), in precedence order: a cell the random arm
+#: widened is the random arm's sample whatever else ran on it (FR-STATS-30 reads it apart);
+#: otherwise an escalation unit makes it an escalation; otherwise it is the base panel's.
+LABEL_ORIGINS = ("random_arm", "escalation", "base")
+
+#: The routing an operational label records (FR-REVIEW-29): the action is what makes the cell
+#: reviewed (M-AGG's `record_review` writes exactly this routing on the score row).
+OPERATIONAL_LABEL_ROUTING = "reviewed"
+
+
+def derive_label_origin(work_unit_origins: Any, cell: str) -> str:
+    """The label origin of one cell, from the origins of its scoring work units (FR-REVIEW-25).
+
+    There is no default: no units, or a unit origin outside `LABEL_ORIGINS`, is refused with the
+    cell named, and the caller writes nothing."""
+    origins = {str(origin) for origin in (work_unit_origins or ()) if origin is not None}
+    unknown = origins - set(LABEL_ORIGINS)
+    if not origins or unknown:
+        found = ", ".join(sorted(origins)) or "none"
+        raise LabelProvenanceError(
+            f"cannot tell how {cell} was marked (scoring records found: {found}), so no "
+            "label was written for it; a label must say whether its answer was marked by "
+            "the base panel, an escalation or the random check"
+        )
+    return next(origin for origin in LABEL_ORIGINS if origin in origins)
+
+
+def _unit_origin(unit: Any) -> Any:
+    """One work unit's origin, whether given as the origin itself, a mapping or an object."""
+    if isinstance(unit, str):
+        return unit
+    if isinstance(unit, Mapping):
+        return unit.get("origin")
+    return getattr(unit, "origin", None)
 
 
 class ActionsMixin:
@@ -75,6 +112,14 @@ class ActionsMixin:
         if not members:
             return []
         per_member = review_seconds / len(members)
+        # Every member's provenance is settled before the first label lands: a group with one
+        # underivable member writes nothing, rather than a partial group (FR-REVIEW-25).
+        origins = {
+            member.score_id: self._cell_origin(
+                member.submission_id, member.criterion_id,
+                self._rows_by_id.get(member.score_id))
+            for member in members
+        }
         label_ids: list[str] = []
         labels: list[LabelRecord] = []
         for member in members:
@@ -87,6 +132,7 @@ class ActionsMixin:
                 review_seconds=per_member,
                 review_queue_action=action,
                 via_group=True,
+                origin=origins[member.score_id],
             )
             self._record_writes(member, action, label)
             self._settle_score(member, label)
@@ -171,8 +217,12 @@ class ActionsMixin:
         review_seconds: float,
         review_queue_action: str,
         via_group: bool = False,
+        origin: str | None = None,
     ) -> LabelRecord:
         row = self._rows_by_id.get(item.score_id)
+        if origin is None:
+            # Derived before anything is written: a refusal leaves no label behind.
+            origin = self._cell_origin(item.submission_id, item.criterion_id, row)
         self._versions.setdefault(item.score_id, item.version)
         # ``new_points`` is derived from the band the label records through
         # `CT-PKG-05`'s pinned mapping (`FR-REVIEW-10`) — the same call the
@@ -195,8 +245,9 @@ class ActionsMixin:
             # A queue action happens with the system's band on the screen
             # (`CT-REVIEW-08`'s per-path values; the blind flow's earned 0 is #111's).
             saw_system_output=1,
-            routing=str(getattr(row, "routing", "queued") or "queued"),
-            origin=str(getattr(row, "origin", "escalation") or "escalation"),
+            # At action time (FR-REVIEW-29): the action is what makes the cell reviewed.
+            routing=OPERATIONAL_LABEL_ROUTING,
+            origin=origin,
             evaluation_mode=str(getattr(row, "evaluation_mode", "judged") or "judged"),
             review_seconds=review_seconds,
             system_band=item.proposed_band,
@@ -283,15 +334,61 @@ class ActionsMixin:
         return None
 
     def _attribution_run(self) -> str | None:
-        """The run a label written now belongs to (NFR-REVIEW-04): the queue this service last
-        built, or, before any build, the only cohort the service was opened over. None when neither
-        applies. The stored row's `cohort_id` holds the same id, because the store flow uses the
-        cohort id as the run id."""
+        """The run a label written now belongs to (NFR-REVIEW-04, FR-REVIEW-25): the run the
+        service was built for, else the queue it last built, else the newest run of the one
+        cohort it writes to. Never the cohort's own id: a run and its cohort are different
+        values, and a label keyed on the cohort is unscoped (#867). None when nothing applies."""
+        if self._scope_run_id is not None:
+            return self._scope_run_id
         if self._current_run_id is not None:
             return self._current_run_id
-        if len(self._cohort_ids) == 1:
-            return self._cohort_ids[0]
+        if self._store is not None:
+            cohort_id = self._writable_cohort()
+            if cohort_id is not None:
+                return _newest_run_id(self._store, cohort_id)
         return None
+
+    def _cell_origin(self, submission_id: str, criterion_id: str, row: Any) -> str:
+        """The origin a label on this cell carries, derived from the cell's work units
+        (FR-REVIEW-25). Store-backed: the run's scoring units for the cell. In memory: the row's
+        `work_units` when it carries them, else the origin the row itself declares. Refused,
+        naming the cell, when neither yields a derivable origin."""
+        cell = f"{submission_id}/{criterion_id}"
+        if self._store is not None:
+            run_id = self._attribution_run()
+            cohort_id = self._writable_cohort()
+            if run_id is None or cohort_id is None:
+                raise ReviewError(
+                    "this service holds a store but no run context: build a queue for "
+                    "the run (or open the service for one run) before labelling — a label "
+                    "is not attributed to an invented run"
+                )
+            origins = [
+                _row_mapping(unit).get("origin")
+                for unit in self._store.cohort(cohort_id).query(
+                    REVIEW_STATEMENTS["select_cell_work_unit_origins"], run_id=run_id,
+                    submission_id=submission_id, criterion_id=criterion_id)
+            ]
+            return derive_label_origin(origins, cell)
+        units = getattr(row, "work_units", None) if row is not None else None
+        if units is not None:
+            return derive_label_origin([_unit_origin(unit) for unit in units], cell)
+        declared = getattr(row, "origin", None) if row is not None else None
+        return derive_label_origin([declared] if declared else [], cell)
+
+    def _student_ref_of(self, submission_id: str) -> str | None:
+        """The roster ref of the student a submission belongs to (FR-REVIEW-25), read from the
+        cohort the service writes to. None when the cohort holds no such submission: an
+        unknown student, never the submission id standing in for one."""
+        cohort_id = self._writable_cohort()
+        if self._store is None or cohort_id is None or not submission_id:
+            return None
+        rows = self._store.cohort(cohort_id).query(
+            REVIEW_STATEMENTS["select_submission_student_ref"], submission_id=submission_id)
+        if not rows:
+            return None
+        ref = _row_mapping(rows[0]).get("student_ref")
+        return str(ref) if ref else None
 
     def _persist_label(
         self, label: LabelRecord, run_id: str, item: ReviewItem | BlindItem
@@ -312,10 +409,8 @@ class ActionsMixin:
                 REVIEW_STATEMENTS["insert_label"],
                 label_id=label.label_id,
                 run_id=run_id,
-                # The store rows carry no student identity (#108's mapping
-                # records the same absence): the submission under review is
-                # what the row can honestly reference in Phase 1.
-                student_ref=item.submission_id,
+                # The roster ref, never the submission id (FR-REVIEW-25, #867).
+                student_ref=self._student_ref_of(str(item.submission_id or "")),
                 criterion_id=label.criterion_id,
                 label_type=label.label_type,
                 band=label.teacher_band,

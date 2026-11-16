@@ -19,3 +19,9 @@ class StaleReviewItemError(ReviewError):
 
 class UnknownRunError(LookupError):
     """`open_review` was given a run id that no store holds (FR-REVIEW-24). Nothing was created."""
+
+
+class LabelProvenanceError(ReviewError):
+    """A label was asked for on a cell whose origin cannot be derived from its work units
+    (FR-REVIEW-25). There is no default origin, so the label is refused with the cell named and
+    nothing is written."""

@@ -37,7 +37,7 @@ from aeh import pkg, review, stats
 from aeh.conf import ModelRef
 from aeh.store import open_store
 from tests.support import broken_stats_fixtures as broken
-from tests.support.grade_vocabulary import write_criterion_scores
+from tests.support.grade_vocabulary import write_criterion_scores, write_scored_cells
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 from tests.support.source_tree import package_source
 
@@ -125,7 +125,7 @@ def test_tc_review_c25_both_write_paths_record_a_backend(tmp_data_dir):
     try:
         _o, run_id, _v = seed_run(store, submissions=("S1",), criteria=(
             {"criterion_id": "C1", "kind": "open", "scoring_model": "atomic"},), cfg=_cloud_cfg())
-        write_criterion_scores(store.cohort(ORCH_COHORT_ID), [("S1", "C1", "B1", 0.0, "provisional")])
+        write_scored_cells(store.cohort(ORCH_COHORT_ID), [("S1", "C1", "B1", 0.0, "provisional")])
     finally:
         store.close()
     review.record_label(data_dir=tmp_data_dir, label=dataclasses.replace(

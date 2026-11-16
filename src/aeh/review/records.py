@@ -95,8 +95,9 @@ class LabelRecord:
     teacher_band: str | None
     actor: str
     timestamp: str
-    #: ``None`` on a blind label (#111): the flow that produced it cannot reach
-    #: a score row — that is the guarantee — so there is no score id to name.
+    #: The cell the label is about, on every label (FR-REVIEW-25, #867). A blind
+    #: label's is resolved by the service, never by the session, which still
+    #: cannot reach a score row (CT-REVIEW-09).
     score_id: str | None
     criterion_id: str
     #: ``None`` on a blind label: it is not a queue action, and `CT-REVIEW-08`'s

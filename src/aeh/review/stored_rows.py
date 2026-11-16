@@ -223,7 +223,9 @@ class _StoredScoreRow:
         #: The run the stored row belongs to, so a review settles THAT run's row (#517).
         self.run_id = mapping.get("run_id")
         self.routing = mapping.get("routing")
-        self.origin = mapping.get("origin", "escalation")
+        # No default origin (FR-REVIEW-25): `criterion_score` carries none, and a label's
+        # origin is derived from the cell's work units at write time instead.
+        self.origin = mapping.get("origin")
         self.evaluation_mode = mapping.get("evaluation_mode", "judged")
         self.state = mapping.get("state")
         self.proposed_band = mapping.get("band")

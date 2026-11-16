@@ -200,6 +200,14 @@ def _service_from_store(
         if found:
             owning.append(cohort_id)
         rows.extend((mapping, cohort_id, scope) for mapping in found)
+    if run_id is not None and not owning:
+        # A run with no advisory rows still has a cohort: the one whose run table holds it.
+        # Labels and their scope columns are addressed there (FR-REVIEW-25).
+        owning = [
+            cohort_id for cohort_id in cohort_ids
+            if store.cohort(cohort_id).query(
+                REVIEW_STATEMENTS["select_run_package"], run_id=run_id)
+        ][:1]
     knobs = _calibration_knobs()
     contexts: dict[tuple[str, str], _ScoreRowContext] = {}
     mapped = []
@@ -223,7 +231,7 @@ def _service_from_store(
         seed=seed,
         administration_id=administration_id,
         previous_administration=previous_administration,
-    )._with_store(store, cohort_ids=cohort_ids, owning_cohorts=owning)
+    )._with_store(store, cohort_ids=cohort_ids, owning_cohorts=owning, run_id=run_id)
     # What the run's package DECLARES, which is a wider set than what the queue holds:
     # `FR-REVIEW-19` answers for every criterion the run scores, including the ones that
     # were auto-accepted and so never reached a teacher's queue.

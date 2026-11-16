@@ -35,7 +35,7 @@ from aeh.store import open_store
 from tests.contract.pkg.test_ct_pkg_catalog import _catalog, _version_with_content
 from tests.support import broken_stats_fixtures as broken
 from tests.support import pipe_world
-from tests.support.grade_vocabulary import write_criterion_scores
+from tests.support.grade_vocabulary import write_criterion_scores, write_scored_cells
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 
 
@@ -132,7 +132,7 @@ def test_tc_review_c23_collected_labels_carry_a_cohort_key(tmp_data_dir):
     try:
         _o, run_id, _v = seed_run(store, submissions=("S1",), criteria=(
             {"criterion_id": "C1", "kind": "open", "scoring_model": "atomic"},))
-        write_criterion_scores(store.cohort(ORCH_COHORT_ID), [("S1", "C1", "B1", 0.0, "provisional")])
+        write_scored_cells(store.cohort(ORCH_COHORT_ID), [("S1", "C1", "B1", 0.0, "provisional")])
     finally:
         store.close()
     service = review.open_review(tmp_data_dir, run_id=run_id)
