@@ -288,7 +288,7 @@ def _depends(cid: str, table: Mapping[str, Any], ids: list[str], where: str) -> 
 
 
 def _judged_line(
-    cid: str, qid: str, translated: list[tuple[int, str, float, str]], scoring: str,
+    cid: str, qid: str, translated: list[tuple[int, str, float, str]], scoring: str | None,
     depends: tuple[str, ...], table: Mapping[str, Any], method: str,
     ids: list[str], declared_methods: Mapping[str, str],
 ) -> dict:
@@ -325,7 +325,7 @@ def _judged_line(
     return fields
 
 
-def _composite(cid: str, qid: str, scoring: str, depends: tuple[str, ...],
+def _composite(cid: str, qid: str, scoring: str | None, depends: tuple[str, ...],
                table: Mapping[str, Any]) -> dict:
     """An `evidence_sum` criterion: a grouping record over its aspects. It carries no band set
     and no key (`CT-PKG-21`) — the export emits its points, which are the sum of its aspects'
@@ -439,8 +439,10 @@ def plan_package(spec: Mapping[str, Any], packages_dir: Path) -> PackagePlan:
                              "options": [(o["option_id"], o["label"])
                                          for o in question["options"]]})
             continue
-        scoring = _text(table, "scoring", where, required=False) or "holistic"
-        if scoring not in SCORING_MODELS:
+        # An undeclared model stays None here: M-PKG's spec write applies FR-PKG-29's
+        # structural default, once, for every build path (CT-PKG-24).
+        scoring = _text(table, "scoring", where, required=False) or None
+        if scoring is not None and scoring not in SCORING_MODELS:
             raise _fail(f"{where}: scoring {scoring!r} is not one of {', '.join(SCORING_MODELS)}.")
         depends = _depends(cid, table, ids, where)
         if declared_methods[cid] == "evidence_sum":

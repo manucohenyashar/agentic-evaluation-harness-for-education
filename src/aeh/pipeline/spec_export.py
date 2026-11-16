@@ -25,7 +25,6 @@ from pathlib import Path
 from typing import Any
 
 from aeh.pkg import points_for_band
-from aeh.pkg.spec_criteria import JUDGED_SCORING
 from aeh.pkg.vocabulary import DEFAULT_SCORE_METHOD, default_evaluation_mode
 
 from .packages import DEFAULT_EVIDENCE_TYPE, PackageSpecError, SPEC_TEMPLATE_VERSION
@@ -219,11 +218,11 @@ def _criterion_block(catalog: Any, version: str, row: dict,
     if method == "general":
         derivation = catalog.derivation(version, criterion_id)
         lines.append(_assign("derivation_description", derivation["description"]))
-    # The declared scoring model comes from the package-side read-back: `CT-AGG-09` keeps
-    # every scoring-model read in `aeh.pkg`, and the export only re-encodes what the build
-    # would otherwise default.
-    declared = catalog.declared_scoring(version, criterion_id)
-    if declared and declared != JUDGED_SCORING:
+    # Whether to declare the line's model, and which, is decided on the package side:
+    # `CT-AGG-09` keeps every scoring-model read in `aeh.pkg`, and a line that took
+    # FR-PKG-29's default is left undeclared so the rebuild takes it again (FR-SETUP-14).
+    declared = catalog.exported_scoring(version, criterion_id)
+    if declared:
         lines.append(_assign("scoring", declared))
     if row["evidence_type"] and row["evidence_type"] != DEFAULT_EVIDENCE_TYPE:
         lines.append(_assign("evidence_type", row["evidence_type"]))
