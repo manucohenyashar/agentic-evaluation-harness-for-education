@@ -56,6 +56,8 @@ DECLARED = {
     "AGG_AUTO_THRESHOLD_ATOMIC": 0.80,
     "AGG_AUTO_THRESHOLD_HOLISTIC": 0.90,
     "AGG_UNCITED_MULTIPLIER": 0.80,
+    # CT-AGG-14 as amended by FR-AGG-22 (D4, ADR-56): holistic harder, not never — 0.95, was 0.85.
+    "AGG_HOLISTIC_MULTIPLIER": 0.95,
 }
 
 #: §3.12's cap table, as the clause declares it — the oracle for the fourth knob.
@@ -123,14 +125,14 @@ def test_tc_agg_c14_moving_each_knob_changes_the_routing_volume():
         "externally-visible effect is dead or mis-wired)"
     )
 
-    # 2. holistic threshold 0.90 → 0.80: the holistic cell reads 1.0 × the
-    #    holistic multiplier 0.85 = 0.85 — queued at 0.90, auto at 0.80.
+    # 2. holistic threshold 0.90 → 0.99: the holistic cell reads 1.0 × the
+    #    holistic multiplier 0.95 = 0.95 (FR-AGG-22) — auto at 0.90, queued at 0.99.
     hol_default = aggregate(_UNANIMOUS_TOP, _HOLISTIC, signals(),
                             config=agg_config())
     hol_moved = aggregate(_UNANIMOUS_TOP, _HOLISTIC, signals(),
-                          config=agg_config(auto_threshold_holistic=0.80))
-    assert hol_default.routing == "queued" and hol_moved.routing == "auto", (
-        f"moving auto_threshold_holistic 0.90 → 0.80 left the routing at "
+                          config=agg_config(auto_threshold_holistic=0.99))
+    assert hol_default.routing == "auto" and hol_moved.routing == "queued", (
+        f"moving auto_threshold_holistic 0.90 → 0.99 left the routing at "
         f"{hol_default.routing!r}/{hol_moved.routing!r} — the holistic ceiling "
         "knob has stopped feeding the routing decision (CT-AGG-14)"
     )

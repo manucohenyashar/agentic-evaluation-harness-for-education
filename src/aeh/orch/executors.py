@@ -254,6 +254,11 @@ class RunHandle:
     #: FR-AGG-20: the run's frozen Jev-final rule, from its persisted provider config. `True`
     #: when the row carries none (engine off, or a row written before the rule).
     jev_final_on_accept: bool = True
+    #: FR-AGG-21: the run's frozen aggregation constants (M-CONF's `AggKnobs`), from its
+    #: persisted provider config, passed to `aggregate` as its `config` on every pass — so a
+    #: resumed run aggregates with the values it started with, whatever the environment says
+    #: now. `None` when the row carries none (written before FR-AGG-21): M-AGG's constants apply.
+    agg_knobs: Any = None
 
 
 class PackageCatalogProtocol(Protocol):

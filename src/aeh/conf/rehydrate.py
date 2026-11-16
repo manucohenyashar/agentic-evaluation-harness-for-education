@@ -12,6 +12,7 @@ from .errors import BackendMismatchError, ConfigurationError
 from .model_ref import ModelRef, _ref_from_dict, _ref_identity
 from .decision_engine import decision_engine_setting, DecisionEngine
 from .checks import _echo
+from .agg_knobs import AggKnobs
 from .run_config import CohortRef, RunConfig
 from .panel import compute_panel_build_ref
 from .consent import _check_consent
@@ -126,6 +127,9 @@ def rehydrate_run_config(
                   else _ref_from_dict(provider_config.get("qa_model"), "qa_model")),
         # FR-AGG-20: the frozen rule comes back as recorded, never re-read from the environment.
         jev_final_on_accept=_recorded_jev_final(provider_config),
+        # FR-AGG-21: the frozen aggregation constants come back as recorded, never re-read from
+        # the environment; a pre-delta row has none and rehydrates to `None`.
+        agg_knobs=AggKnobs.from_record(provider_config),
     )
 
     if cfg is not None:

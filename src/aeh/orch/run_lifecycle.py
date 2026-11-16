@@ -90,6 +90,12 @@ class RunLifecycleMixin:
         provider_fields.update(_pin_records(model_pins))
         if orch_knobs is not None:
             provider_fields.update(orch_knobs.to_record())
+        # FR-AGG-21: the run's frozen aggregation constants, read back by `run_handle` so every
+        # pass — a resumed one included — aggregates with the values the run started with.
+        # Absent on a config without them (a test double), so that row is byte-identical.
+        agg_knobs = getattr(cfg, "agg_knobs", None)
+        if agg_knobs is not None:
+            provider_fields.update(agg_knobs.to_record())
         provider_config = json.dumps(
             {
                 **provider_fields,

@@ -11,6 +11,7 @@ from typing import Any, Literal
 from .errors import ConfigurationError
 from .model_ref import ModelRef, _REF_FIELDS, _SERVED_AS
 from .checks import _echo
+from .agg_knobs import AGG_KEYS
 from .orch_knobs import ORCH_KEYS, OrchKnobs
 from .run_config import RunConfig
 
@@ -84,11 +85,13 @@ def environment_snapshot(
 
     `include_orch=True` also lifts `ORCH_KEYS` — the escalation budget and random-arm rate —
     so `resolve_orch_knobs` can order the environment over the config file's plain keys
-    (FR-CONF-36).
+    (FR-CONF-36) — and `AGG_KEYS`, the four aggregation knobs, for `resolve_agg_knobs` the same
+    way (FR-CONF-38).
     """
     source = os.environ if environ is None else environ
     keys = HARNESS_KEYS + (CONSOLE_KEYS if include_console else ()) + (
-        DECISION_KEYS if include_decision else ()) + (ORCH_KEYS if include_orch else ())
+        DECISION_KEYS if include_decision else ()) + (
+        ORCH_KEYS + AGG_KEYS if include_orch else ())
     return {key: source[key] for key in keys if key in source}
 
 

@@ -107,3 +107,26 @@ def decision_engine_metrics(handle: Any, run_id: str) -> DecisionEngineMetrics:
     criteria = sorted({r["criterion_id"] for r in rows})
     per = {c: _metrics_of([r for r in rows if r["criterion_id"] == c], alert_rate, alert_min) for c in criteria}
     return dataclasses.replace(overall, per_criterion=per)
+
+
+# --- citation counts (FR-AGG-23, CT-AGG-25) -------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class VerdictCitationCounts:
+    """How many of a run's verdicts are uncited, and how many kept a citation only by
+    re-anchoring it (FR-JUDGE-40). A re-anchored verdict is cited: it counts in `reanchored`,
+    never in `uncited` (CT-JUDGE-32)."""
+
+    uncited: int
+    reanchored: int
+
+
+def verdict_citation_counts(handle: Any, run_id: str) -> VerdictCitationCounts:
+    """The run's uncited and re-anchored verdict counts, read from the stored verdict rows — the
+    figures the aggregate stage report carries (FR-AGG-23). Every read names the run."""
+    rows = list(handle.query(JUDGE_STATEMENTS["select_run_verdict_citations"], run_id=run_id))
+    if not rows:
+        return VerdictCitationCounts(uncited=0, reanchored=0)
+    return VerdictCitationCounts(uncited=int(rows[0]["uncited"] or 0),
+                                 reanchored=int(rows[0]["reanchored"] or 0))

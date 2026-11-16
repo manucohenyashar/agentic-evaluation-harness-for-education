@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .schema import AGG_STATEMENTS
+from .settings import AGG_CAP_TABLE
 
 
 @dataclass(frozen=True)
@@ -98,3 +99,64 @@ def aggregation_signals(handle: Any, run_id: str) -> AggregationSignals:
         auto_accept_rate=auto_rate,
         caps_fired=caps,
     )
+
+
+# --- FR-AGG-23 / CT-AGG-25: the aggregate stage report --------------------------------------------
+
+#: Every routing value a `criterion_score` row can carry (the store's CHECK), so the report
+#: names each one — a routing nobody reached reads 0, not missing.
+ROUTINGS: tuple[str, ...] = ("auto", "queued", "provisional", "triage", "reviewed")
+
+#: Why min / median / max are absent on a run with no aggregated cell: absent, never 0.0.
+NO_CONFIDENCE_REASON = "no cell has been aggregated yet, so there is no confidence to report"
+
+
+@dataclass(frozen=True)
+class AggregationStageFigures:
+    """What the aggregate stage decided over a whole run, from its stored score rows (FR-AGG-23).
+
+    `confidence_min` / `_median` / `_max` are `None` — with `confidence_absent_reason` saying
+    why — when no aggregated row carries a confidence; never 0.0 (a figure nobody measured is not
+    a low one). `caps_fired` names every declared cap, with the number of cells where it fired;
+    `routing` names every routing value, with its cell count.
+    """
+
+    cells: int
+    confidence_min: float | None
+    confidence_median: float | None
+    confidence_max: float | None
+    confidence_absent_reason: str | None
+    caps_fired: dict[str, int]
+    routing: dict[str, int]
+
+
+def aggregation_stage_figures(handle: Any, run_id: str) -> AggregationStageFigures:
+    """The run's aggregate-stage figures, computed run-wide from the stored score rows the
+    aggregation wrote (FR-AGG-23, CT-AGG-25) — so a resumed run's report covers every cell, and a
+    re-aggregated cell counts once. Every read names the run (`CT-AGG-20`)."""
+
+    confidences: list[float] = []
+    caps: dict[str, int] = {name: 0 for name in AGG_CAP_TABLE}
+    routing: dict[str, int] = {name: 0 for name in ROUTINGS}
+    cells = 0
+    for row in handle.query(AGG_STATEMENTS["select_run_aggregated_scores"], run_id=run_id):
+        cells += 1
+        if row["confidence"] is not None:
+            confidences.append(float(row["confidence"]))
+        name = str(row["routing"])
+        routing[name] = routing.get(name, 0) + 1
+        raw = row["caps_fired"]
+        if raw:
+            try:
+                fired = json.loads(raw)
+            except ValueError:
+                fired = []
+            for cap in fired or ():
+                caps[str(cap)] = caps.get(str(cap), 0) + 1
+    if not confidences:
+        return AggregationStageFigures(cells, None, None, None, NO_CONFIDENCE_REASON, caps, routing)
+    ordered = sorted(confidences)
+    middle = len(ordered) // 2
+    median = (ordered[middle] if len(ordered) % 2
+              else (ordered[middle - 1] + ordered[middle]) / 2)
+    return AggregationStageFigures(cells, ordered[0], median, ordered[-1], None, caps, routing)

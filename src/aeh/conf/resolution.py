@@ -45,6 +45,7 @@ from .sources import JEV_FINAL_ON_ACCEPT_KEY, parse_allow_remote_real_work, pars
 from .panel import compute_panel_build_ref
 from .consent import _check_consent, REMOTE_PROFILES
 from .qa_model import resolve_qa_model
+from .agg_knobs import resolve_agg_knobs
 from .orch_knobs import resolve_orch_knobs
 
 
@@ -338,6 +339,11 @@ def resolve_run_config(cfg: Mapping[str, Any], cohort: CohortRef) -> RunConfig:
     # 5e. FR-AGG-20: whether a lone accepted decision is final, frozen with the decision keys.
     jev_final_on_accept = parse_jev_final_on_accept(cfg.get(JEV_FINAL_ON_ACCEPT_KEY))
 
+    # 5f. FR-CONF-38 / FR-AGG-21: the four aggregation constants, environment > config file >
+    #     default, refused outside (0, 1] naming the key. Frozen here, so every run path (`aeh
+    #     run`, the console's start, the background driver) records the same values.
+    agg_knobs = resolve_agg_knobs(cfg)
+
     # 6. The consent gate (FR-CONF-08), last because it is the only check that reads `cohort`:
     #    a malformed config reports the malformation, and a well-formed one gets an unambiguous
     #    consent verdict rather than one buried behind a typo.
@@ -360,6 +366,7 @@ def resolve_run_config(cfg: Mapping[str, Any], cohort: CohortRef) -> RunConfig:
         decision_engine=decision_engine,
         qa_model=qa_model,
         jev_final_on_accept=jev_final_on_accept,
+        agg_knobs=agg_knobs,
     )
 
 

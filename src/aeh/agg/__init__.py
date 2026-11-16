@@ -67,7 +67,13 @@ from .aggregate import (
 from .recompute import recompute_confidence
 from .schema import AGG_SIGNAL_STATEMENTS, AGG_STATEMENTS
 from .persistence import record_review, write_score
-from .metrics import aggregation_signals, AggregationSignals
+from .metrics import (
+    aggregation_signals,
+    aggregation_stage_figures,
+    AggregationSignals,
+    AggregationStageFigures,
+    NO_CONFIDENCE_REASON,
+)
 from .escalation import (
     CriterionEscalationRank,
     EscalationDecision,
@@ -101,6 +107,9 @@ __all__ = [
     "AGG_STATEMENTS",
     "AggregationSignals",
     "aggregation_signals",
+    "aggregation_stage_figures",
+    "AggregationStageFigures",
+    "NO_CONFIDENCE_REASON",
     "describe_agreement",
     "ordinal_alpha",
     "rank_criteria_for_escalation",

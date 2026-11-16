@@ -195,6 +195,10 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any,
     # FR-AGG-20: the Jev-final rule the run froze at creation (recorded on its row), so a
     # resumed run aggregates every cell by one rule whatever the environment says now.
     jev_final_on_accept = bool(getattr(handle, "jev_final_on_accept", True))
+    # FR-AGG-21: the aggregation constants the run froze at creation (recorded on its row), so
+    # a resumed run aggregates every cell with the values it started with. `None` on a row
+    # written before FR-AGG-21: `aggregate` then uses M-AGG's declared constants.
+    agg_knobs = getattr(handle, "agg_knobs", None)
     detail: list[str] = []
     escalated = 0
     current: Any = None
@@ -258,7 +262,8 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any,
                             f"{len(verdicts)} after {quarantined} quarantined arm(s) -> "
                             f"replacement arm {replacement.arm}")
                         continue
-                    score = aggregate_even_panel_after_quarantine(verdicts, criterion, signals)
+                    score = aggregate_even_panel_after_quarantine(
+                        verdicts, criterion, signals, config=agg_knobs)
                     write_score(tx, handle.run_id, cell.submission_id, score, signals)
                     orch.mark_cell_phase(
                         tx, handle.run_id, cell.submission_id, cell.criterion_id,
@@ -287,6 +292,8 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any,
                 breaker_tripped=cell.criterion_id in latched,
                 # FR-AGG-20: the run's frozen rule, never the environment at this pass.
                 jev_final_on_accept=jev_final_on_accept,
+                # FR-AGG-21: the run's frozen constants, never the environment at this pass.
+                config=agg_knobs,
             )
             # `should_escalate` is pure (FR-AGG-08); the decision is the unmodified score's.
             decision = should_escalate(

@@ -150,6 +150,22 @@ def _jev_final_on_accept_of(row: Any) -> bool:
     return value if isinstance(value, bool) else True
 
 
+def _agg_knobs_of(row: Any) -> Any:
+    """The run's frozen aggregation constants (FR-AGG-21) from its saved provider config, as
+    M-CONF's `AggKnobs`; `None` when the row records none (written before FR-AGG-21). A partial
+    or out-of-domain record is refused (`ConfigurationError`), never filled from today's
+    defaults."""
+    try:
+        config = json.loads(_mapping_get(row, "provider_config") or "{}")
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(config, dict):
+        return None
+    from aeh.conf import AggKnobs
+
+    return AggKnobs.from_record(config)
+
+
 def _model_pin_records_of(
     row: Any,
 ) -> tuple[tuple[str, str, str, "str | None"], ...]:
