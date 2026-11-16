@@ -97,9 +97,11 @@ TWIN_CONFIG_TOML = (
     "[[profiles.edge-local.panel]]\n"
     'role = "judge"\nprovider = "ollama"\n'
     'build_id = "/models/llama-3.3-70b.gguf@sha256:aaaa"\nquantization = "q4"\n'
+    'served_as = "llama3.3:70b"\n'
     "[profiles.edge-local.transcriber]\n"
     'role = "transcriber"\nprovider = "ollama"\n'
     'build_id = "/models/whisper-large-v3.gguf@sha256:bbbb"\nquantization = "q4"\n'
+    'served_as = "whisper:large-v3"\n'
 )
 
 

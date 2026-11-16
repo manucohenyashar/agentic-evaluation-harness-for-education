@@ -78,8 +78,8 @@ def test_tc_req_04_ingest_makes_one_call_per_page_and_records_the_served_build(t
     """`TC-REQ-04` (`M-INGEST` → `M-PROV`, CT-PROV-01/03/06/07): a three-page document is ingested
     through the real `Ingestor` and a real provider. The provider is dispatched exactly one
     completion per page, and the first page's transport failure is retried inside the provider,
-    not by ingest. The document's `transcriber_ref` records the build the response reported
-    (`served-build-7`), not the build ingest requested."""
+    not by ingest. The document's `transcriber_ref` records the pinned build: on a local server
+    the reported name (`served-build-7`) is an address, not a build (FR-PROV-47)."""
     from aeh.conf import ModelRef
     from aeh.ingest import Ingestor, PageImage, ResidencySlot
     from aeh.prov import TransportError
@@ -119,8 +119,11 @@ def test_tc_req_04_ingest_makes_one_call_per_page_and_records_the_served_build(t
         store.close()
     assert len(transport.bodies) == 3, f"{len(transport.bodies)} completions for three pages"
     assert transport.attempts == 4, f"the transport failure was not retried once: {transport.attempts}"
-    assert "served-build-7" in row["transcriber_ref"] and "requested-build-3" not in row["transcriber_ref"], (
-        f"transcriber_ref records {row['transcriber_ref']!r}, not the build that answered")
+    # Re-based by FR-PROV-47 (ADR-61): a local server reports the name it serves the model
+    # under (here `served-build-7`), which identifies no weights, so the local provider's
+    # resolved build is the pinned `build_id` and the reported name goes to the call journal.
+    assert "requested-build-3" in row["transcriber_ref"] and "served-build-7" not in row["transcriber_ref"], (
+        f"transcriber_ref records {row['transcriber_ref']!r}, not the pinned build (FR-PROV-47)")
 
 
 # -- TC-REQ-10 ----------------------------------------------------------------------------------
