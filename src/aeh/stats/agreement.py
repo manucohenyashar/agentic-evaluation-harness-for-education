@@ -333,10 +333,13 @@ def agreement(
         # No chance-corrected coefficient is computable over fewer than two
         # paired valuations; the answer is the absence value, carrying what
         # *was* measured (`TC-STATS-C01`'s rung-2 pin reads ``n`` off it;
-        # `TC-REVIEW-C17` reads the interval off it).
+        # `TC-REVIEW-C17` reads the interval off it). The population is not
+        # empty, so the reason is `too_few_labels` (FR-STATS-31): a reader told
+        # "no blind labels" over one label would believe nothing was drawn
+        # (SV-15). `no_blind_labels` stays reserved for n = 0, above.
         low, high = _achievable_precision(n, None, None)
         return NoValidationData(
-            reason="no_blind_labels",
+            reason="too_few_labels",
             n=n,
             excluded_count=excluded_count,
             interval_low=low,

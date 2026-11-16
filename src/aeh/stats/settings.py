@@ -54,25 +54,39 @@ _WORST_CASE_VARIANCE = 0.25
 ROUTING_POLICY_ARMS: tuple[str, ...] = ("escalated_and_reviewed", "auto_accepted")
 
 
-#: Which ``routing`` values put a label in which arm. The label's ``routing``
-#: column carries the queue's admission routing — `CT-AGG-06`'s closed set
-#: ``{auto, queued, provisional, reviewed, triage}`` — recorded on the label
-#: for traceability (`CT-REVIEW-07`), and the two arms of `FR-STATS-08`'s
-#: comparison are read off it: ``reviewed`` — the one value `aeh.agg` never
-#: assigns, because it names a review that has happened — is the
-#: escalated-and-reviewed arm; ``auto`` — the confidence met the scoring
-#: model's threshold — is the auto-accepted arm. Each arm also accepts its own
-#: protocol name, which is what an in-memory construction of the comparison
-#: uses. The other three values join **neither** arm on purpose: ``queued`` and
-#: ``triage`` are judgments still awaiting review — escalated, but the review
-#: the arm names has not happened — and ``provisional`` names a single-judge
-#: band or a tripped breaker that was never auto-accepted, so it belongs to no
-#: population the policy created. Rows predating the column read ``None`` and
-#: join neither arm rather than being guessed into one.
+#: Which ``routing`` values put a label in which arm (`FR-STATS-30`,
+#: `CT-STATS-27`). The label's ``routing`` column carries the queue's admission
+#: routing at draw time — `CT-AGG-06`'s closed set ``{auto, queued,
+#: provisional, reviewed, triage}`` (`FR-REVIEW-29`) — and the two arms of
+#: `FR-STATS-08`'s comparison are read off it. The escalated arm is every
+#: judgment the policy did **not** auto-accept and held for a teacher:
+#: ``queued`` (waiting in the review queue), ``reviewed`` (a review has
+#: happened) and ``provisional`` (a single-judge band or a tripped breaker held
+#: back from auto-acceptance). The auto arm is ``auto`` — the confidence met the
+#: scoring model's threshold. ``triage`` is in **neither**: a triaged cell never
+#: reached a judgment the policy could have routed either way. Each arm also
+#: accepts its own protocol name, which is what an in-memory construction of
+#: the comparison uses. Rows predating the column read ``None`` and join
+#: neither arm rather than being guessed into one.
+#:
+#: Before `FR-STATS-30` the escalated arm was ``reviewed`` alone — a value the
+#: draw never records, because the label is written before any review — so the
+#: arm was empty by construction and live administrations reported ``no_data``
+#: (SV-17).
 ROUTING_POLICY_ARM_SOURCES: Mapping[str, tuple[str, ...]] = {
-    "escalated_and_reviewed": ("escalated_and_reviewed", "reviewed"),
+    "escalated_and_reviewed": (
+        "escalated_and_reviewed", "queued", "reviewed", "provisional",
+    ),
     "auto_accepted": ("auto_accepted", "auto"),
 }
+
+
+#: The label ``origin`` the random-arm estimate reads (`FR-STATS-30`, HLD
+#: §7.1). The random arm is enumerated independent of confidence
+#: (`FR-ORCH-11`), so its labels are the one unbiased sample of the judgment
+#: error rate the system has. The estimate counts these labels and only these;
+#: routing plays no part in it.
+ROUTING_POLICY_RANDOM_ARM_ORIGIN = "random_arm"
 
 
 #: The verdict vocabulary `CT-STATS-11` fixes. ``failing`` is what similar

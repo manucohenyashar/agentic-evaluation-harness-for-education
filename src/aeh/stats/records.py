@@ -92,13 +92,21 @@ class RoutingPolicyReport:
     ``no_data`` where an arm has no computable rate (`CT-STATS-16`'s value,
     not an exception). ``stated_interpretation`` carries the reading the
     verdict vocabulary rests on — similar rates are a finding about
-    `M-AGG`'s constants, never ``uninformative``."""
+    `M-AGG`'s constants, never ``uninformative``.
+
+    ``random_arm`` is the random-arm estimate (`FR-STATS-30`, HLD §7.1): the
+    same error-rate shape computed over the admissible labels whose ``origin``
+    is ``random_arm`` and no others, whatever their routing. It sits beside
+    the verdict, not inside it. The verdict compares the two routed arms, while
+    the random arm is the unbiased reading of the error rate those arms are
+    judged against. ``None`` only on a report built without it."""
     cohort_id: str | None
     verdict: str
     label_population: Mapping[str, RoutingArm]
     tolerance: float
     stated_interpretation: str
     n: int
+    random_arm: RoutingArm | None = None
 
 
 @dataclass(frozen=True)
