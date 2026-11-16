@@ -90,16 +90,12 @@ from .metrics import (
     DecisionEngineMetrics,
     FALLBACK_ALERT_RATE_DEFAULT,
     FALLBACK_ALERT_RATE_ENV,
-    verdict_citation_counts,
-    VerdictCitationCounts,
 )
 
 
 __all__ = [
     "DecisionEngineMetrics",
     "decision_engine_metrics",
-    "VerdictCitationCounts",
-    "verdict_citation_counts",
     "Accepted",
     "BelowGate",
     "DECISION_ENGINE_INVENTORY",

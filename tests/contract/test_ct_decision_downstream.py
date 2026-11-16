@@ -189,7 +189,9 @@ def test_tc_pipe_c09_an_engine_off_run_constructs_no_decision_provider(tmp_path,
         world.start_run()
         result = pipe_world.drive_composed(world)
         assert result.status == "complete" and constructed == []
-        assert not [s for s in result.stages if getattr(s, "metrics", None)]
+        # No decision summary. #865 (FR-AGG-23): the aggregate stage report carries metrics on
+        # every run, engine on or off, so the check names the score stage.
+        assert not [s for s in result.stages if s.stage == "score" and getattr(s, "metrics", None)]
     finally:
         world.store.close()
 

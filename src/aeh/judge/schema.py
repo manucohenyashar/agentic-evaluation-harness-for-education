@@ -255,15 +255,6 @@ JUDGE_STATEMENTS: dict[str, Statement] = {
         "SELECT criterion_id, outcome, reason, gate_confidence, latency_ms "
         "FROM decision_prescreen WHERE run_id = :run_id ORDER BY work_id"
     ),
-    # FR-AGG-23 / CT-AGG-25: the run's uncited and re-anchored verdict counts, for the aggregate
-    # stage report. A re-anchored verdict kept its (relocated) spans, so it is cited, never
-    # uncited (CT-JUDGE-32); a row written before the mark (NULL) counts as neither.
-    "select_run_verdict_citations": Statement(
-        "SELECT COUNT(CASE WHEN v.uncited = 1 THEN 1 END) AS uncited, "
-        "COUNT(CASE WHEN v.reanchored = 1 THEN 1 END) AS reanchored "
-        "FROM verdict v JOIN work_unit w ON w.work_id = v.work_id "
-        "WHERE w.run_id = :run_id"
-    ),
     # FR-JUDGE-18 / CT-JUDGE-20: one run's verdicts for one cell, in work_id order.
     "select_cell_verdicts": Statement(
         "SELECT v.work_id, v.judge_id, v.band, v.band_ordinal, v.cited_spans, "

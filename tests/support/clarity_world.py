@@ -43,6 +43,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 # The full migration chain before the first store open (CLAUDE.md).
@@ -111,10 +112,17 @@ EXPECTED_REASONS: dict[str, str | None] = {
     "llm_single": "one_grader_unsure",
     # #806: C2 is holistic, so even a unanimous panel scores 1.0 x 0.85 = 0.85, below the 0.90
     # holistic bar, and is routed `queued` (unchanged by FR-AGG-20). FR-AGG-20 gives a queued
-    # cell a code, and the closed set's code for a panel is `graders_disagree`.
+    # cell a code, and the closed set's code for a panel is `graders_disagree`. #865 (FR-AGG-22)
+    # moved the default holistic multiplier to 0.95, so the seed's run freezes the pre-delta
+    # 0.85 (`SEED_AGG_CONFIG`) — the value a run started before FR-AGG-22 aggregates with.
     "panel_agreeing": "graders_disagree",
     "breaker_tripped": "graders_refused",
 }
+
+#: The aggregation constants the seed's runs froze (FR-AGG-21): the pre-FR-AGG-22 holistic
+#: multiplier, so C2's unanimous holistic panel stays below the 0.90 bar the cell kinds assume.
+SEED_AGG_CONFIG = SimpleNamespace(auto_threshold_atomic=0.80, auto_threshold_holistic=0.90,
+                                  uncited_multiplier=0.80, holistic_multiplier=0.85)
 
 COHORTS: dict[str, str] = {"synthetic": "eng7-clarity-synthetic", "real": "eng7-clarity-real"}
 
@@ -279,7 +287,8 @@ def seed_jev_final(store: Any, *, consent_class: str = "synthetic",
                             w=verdict.work_id, r=run_id, s=submission_id, c=criterion_id,
                             b=JEV_BUILD, g=JEV_GATE, band=band, th=JEV_THRESHOLD)
                 score = aggregate(verdicts, criterion, signals,
-                                  breaker_tripped=kind == "breaker_tripped", **knob)
+                                  breaker_tripped=kind == "breaker_tripped",
+                                  config=SEED_AGG_CONFIG, **knob)
                 write_score(tx, run_id, submission_id, score, signals)
     return JevFinalSeed(cohort_id=cohort_id, consent_class=consent_class, run_id=run_id,
                         package_id=package_id, package_version_id=version,

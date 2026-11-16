@@ -113,12 +113,14 @@ NO_CONFIDENCE_REASON = "no cell has been aggregated yet, so there is no confiden
 
 @dataclass(frozen=True)
 class AggregationStageFigures:
-    """What the aggregate stage decided over a whole run, from its stored score rows (FR-AGG-23).
+    """What the aggregate stage decided over a whole run, from its stored rows (FR-AGG-23).
 
     `confidence_min` / `_median` / `_max` are `None` — with `confidence_absent_reason` saying
     why — when no aggregated row carries a confidence; never 0.0 (a figure nobody measured is not
     a low one). `caps_fired` names every declared cap, with the number of cells where it fired;
-    `routing` names every routing value, with its cell count.
+    `routing` names every routing value, with its cell count. `uncited` and `reanchored` count
+    the run's verdicts; a re-anchored verdict is cited (CT-JUDGE-32), so it never counts in
+    `uncited`.
     """
 
     cells: int
@@ -128,13 +130,14 @@ class AggregationStageFigures:
     confidence_absent_reason: str | None
     caps_fired: dict[str, int]
     routing: dict[str, int]
+    uncited: int
+    reanchored: int
 
 
 def aggregation_stage_figures(handle: Any, run_id: str) -> AggregationStageFigures:
-    """The run's aggregate-stage figures, computed run-wide from the stored score rows the
-    aggregation wrote (FR-AGG-23, CT-AGG-25) — so a resumed run's report covers every cell, and a
+    """The run's aggregate-stage figures, computed run-wide from the stored score and verdict
+    rows (FR-AGG-23, CT-AGG-25) — so a resumed run's report covers every cell, and a
     re-aggregated cell counts once. Every read names the run (`CT-AGG-20`)."""
-
     confidences: list[float] = []
     caps: dict[str, int] = {name: 0 for name in AGG_CAP_TABLE}
     routing: dict[str, int] = {name: 0 for name in ROUTINGS}
@@ -153,10 +156,15 @@ def aggregation_stage_figures(handle: Any, run_id: str) -> AggregationStageFigur
                 fired = []
             for cap in fired or ():
                 caps[str(cap)] = caps.get(str(cap), 0) + 1
+    uncited = reanchored = 0
+    for row in handle.query(AGG_STATEMENTS["select_run_verdict_citations"], run_id=run_id):
+        uncited, reanchored = int(row["uncited"] or 0), int(row["reanchored"] or 0)
     if not confidences:
-        return AggregationStageFigures(cells, None, None, None, NO_CONFIDENCE_REASON, caps, routing)
+        return AggregationStageFigures(cells, None, None, None, NO_CONFIDENCE_REASON, caps,
+                                       routing, uncited, reanchored)
     ordered = sorted(confidences)
     middle = len(ordered) // 2
     median = (ordered[middle] if len(ordered) % 2
               else (ordered[middle - 1] + ordered[middle]) / 2)
-    return AggregationStageFigures(cells, ordered[0], median, ordered[-1], None, caps, routing)
+    return AggregationStageFigures(cells, ordered[0], median, ordered[-1], None, caps, routing,
+                                   uncited, reanchored)

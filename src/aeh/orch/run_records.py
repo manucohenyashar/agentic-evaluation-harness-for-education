@@ -151,19 +151,23 @@ def _jev_final_on_accept_of(row: Any) -> bool:
 
 
 def _agg_knobs_of(row: Any) -> Any:
-    """The run's frozen aggregation constants (FR-AGG-21) from its saved provider config, as
-    M-CONF's `AggKnobs`; `None` when the row records none (written before FR-AGG-21). A partial
-    or out-of-domain record is refused (`ConfigurationError`), never filled from today's
-    defaults."""
+    """The run's frozen aggregation constants (FR-AGG-21), as M-CONF's `AggKnobs`, from the
+    run row's `run_config` column — the whole frozen `RunConfig` (`to_persisted_dict()`), whose
+    `provider_config` section carries them. They are deliberately not copied into the
+    `provider_config` column, so an engine-off run row stays byte-identical (NFR-SYS-14).
+    `None` when the row records none (no `run_config`, or written before FR-AGG-21): M-AGG's
+    constants apply. A partial or out-of-domain record is refused (`ConfigurationError`), never
+    filled from today's defaults."""
     try:
-        config = json.loads(_mapping_get(row, "provider_config") or "{}")
+        persisted = json.loads(_mapping_get(row, "run_config") or "{}")
     except (TypeError, ValueError):
         return None
-    if not isinstance(config, dict):
+    section = persisted.get("provider_config") if isinstance(persisted, dict) else None
+    if not isinstance(section, dict):
         return None
     from aeh.conf import AggKnobs
 
-    return AggKnobs.from_record(config)
+    return AggKnobs.from_record(section)
 
 
 def _model_pin_records_of(

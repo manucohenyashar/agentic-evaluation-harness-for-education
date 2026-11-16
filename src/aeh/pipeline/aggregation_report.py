@@ -26,11 +26,9 @@ def aggregation_report(orch: Any, handle: Any, run_id: str) -> StageTrace:
     nor vanish silently.
     """
     from aeh.agg import aggregation_stage_figures
-    from aeh.judge import verdict_citation_counts
 
     try:
         figures = aggregation_stage_figures(handle.cohort, run_id)
-        citations = verdict_citation_counts(handle.cohort, run_id)
     except Exception as error:  # noqa: BLE001 - reported on the trace, never raised
         return StageTrace("aggregate", detail=(
             f"aggregate stage report not computed: {type(error).__name__}: {error}",))
@@ -43,8 +41,8 @@ def aggregation_report(orch: Any, handle: Any, run_id: str) -> StageTrace:
         "confidence_absent_reason": figures.confidence_absent_reason,
         "caps_fired": dict(figures.caps_fired),
         "routing": dict(figures.routing),
-        "uncited": citations.uncited,
-        "reanchored": citations.reanchored,
+        "uncited": figures.uncited,
+        "reanchored": figures.reanchored,
     }
     detail = [_summary_line(metrics)]
     try:
