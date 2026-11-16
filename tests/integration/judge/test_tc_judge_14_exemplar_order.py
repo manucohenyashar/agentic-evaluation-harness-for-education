@@ -57,11 +57,12 @@ SUBMISSIONS = ("s-14a", "s-14b", "s-14c", "s-14d")
 
 #: Salts verified empirically under this world's digest key (sha256 over
 #: `salt||C1`, base order ex-00..ex-03) to give THREE pairwise-distinct permutations:
-#: the unset default (`judge-prompt/3`, TC-REG-16; was `/2` -> (01,02,03,00)) -> (03,01,02,00), "salt-a" -> (01,03,00,02),
-#: "salt-b" -> (00,02,01,03). If a rename ever makes two coincide, the fixture-bug
-#: assertion in 14_b names it.
+#: the unset default (`judge-prompt/4`, #863; was `/3` -> (03,01,02,00), `/2` -> (01,02,03,00))
+#: -> (00,02,01,03), "salt-a" -> (01,03,00,02), "salt-c" -> (02,00,03,01). ("salt-b" gave
+#: (00,02,01,03), which the /4 default now coincides with, so the third salt moved to "salt-c".)
+#: If a rename ever makes two coincide, the fixture-bug assertion in 14_b names it.
 SALT_A = "salt-a"
-SALT_B = "salt-b"
+SALT_B = "salt-c"
 
 
 def _world(tmp_data_dir, make_fixture_provider, *, name: str = "a"):
