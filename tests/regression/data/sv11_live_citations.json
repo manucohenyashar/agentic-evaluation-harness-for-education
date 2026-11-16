@@ -1,0 +1,39 @@
+{
+  "_provenance": "Copied verbatim from the 2026-11-13 live walk (scratchpad/stat-validity-2026-11-13/, not committed): live-A and live-B data directories, cohort eng7-class. Documents are document.markdown; spans are evidence.payload; the judge reply is the ai_judge call's response from live-B/logs/ai-calls/eng7-class/2026-11-13.jsonl. Nothing here is edited. Stored as JSON so the byte offsets survive a CRLF checkout.",
+  "run_a_e7_002": {
+    "submission_id": "sub-2b6668137424",
+    "document": "<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->Assessment: ENG7-READ-01<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->Student: E7-002<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->Answer Sheet - Grade 7 English - Reading Response - The Lighthouse Keeper<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->Q1. Who is the main character, and what does he do every evening?<!-- /region -->\n<!-- region: kind=transcribed_text question_id=Q1 conf=0.99 state=present is_untrusted_content=1 -->Tomas lights the lamp every evening.<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->Q2. Why does Tomas keep the lamp burning even though the big ships no longer come? Use evidence from the passage.<!-- /region -->\n<!-- region: kind=transcribed_text question_id=Q2 conf=0.99 state=present is_untrusted_content=1 -->Because somebody might need it to be safe at night.<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->Q3. Write two or three sentences about how Tomas changes by the end of the passage.<!-- /region -->\n<!-- region: kind=transcribed_text question_id=Q3 conf=0.99 state=present is_untrusted_content=1 -->He was sad at the start and happy at the end.<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->Page 1 of 1<!-- /region -->",
+    "c1a_extracted_span": {
+      "end": 641,
+      "region_kind": "transcribed_text",
+      "start": 606,
+      "text": "untrusted_content=1 -->Tomas lights"
+    }
+  },
+  "run_b_e7_001_c1a": {
+    "call_id": "843eca9f5a6e72df3c382e3dc32ac8a0",
+    "at": "2026-11-13T03:23:08.079+00:00",
+    "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+    "submission_id": "sub-f8513123f19b",
+    "student_ref": "r-4446814817",
+    "criterion_id": "C1a",
+    "outcome_then": "ok",
+    "response": "{\"cited_spans\":[{\"start\":644,\"end\":671}],\"evidence_assessment\":\"The cited span says the main character is Tomas, satisfying the present band.\",\"evidence_sufficient\":true,\"band\":\"present\",\"self_confidence\":0.99}",
+    "offered_evidence": [
+      {
+        "end": 671,
+        "region_kind": "transcribed_text",
+        "start": 644,
+        "text": "in character is Tomas, the "
+      },
+      {
+        "end": 599,
+        "region_kind": "transcribed_text",
+        "start": 572,
+        "text": "question_id=Q1 conf=0.91 st"
+      }
+    ],
+    "bands_field": "bands (the declared set, in ordinal order; no scores attached):\n- absent: Does not name Tomas as the main character (for example, only 'a man' or 'the keeper').\n- present: Names Tomas as the main character.",
+    "document": "<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nAssessment: ENG7-READ-01\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nStudent: E7-001\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nAnswer Sheet - Grade 7 English - Reading Response - The Lighthouse Keeper\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nQ1. Who is the main character, and what does he do every evening?\n<!-- /region -->\n<!-- region: kind=transcribed_text question_id=Q1 conf=0.91 state=present is_untrusted_content=1 -->\nThe main character is Tomas, the lighthouse keeper. Every evening he climbs the steps a\nlights the lamp.\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nQ2. Why does Tomas keep the lamp burning even though the big ships no longer come? Use evidence from the passage.\n<!-- /region -->\n<!-- region: kind=transcribed_text question_id=Q2 conf=0.88 state=present is_untrusted_content=1 -->\nSomeone might still need the light. A small fishing boat came out of the dark on a stor\nnight and used the light to find the safe channel, even though the big ships had stoppe\ncoming.\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nQ3. Write two or three sentences about how Tomas changes by the end of the passage.\n<!-- /region -->\n<!-- region: kind=transcribed_text question_id=Q3 conf=0.89 state=present is_untrusted_content=1 -->\nAt first Tomas is not sure the lamp matters because no big ships come. After he helps t\nfisherman he is sure it does, and he climbs the steps a little taller than before.\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nPage 1 of 1\n<!-- /region -->"
+  }
+}
