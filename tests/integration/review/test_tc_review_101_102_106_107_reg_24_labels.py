@@ -50,7 +50,6 @@ from tests.support.label_identity_world import (
     assert_label_identity,
     served_run,
 )
-from tests.support.source_tree import package_source
 
 pytestmark = pytest.mark.integration
 
@@ -211,25 +210,48 @@ def test_tc_review_101_c_origins_through_the_console_and_the_refusal_writes_noth
                     if label["score_id"] == f"{underivable[0]}:C1"]
 
 
-#: An origin default: `getattr(row, "origin", "escalation")` or `... or "escalation"`.
+#: An origin default, in any of the four shapes it can take: `getattr(row, "origin",
+#: "escalation")`, `row.get("origin", "escalation")`, `... or "escalation"`, and a parameter
+#: default `origin: str = "escalation"` / `origin="escalation"` in a signature.
 _ESCALATION_DEFAULT = re.compile(
-    r"""getattr\([^)]*["']origin["']\s*,\s*["']escalation["']\s*\)"""
-    r"""|\bor\s+["']escalation["']""")
+    r"""(?:getattr\([^)]*|\.get\(\s*)["']origin["']\s*,\s*["']escalation["']\s*\)"""
+    r"""|\bor\s+["']escalation["']"""
+    r"""|\borigin\s*(?::\s*[\w|\s\[\]]+)?=\s*["']escalation["']\s*[,)]""")
 
-#: The pre-#867 line in `review/blind.py` (`git show 1be9d80^`), the census's positive control.
-_PRE_867_LINE = 'origin=str(getattr(row, "origin", "escalation") or "escalation")'
+#: The census's positive controls: the pre-#867 line in `review/blind.py`
+#: (`git show 1be9d80^`), and the other three shapes.
+_DEFAULT_SHAPES = (
+    'origin=str(getattr(row, "origin", "escalation") or "escalation")',
+    'origin = mapping.get("origin", "escalation")',
+    '    origin: str = "escalation",',
+    'self._write(ref, origin="escalation")',
+)
+
+#: The label writers the console's paths run through (FR-REVIEW-25, #867): the blind close and
+#: the queue actions. The plan's census names `review/blind.py`; `review/actions.py` holds
+#: the shared derivation and `_persist_label`, so it is covered too.
+_LABEL_WRITER_MODULES = ("aeh.review.blind", "aeh.review.actions")
 
 
-def test_tc_review_101_d_census_no_escalation_default_in_m_review():
-    """TC-REVIEW-101's code census: no label origin defaults to `"escalation"` anywhere in
-    M-REVIEW. The pattern is positive-controlled against the line #867 removed from
-    `review/blind.py`, so a regex that can match nothing cannot pass."""
-    import aeh.review as review
+def test_tc_review_101_d_census_no_escalation_default_on_the_label_paths():
+    """TC-REVIEW-101's code census: no label origin defaults to `"escalation"` in the modules
+    the console's label paths run through (`review/blind.py`, `review/actions.py`). Each of the
+    four default shapes is positive-controlled, so a pattern that can match nothing cannot pass.
 
-    assert _ESCALATION_DEFAULT.search(_PRE_867_LINE), "census pattern lost its positive control"
-    source = package_source(review)
-    hits = [line.strip() for line in source.splitlines() if _ESCALATION_DEFAULT.search(line)]
-    assert not hits, f"M-REVIEW defaults a label origin to 'escalation': {hits}"
+    Outside this scope, and reported in the PR as findings rather than asserted here:
+    `review/labels.py`'s `record_label(..., origin: str = "escalation")` (no caller in `src/`),
+    and `review/schema.py`'s `label.origin ... DEFAULT 'escalation'` column default."""
+    import importlib
+    import inspect
+
+    for shape in _DEFAULT_SHAPES:
+        assert _ESCALATION_DEFAULT.search(shape), f"census pattern misses the shape {shape!r}"
+    hits = []
+    for name in _LABEL_WRITER_MODULES:
+        source = inspect.getsource(importlib.import_module(name))
+        hits += [f"{name}: {line.strip()}" for line in source.splitlines()
+                 if _ESCALATION_DEFAULT.search(line)]
+    assert not hits, f"a label path defaults its origin to 'escalation': {hits}"
 
 
 # --- TC-REVIEW-102 ---------------------------------------------------------------------------
@@ -252,11 +274,12 @@ def test_tc_review_102_a_blind_label_keeps_the_routing_its_cell_had_at_draw(
     fallback is indistinguishable from the right answer. On the provisional cell it is not
     (mutation-checked: reading the routing at close turns this red)."""
     with served_run(tmp_path / "w", monkeypatch, network_guard) as served:
-        queued, provisional = served.cells("C1")[:2]
+        queued, provisional, later = served.cells("C1")
         served.execute("UPDATE criterion_score SET routing = 'provisional' WHERE run_id = ? "
                        "AND submission_id = ? AND criterion_id = ?", served.run_id, *provisional)
         _draft_blind(served, [(queued, dev_pipe.band_at("C1", 2)),
-                              (provisional, dev_pipe.band_at("C1", 3))])
+                              (provisional, dev_pipe.band_at("C1", 3)),
+                              (later, dev_pipe.band_at("C1", 4))])
         for cell in (queued, provisional):
             _review(served, cell, "accept")
             now = served.rows("SELECT routing FROM criterion_score WHERE run_id = ? AND "
@@ -281,14 +304,24 @@ def test_tc_review_102_a_blind_label_keeps_the_routing_its_cell_had_at_draw(
                 "`reviewed`, the routing its action creates")
 
         snapshot = {label["label_id"]: label["routing"] for label in served.labels()}
+        assert snapshot.get(next(label["label_id"] for label in served.labels()
+                                 if label["score_id"] == f"{later[0]}:C1")) == "queued"
+        # An override on a cell that already holds a blind label, after Finish. This is the
+        # action most likely to rewrite that label's routing, if any action does.
+        _review(served, later, "override", _other_band(served, later, 1))
         other = served.cells("C2")[0]
         _review(served, other, "edit", _other_band(served, other, 1))
-        with pytest.raises(Exception):
+        from aeh.review import ReviewError
+
+        with pytest.raises(ReviewError):
             served.finish_through_the_consoles_service()
         served.get("/api/v1/blind-seats", run_id=served.run_id)
         after = {label["label_id"]: label["routing"] for label in served.labels()}
         assert {k: after[k] for k in snapshot} == snapshot, (
             "a later review action rewrote a stored label's routing (FR-REVIEW-29)")
+        assert [label["routing"] for label in served.labels()
+                if label["score_id"] == f"{later[0]}:C1" and label["label_type"] != "blind"
+                ] == ["reviewed"]
 
 
 # --- TC-REVIEW-106 ---------------------------------------------------------------------------
@@ -306,6 +339,25 @@ _SEAT_READABLE = frozenset({"submission", "roster", "criterion", "band", "docume
 _SEAT_FORBIDDEN = frozenset({"criterion_score", "verdict", "extraction"})
 
 _TABLE = re.compile(r"\b(?:FROM|JOIN|INTO|UPDATE)\s+([A-Za-z_][A-Za-z_0-9]*)", re.IGNORECASE)
+
+
+_REGION_BLOCK = re.compile(
+    r"<!-- region:(?P<header>[^>]*?)-->\n?(?P<body>.*?)<!-- /region -->", re.DOTALL)
+_QUESTION_TAG = re.compile(r"\bquestion_id=(\S+)")
+
+
+def _markdown_answer(markdown: str, question_id: str) -> str:
+    """The question's answer from the canonical Markdown, worked independently of
+    `aeh.integ`: each region block tagged with the question, plus the untagged blocks after
+    it, up to the next tagged block. Bodies are stripped and joined with a newline."""
+    in_force, bodies = None, []
+    for block in _REGION_BLOCK.finditer(markdown):
+        tag = _QUESTION_TAG.search(block.group("header"))
+        if tag:
+            in_force = tag.group(1)
+        if in_force == question_id and block.group("body").strip():
+            bodies.append(block.group("body").strip())
+    return "\n".join(bodies)
 
 
 def _tables(statements) -> set[str]:
@@ -346,6 +398,14 @@ def test_tc_review_106_the_seat_carries_the_answer_and_descriptors_and_nothing_g
         world.build_run()
         world.start_run()
         assert pipe_world.drive_composed(world).status == "complete"
+        # The class list names each student, so the seat's preferred name path (the roster's
+        # full name, the teacher-facing name) is the one exercised, not the ref fallback.
+        with real_connect(root / "cohorts" / f"{world.cohort_id}.sqlite") as connection:
+            for (ref,) in connection.execute("SELECT student_ref FROM submission").fetchall():
+                connection.execute(
+                    "INSERT INTO roster (cohort_id, student_ref, full_name) VALUES (?, ?, ?) "
+                    "ON CONFLICT(cohort_id, student_ref) DO UPDATE SET full_name = "
+                    "excluded.full_name", (world.cohort_id, ref, f"Student {ref}"))
         statements.clear()
         service = build_console(store=world.store)._review_service(world.run_id)
         assert "criterion_score" in _tables(statements), (
@@ -376,11 +436,13 @@ def test_tc_review_106_the_seat_carries_the_answer_and_descriptors_and_nothing_g
         ).fetchone()[0]
         refs = dict(connection.execute("SELECT submission_id, student_ref FROM submission"))
         documents: dict[str, str] = {}
+        markdown: dict[str, str] = {}
         for ref in session.items:
             document = connection.execute(
-                "SELECT document_id FROM document WHERE submission_id = ? AND kind = "
+                "SELECT document_id, markdown FROM document WHERE submission_id = ? AND kind = "
                 "'submission' ORDER BY document_id LIMIT 1", (ref.submission_id,)).fetchone()
             documents[ref.submission_id] = document[0]
+            markdown[ref.submission_id] = str(document[1] or "")
     package_file = root / "packages" / f"{world.package_id}.pkg.sqlite"
     assert package_file.is_file(), f"fixture: no package file at {package_file}"
     with real_connect(package_file) as connection:
@@ -404,7 +466,9 @@ def test_tc_review_106_the_seat_carries_the_answer_and_descriptors_and_nothing_g
         assert seat["seat_id"] == f"seat-{number}" and seat["criterion_id"] == ref.criterion_id
         question = question_of[ref.criterion_id]
         assert seat["question"] == question
-        assert seat["student_name"] in (refs[ref.submission_id],), seat["student_name"]
+        assert seat["student_name"] == f"Student {refs[ref.submission_id]}", (
+            f"seat {number} names the student {seat['student_name']!r}, not the class list's "
+            "full name")
         with real_connect(cohort) as connection:
             rows = connection.execute(
                 "SELECT page_no, content FROM document_region WHERE document_id = ? AND "
@@ -412,6 +476,10 @@ def test_tc_review_106_the_seat_carries_the_answer_and_descriptors_and_nothing_g
                 (documents[ref.submission_id], question)).fetchall()
         expected_text = "\n".join(str(content).strip() for _page, content in rows if content)
         assert expected_text, f"fixture: seat {number}'s question has no region text"
+        # The same text, worked from the canonical Markdown (the reader's preferred source).
+        assert _markdown_answer(markdown[ref.submission_id], question) == expected_text, (
+            f"fixture: the canonical Markdown and the stored region rows disagree on seat "
+            f"{number}'s answer, so the oracle is ambiguous")
         assert seat["answer_text"] == expected_text, (
             f"seat {number}'s answer is not the canonical region's text:\n"
             f"{seat['answer_text']!r}\n!=\n{expected_text!r}")
