@@ -211,6 +211,18 @@ class ValidationUpdate:
     #: recorded, or why nothing was (a published version, no cohort file). Empty for an
     #: engine-off administration, which writes nothing.
     noninferiority_outcomes: Mapping[str, str] = field(default_factory=dict)
+    #: FR-STATS-32 (#879): the administration's figures per criterion — the scoring model, `n`,
+    #: `matched`, `kappa`, `qwk` (None below three bands), `reason` for an absent figure,
+    #: the engine measurements and the confusion counts. A multi-criterion administration's
+    #: `agreement_kappa` is None and THIS is where its figures are (CT-STATS-29).
+    criterion_figures: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
+    #: FR-STATS-33 (#879, migration P2): `skipped`, `none_marked` or None, and the drawn seats
+    #: left unmarked when the draw closed.
+    absence_reason: str | None = None
+    unmarked_count: int = 0
+    #: FR-STATS-33: True when this administration's record already existed, so this call
+    #: claimed nothing and wrote nothing, and the values are the stored record's.
+    already_recorded: bool = False
 
 
 @dataclass(frozen=True)

@@ -648,7 +648,9 @@ STATEMENTS.update(PKG_STATEMENTS)
 
 #: #529 (FR-CONSOLE-24): one administration's validation record, read back.
 _SELECT_PROMOTION_RECORD = Statement(
-    "SELECT package_version_id, cohort_id, blind_count, n, agreement_kappa, recorded_at "
+    "SELECT package_version_id, cohort_id, blind_count, n, agreement_kappa, recorded_at, "
+    "operational_count, cohorts_used, weakest_per_population, surface_proxy_flags, message, "
+    "absence_reason, unmarked_count "
     "FROM package_validation WHERE package_version_id = :package_version_id "
     "AND cohort_id = :cohort_id"
 )

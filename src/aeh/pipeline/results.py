@@ -60,3 +60,8 @@ class RecoveryReport:
     leases_reclaimed: int = 0
     runs_resumed: tuple[str, ...] = ()
     runs_regraded: tuple[str, ...] = ()
+    #: FR-PIPE-21 (#879): the runs whose administration this sweep promoted — a draw closed by
+    #: the review window, or a close whose promotion never ran — and, per run, why a promotion
+    #: failed, so a sweep that could not record an administration says so.
+    administrations_promoted: tuple[str, ...] = ()
+    promotion_failures: tuple[str, ...] = ()

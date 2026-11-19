@@ -138,7 +138,12 @@ from .comparisons import (
     routing_policy_validity,
     surface_proxies,
 )
-from .promotion import aggregate, promote, _record_noninferiority_verdicts
+from .promotion import (
+    administration_record,
+    aggregate,
+    promote,
+    _record_noninferiority_verdicts,
+)
 from .history import (
     criterion_disagreement_rate,
     criterion_override_history,
@@ -240,6 +245,7 @@ __all__ = [
     "open_stats",
     "operational_signal",
     "promote",
+    "administration_record",
     "routing_policy_validity",
     "SELF_AGREEMENT_MINIMUM_RUNS",
     "measure_position_bias",

@@ -243,6 +243,21 @@ class BlindCloseReport:
 
 
 @dataclass(frozen=True)
+class DrawRecord:
+    """A run's draw as stored, read without acting on it (FR-REVIEW-30, #879): its state, and for
+    a closed draw what the close recorded — the blind labels it wrote, the seats left unmarked
+    and the absence reason. The composition root reads it to promote the administration when the
+    draw closes (FR-PIPE-21): a window lapse returns no `BlindCloseReport` to anyone."""
+
+    run_id: str
+    state: str
+    labels_written: int = 0
+    unmarked_count: int = 0
+    absence_reason: str | None = None
+    closed_at: str | None = None
+
+
+@dataclass(frozen=True)
 class BlindSession:
     """One blind sitting: the drawn references, and the two checks CT-REVIEW-09 makes.
     `readable_tables()` is the query-level guarantee (only `submission` and `criterion`, never

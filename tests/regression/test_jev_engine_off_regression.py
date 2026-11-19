@@ -76,6 +76,13 @@ def test_tc_reg_08_engine_off_run_equals_the_fb12d1e_baseline(head_snapshot) -> 
     reports = [entry for entry in now["trace"] if _is_aggregate_report(entry)]
     assert len(reports) == 1, f"expected one aggregate stage report, got {reports!r}"
     now["trace"] = [entry for entry in now["trace"] if not _is_aggregate_report(entry)]
+    # #879 (FR-PIPE-20): a complete run's trace ends with the additive `validity` stage, absent
+    # at fb12d1e. Asserted (finalization never offers the draw), then projected.
+    assert now["trace"][-1][0] == "validity", now["trace"][-1]
+    assert now["trace"][-1][4] == [
+        "validity: the blind sample has not been offered yet, so there is no agreement "
+        "evidence for this run"], now["trace"][-1]
+    now["trace"] = now["trace"][:-1]
     for section in ("status", "work_ids", "run_row", "profile_summary", "fixture_keys", "trace",
                     "decision_prescreen_rows"):
         assert now[section] == golden[section], (

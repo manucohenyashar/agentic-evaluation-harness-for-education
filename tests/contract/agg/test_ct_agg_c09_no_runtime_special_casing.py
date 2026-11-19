@@ -138,6 +138,21 @@ _STATS_SANCTIONED = (
     "self._scoring_models = dict(scoring_models or {})",
     "scoring_models=scoring_models,",
     "scoring_models=stats._scoring_models,",
+    # #879 (FR-STATS-32): the validation record keys each administration's per-criterion
+    # figures with the scoring model the package declared, so atomic and holistic lines are
+    # never pooled (FR-STATS-03). Each site is a pass-through of that declaration — the Tier P
+    # read, the constructor's mapping winning over it, the figure's key, the stored column
+    # and its read-back — never a branch on the value.
+    "scoring_models: Mapping[str, str],",
+    '"scoring_model": scoring_models.get(criterion) or "",',
+    'scoring_models = {criterion: scale["scoring_model"] for criterion, scale in',
+    "scoring_models.update(self._scoring_models)",
+    "scoring_models=self._scoring_models)",
+    '"scoring_model": figure["scoring_model"],',
+    '"scoring_model": row.get("scoring_model") or "",',
+    "scoring_model=None,",
+    "n, cohort_id, scoring_model, matched, kappa, qwk, reason, figures)",
+    ":cohort_id, :scoring_model, :matched,",
 )
 #: M-CALIB's sanctioned scoring-model references, each its clause: the §6.2 vocabulary
 #: entry naming the locked field (the HLD's own name for it, the same name

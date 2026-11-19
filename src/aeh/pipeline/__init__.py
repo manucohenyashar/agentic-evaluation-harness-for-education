@@ -17,6 +17,7 @@ Files:
     hooks.py            the integrity and aggregation hooks run between stages
     finishing.py        narrative synthesis and grading once a submission is fully scored
     driver.py           `run_to_completion` and `recover`
+    validity.py         `promote_administration` on draw close, and the trace's `validity` stage
     runtime.py          opening the store and choosing a run's provider
     background.py       the console's doors: start or resume runs on worker threads, uploads
     cli.py              the `aeh` command line (`main`)
@@ -50,6 +51,13 @@ from . import decision_engine  # noqa: F401  (imported for its registrations)
 from .hooks import _aggregate_hook, _integrity_pre_hook
 from . import finishing  # noqa: F401  (imported for its registrations)
 from .driver import recover, run_to_completion
+from .validity import (
+    AdministrationPromotion,
+    PROMOTION_TRIGGERS,
+    promote_administration,
+    VALIDITY_STAGE,
+    validity_stage,
+)
 from .runtime import _provider_for
 from .background import (
     check_parked_assignment,
