@@ -37,6 +37,7 @@ from .decision_engine import (
 from .errors import ConfigurationError
 from .hardware import DEFAULT_HOSTED_PREFIX_TOKEN_CEILING, HARDWARE_PROFILES
 from .model_ref import ModelRef
+from .agg_knobs import resolve_agg_knob_sources
 from .orch_knobs import BUDGET_LABEL, SAMPLE_LABEL, resolve_orch_knobs
 from .qa_model import resolve_qa_model
 from .resolution import (
@@ -270,6 +271,9 @@ def configuration_projection(
                     "text", False),
         SettingView("random_extra_grader_sample", SAMPLE_LABEL, orch_knobs.sample_text(),
                     "text", False),
+        # FR-CONF-38: the four aggregation constants, each with where it came from.
+        *(SettingView(knob.key, knob.label, knob.text(), "text", False)
+          for knob in resolve_agg_knob_sources(cfg)),
         SettingView(_MODEL_PROVIDER_KEY_ID, "Model provider key", "", "secret", False,
                     configured=configured(_MODEL_PROVIDER_KEY_ID)),
     ]

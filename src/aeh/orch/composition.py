@@ -6,7 +6,7 @@ from typing import Any
 
 from .errors import CellPhaseError
 from .statements import ORCH_STATEMENTS
-from .run_records import _jev_final_on_accept_of, _panel_build_ref_of, _model_pin_records_of
+from .run_records import _agg_knobs_of, _jev_final_on_accept_of, _panel_build_ref_of, _model_pin_records_of
 from .executors import (
     CELL_PHASES,
     CellKey,
@@ -76,6 +76,7 @@ class CompositionMixin:
             panel_build_ref=_panel_build_ref_of(row),
             model_pins=_model_pin_records_of(row),
             jev_final_on_accept=_jev_final_on_accept_of(row),
+            agg_knobs=_agg_knobs_of(row),
         )
 
     def cell_unit_counts(self, run_id: str, stage: str) -> dict["CellKey", tuple[int, int]]:

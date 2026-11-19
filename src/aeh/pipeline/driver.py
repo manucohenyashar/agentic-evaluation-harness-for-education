@@ -22,6 +22,7 @@ from .decision_engine import (
     _decision_run_start_checks,
     _decision_summary,
 )
+from .aggregation_report import aggregation_report
 from .hooks import _aggregate_hook, _CellFault, _drain, _FAULT_PREFIX, _integrity_pre_hook
 from .finishing import _grade, _grades_all_final, _synthesize
 
@@ -338,6 +339,11 @@ def run_to_completion(
 
     if decision_provider is not None:
         stages.append(_decision_summary(handle, run_id))
+
+    # FR-AGG-23 / CT-AGG-25: what aggregation decided over the whole run, from the stored rows,
+    # recorded into `run_metrics` as `agg.<name>` rows. Once per call, after the last pass, and
+    # after the score stage's decision summary, which stays the first trace carrying metrics.
+    stages.append(aggregation_report(orch, handle, run_id))
 
     if fault is not None:
         try:

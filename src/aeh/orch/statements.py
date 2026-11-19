@@ -16,10 +16,12 @@ ORCH_STATEMENTS: dict[str, Statement] = {
     # The run-row read carries the lifecycle columns #61 added (`cost_estimate`,
     # `cost_spend`, `pause_reason`) beside the frozen backend snapshot — the ceiling is
     # enforced from the row's OWN figures, never from current configuration.
+    # `run_config` (the whole frozen RunConfig) is read for FR-AGG-21's aggregation constants,
+    # which `run_handle` hands to every aggregate pass.
     "select_run": Statement(
         "SELECT run_id, cohort_id, package_version_id, package_id, panel_config, "
         "backend_profile, provider_config, prompt_template_v, status, started_at, "
-        "completed_at, cost_estimate, cost_spend, pause_reason "
+        "completed_at, cost_estimate, cost_spend, pause_reason, run_config "
         "FROM run WHERE run_id = :run_id"
     ),
     # The runs resume() may drive: everything not yet finished. Ordered by run_id so two

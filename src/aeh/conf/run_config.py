@@ -9,6 +9,7 @@ from decimal import Decimal
 from typing import Any, Literal
 
 from .vocabulary import BACKEND_PROFILES, BackendProfile, HardwareProfileName, PANEL_SIZES
+from .agg_knobs import AggKnobs
 from .errors import BackendMismatchError, ConfigurationError
 from .frozen import _typeerror_on_mutation
 from .model_ref import ModelRef, _ref_to_dict, _require_model_ref
@@ -129,10 +130,11 @@ class ProfileSummary:
 class RunConfig:
     """One frozen answer to "which grader is this run?" (design §3.1).
 
-    The field set is **exactly** these fifteen (Jev design delta FR-CONF-17 added
+    The field set is **exactly** these sixteen (Jev design delta FR-CONF-17 added
     `decision_engine`, the operator-requirements delta FR-CONF-30 / CT-CONF-22 added
-    `qa_model`, and the console-clarity delta FR-AGG-20 added `jev_final_on_accept`; each has a
-    default so a literal written before it still constructs).
+    `qa_model`, the console-clarity delta FR-AGG-20 added `jev_final_on_accept`, and the
+    statistical-validity delta FR-AGG-21 added `agg_knobs`; each has a default so a literal
+    written before it still constructs).
     `CT-CONF-C02` asserts set equality rather than a
     subset, so adding a convenience field here breaks the contract suite by design — that is the
     clause working, not a broken test.
@@ -171,6 +173,12 @@ class RunConfig:
     #: resolution (`HARNESS_JEV_FINAL_ON_ACCEPT`, default true) and recorded with the decision
     #: engine, so a resumed run grades every cell by one rule. Not part of the grader identity.
     jev_final_on_accept: bool = True
+    #: FR-AGG-21 / FR-CONF-38: the four aggregation constants (the two auto-accept thresholds and
+    #: the uncited and holistic multipliers), resolved once at start and frozen here, recorded on
+    #: the run row and read back on resume, so every cell of a run — resumed or not — aggregates
+    #: with the same values. Not part of the grader identity. `None` only on a literal or a row
+    #: written before FR-AGG-21, where `aggregate` uses M-AGG's declared constants.
+    agg_knobs: AggKnobs | None = None
 
     def __post_init__(self) -> None:
         """Enforce CT-CONF-02 and CT-CONF-03 on the type itself, not only in the resolver.
@@ -312,6 +320,9 @@ class RunConfig:
         if not isinstance(self.jev_final_on_accept, bool):
             raise ConfigurationError(
                 f"jev_final_on_accept must be a bool, got {type(self.jev_final_on_accept).__name__}.")
+        if self.agg_knobs is not None and not isinstance(self.agg_knobs, AggKnobs):
+            raise ConfigurationError(
+                f"agg_knobs must be an AggKnobs or None, got {type(self.agg_knobs).__name__}.")
 
         expected_ref = compute_panel_build_ref(self.panel, self.decision_engine)
         if self.panel_build_ref != expected_ref:
@@ -419,5 +430,9 @@ class RunConfig:
                 # FR-CONF-30: recorded on every resolved run; absent only on a pre-delta literal,
                 # so such a row still round-trips byte-identically.
                 **({} if self.qa_model is None else {"qa_model": _ref_to_dict(self.qa_model)}),
+                # FR-AGG-21: the four frozen aggregation constants, under their config-file key
+                # names; absent only on a pre-delta literal, so such a row round-trips
+                # byte-identically.
+                **({} if self.agg_knobs is None else self.agg_knobs.to_record()),
             },
         }

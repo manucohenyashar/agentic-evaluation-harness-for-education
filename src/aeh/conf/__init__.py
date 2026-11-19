@@ -101,6 +101,14 @@ from .orch_knobs import (
     RANDOM_ARM_RATE_FILE_KEY,
     resolve_orch_knobs,
 )
+from .agg_knobs import (
+    AGG_FILE_KEYS,
+    AGG_KEYS,
+    AggKnobs,
+    ResolvedAggKnob,
+    resolve_agg_knob_sources,
+    resolve_agg_knobs,
+)
 from .resolution import resolve_run_config
 from .rehydrate import rehydrate_run_config, RUN_CONFIG_FIELDS
 from .audit_log import log_run_start, LOGGER_NAME, RUN_START_EVENT
@@ -123,6 +131,12 @@ __all__ = [
     "OrchKnobs",
     "RANDOM_ARM_RATE_FILE_KEY",
     "resolve_orch_knobs",
+    "AGG_FILE_KEYS",
+    "AGG_KEYS",
+    "AggKnobs",
+    "ResolvedAggKnob",
+    "resolve_agg_knob_sources",
+    "resolve_agg_knobs",
     "format_profile_banner",
     "parse_config_document",
     "PROFILE_SOURCE_CONFIG_FILE",

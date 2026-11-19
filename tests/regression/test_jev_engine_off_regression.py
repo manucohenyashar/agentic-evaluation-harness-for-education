@@ -31,6 +31,12 @@ GOLDEN = Path(__file__).resolve().parent / "baselines" / "jev_engine_off.json"
 _NEW_VERDICT_COLUMNS = ("scoring_engine", "engine_build")
 
 
+def _is_aggregate_report(entry: list) -> bool:
+    """FR-AGG-23's end-of-run aggregate stage report, as the capture's trace entry carries it."""
+    return entry[0] == "aggregate" and any(
+        str(line).startswith("aggregate stage report:") for line in entry[4])
+
+
 def _golden() -> dict:
     return json.loads(GOLDEN.read_text(encoding="utf-8"))
 
@@ -65,6 +71,11 @@ def test_tc_reg_08_engine_off_run_equals_the_fb12d1e_baseline(head_snapshot) -> 
     for row in now["tables"].get("criterion_score", []):
         assert row.pop("state_reason", None) is None, (
             f"an engine-off criterion_score row carries a state_reason: {row!r}")
+    # #865 (FR-AGG-23, CT-AGG-25): one additive end-of-run `aggregate` trace, the aggregate stage
+    # report. Asserted present exactly once, then projected like the additive columns above.
+    reports = [entry for entry in now["trace"] if _is_aggregate_report(entry)]
+    assert len(reports) == 1, f"expected one aggregate stage report, got {reports!r}"
+    now["trace"] = [entry for entry in now["trace"] if not _is_aggregate_report(entry)]
     for section in ("status", "work_ids", "run_row", "profile_summary", "fixture_keys", "trace",
                     "decision_prescreen_rows"):
         assert now[section] == golden[section], (

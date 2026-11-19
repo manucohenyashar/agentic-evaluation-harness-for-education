@@ -189,6 +189,11 @@ def test_tc_orch_61_the_random_arm_still_samples_a_jev_final_cell(tmp_path, monk
         # One random-arm judge gives the neighbouring band on XR.
         world.band_overrides = {(*XR, "escalation-arm-3"): "secure"}
     monkeypatch.setenv(RANDOM_ARM_RATE_ENV_KEY, "1.0")
+    # #865 (FR-AGG-21/22): the run freezes the pre-delta holistic multiplier 0.85, so the
+    # unanimous holistic panel below stays under the 0.90 bar, as this case's oracle assumes.
+    overrides = world._run_cfg_overrides
+    monkeypatch.setattr(world, "_run_cfg_overrides",
+                        lambda: {**overrides(), "agg_holistic_multiplier": 0.85})
     try:
         result, seen = drive(world)
         assert result.status == "complete", result.pause_reason
@@ -203,7 +208,7 @@ def test_tc_orch_61_the_random_arm_still_samples_a_jev_final_cell(tmp_path, monk
                                                  x["score"][5], x["score"][6])
     assert count == 3
     # The ordinary three-judge rule: C1 scores holistically here, and a holistic panel tops out at
-    # 1.0 x 0.85, below the 0.90 bar, so even a unanimous panel is routed `queued`. Neither arm is
+    # 1.0 x 0.85 (the multiplier this run froze), below the 0.90 bar, so even a unanimous panel is routed `queued`. Neither arm is
     # Jev-final any more, and the confidence is the panel's, never the gate.
     assert routing == "queued" and confidence < ACCEPTED["gate"], x["score"]
     if disagree:

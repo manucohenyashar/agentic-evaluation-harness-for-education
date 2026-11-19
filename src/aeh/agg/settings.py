@@ -10,7 +10,10 @@ from types import MappingProxyType
 # Production defaults, declared here and injected at the call (`config=`): the
 # policy reads no configuration beyond the values passed in (`CT-AGG-01`), so
 # these constants are what a `config=None` call uses — never a second reading
-# path. The numbers are §3.12's Assumption-numbered cap table and thresholds:
+# path. FR-AGG-21: the two thresholds and two multipliers are also the code
+# defaults of the run's knobs (`aeh.conf.agg_knobs`, FR-CONF-38) — resolved once
+# per run, frozen into `RunConfig.agg_knobs`, recorded on the run row, and passed
+# back to `aggregate` as its `config` on every pass, resume included. The numbers are §3.12's Assumption-numbered cap table and thresholds:
 # fixture data in the tests (Q-04), production defaults here.
 
 #: Auto-accept threshold for an atomic criterion (§3.12: auto-accept iff
@@ -34,8 +37,11 @@ AGG_UNCITED_MULTIPLIER: float = 0.80
 AGG_JEV_FINAL_ON_ACCEPT: bool = True
 
 
-#: §3.12's multiplier applied to the base for a holistic criterion.
-AGG_HOLISTIC_MULTIPLIER: float = 0.85
+#: §3.12's multiplier applied to the base for a holistic criterion. FR-AGG-22 (D4, ADR-56): 0.95,
+#: was 0.85 — holistic is held to a harder bar, not an unreachable one. With the 0.90 threshold,
+#: only a unanimous, fully cited, uncapped holistic panel auto-accepts (α × 0.95 ≥ 0.90 needs
+#: α ≥ ≈0.95). A declared constant, not a tuned one (CT-AGG-14).
+AGG_HOLISTIC_MULTIPLIER: float = 0.95
 
 
 #: §3.12's Assumption cap table: the hard ceiling each adverse integrity signal

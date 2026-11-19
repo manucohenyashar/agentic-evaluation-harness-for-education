@@ -59,6 +59,24 @@ AGG_SIGNAL_STATEMENTS: dict[str, Statement] = {
         "FROM criterion_score WHERE run_id = :run_id "
         "ORDER BY criterion_id, submission_id"
     ),
+    # FR-AGG-23 / CT-AGG-25: the rows the aggregate stage wrote — judged cells only. A
+    # deterministic row (judge_count 0) is M-DET's, carries no confidence, and would read as
+    # an `auto` the aggregation never decided.
+    "select_run_aggregated_scores": Statement(
+        "SELECT confidence, routing, caps_fired FROM criterion_score "
+        "WHERE run_id = :run_id AND COALESCE(judge_count, 0) > 0 "
+        "ORDER BY criterion_id, submission_id"
+    ),
+    # FR-AGG-23 / CT-AGG-25: the run's uncited and re-anchored verdict counts. A re-anchored
+    # verdict kept its (relocated) spans, so it is cited, never uncited (CT-JUDGE-32); a row
+    # written before either mark (NULL) counts as neither. M-AGG reads completed verdicts as
+    # `verdicts_for` does; no judge path reaches this read.
+    "select_run_verdict_citations": Statement(
+        "SELECT COUNT(CASE WHEN v.uncited = 1 THEN 1 END) AS uncited, "
+        "COUNT(CASE WHEN v.reanchored = 1 THEN 1 END) AS reanchored "
+        "FROM verdict v JOIN work_unit w ON w.work_id = v.work_id "
+        "WHERE w.run_id = :run_id"
+    ),
     # Panels, not units: one widening writes TWO units (1→3, 3→5), so counting rows would
     # report twice the share of panels widened and could exceed 1.0. The shipped precedent is
     # M-ORCH's own `select_escalated_results` — COUNT(DISTINCT submission_id).

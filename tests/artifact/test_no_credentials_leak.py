@@ -316,7 +316,7 @@ def test_tc_conf_11_provider_config_holds_no_free_text_at_all():
     numeric string. A field added later that carries caller free text fails here — which is the
     only assertion that survives someone extending the dict.
     """
-    from aeh.conf import HARDWARE_PROFILES, RETENTION_SETTINGS
+    from aeh.conf import AGG_FILE_KEYS, HARDWARE_PROFILES, RETENTION_SETTINGS
 
     config = resolve_run_config(hosted_cfg("cloud-hosted", panel=HOSTED_PANEL_3), SYNTHETIC_COHORT)
     # `qa_model` (FR-CONF-30) is checked inside the helper: it must equal panel[0]'s identity.
@@ -333,6 +333,10 @@ def test_tc_conf_11_provider_config_holds_no_free_text_at_all():
             assert value is None or re.fullmatch(r"[A-Z]{3}", value), f"{key} is free text"
         elif key == "cost_ceiling":
             assert value is None or re.fullmatch(r"[-+0-9.eE]+", value), f"{key} is free text"
+        elif key in AGG_FILE_KEYS:
+            # FR-AGG-21 / FR-CONF-38: the four frozen aggregation constants, each a float the
+            # resolver has already refused outside (0, 1] — a closed numeric domain, never text.
+            assert isinstance(value, float) and 0 < value <= 1, f"{key} is outside (0, 1]"
         else:
             assert isinstance(value, int) and not isinstance(value, bool), (
                 f"provider_config gained a non-numeric field {key!r} that is not a closed set — "

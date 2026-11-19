@@ -187,7 +187,11 @@ def _morning_drive(world: SynthWorld) -> None:
     the morning's (the module docstring's first disclosure). The queue's
     population is the shipped policy's teacher routing: the unanimous holistic
     panel's `1.0 x 0.85` sits below the 0.90 auto threshold, so every judged
-    cell routes `queued`."""
+    cell routes `queued`. #865 (FR-AGG-21/22) moved the default holistic
+    multiplier to 0.95 and made it a per-run frozen knob, so this run freezes
+    the pre-delta 0.85 the journey's queue population is built on."""
+    overrides = world._run_cfg_overrides
+    world._run_cfg_overrides = lambda: {**overrides(), "agg_holistic_multiplier": 0.85}
     world.build_run()
     world.start_run()
     terminal_before = 0
@@ -272,7 +276,7 @@ def _morning_drive(world: SynthWorld) -> None:
     judged_routings = {row["routing"] for row in routed
                        if row["criterion_id"] in world.open_ids}
     assert judged_routings == {"queued"}, (
-        f"the judged cells routed {judged_routings} - the shipped policy holds "
+        f"the judged cells routed {judged_routings} - the run's frozen policy holds "
         "the unanimous holistic panel at 0.85 under the 0.90 auto threshold, "
         "so every judged cell is the teacher's (CT-AGG-06), and the queue "
         "below reviews exactly that population"

@@ -44,6 +44,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -343,9 +344,14 @@ def test_tc_agg_c09_a_holistic_criterion_ranks_higher_in_the_review_queue(
         atom = aggregate(stored_verdicts(store, run_id, _SUBMISSION, "C-ATOM"),
                          criterion(bands, criterion_id="C-ATOM"),
                          signals(), config=agg_config())
+        # The run froze the pre-FR-AGG-22 holistic multiplier (0.85), so the unanimous holistic
+        # cell stays below the 0.90 bar and reaches the queue this case ranks. At #865's 0.95
+        # default it would auto-accept, leaving nothing to rank (FR-AGG-21: the multiplier is a
+        # per-run frozen value).
         hol = aggregate(stored_verdicts(store, run_id, _SUBMISSION, "C-HOL"),
                         criterion(bands, scoring_model="holistic", criterion_id="C-HOL"),
-                        signals(), config=agg_config())
+                        signals(),
+                        config=SimpleNamespace(**vars(agg_config()), holistic_multiplier=0.85))
         assert hol.routing == "queued", (
             "fixture bug: the holistic criterion did not route to the teacher's "
             "queue, so the ranking differential has nothing to rank"

@@ -170,7 +170,9 @@ def test_tc_pipe_18_trace_suffixes_on_and_none_off(engine_on, tmp_path) -> None:
     off = pipe_world.replay_world(tmp_path / "off")
     try:
         off_result = _run(off)
-        off_lines = sorted(line for s in off_result.stages for line in s.detail)
+        # #865 (FR-AGG-23): the end-of-run aggregate stage report is additive; projected out.
+        off_lines = sorted(line for s in off_result.stages for line in s.detail
+                           if not line.startswith("aggregate stage report:"))
         assert not [line for line in off_lines if line.endswith("]")]
         assert off_lines == sorted(line for stage in golden["trace"] for line in stage[4])
     finally:

@@ -68,6 +68,9 @@ DESIGN_RUN_CONFIG_FIELDS = (
     # FR-AGG-20 (console-clarity delta, #806): the Jev-final rule is "frozen into RunConfig with
     # the other decision keys and recorded on the run row". The 15th field.
     "jev_final_on_accept",
+    # FR-AGG-21 (statistical-validity delta, #865): the aggregation constants are "frozen into
+    # `RunConfig`, recorded on the run row, and read back on resume". The 16th field.
+    "agg_knobs",
 )
 
 

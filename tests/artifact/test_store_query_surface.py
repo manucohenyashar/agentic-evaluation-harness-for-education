@@ -326,7 +326,7 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # keyword parameters) lands above `record_run_metrics`, which moves 369 -> 389.
     "aeh.orch.reporting:381",
     "aeh.orch.reporting:402",
-    "aeh.orch.run_records:221",
+    "aeh.orch.run_records:241",
     # #612 (live OpenRouter enablement): cohort creation and roster widening write the
     # roster through ORCH_STATEMENTS, and ingest marks interrupted submissions
     # not_reached through INGEST_STATEMENTS - declared statements, keyword parameters,
