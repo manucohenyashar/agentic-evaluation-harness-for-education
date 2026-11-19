@@ -6,7 +6,7 @@ from typing import Any
 
 from .errors import CellPhaseError
 from .statements import ORCH_STATEMENTS
-from .run_records import _agg_knobs_of, _jev_final_on_accept_of,_panel_build_ref_of, _model_pin_records_of
+from .run_records import _agg_knobs_of, _jev_final_on_accept_of, _panel_build_ref_of, _model_pin_records_of
 from .executors import (
     CELL_PHASES,
     CellKey,
