@@ -2326,6 +2326,23 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # seed) were dropped and their cases run unmarked. #808 landed too (PR #843).
 
     # T21 (#905): S30 (#872) landed — TC-PROV-71 and TC-CONSOLE-123 run unmarked.
+
+    # --- Validity T4 (#897): TC-REVIEW-100 and TC-REVIEW-107 (a), keyed on S12 (#882) -------
+    #
+    # Both cases draft and finish the blind sample through the console's own actions. The plan
+    # keys them on S12, the last story they need (S6, #867, has landed). S12 adds ACTION
+    # STRINGS to `CONTROL_SURFACE_ACTIONS` (`blind-sample draft`, `blind-sample finish`), not a
+    # symbol, so a `symbol` key cannot see it. The probe resolves when both strings are on the
+    # control surface. It puts `src` first on the path, as the #641 probe does: a worktree's
+    # editable install can point at another checkout's `src`.
+    # T4's other cases (TC-REVIEW-101/102/106, TC-REG-24, TC-STATS-39/40) run unmarked.
+    "#882 Validity S12 console blind-sample draft/finish (T4: TC-REVIEW-100, TC-REVIEW-107a)": (
+        "command",
+        "python -c \"import sys; sys.path.insert(0, 'src');"
+        "from aeh.console.vocabulary import CONTROL_SURFACE_ACTIONS as A;"
+        "raise SystemExit(0 if {'blind-sample draft', 'blind-sample finish'} <= set(A) else 1)\"",
+        ("tests/integration/review/test_tc_review_100_107_console_blind_finish.py",),
+    ),
 }
 
 def blocker_is_resolved(kind: str, target: str, repo_root: Any) -> bool:
