@@ -49,41 +49,63 @@ CLEAN_COPY_CHECK = "transcript-marks-v1"
 
 # What the check reads as a marker's annotation on a page of the transcript:
 #
-# 1. A tick or cross glyph anywhere outside a multiple-choice mark region (a student's chosen
-#    option is that region's business, not a marking annotation).
-# 2. A score standing on its own — "3/5", "(2/4)", "+2", "-1", "2 marks" — as a whole line or
-#    a whole region, outside the student's answer regions (those carrying `question_id=`), so a
-#    fraction the student wrote as an answer is not mistaken for a mark.
-# 3. A described annotation (`element_kind=label_or_annotation`) whose description names a
-#    marker's hand: a margin comment, the teacher's or examiner's writing, red ink.
-_TICK_GLYPHS = frozenset("✓✔✗✘☑☒✅❌")
+# 1. A tick or cross glyph (not a checkbox glyph, which a printed or student box may be)
+#    anywhere outside a multiple-choice mark region — a student's chosen option is that
+#    region's business, not a marking annotation.
+# 2. An awarded score: a fraction standing alone on its line ("3/5", "(2/4)") or a labelled one
+#    ("Total: 18/20", "Score 3/5"). Inside a student's answer region (one carrying
+#    `question_id=`) a lone fraction counts only beside other answer lines, so a student whose
+#    whole answer is "3/5" is not refused. Printed allocations ("(3 marks)") and bare numbers
+#    are not scores: every exam paper prints them.
+# 3. A described region whose description attributes writing to another hand: the teacher's,
+#    the marker's or examiner's, red ink, a second or different hand. A bare "margin" is not
+#    enough — students write in margins too.
+#
+# Known limit: a margin comment the transcriber writes down as plain text, without saying it is
+# in another hand, cannot be told from the student's own words on the transcript alone. Closing
+# that needs the transcriber to tag annotations (OQ-4's other option, a prompt version bump) —
+# a later `CLEAN_COPY_CHECK` version.
+_TICK_GLYPHS = frozenset("✓✔✗✘✅❌")
 
 _REGION = re.compile(
     r"<!--\s*region:(?P<attrs>.*?)-->(?P<body>.*?)<!--\s*/region\s*-->", re.DOTALL)
 
 _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 
-_SCORE = re.compile(
-    r"^\(?\s*(?:\d+(?:\.\d+)?\s*/\s*\d+(?:\.\d+)?"
-    r"|[+-]\s*\d+(?:\.\d+)?"
-    r"|\d+(?:\.\d+)?\s*(?:marks?|pts?|points?))\s*\)?$",
+_FRACTION = r"\d+(?:\.\d+)?\s*/\s*\d+(?:\.\d+)?"
+
+_LONE_SCORE = re.compile(rf"^\(?\s*{_FRACTION}\s*\)?$")
+
+_LABELLED_SCORE = re.compile(
+    rf"^(?:total|score|mark|marks|grade)\b\s*[:=]?\s*\(?\s*{_FRACTION}\s*\)?$",
     re.IGNORECASE,
 )
 
-_MARKER_HAND = re.compile(
-    r"\b(?:margin|marker'?s?|teacher'?s?|grader'?s?|examiner'?s?|red (?:ink|pen)"
-    r"|second hand|different hand(?:writing)?)\b",
+_OTHER_HAND = re.compile(
+    r"\b(?:marker'?s?|teacher'?s?|grader'?s?|examiner'?s?|red (?:ink|pen)"
+    r"|second hand|different hand(?:writing)?|another hand)\b",
     re.IGNORECASE,
 )
 
 
-def _has_score_line(text: str) -> bool:
-    return any(_SCORE.match(line.strip()) for line in _COMMENT.sub("\n", text).splitlines())
+def _lines(text: str) -> list[str]:
+    return [line.strip() for line in _COMMENT.sub("\n", text).splitlines() if line.strip()]
+
+
+def _has_score(text: str, *, answer: bool = False) -> bool:
+    lines = _lines(text)
+    if any(_LABELLED_SCORE.match(line) for line in lines):
+        return True
+    lone = [line for line in lines if _LONE_SCORE.match(line)]
+    if not answer:
+        return bool(lone)
+    # In an answer region a lone fraction is a mark only when it stands beside the answer.
+    return bool(lone) and len(lone) < len(lines)
 
 
 def _page_has_marks(page: str) -> bool:
     outside = _REGION.sub("\n", page)
-    if _TICK_GLYPHS.intersection(outside) or _has_score_line(outside):
+    if _TICK_GLYPHS.intersection(outside) or _has_score(outside):
         return True
     for region in _REGION.finditer(page):
         attrs, body = region.group("attrs"), region.group("body")
@@ -91,17 +113,17 @@ def _page_has_marks(page: str) -> bool:
             continue
         if _TICK_GLYPHS.intersection(body):
             return True
-        if "question_id=" not in attrs and _has_score_line(body):
+        if _has_score(body, answer="question_id=" in attrs):
             return True
-        if "element_kind=label_or_annotation" in attrs and _MARKER_HAND.search(body):
+        if "kind=described_graphic" in attrs and _OTHER_HAND.search(body):
             return True
     return False
 
 
 def marked_pages(markdown: str) -> tuple[int, ...]:
     """The 1-based numbers of the pages whose transcript shows marking annotations (FR-SETUP-21,
-    `CLEAN_COPY_CHECK`): a tick or cross, a score standing beside an answer, or a margin comment
-    described as a marker's. Pages are the pieces of the canonical Markdown between page-break
+    `CLEAN_COPY_CHECK`): a tick or cross, an awarded score, or writing described as in another
+    hand (the marker's, red ink). Pages are the pieces of the canonical Markdown between page-break
     markers, in document order. Empty for a clean copy."""
     pages = str(markdown).split(PAGE_BREAK)
     return tuple(number for number, page in enumerate(pages, start=1)

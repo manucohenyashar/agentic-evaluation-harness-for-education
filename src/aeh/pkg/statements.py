@@ -520,7 +520,10 @@ PKG_STATEMENTS.update({
     "pkg_revision_copy_setup_step_record": Statement(
         "INSERT INTO setup_step_record (package_version_id, step_id, status, payload, "
         "recorded_at) SELECT :new, step_id, status, payload, recorded_at "
-        "FROM setup_step_record WHERE package_version_id = :old"
+        # The marked examples are per version marked under (FR-SETUP-20): their bands are not
+        # copied, so neither is the step row that lists them — the child starts its own.
+        "FROM setup_step_record WHERE package_version_id = :old "
+        "AND step_id <> 'marked_examples'"
     ),
     "pkg_revision_copied_counts": Statement(
         # #230's observability half: the revision result names what was copied, with

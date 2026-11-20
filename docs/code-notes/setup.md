@@ -196,12 +196,19 @@ failure there impossible.
   uploaded `(document id, file name)` pairs, which are fully marked, and the check's name.
 
 **OQ-4 (how marks are detected): a check over the stored transcript**, `CLEAN_COPY_CHECK =
-"transcript-marks-v1"` — tick/cross glyphs outside MCQ mark regions; a score standing alone
-(`3/5`, `+2`, `2 marks`) outside the student's answer regions; a described annotation whose
-description names a marker's hand (margin, teacher, red ink). Not a transcriber instruction:
-the transcription prompt is version-pinned (`NFR-INGEST-05`) and changing it re-keys every
-transcript and recording. Limit: a mark the transcriber does not write down (a faint tick it
-omits) passes; a stricter mechanism is a new `CLEAN_COPY_CHECK` version.
+"transcript-marks-v1"` — tick/cross glyphs (not checkbox glyphs) outside MCQ mark regions; an
+awarded score: a lone fraction on its line (`3/5`; inside an answer region only beside other
+answer lines, so an answer of `3/5` passes) or a labelled one (`Total: 18/20`); a described
+region attributing writing to another hand (teacher, marker, examiner, red ink). Printed
+allocations (`(3 marks)`) and bare numbers are deliberately not scores, and a bare "margin" is
+not another hand. Not a transcriber instruction: the transcription prompt is version-pinned
+(`NFR-INGEST-05`) and changing it re-keys every transcript and recording. Limits: a mark the
+transcriber does not write down passes, and a margin comment transcribed as plain text with no
+word about its hand cannot be told from the student's writing — closing that needs the
+transcriber to tag annotations, a later `CLEAN_COPY_CHECK` version.
+
+A revision does not copy the `marked_examples` step row (nor the bands): the child version
+starts its own examples.
 
 `store_calibration_papers` (the `FR-SETUP-15` stored-not-used intake) is left in place for
 its existing callers; the marked-examples step supersedes it.
