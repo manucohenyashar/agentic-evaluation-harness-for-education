@@ -1,0 +1,648 @@
+{
+ "_provenance": "Copied verbatim from the 2026-11-13 live walk (scratchpad/stat-validity-2026-11-13/, not committed): live-A and live-B, the ENG7 sample class graded through OpenRouter. `documents` are each run's canonical `document.markdown` rows; `calls` are every `kind=answer_extraction` record of logs/ai-calls/eng7-class/2026-11-13.jsonl, in log order, with the model's reply text untouched; `criterion_questions` is the run's pinned package `criterion.question_id`. Nothing here is hand-written.",
+ "runs": {
+  "A": {
+   "documents": [
+    {
+     "submission_id": "sub-a541b2284793",
+     "student": "E7-001",
+     "student_ref": "r-4446814817",
+     "markdown": "<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nAssessment: ENG7-READ-01\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nStudent: E7-001\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nAnswer Sheet - Grade 7 English - Reading Response - The Lighthouse Keeper\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nQ1. Who is the main character, and what does he do every evening?\n<!-- /region -->\n<!-- region: kind=transcribed_text question_id=Q1 conf=0.91 state=present is_untrusted_content=1 -->\nThe main character is Tomas, the lighthouse keeper. Every evening he climbs the steps a\nlights the lamp.\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nQ2. Why does Tomas keep the lamp burning even though the big ships no longer come? Use evidence from the passage.\n<!-- /region -->\n<!-- region: kind=transcribed_text question_id=Q2 conf=0.89 state=present is_untrusted_content=1 -->\nSomeone might still need the light. A small fishing boat came out of the dark on a stor\nnight and used the light to find the safe channel, even though the big ships had stoppe\ncoming.\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nQ3. Write two or three sentences about how Tomas changes by the end of the passage.\n<!-- /region -->\n<!-- region: kind=transcribed_text question_id=Q3 conf=0.90 state=present is_untrusted_content=1 -->\nAt first Tomas is not sure the lamp matters because no big ships come. After he helps t\nfisherman he is sure it does, and he climbs the steps a little taller than before.\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nPage 1 of 1\n<!-- /region -->"
+    },
+    {
+     "submission_id": "sub-2b6668137424",
+     "student": "E7-002",
+     "student_ref": "r-1536626794",
+     "markdown": "<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->Assessment: ENG7-READ-01<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->Student: E7-002<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->Answer Sheet - Grade 7 English - Reading Response - The Lighthouse Keeper<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->Q1. Who is the main character, and what does he do every evening?<!-- /region -->\n<!-- region: kind=transcribed_text question_id=Q1 conf=0.99 state=present is_untrusted_content=1 -->Tomas lights the lamp every evening.<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->Q2. Why does Tomas keep the lamp burning even though the big ships no longer come? Use evidence from the passage.<!-- /region -->\n<!-- region: kind=transcribed_text question_id=Q2 conf=0.99 state=present is_untrusted_content=1 -->Because somebody might need it to be safe at night.<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->Q3. Write two or three sentences about how Tomas changes by the end of the passage.<!-- /region -->\n<!-- region: kind=transcribed_text question_id=Q3 conf=0.99 state=present is_untrusted_content=1 -->He was sad at the start and happy at the end.<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->Page 1 of 1<!-- /region -->"
+    },
+    {
+     "submission_id": "sub-72a97339683f",
+     "student": "E7-003",
+     "student_ref": "r-9662521570",
+     "markdown": "<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nAssessment: ENG7-READ-01\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nStudent: E7-003\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nAnswer Sheet - Grade 7 English - Reading Response - The Lighthouse Keeper\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nQ1. Who is the main character, and what does he do every evening?\n<!-- /region -->\n<!-- region: kind=transcribed_text question_id=Q1 conf=0.99 state=present is_untrusted_content=1 -->A man in a lighthouse.<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nQ2. Why does Tomas keep the lamp burning even though the big ships no longer come? Use evidence from the passage.\n<!-- /region -->\n<!-- region: kind=transcribed_text question_id=Q2 conf=0.99 state=present is_untrusted_content=1 -->He lights it every night.<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nQ3. Write two or three sentences about how Tomas changes by the end of the passage.\n<!-- /region -->\n<!-- region: kind=transcribed_text question_id=Q3 conf=0.99 state=present is_untrusted_content=1 -->A boat came and the man shook his hand.<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nPage 1 of 1\n<!-- /region -->"
+    },
+    {
+     "submission_id": "sub-2ffa13872440",
+     "student": "E7-004",
+     "student_ref": "r-1414123724",
+     "markdown": "<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nAssessment: ENG7-READ-01\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nStudent: E7-004\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nAnswer Sheet - Grade 7 English - Reading Response - The Lighthouse Keeper\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nQ1. Who is the main character, and what does he do every evening?\n<!-- /region -->\n<!-- region: kind=transcribed_text question_id=Q1 conf=0.99 state=present is_untrusted_content=1 -->Tomas.<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nQ2. Why does Tomas keep the lamp burning even though the big ships no longer come? Use evidence from the passage.\n<!-- /region -->\n<!-- region: kind=transcribed_text question_id=Q2 conf=0.99 state=blank is_untrusted_content=1 --><!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nQ3. Write two or three sentences about how Tomas changes by the end of the passage.\n<!-- /region -->\n<!-- region: kind=transcribed_text question_id=Q3 conf=0.99 state=blank is_untrusted_content=1 --><!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nPage 1 of 1\n<!-- /region -->"
+    }
+   ],
+   "calls": [
+    {
+     "call_id": "10464180f5c331bb805a35891a1d49b7",
+     "at": "2026-11-13T03:08:38.725+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-2ffa13872440",
+     "criterion_id": "C1b",
+     "outcome": "ok",
+     "response": "{\"spans\": []}"
+    },
+    {
+     "call_id": "e1b1c0c89da6bba0bcc7b0c61295096b",
+     "at": "2026-11-13T03:08:38.810+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-72a97339683f",
+     "criterion_id": "C1a",
+     "outcome": "ok",
+     "response": "{\"spans\":[]}"
+    },
+    {
+     "call_id": "c615af85acdd6cab0f1df33334bd0deb",
+     "at": "2026-11-13T03:08:47.901+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-2b6668137424",
+     "criterion_id": "C1a",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":606,\"end\":641,\"text\":\"Tomas lights the lamp every evening.\"}]}"
+    },
+    {
+     "call_id": "62d22e00730b1084729f39157eda63c7",
+     "at": "2026-11-13T03:08:48.756+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-2b6668137424",
+     "criterion_id": "C1b",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":605,\"end\":641,\"text\":\"Tomas lights the lamp every evening.\"}]}"
+    },
+    {
+     "call_id": "d2133df145bd1b33f340594c81508a0e",
+     "at": "2026-11-13T03:08:50.340+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-2ffa13872440",
+     "criterion_id": "C1a",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":574,\"end\":580,\"text\":\"Tomas.\"}]}"
+    },
+    {
+     "call_id": "e2d60aaf291e9a910693ab43187468e2",
+     "at": "2026-11-13T03:08:53.333+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-a541b2284793",
+     "criterion_id": "C1b",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":407,\"end\":460,\"text\":\"Every evening he climbs the steps a\\n lights the lamp.\"}]}"
+    },
+    {
+     "call_id": "adb16bf30be489047ebf8e4e95cc483e",
+     "at": "2026-11-13T03:08:54.593+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-a541b2284793",
+     "criterion_id": "C1a",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":571,\"end\":598,\"text\":\"The main character is Tomas\"}]}"
+    },
+    {
+     "call_id": "65f0b5c65ace92d0874940d470ab71ed",
+     "at": "2026-11-13T03:09:06.793+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-72a97339683f",
+     "criterion_id": "C1b",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":1056,\"end\":1081,\"text\":\"He lights it every night.\"}]}"
+    },
+    {
+     "call_id": "f8da7f213ff6f99c85e0d4a0a536da10",
+     "at": "2026-11-13T03:09:08.666+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-2ffa13872440",
+     "criterion_id": "C2",
+     "outcome": "ok",
+     "response": "{\"spans\":[]}"
+    },
+    {
+     "call_id": "fcc3ba34d1e5213e6601815aad28ead2",
+     "at": "2026-11-13T03:09:09.634+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-2b6668137424",
+     "criterion_id": "C3",
+     "outcome": "ok",
+     "response": "{\"spans\": []}"
+    },
+    {
+     "call_id": "5202d223dd60af7baafab561ff96f960",
+     "at": "2026-11-13T03:09:09.775+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-2ffa13872440",
+     "criterion_id": "C3",
+     "outcome": "ok",
+     "response": "{\"spans\":[]}"
+    },
+    {
+     "call_id": "63d99b400afaf7194063b4aaec6895bc",
+     "at": "2026-11-13T03:09:18.188+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-72a97339683f",
+     "criterion_id": "C3",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":689,\"end\":728,\"text\":\"A boat came and the man shook his hand.\"}]}"
+    },
+    {
+     "call_id": "6d7678ed3e2dbe3a1bff9d858f4c8356",
+     "at": "2026-11-13T03:09:18.834+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-72a97339683f",
+     "criterion_id": "C2",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":593,\"end\":618,\"text\":\"He lights it every night.\"}]}"
+    },
+    {
+     "call_id": "42ec37c125a274f3662c376e9b1a9152",
+     "at": "2026-11-13T03:09:22.427+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-2b6668137424",
+     "criterion_id": "C2",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":958,\"end\":1009,\"text\":\"Because somebody might need it to be safe at night.\"}]}"
+    },
+    {
+     "call_id": "4e3cb68bc0c2390c585fd767e443fa6e",
+     "at": "2026-11-13T03:09:34.623+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-a541b2284793",
+     "criterion_id": "C3",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":784,\"end\":955,\"text\":\"At first Tomas is not sure the lamp matters because no big ships come. After he helps t\\nfisherman he is sure it does, and he climbs the steps a little taller than before.\"}]}"
+    },
+    {
+     "call_id": "779f9f3439fe81e5f6f1adcd1e4b70ef",
+     "at": "2026-11-13T03:09:36.017+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-a541b2284793",
+     "criterion_id": "C2",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":951,\"end\":1133,\"text\":\"Someone might still need the light. A small fishing boat came out of the dark on a stor\\nnight and used the light to find the safe channel, even though the big ships had stoppe\\ncoming.\"}]}"
+    },
+    {
+     "call_id": "432c5dd6407b50e48b65c16b92461cd6",
+     "at": "2026-11-13T03:09:37.700+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-2ffa13872440",
+     "criterion_id": "C1b",
+     "outcome": "ok",
+     "response": "{\"spans\": []}"
+    },
+    {
+     "call_id": "2555c5e5cba6705963a50c1341c7a88f",
+     "at": "2026-11-13T03:09:37.964+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-72a97339683f",
+     "criterion_id": "C1a",
+     "outcome": "ok",
+     "response": "{\"spans\": []}"
+    },
+    {
+     "call_id": "2b9e55061469175873af70908249b2ff",
+     "at": "2026-11-13T03:09:46.865+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-2ffa13872440",
+     "criterion_id": "C1a",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":316,\"end\":322,\"text\":\"Tomas.\"}]}"
+    },
+    {
+     "call_id": "cb9ee6d129f4a1bc133c753c9ba3ee35",
+     "at": "2026-11-13T03:09:50.362+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-a541b2284793",
+     "criterion_id": "C1a",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":615,\"end\":642,\"text\":\"The main character is Tomas\"}]}"
+    },
+    {
+     "call_id": "33882c182eb290329f7ed436aefc88e2",
+     "at": "2026-11-13T03:09:51.077+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-a541b2284793",
+     "criterion_id": "C1b",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":579,\"end\":631,\"text\":\"Every evening he climbs the steps a\\nlights the lamp.\"}]}"
+    },
+    {
+     "call_id": "58189efd5b65048a8a298d7c5c30c2a6",
+     "at": "2026-11-13T03:09:53.638+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-2b6668137424",
+     "criterion_id": "C1a",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":635,\"end\":671,\"text\":\"Tomas lights the lamp every evening.\"}]}"
+    },
+    {
+     "call_id": "40483b9ef1119c78395376060daf6361",
+     "at": "2026-11-13T03:09:56.322+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-2b6668137424",
+     "criterion_id": "C1b",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":585,\"end\":621,\"text\":\"Tomas lights the lamp every evening.\"}]}"
+    },
+    {
+     "call_id": "fc104ea0676b9d7b1832167a50a63a52",
+     "at": "2026-11-13T03:09:58.016+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-72a97339683f",
+     "criterion_id": "C1b",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":1019,\"end\":1044,\"text\":\"He lights it every night.\"}]}"
+    },
+    {
+     "call_id": "841d34867203575745fc10743aa60be0",
+     "at": "2026-11-13T03:09:59.341+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-2ffa13872440",
+     "criterion_id": "C2",
+     "outcome": "ok",
+     "response": "{\"spans\": []}"
+    },
+    {
+     "call_id": "6356442da512e97029a06059378ec4dd",
+     "at": "2026-11-13T03:10:00.342+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-2ffa13872440",
+     "criterion_id": "C3",
+     "outcome": "ok",
+     "response": "{\"spans\":[]}"
+    },
+    {
+     "call_id": "d60a2f65bb666a28b471d12154c57e59",
+     "at": "2026-11-13T03:10:02.049+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-2b6668137424",
+     "criterion_id": "C3",
+     "outcome": "ok",
+     "response": "{\"spans\": []}"
+    },
+    {
+     "call_id": "aec01a28db274fd7e878b18fb2d0a706",
+     "at": "2026-11-13T03:10:10.808+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-72a97339683f",
+     "criterion_id": "C2",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":801,\"end\":826,\"text\":\"He lights it every night.\"}]}"
+    },
+    {
+     "call_id": "e8a5b97187638eeb726096243fbc864e",
+     "at": "2026-11-13T03:10:11.147+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-2b6668137424",
+     "criterion_id": "C2",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":959,\"end\":1011,\"text\":\"Because somebody might need it to be safe at night.\"}]}"
+    },
+    {
+     "call_id": "7c75ebd1510b02e3c6753314e95d70a8",
+     "at": "2026-11-13T03:10:12.803+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-a541b2284793",
+     "criterion_id": "C2",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":722,\"end\":895,\"text\":\"Someone might still need the light. A small fishing boat came out of the dark on a stor\\nnight and used the light to find the safe channel, even though the big ships had stoppe\\ncoming.\"}]}"
+    },
+    {
+     "call_id": "d2080af4e9a7ad415610f32bab5661ec",
+     "at": "2026-11-13T03:10:20.714+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-72a97339683f",
+     "criterion_id": "C3",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":1240,\"end\":1279,\"text\":\"A boat came and the man shook his hand.\"}]}"
+    },
+    {
+     "call_id": "c619d4bfbea745c55ef7aadb4a0c9d8a",
+     "at": "2026-11-13T03:10:21.179+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-a541b2284793",
+     "criterion_id": "C3",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":1536,\"end\":1705,\"text\":\"At first Tomas is not sure the lamp matters because no big ships come. After he helps t\\nfisherman he is sure it does, and he climbs the steps a little taller than before.\"}]}"
+    }
+   ]
+  },
+  "B": {
+   "documents": [
+    {
+     "submission_id": "sub-f8513123f19b",
+     "student": "E7-001",
+     "student_ref": "r-4446814817",
+     "markdown": "<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nAssessment: ENG7-READ-01\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nStudent: E7-001\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nAnswer Sheet - Grade 7 English - Reading Response - The Lighthouse Keeper\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nQ1. Who is the main character, and what does he do every evening?\n<!-- /region -->\n<!-- region: kind=transcribed_text question_id=Q1 conf=0.91 state=present is_untrusted_content=1 -->\nThe main character is Tomas, the lighthouse keeper. Every evening he climbs the steps a\nlights the lamp.\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nQ2. Why does Tomas keep the lamp burning even though the big ships no longer come? Use evidence from the passage.\n<!-- /region -->\n<!-- region: kind=transcribed_text question_id=Q2 conf=0.88 state=present is_untrusted_content=1 -->\nSomeone might still need the light. A small fishing boat came out of the dark on a stor\nnight and used the light to find the safe channel, even though the big ships had stoppe\ncoming.\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nQ3. Write two or three sentences about how Tomas changes by the end of the passage.\n<!-- /region -->\n<!-- region: kind=transcribed_text question_id=Q3 conf=0.89 state=present is_untrusted_content=1 -->\nAt first Tomas is not sure the lamp matters because no big ships come. After he helps t\nfisherman he is sure it does, and he climbs the steps a little taller than before.\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nPage 1 of 1\n<!-- /region -->"
+    },
+    {
+     "submission_id": "sub-547042d4885c",
+     "student": "E7-002",
+     "student_ref": "r-1536626794",
+     "markdown": "<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nAssessment: ENG7-READ-01\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nStudent: E7-002\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nAnswer Sheet - Grade 7 English - Reading Response - The Lighthouse Keeper\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nQ1. Who is the main character, and what does he do every evening?\n<!-- /region -->\n<!-- region: kind=transcribed_text question_id=Q1 conf=0.99 state=present is_untrusted_content=1 -->\nTomas lights the lamp every evening.\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nQ2. Why does Tomas keep the lamp burning even though the big ships no longer come? Use evidence from the passage.\n<!-- /region -->\n<!-- region: kind=transcribed_text question_id=Q2 conf=0.99 state=present is_untrusted_content=1 -->\nBecause somebody might need it to be safe at night.\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nQ3. Write two or three sentences about how Tomas changes by the end of the passage.\n<!-- /region -->\n<!-- region: kind=transcribed_text question_id=Q3 conf=0.99 state=present is_untrusted_content=1 -->\nHe was sad at the start and happy at the end.\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nPage 1 of 1\n<!-- /region -->"
+    },
+    {
+     "submission_id": "sub-678c2807b329",
+     "student": "E7-003",
+     "student_ref": "r-9662521570",
+     "markdown": "<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nAssessment: ENG7-READ-01\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nStudent: E7-003\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nAnswer Sheet - Grade 7 English - Reading Response - The Lighthouse Keeper\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nQ1. Who is the main character, and what does he do every evening?\n<!-- /region -->\n<!-- region: kind=transcribed_text question_id=Q1 conf=0.98 state=present is_untrusted_content=1 -->\nA man in a lighthouse.\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nQ2. Why does Tomas keep the lamp burning even though the big ships no longer come? Use evidence from the passage.\n<!-- /region -->\n<!-- region: kind=transcribed_text question_id=Q2 conf=0.98 state=present is_untrusted_content=1 -->\nHe lights it every night.\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nQ3. Write two or three sentences about how Tomas changes by the end of the passage.\n<!-- /region -->\n<!-- region: kind=transcribed_text question_id=Q3 conf=0.98 state=present is_untrusted_content=1 -->\nA boat came and the man shook his hand.\n<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->\nPage 1 of 1\n<!-- /region -->"
+    },
+    {
+     "submission_id": "sub-41fb07807cf3",
+     "student": "E7-004",
+     "student_ref": "r-1414123724",
+     "markdown": "<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->Assessment: ENG7-READ-01<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->Student: E7-004<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->Answer Sheet - Grade 7 English - Reading Response - The Lighthouse Keeper<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->Q1. Who is the main character, and what does he do every evening?<!-- /region -->\n<!-- region: kind=transcribed_text question_id=Q1 conf=0.99 state=present is_untrusted_content=1 -->Tomas.<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->Q2. Why does Tomas keep the lamp burning even though the big ships no longer come? Use evidence from the passage.<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->(no answer written)<!-- /region -->\n<!-- region: kind=transcribed_text question_id=Q2 conf=0.99 state=blank is_untrusted_content=1 --><!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->Q3. Write two or three sentences about how Tomas changes by the end of the passage.<!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->(no answer written)<!-- /region -->\n<!-- region: kind=transcribed_text question_id=Q3 conf=0.99 state=blank is_untrusted_content=1 --><!-- /region -->\n<!-- region: kind=transcribed_text conf=0.99 is_untrusted_content=1 -->Page 1 of 1<!-- /region -->"
+    }
+   ],
+   "calls": [
+    {
+     "call_id": "855bcb6222b9be9a87362791d18caca9",
+     "at": "2026-11-13T03:21:20.267+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-678c2807b329",
+     "criterion_id": "C1a",
+     "outcome": "ok",
+     "response": "{\"spans\": []}"
+    },
+    {
+     "call_id": "b0231867d9de07ce7b3581ba8b94f481",
+     "at": "2026-11-13T03:21:20.522+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-41fb07807cf3",
+     "criterion_id": "C1b",
+     "outcome": "ok",
+     "response": "{\"spans\":[]}"
+    },
+    {
+     "call_id": "9b741230ba2d220f1e75b2ad69f2f77b",
+     "at": "2026-11-13T03:21:29.191+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-547042d4885c",
+     "criterion_id": "C1a",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":562,\"end\":598,\"text\":\"Tomas lights the lamp every evening.\"}]}"
+    },
+    {
+     "call_id": "42f6c2d135b5a6f863027b0b268c4401",
+     "at": "2026-11-13T03:21:30.463+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-547042d4885c",
+     "criterion_id": "C1b",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":384,\"end\":420,\"text\":\"Tomas lights the lamp every evening.\"}]}"
+    },
+    {
+     "call_id": "12496b033ee99eecb0cc8ba4d7ab5665",
+     "at": "2026-11-13T03:21:31.740+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-f8513123f19b",
+     "criterion_id": "C1a",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":644,\"end\":671,\"text\":\"The main character is Tomas\"}]}"
+    },
+    {
+     "call_id": "66ea65f999eb24094b9ea33eb2fba746",
+     "at": "2026-11-13T03:21:34.766+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-41fb07807cf3",
+     "criterion_id": "C1a",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":635,\"end\":641,\"text\":\"Tomas.\"}]}"
+    },
+    {
+     "call_id": "92d12c9f5ffed70f3b717eddcbe41e4b",
+     "at": "2026-11-13T03:21:37.859+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-f8513123f19b",
+     "criterion_id": "C1b",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":599,\"end\":651,\"text\":\"Every evening he climbs the steps a\\nlights the lamp.\"}]}"
+    },
+    {
+     "call_id": "8217156ef0f482b3d618fa95992887f6",
+     "at": "2026-11-13T03:21:38.974+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-678c2807b329",
+     "criterion_id": "C1b",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":886,\"end\":911,\"text\":\"He lights it every night.\"}]}"
+    },
+    {
+     "call_id": "d9faa58ffd2fa4be5ccf8882c3119235",
+     "at": "2026-11-13T03:21:40.415+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-41fb07807cf3",
+     "criterion_id": "C3",
+     "outcome": "ok",
+     "response": "{\"spans\":[]}"
+    },
+    {
+     "call_id": "ffae83c516cbcd0381832d41e371a783",
+     "at": "2026-11-13T03:21:40.501+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-41fb07807cf3",
+     "criterion_id": "C2",
+     "outcome": "ok",
+     "response": "{\"spans\":[]}"
+    },
+    {
+     "call_id": "b557b36fffe412ad3daabaeb0f406e8f",
+     "at": "2026-11-13T03:21:46.204+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-547042d4885c",
+     "criterion_id": "C2",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":450,\"end\":501,\"text\":\"Because somebody might need it to be safe at night.\"}]}"
+    },
+    {
+     "call_id": "3aeeffc6fef829875748a876e26cec7a",
+     "at": "2026-11-13T03:21:47.085+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-678c2807b329",
+     "criterion_id": "C2",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":504,\"end\":529,\"text\":\"He lights it every night.\"}]}"
+    },
+    {
+     "call_id": "ab27493b8b0ac7d72b04fc0e769609f7",
+     "at": "2026-11-13T03:21:48.009+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-547042d4885c",
+     "criterion_id": "C3",
+     "outcome": "ok",
+     "response": "{\"spans\": []}"
+    },
+    {
+     "call_id": "6252e8b2a119142af62184eef773c755",
+     "at": "2026-11-13T03:21:56.373+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-f8513123f19b",
+     "criterion_id": "C2",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":649,\"end\":832,\"text\":\"Someone might still need the light. A small fishing boat came out of the dark on a stor\\nnight and used the light to find the safe channel, even though the big ships had stoppe\\ncoming.\"}]}"
+    },
+    {
+     "call_id": "6c7a243f04f097a4975e50279beb464e",
+     "at": "2026-11-13T03:22:03.496+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-678c2807b329",
+     "criterion_id": "C3",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":1303,\"end\":1342,\"text\":\"A boat came and the man shook his hand.\"}]}"
+    },
+    {
+     "call_id": "3eb09888e452aa68ae430540212251aa",
+     "at": "2026-11-13T03:22:19.648+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-f8513123f19b",
+     "criterion_id": "C3",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":1543,\"end\":1712,\"text\":\"At first Tomas is not sure the lamp matters because no big ships come. After he helps t\\nfisherman he is sure it does, and he climbs the steps a little taller than before.\"}]}"
+    },
+    {
+     "call_id": "27b286ce738042870e5607e83c367964",
+     "at": "2026-11-13T03:22:23.131+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-678c2807b329",
+     "criterion_id": "C1a",
+     "outcome": "ok",
+     "response": "{\"spans\": []}"
+    },
+    {
+     "call_id": "f47ccc3137c3b937966cebb4d916f0b2",
+     "at": "2026-11-13T03:22:23.203+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-41fb07807cf3",
+     "criterion_id": "C1b",
+     "outcome": "ok",
+     "response": "{\"spans\": []}"
+    },
+    {
+     "call_id": "db91a96509bc3206093499372b4834c0",
+     "at": "2026-11-13T03:22:30.945+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-41fb07807cf3",
+     "criterion_id": "C1a",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":589,\"end\":595,\"text\":\"Tomas.\"}]}"
+    },
+    {
+     "call_id": "4d9608a9b84daa864a86ff92266c97f5",
+     "at": "2026-11-13T03:22:31.796+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-f8513123f19b",
+     "criterion_id": "C1a",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":572,\"end\":599,\"text\":\"The main character is Tomas\"}]}"
+    },
+    {
+     "call_id": "e628ab1c8c78f9b9bfd32de2d18d5b95",
+     "at": "2026-11-13T03:22:32.737+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-547042d4885c",
+     "criterion_id": "C1b",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":576,\"end\":612,\"text\":\"Tomas lights the lamp every evening.\"}]}"
+    },
+    {
+     "call_id": "c39ae3ed28c412ab444ee0035da22282",
+     "at": "2026-11-13T03:22:34.120+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-f8513123f19b",
+     "criterion_id": "C1b",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":465,\"end\":516,\"text\":\"Every evening he climbs the steps a\\nlights the lamp.\"}]}"
+    },
+    {
+     "call_id": "6af76222ee8707f5ce741b2fe3a22756",
+     "at": "2026-11-13T03:22:36.425+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-547042d4885c",
+     "criterion_id": "C1a",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":643,\"end\":679,\"text\":\"Tomas lights the lamp every evening.\"}]}"
+    },
+    {
+     "call_id": "5153834c0dc536db4f037999625fe884",
+     "at": "2026-11-13T03:22:36.887+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-678c2807b329",
+     "criterion_id": "C1b",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":879,\"end\":904,\"text\":\"He lights it every night.\"}]}"
+    },
+    {
+     "call_id": "3552094eb026316d1fe41f46e5ce46b0",
+     "at": "2026-11-13T03:22:38.154+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-41fb07807cf3",
+     "criterion_id": "C2",
+     "outcome": "ok",
+     "response": "{\"spans\": []}"
+    },
+    {
+     "call_id": "5c358c3c6b323a59bc86307e9f3c7203",
+     "at": "2026-11-13T03:22:38.367+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-41fb07807cf3",
+     "criterion_id": "C3",
+     "outcome": "ok",
+     "response": "{\"spans\": []}"
+    },
+    {
+     "call_id": "5fde6f2e0a881fa2391668362e60aa99",
+     "at": "2026-11-13T03:22:39.404+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-547042d4885c",
+     "criterion_id": "C3",
+     "outcome": "ok",
+     "response": "{\"spans\": []}"
+    },
+    {
+     "call_id": "e7874d31c978c7aa92a8114a76c26fb3",
+     "at": "2026-11-13T03:22:48.489+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-678c2807b329",
+     "criterion_id": "C2",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":713,\"end\":738,\"text\":\"He lights it every night.\"}]}"
+    },
+    {
+     "call_id": "37cf1f6ca76bc4fa5b41527c5040eb40",
+     "at": "2026-11-13T03:22:50.624+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-547042d4885c",
+     "criterion_id": "C2",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":721,\"end\":773,\"text\":\"Because somebody might need it to be safe at night.\"}]}"
+    },
+    {
+     "call_id": "3bb299c819d0c7204de7dc5c1504791b",
+     "at": "2026-11-13T03:22:56.688+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-678c2807b329",
+     "criterion_id": "C3",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":1175,\"end\":1214,\"text\":\"A boat came and the man shook his hand.\"}]}"
+    },
+    {
+     "call_id": "8311c5214e2cc346dcfce4bc956a7c08",
+     "at": "2026-11-13T03:22:56.706+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-f8513123f19b",
+     "criterion_id": "C3",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":1638,\"end\":1808,\"text\":\"At first Tomas is not sure the lamp matters because no big ships come. After he helps t\\nfisherman he is sure it does, and he climbs the steps\\na little taller than before.\"}]}"
+    },
+    {
+     "call_id": "27f8fadb0f18788efd190affdefb40df",
+     "at": "2026-11-13T03:23:04.878+00:00",
+     "model": "openrouter/openai/gpt-6-luna@2026-06-01",
+     "submission_id": "sub-f8513123f19b",
+     "criterion_id": "C2",
+     "outcome": "ok",
+     "response": "{\"spans\":[{\"start\":968,\"end\":1151,\"text\":\"Someone might still need the light. A small fishing boat came out of the dark on a stor\\nnight and used the light to find the safe channel, even though the big ships had stoppe\\ncoming.\\n\"}]}"
+    }
+   ]
+  }
+ },
+ "criterion_questions": {
+  "C1": "Q1",
+  "C1a": "Q1",
+  "C1b": "Q1",
+  "C2": "Q2",
+  "C3": "Q3"
+ }
+}
