@@ -16,6 +16,7 @@ the drawn lines of a draw that is already open (`held_back`).
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from aeh.review import REVIEW_BLIND_N
@@ -129,6 +130,23 @@ def _refused(why: str) -> BlindOutcome:
     return (), why, False, True
 
 
+#: What M-REVIEW's refusals carry that is not teacher text: a requirement id in parentheses,
+#: the run's id, and the code-voice tail after a colon (FR-UI-23).
+_REQUIREMENT_ID = re.compile(r"\s*\((?:FR|NFR|CT)-[A-Z]+-\d+[^)]*\)")
+_RUN_NAMED = re.compile(r"run '[^']*'('s)?")
+_CRITERION_NAMED = re.compile(r"(?:of )?criterion '[^']*'")
+
+
+def _teacher_reason(exc: Exception) -> str:
+    """M-REVIEW's refusal in teacher words: the requirement ids dropped, the run named as
+    "this test run", and only its first clause kept."""
+    text = _REQUIREMENT_ID.sub("", str(exc))
+    text = _RUN_NAMED.sub(lambda m: "this test run" + ("'s" if m.group(1) else ""), text)
+    text = _CRITERION_NAMED.sub("for this question", text)
+    first = text.split(": ", 1)[0].strip().rstrip(".")
+    return (first[:1].upper() + first[1:] + ".") if first else "It was refused."
+
+
 def _service_for(app: Any, params: dict[str, Any]) -> tuple[str, Any]:
     run_id = str(params.get("run_id") or "")
     if not run_id:
@@ -150,7 +168,7 @@ def draft_effect(app: Any, params: dict[str, Any]) -> BlindOutcome:
     try:
         service.draft_blind(run_id, seat_id, band)
     except Exception as exc:  # noqa: BLE001 — M-REVIEW's refusal is the honest outcome
-        return _refused(f"The mark was not saved: {exc}")
+        return _refused(f"The mark was not saved. {_teacher_reason(exc)}")
     return (), f"Saved your mark ({band}). It counts when you finish the sample.", True, False
 
 
@@ -166,7 +184,7 @@ def finish_effect(app: Any, params: dict[str, Any]) -> BlindOutcome:
     try:
         report = service.finish_blind(run_id)
     except Exception as exc:  # noqa: BLE001 — M-REVIEW's refusal is the honest outcome
-        return _refused(f"The sample was not finished: {exc}")
+        return _refused(f"The sample was not finished. {_teacher_reason(exc)}")
     promoted = _promote_after_close(app, run_id, "finish")
     labels = tuple(report.label_ids)
     unmarked = int(report.unmarked_count or 0)
@@ -194,7 +212,7 @@ def skip_effect(app: Any, params: dict[str, Any]) -> BlindOutcome:
     try:
         service.skip_blind_sample(run_id)
     except Exception as exc:  # noqa: BLE001 — M-REVIEW's refusal is the honest outcome
-        return _refused(f"The sample was not skipped: {exc}")
+        return _refused(f"The sample was not skipped. {_teacher_reason(exc)}")
     promoted = _promote_after_close(app, run_id, "skip")
     return (), SKIPPED_REPLY if not promoted else f"{SKIPPED_REPLY} {promoted}", True, False
 

@@ -83,12 +83,15 @@ def drawn_lines(app: Any, run_id: str) -> DrawnLines | None:
         return None
     if service is None or state != DRAW_OPEN:
         return None
-    cells = frozenset((str(item.submission_id), str(item.criterion_id))
-                      for item in service.blind_draw_items(run_id))
+    try:
+        cells = frozenset((str(item.submission_id), str(item.criterion_id))
+                          for item in service.blind_draw_items(run_id))
+        row = app._run_row(run_id)
+    except Exception:  # noqa: BLE001 — an unreadable draw holds nothing back
+        return None
     if not cells:
         return None
     refs: dict[str, str] = {}
-    row = app._run_row(run_id)
     if row is not None:
         try:
             refs = {str(r["student_ref"]): str(r["submission_id"])
@@ -226,6 +229,26 @@ class _Pass:
 _CELL_RECORD_LISTS: tuple[str, ...] = ("shown", "items", "entries")
 
 
+def _is_drawn_record(item: Any, run: DrawnLines | None, draws: dict[str, DrawnLines]) -> bool:
+    """A record about a drawn cell, or about a drawn student's whole paper (a feedback call
+    names the submission and no criterion): the record names its own run, else its list's."""
+    if not isinstance(item, dict):
+        return False
+    named = item.get("run_id")
+    if isinstance(named, str) and named:
+        run = draws.get(named)
+    if run is None:
+        return False
+    submission = item.get("submission_id")
+    if not (isinstance(submission, str) and submission):
+        ref = item.get("student_ref")
+        submission = run.refs.get(ref) if isinstance(ref, str) else None
+    if submission not in run.submissions:
+        return False
+    criterion = item.get("criterion_id")
+    return not criterion or (submission, criterion) in run.cells
+
+
 def _drop_drawn_records(node: Any, pass_: _Pass, run: DrawnLines | None) -> None:
     if isinstance(node, list):
         for child in node:
@@ -238,8 +261,8 @@ def _drop_drawn_records(node: Any, pass_: _Pass, run: DrawnLines | None) -> None
         run = pass_.draws.get(named)
     for key in _CELL_RECORD_LISTS:
         items = node.get(key)
-        if run is not None and isinstance(items, list):
-            kept = [item for item in items if not pass_.is_drawn_cell(item, run, None)]
+        if isinstance(items, list):
+            kept = [item for item in items if not _is_drawn_record(item, run, pass_.draws)]
             pass_.dropped += len(items) - len(kept)
             node[key] = kept
     for child in node.values():
