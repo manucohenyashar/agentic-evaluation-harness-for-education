@@ -24,7 +24,9 @@ and C1a's band set. Nothing is edited.
 
 Isolation: rung 1 on a real store (`tests/support/citation_world.py`), the live document seeded as
 the submission's canonical bytes, the live offered evidence through the real extraction leg, and
-the live reply recorded under the unit's request key.
+the live reply recorded under the unit's request key. Of the two live offered spans, the one on
+C1a's region-header bytes is left out: since #873 (FR-EXTRACT-14) the extraction leg refuses a
+reply carrying it, so only the clean span the reply cites can still be offered.
 """
 
 from __future__ import annotations

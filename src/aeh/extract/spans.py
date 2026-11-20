@@ -111,7 +111,8 @@ def parse_spans(
     REFUSED, not clamped or dropped, unless `0 <= start <= end` and — when the
     document's bytes are given — `end <= len(bytes)` and neither boundary splits a
     UTF-8 code point: a clamp would rewrite the address, a silent drop would let the
-    caller believe the set held. With the bytes, `text` is DERIVED from what the
+    caller believe the set held. (A span that quotes a passage is re-anchored on its
+    words first, below, so it is refused only when that fails too.) With the bytes, `text` is DERIVED from what the
     offsets address — a reply's own text can never disagree with its offsets. Without
     them (the pure-conversion mode the schema assertions drive, no document to
     address) the reply's own `text` is taken and the byte-boundary checks cannot
