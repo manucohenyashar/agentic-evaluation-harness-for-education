@@ -47,6 +47,12 @@ class DomainEffectsMixin:
                 try:
                     self._store.purge_cohort(cohort_id)
                 except Exception as exc:  # noqa: BLE001 — a refusal is the honest outcome
+                    # FR-STORE-22: a graded class whose blind sample is still to close is
+                    # refused with what the teacher does about it, in the teacher's words —
+                    # relayed verbatim, never wrapped in the store's own vocabulary.
+                    next_step = getattr(exc, "next_step", None)
+                    if next_step:
+                        return str(next_step), False
                     # A class that never held a paper or a run has no evidence to promote, so
                     # the purge's precondition can never pass for it: it is removed outright
                     # instead (M-STORE's `discard_empty_cohort`, which refuses anything else).

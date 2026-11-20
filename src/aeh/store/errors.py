@@ -70,7 +70,21 @@ class PurgePreconditionError(StoreError):
     leaves every byte where it was. Not retryable by the caller in the sense that matters:
     the missing promotion is `M-STATS`/`M-REVIEW`'s `promote`, not something a retry of
     `purge_cohort` can produce.
+
+    FR-STORE-22 (#880): `next_step` is what the teacher does about it, in the teacher's words
+    ("Finish or skip the blind sample for <class>, then delete the class."), or None for a class
+    that holds no grading run (there is no blind sample to close). The refusal of a class that
+    holds a run is exactly that sentence. `unmet_gates` names the Tier D gates that were not met
+    and `detail` says so for an operator (both empty for an open draw, which refuses before the
+    gates are read); for a class with no run the message is that detail.
     """
+
+    def __init__(self, message: str, *, next_step: str | None = None,
+                 unmet_gates: tuple[str, ...] = (), detail: str = "") -> None:
+        super().__init__(message)
+        self.next_step = next_step
+        self.unmet_gates = unmet_gates
+        self.detail = detail
 
 
 class DiskFullError(StoreError):

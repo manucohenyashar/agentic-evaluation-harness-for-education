@@ -216,7 +216,9 @@ def test_tc_review_33_a_pre_rule_label_never_lets_a_purge_pass(tmp_data_dir):
             store.purge_cohort(ORCH_COHORT_ID)
     finally:
         store.close()
-    unmet = str(refused.value).split("Unmet gates:", 1)[1].split(". Promotion", 1)[0]
+    # #880 (FR-STORE-22): a graded class's refusal is the teacher's sentence; the unmet gates
+    # ride the error's operator `detail`.
+    unmet = refused.value.detail.split("Unmet gates:", 1)[1].split(". Promotion", 1)[0]
     assert unmet.strip().startswith("labels") and "audit" not in unmet and "statistics" not in unmet, (
         f"the purge must be refused on the labels gate alone: {unmet}")
     with sqlite3.connect(durable) as c:

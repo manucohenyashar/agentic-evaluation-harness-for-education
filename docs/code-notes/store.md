@@ -223,6 +223,20 @@ byte-for-byte as it was. Inspecting Tier D opens it: on a store whose Tier D nev
 existed this creates the empty, migrated file and then refuses — nothing of the
 cohort's is touched either way.
 
+FR-STORE-22 (#880) adds the route a real promotion takes, because what promotion writes
+does not meet those three gates: `audit_record` is append-only and never stamped with a
+cohort, and a skipped administration writes no label and no per-criterion row. So the
+cohort file is read first (a raw read-only connection — opening the tier handle would
+migrate it): an **open blind draw** refuses with exactly *"Finish or skip the blind sample
+for <class>, then delete the class."*; a class whose **every administration** — each
+package version a non-failed run graded under — has its record in Tier D's
+`package_validation` passes (`preconditions_verified = ("every administration recorded",)`),
+unless a run is still grading (`running`/`paused` — the record is keyed on the version, not
+the run), which is refused with *"Let the grading of <class> finish, or stop it, then delete
+the class."*; otherwise the three gates decide. Any refusal of a class that holds a run is exactly the
+teacher's sentence (`PurgePreconditionError.next_step`), with the unmet gates on
+`unmet_gates` and the operator text on `detail`; the console relays the sentence verbatim.
+
 What purge deletes is the **content** of Tiers C and R — every row of every table in
 the cohort file — inside one transaction with foreign keys deferred to the commit,
 followed by a `VACUUM` and a truncate checkpoint. The vacuum is why a sentinel

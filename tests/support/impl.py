@@ -1318,22 +1318,12 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `TS26_EXTRACT_SYMBOLS` (built from `tests/support/extract_vocabulary.py`)
     # resolved when #68 landed `aeh.extract`, and the seven suite files it named lost
     # their markers in the same change. What remains keyed of this suite is the one
-    # case whose blocker #68 did NOT land — TC-EXTRACT-14 below — and the #69
+    # case whose blocker #68 did NOT land — TC-EXTRACT-14 — and the #69
     # second-family entry left with #69.
-    # TC-EXTRACT-14 (`test_extract_pii_purge.py`) is keyed SEPARATELY from the TS-26
-    # suite: #68 made its extraction half runnable (the payload provably carries the
-    # student's verbatim work before the purge), but the purge half calls
-    # `store.purge_cohort`, whose Tier D promotion precondition — `audit_record`,
-    # `label` and `criterion_stats` scoped by `cohort_id`, and `promote` itself — is
-    # M-STATS/M-REVIEW's to land (the shipped gate names them). Keyed on the promote
-    # surface (the vocabulary bet: the store's own error names the operation); the
-    # implementer who lands promotion unmarks the file and reconciles the case's
-    # seeding with the promote API.
-    "#68 TC-EXTRACT-14 purge (waits on M-STATS/M-REVIEW promotion)": (
-        "symbol",
-        f"{STATS_MODULE}:promote_cohort",
-        ("tests/security/extract/test_extract_pii_purge.py",),
-    ),
+    # The "#68 TC-EXTRACT-14 purge" entry stood here, keyed on the never-shipped
+    # `aeh.stats:promote_cohort`. #880 (FR-STORE-22) re-keyed it to the real surface,
+    # `aeh.pipeline:promote_administration` — which ships — so the entry resolved and left
+    # with the file's marker; the case now promotes on Skip before it purges.
     # The "#69 second family (TS-26)" entry stood here: its conjunction over the
     # driver plus `second_family_model` resolved when #69 landed the different-family
     # model and the `ExtractionWorker` seam, and the file runs in TEST_CMD again.

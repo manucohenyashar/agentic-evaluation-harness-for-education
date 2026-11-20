@@ -832,7 +832,7 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.console.controls:248",
     # (#875 re-pin: the blind effect's draft wording moved the quarantine site; same
     # statement.)
-    "aeh.console.effects:824",
+    "aeh.console.effects:830",
     "aeh.console.key_correction:140",
     "aeh.console.driver:120",
     "aeh.console.driver:159",
