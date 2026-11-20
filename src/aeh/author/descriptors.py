@@ -120,16 +120,20 @@ def open_descriptors(spec: Mapping[str, Any]) -> list[tuple[str, str]]:
 
 def mark_missing_descriptors(spec: Mapping[str, Any]) -> list[str]:
     """Put the descriptor placeholder into every judged band with no descriptor, in place;
-    the placeholder ids it wrote, in document order. A band already carrying a placeholder
-    is left as it stands."""
+    the placeholder ids it wrote, in document order. A band already carrying its own
+    placeholder is left as it stands; one whose placeholder names another band or question
+    (the band renamed, the line re-pointed at another question) is re-keyed, so the open
+    question always names the band and question as they now stand."""
     written: list[str] = []
     for criterion, band in judged_bands(spec):
-        descriptor = band.get("descriptor")
-        if is_placeholder(descriptor) or not lacks_descriptor(band):
+        if not lacks_descriptor(band):
             continue
         item_id = descriptor_item_id(str(band.get("name") or ""),
                                      str(criterion.get("question") or ""))
-        band["descriptor"] = f"<<PLACEHOLDER: {item_id}>>"
+        sentinel = f"<<PLACEHOLDER: {item_id}>>"
+        if band.get("descriptor") == sentinel:
+            continue
+        band["descriptor"] = sentinel
         written.append(item_id)
     return written
 
