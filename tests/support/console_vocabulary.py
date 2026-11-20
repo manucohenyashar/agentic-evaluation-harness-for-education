@@ -215,11 +215,28 @@ CORRECTIONS_CONTROL_ACTIONS: dict[str, str] = {
 #: paused at its cost limit (FR-CONSOLE-97, §3.7.7).
 VALIDITY_CONTROL_ACTIONS: dict[str, str] = {
     "resume reading": "FR-CONSOLE-97",
+    # #882 (§3.4.1/§3.4.2): the blind sample's draft, Finish and Skip replace the per-choice
+    # submit.
+    "blind-sample draft": "FR-CONSOLE-83",
+    "blind-sample finish": "FR-CONSOLE-83",
+    "blind-sample skip": "FR-CONSOLE-81",
 }
+
+#: HLD §11.8 actions a later delta retired from the runtime surface, each with the requirement
+#: that replaced it. FR-CONSOLE-83 (#882): "Console actions `blind-sample draft` (seat, band)
+#: and `blind-sample finish` (run) replace the per-choice submit." The HLD's fifteen stay
+#: transcribed as the HLD states them; the runtime surface is the HLD's minus these.
+RETIRED_HLD_CONTROL_ACTIONS: dict[str, str] = {
+    "blind-sample submission": "FR-CONSOLE-83",
+}
+
+#: The HLD's actions the runtime still enumerates.
+CURRENT_HLD_CONTROL_ACTIONS: tuple[str, ...] = tuple(
+    action for action in HLD_CONTROL_ACTIONS if action not in RETIRED_HLD_CONTROL_ACTIONS)
 
 #: The whole enumerated write surface `FR-CONSOLE-32` pins: §11.8's fifteen plus the deltas'.
 CONTROL_SURFACE_ACTIONS: tuple[str, ...] = (
-    HLD_CONTROL_ACTIONS + tuple(DELTA_CONTROL_ACTIONS) + tuple(REDESIGN_CONTROL_ACTIONS)
+    CURRENT_HLD_CONTROL_ACTIONS + tuple(DELTA_CONTROL_ACTIONS) + tuple(REDESIGN_CONTROL_ACTIONS)
     + tuple(CORRECTIONS_CONTROL_ACTIONS) + tuple(VALIDITY_CONTROL_ACTIONS)
 )
 

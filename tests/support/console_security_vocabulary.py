@@ -160,12 +160,30 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
         "label.label_type",
         "label.band",
     ),
-    # #875 (FR-REVIEW-26): a blind choice is a draft until the sample closes.
-    "blind-sample submission": (
+    # #882 (FR-CONSOLE-83, FR-REVIEW-26): a seat's band is a draft until the sample closes;
+    # Finish writes the labels and closes the draw, Skip closes it with none, and each close
+    # is followed by M-PIPE's promotion (FR-PIPE-21).
+    "blind-sample draft": (
         "blind_draft.band",
         "blind_draft.updated_at",
+    ),
+    "blind-sample finish": (
+        "label.label_type",
+        "label.band",
+        "label.actor",
         "blind_draw.state",
-        "blind_draw_seat.seat_no",
+        "blind_draw.closed_at",
+        "blind_draw.labels_written",
+        "blind_draw.unmarked_count",
+        "package_validation.cohort_id",
+        "audit_record.actor",
+    ),
+    "blind-sample skip": (
+        "blind_draw.state",
+        "blind_draw.closed_at",
+        "blind_draw.absence_reason",
+        "package_validation.cohort_id",
+        "audit_record.actor",
     ),
     "correct an answer key after a run": ("criterion.answer_key",),
     "finalize batch": ("submission_grade.finalized_at", "audit_record.actor"),

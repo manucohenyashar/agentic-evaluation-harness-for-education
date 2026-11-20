@@ -264,6 +264,14 @@ class ControlActionsMixin:
         # The class vocabulary's three actions (`ADR-48`, #761): their effects carry a
         # refusal's next action alongside the detail, which the generic domain-effect
         # path below does not.
+        # The blind sample's three actions (#882, FR-CONSOLE-81/83): Finish reports the
+        # labels it wrote as its rows (FR-CONSOLE-89, SV-15), and a refusal rides
+        # `refused=True` — neither of which the generic domain-effect path below carries.
+        if action in ("blind-sample draft", "blind-sample finish", "blind-sample skip"):
+            from .blind_actions import BLIND_ACTION_EFFECTS
+
+            written, detail, dispatched, refused = BLIND_ACTION_EFFECTS[action](self, params)
+            return written, detail, dispatched, refused, None
         if action in ("create class", "create cohort from class", "import roster file"):
             from .class_actions import CLASS_ACTION_EFFECTS
 

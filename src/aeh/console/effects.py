@@ -169,8 +169,6 @@ class DomainEffectsMixin:
             return self._amend_effect(params)
         if action == "review action":
             return self._review_effect(params)
-        if action == "blind-sample submission":
-            return self._blind_effect(params)
         if action == "start run":
             return self._start_run_effect(params)
         if action == "publish package":
@@ -415,48 +413,6 @@ class DomainEffectsMixin:
             True,
         )
 
-    def _blind_effect(self, params: dict[str, Any]) -> tuple[str, bool]:
-        run_id = str(params.get("run_id") or "")
-        submission_id = str(params.get("submission_id") or params.get("submission_ref") or "")
-        criterion_id = str(params.get("criterion_id") or "")
-        band = params.get("band", params.get("new_band"))
-        if not run_id or not submission_id or not criterion_id or not band:
-            return (
-                "blind-sample submission names no run, submission, criterion or band; "
-                "nothing was written",
-                False,
-            )
-        service = self._review_service(run_id)
-        if service is None:
-            return f"M-REVIEW cannot open run {run_id!r}; nothing was written", False
-        try:
-            # The run's stored draw (#875): the same seats on every request, so the seat the
-            # teacher marked is the seat the mark lands on.
-            session = service.blind_sample(run_id)
-            drawn = [ref for ref in session.items
-                     if ref.submission_id == submission_id and ref.criterion_id == criterion_id]
-            if not drawn:
-                return (
-                    f"{submission_id}/{criterion_id} is not in run {run_id}'s blind draw; "
-                    "a band for a criterion the flow never posed is a judgement nobody "
-                    "made — nothing was written",
-                    False,
-                )
-            # A choice is a draft (FR-REVIEW-26): it becomes a blind label when the sample is
-            # finished or its review window ends, never at the click (SV-18).
-            service.draft_blind(run_id, drawn[0], str(band))
-        except Exception as exc:  # noqa: BLE001 — a refusal is the honest outcome
-            return (
-                f"M-REVIEW refused the blind mark for {submission_id}/{criterion_id}: "
-                f"{exc} — nothing was written",
-                False,
-            )
-        return (
-            f"blind mark for {submission_id}/{criterion_id} saved as a draft through "
-            "M-REVIEW; it is recorded when the sample is finished",
-            True,
-        )
-
     def _start_run_effect(self, params: dict[str, Any]) -> tuple[str, bool]:
         from aeh.pipeline import start_run_in_background
 
@@ -511,9 +467,13 @@ class DomainEffectsMixin:
         except Exception as exc:  # noqa: BLE001 — a refusal is the honest outcome
             return f"M-ORCH refused to start the run: {exc} — nothing was started", False
         self._run_threads[started] = thread
+        from .blind_actions import run_start_sample_sentence
+
+        # FR-CONSOLE-82 (#882): the run-start outcome states the coming blind sample.
         return (
             f"run {started} started on a server-owned worker thread; it continues if the "
-            "browser closes, and `aeh recover` resumes it after a restart",
+            "browser closes, and `aeh recover` resumes it after a restart. "
+            + run_start_sample_sentence(),
             True,
         )
 

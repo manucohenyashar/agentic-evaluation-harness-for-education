@@ -79,7 +79,6 @@ def _review_three_c2_cells(served) -> None:
         served.dispatched("review action", **params)
 
 
-@pytest.mark.writtenahead
 def test_tc_review_100_every_console_label_carries_its_real_identity(
         tmp_path, monkeypatch, network_guard):
     """TC-REVIEW-100 (FR-REVIEW-25, CT-REVIEW-26; RSV-06). The run is complete. Then
@@ -106,7 +105,6 @@ def test_tc_review_100_every_console_label_carries_its_real_identity(
         assert_agreement_scope_is_accepted(served, "C1", blind_count=3)
 
 
-@pytest.mark.writtenahead
 def test_tc_review_107_a_the_consoles_blind_finish_writes_the_teachers_labels(
         tmp_path, monkeypatch, network_guard):
     """TC-REVIEW-107 (a) (FR-REVIEW-28). A label written by the console's `blind-sample

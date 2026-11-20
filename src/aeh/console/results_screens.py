@@ -23,6 +23,7 @@ from .provenance import (
 )
 from .surfaces import render_agreement_block
 from .grade_rendering import _boundary_text, _coverage_text, _grade_line, _label_value
+from .held_back import HELD_BACK_SENTENCE
 
 
 class ResultsScreensMixin:
@@ -42,8 +43,22 @@ class ResultsScreensMixin:
         # "could cross" language, all from the same presentation `render_grade_coverage`
         # renders per submission, so the screen and the renderer cannot drift apart.
         segments = ""
+        # FR-CONSOLE-89 r2 (D6, #882): while the blind draw is open, a student with a drawn
+        # line shows no grade, total or range — total minus the visible lines would give the
+        # drawn line away.
+        from .held_back import drawn_lines
+
+        drawn = drawn_lines(self, run_id)
+        held = drawn.submissions if drawn is not None else frozenset()
         for row in grades:
             sid = str(_row_get(row, "submission_id"))
+            if sid in held:
+                segments += (
+                    '<div data-role="grade" data-hidden-until-blind="true">'
+                    f"<p>{escape(sid)}: {escape(HELD_BACK_SENTENCE)}</p>"
+                    "</div>"
+                )
+                continue
             boundary = _boundary_text(row)
             segments += (
                 '<div data-role="grade">'
@@ -248,6 +263,12 @@ class ResultsScreensMixin:
         # Invariant 16 (`FR-CONSOLE-20`): the scores render beside an editable band
         # control per criterion — the student view is a grade view, so it changes grades.
         score_lines = ""
+        # FR-CONSOLE-89 (#882): a drawn line's feedback is held back while the draw is open.
+        from .held_back import drawn_cells_of_submission
+
+        drawn_here = drawn_cells_of_submission(self, ref)
+        if drawn_here:
+            narrative = [f'<p class="withheld">{escape(HELD_BACK_SENTENCE)}</p>']
         for row in scores:
             criterion = str(_row_get(row, "criterion_id"))
             score_lines += (

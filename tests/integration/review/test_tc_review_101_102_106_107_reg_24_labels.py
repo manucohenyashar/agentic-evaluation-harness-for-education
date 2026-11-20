@@ -13,9 +13,9 @@ draw).
 
 **Disclosed departures (in the PR as well).**
 
-1. *The Finish stand-in.* The console's `blind-sample finish` action is S12's (#882) and has
-   not landed. These cases draft over HTTP through the shipped `blind-sample submission`
-   action, then close the draw through the console's own review service
+1. *The Finish stand-in.* These cases draft over HTTP through the console's
+   `blind-sample draft` action (re-based at S12, #882, from the retired per-choice
+   `blind-sample submission`), then close the draw through the console's own review service
    (`label_identity_world.ServedRun.finish_through_the_consoles_service`). That is the same
    service, actor and scope. TC-REVIEW-100 and TC-REVIEW-107 (a), which drive Finish over
    HTTP, are written ahead in `test_tc_review_100_107_console_blind_finish.py`.
@@ -55,15 +55,21 @@ pytestmark = pytest.mark.integration
 
 
 def _draft_blind(served, cells_and_bands) -> None:
-    """Draw (the console's blind-seats read draws once), then draft each cell over HTTP."""
+    """Draw (the console's blind-seats read draws once), then draft each cell over HTTP.
+
+    Re-based at S12 (#882): the per-choice `blind-sample submission` is gone, and a seat
+    carries no submission id (FR-CONSOLE-83's allowlist). The draft names its seat, so the
+    seat for a cell is read from the draw's own membership table (`seat-<seat_no>`)."""
     status, read = served.get("/api/v1/blind-seats", run_id=served.run_id)
     assert status == 200, f"the blind-seats read answered {status}: {read!r}"
-    drawn = {(seat["submission_id"], seat["criterion_id"]) for seat in read["seats"]}
-    for (submission_id, criterion_id), band in cells_and_bands:
-        assert (submission_id, criterion_id) in drawn, (
-            f"fixture: {submission_id}/{criterion_id} is not in the draw {sorted(drawn)}")
-        served.dispatched("blind-sample submission", run_id=served.run_id,
-                          submission_id=submission_id, criterion_id=criterion_id, band=band)
+    seat_of = {(row["submission_id"], row["criterion_id"]): f"seat-{row['seat_no']}"
+               for row in served.rows("SELECT seat_no, submission_id, criterion_id FROM "
+                                      "blind_draw_seat WHERE run_id = ?", served.run_id)}
+    assert {seat["seat_id"] for seat in read["seats"]} == set(seat_of.values()), read
+    for cell, band in cells_and_bands:
+        assert cell in seat_of, f"fixture: {cell} is not in the draw {sorted(seat_of)}"
+        served.dispatched("blind-sample draft", run_id=served.run_id, seat_id=seat_of[cell],
+                          band=band)
 
 
 def _review(served, cell, decision: str, band: str | None = None) -> dict:

@@ -3,80 +3,123 @@ import { FormatLine, useFieldIds } from "../components/Field";
 import { useReportedAction } from "../components/Outcome";
 import { ReadScreen } from "../components/ReadScreen";
 import { useScreenRead } from "../useScreenRead";
-import { studentName } from "../studentNames";
 import { useRunParams } from "../selection";
 import { FORMAT_CHOOSE_ONE } from "../wizard/vocabulary";
 
 /**
- * The blind sample's screen: M-REVIEW's draw for the run, each seat named only by what the
- * flow posed — submission, criterion, evaluation mode — beside that grading point's own
- * declared levels (the generic scale only when the package cannot be read). No
- * system output is carried or shown: no band value, no engine marker, and every select
- * starts unselected (a band must come from the teacher, not from the page). A chosen band
- * posts the enumerated "blind-sample submission" control; the outcome shows in the shell's
- * banner, a refusal as refused.
+ * The blind sample's screen (FR-CONSOLE-83): M-REVIEW's seats for the run, each with the
+ * student's answer and the question's levels with their descriptions — nothing the system
+ * decided about the answer. Choosing a level saves a draft ("blind-sample draft"); nothing
+ * counts until **Finish** ("blind-sample finish"). **Skip** ("blind-sample skip") closes the
+ * sample with no marks. Every choice starts unselected unless the teacher drafted one.
  */
 export function BlindSample() {
   const read = useScreenRead<BlindSeatsDoc>("/api/v1/blind-seats", useRunParams());
+  const { busy, run } = useReportedAction();
   return (
     <ReadScreen title="Blind sample" read={read}>
-      {(data) => (
-        <>
-          <p className="hub-state">
-            {data.seats.length === 0
-              ? "The draw holds no seat for this run."
-              : `${data.seats.length} seat(s) in the draw. Choose the band you judge for each.`}
-          </p>
-          <ul className="rows-list">
-            {data.seats.map((seat) => (
-              <SeatRow
-                key={`${seat.submission_id}-${seat.criterion_id}`}
-                seat={seat}
-                runId={data.run_id}
-                scale={seat.band_scale ?? data.band_scale}
-              />
-            ))}
-          </ul>
-        </>
-      )}
+      {(data) => {
+        const open = data.state === "open";
+        const { marked, total } = data.progress;
+        return (
+          <>
+            <p className="hub-state">
+              {total === 0
+                ? "There are no answers to mark in this sample."
+                : open
+                  ? `${marked} of ${total} marked. Choose the level you would give each answer; your marks count when you finish.`
+                  : "This sample is closed: it was finished, skipped or its time ran out."}
+            </p>
+            {open && total > 0 && (
+              <p>
+                <button
+                  type="button"
+                  disabled={busy || marked === 0}
+                  onClick={() => {
+                    const unmarked = total - marked;
+                    if (
+                      unmarked > 0 &&
+                      !window.confirm(
+                        `Finish with ${unmarked} answers unmarked? Only the ones you marked will count.`,
+                      )
+                    ) {
+                      return;
+                    }
+                    void run("blind-sample finish", { run_id: data.run_id }, { onDone: read.retry });
+                  }}
+                >
+                  Finish
+                </button>{" "}
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    void run("blind-sample skip", { run_id: data.run_id }, { onDone: read.retry });
+                  }}
+                >
+                  Skip the sample
+                </button>
+              </p>
+            )}
+            <ul className="rows-list">
+              {data.seats.map((seat) => (
+                <SeatRow
+                  key={seat.seat_id}
+                  seat={seat}
+                  runId={data.run_id}
+                  open={open}
+                  onSaved={read.retry}
+                />
+              ))}
+            </ul>
+          </>
+        );
+      }}
     </ReadScreen>
   );
 }
 
-/** One seat: who and what it is, and the teacher's own band for it. */
-function SeatRow({ seat, runId, scale }: { seat: BlindSeat; runId: string; scale: string[] }) {
+/** One seat: whose answer and which question, the answer itself, and the teacher's level. */
+function SeatRow({
+  seat,
+  runId,
+  open,
+  onSaved,
+}: {
+  seat: BlindSeat;
+  runId: string;
+  open: boolean;
+  onSaved: () => void;
+}) {
   const { busy, run } = useReportedAction();
   const ids = useFieldIds();
-  const point = seat.label ?? seat.criterion_id;
   return (
     <li>
-      <span className="step-name">{studentName(seat)}</span>
-      <span className="step-note">{point}</span>
-      {seat.evaluation_mode !== "" && <span className="step-state">{seat.evaluation_mode}</span>}
-      <label htmlFor={ids.id}>Your score level</label>
+      <span className="step-name">{seat.student_name ?? "A student"}</span>
+      <span className="step-note">{seat.question}</span>
+      <p className="step-note">{seat.answer_text ?? "No answer text could be read for this question."}</p>
+      <label htmlFor={ids.id}>Your level</label>
       <select
         {...ids.control}
-        name={`seat-band-${seat.criterion_id}`}
-        defaultValue=""
-        disabled={busy}
+        name={`seat-band-${seat.seat_id}`}
+        defaultValue={seat.draft_band ?? ""}
+        disabled={busy || !open}
         aria-busy={busy || undefined}
         onChange={(event) => {
           if (event.target.value === "") {
             return;
           }
-          void run("blind-sample submission", {
-            run_id: runId,
-            submission_id: seat.submission_id,
-            criterion_id: seat.criterion_id,
-            band: event.target.value,
-            actor: "operator",
-          });
+          void run(
+            "blind-sample draft",
+            { run_id: runId, seat_id: seat.seat_id, band: event.target.value },
+            { onDone: onSaved },
+          );
         }}
       >
         <option value="">—</option>
-        {scale.map((band) => (
-          <option key={band} value={band}>
-            {band}
+        {seat.bands.map((band) => (
+          <option key={band.name} value={band.name}>
+            {band.descriptor ? `${band.name}: ${band.descriptor}` : band.name}
           </option>
         ))}
       </select>

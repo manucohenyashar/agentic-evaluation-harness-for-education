@@ -831,8 +831,9 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # statement. Re-read from the walker, never hand-unioned.)
     "aeh.console.controls:248",
     # (#875 re-pin: the blind effect's draft wording moved the quarantine site; same
-    # statement.)
-    "aeh.console.effects:830",
+    # statement. #882 re-pin: the blind effect moved to `blind_actions`, moving it up
+    # again; same statement.)
+    "aeh.console.effects:790",
     "aeh.console.key_correction:140",
     "aeh.console.driver:120",
     "aeh.console.driver:159",
