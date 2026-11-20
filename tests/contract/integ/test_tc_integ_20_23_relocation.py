@@ -19,10 +19,10 @@ Source: `docs/design/statistical_validity_test_plan.md` §3.2, story T1. Surface
 follows the design: the reply is refused and no verdict row exists. The plan's "verdict stored
 uncited" wording is the error.
 
-**Not here: the extractor half of TC-INTEG-23's spy.** M-EXTRACT does not call `relocate_span`
-until FR-EXTRACT-14 lands (#873). A spy asserting "every call from the extractor passes a region"
-would pass on zero calls, so it is left to TC-EXTRACT-20 (#895), which covers
-M-EXTRACT→CT-INTEG-19 once #873 lands.
+**Not here: the extractor half of TC-INTEG-23's spy.** It lives with TC-EXTRACT-20 (#895), which
+covers M-EXTRACT→CT-INTEG-19: `tests/contract/extract/test_tc_extract_19_20_spans_on_answer_text.py`
+(`test_tc_integ_23_every_extractor_relocation_is_scoped_to_the_units_question` and its
+sensitivity arm).
 
 Isolation: rung 0 for TC-INTEG-20/21/22 (pure functions over bytes; the citation-gate rows read
 the document through a patched `_canonical_document_bytes`, the TC-REG-11 precedent). TC-INTEG-23's
