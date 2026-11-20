@@ -388,7 +388,7 @@ So use `dev-ci`. The two files are almost the same; the differences are in the t
 
 ### 7.3 The configuration files
 
-**`dev-ci`** (the shipped file for the first live test is [`docs/live-tests/config/live-test.dev-ci.toml`](../live-tests/config/live-test.dev-ci.toml); it is accepted by the checker, checked):
+**`dev-ci`** (two files ship for the live tests, both accepted by the checker, checked. [`docs/live-tests/config/live-test.dev-ci.toml`](../live-tests/config/live-test.dev-ci.toml) is the smoke profile: one judge, so it cannot show agreement. [`docs/live-tests/config/live-test.panel.toml`](../live-tests/config/live-test.panel.toml) is the one that can: three judges from three model families, three escalation judges, and the random extra-grader sample at 0.07. The smallest form of the file is):
 
 ```toml
 HARNESS_PROFILE = "dev-ci"
@@ -438,8 +438,8 @@ What each part means, and the rules (all checked unless said):
 * **`HARNESS_COST_CEILING`** is required for both profiles. **It counts estimates, not the bill.** Each model call is counted at the system's fixed price sheet before it is sent: about $0.007 a call with the default settings, while the real calls in 7.6 cost about $0.0001. So a ceiling of `5` stops a run after roughly 700 model calls, whatever OpenRouter actually charges; raise it if a run pauses on the ceiling, and keep OpenRouter's own spending limit (7.2) as the real stop. Without it: *"HARNESS_COST_CEILING is required for backend_profile 'cloud-hosted'"*. It must be a whole or decimal number, not negative. `5` is plenty for ten sample answer sheets. The environment can override it.
 * **`retention_setting`** is required for `cloud-hosted` only. It must be `provider-default` or `zero-retention`. It *records* your choice. It does **not** make the privacy check pass (see 7.6). Leaving it out is refused: *"retention_setting is required for backend_profile 'cloud-hosted'"*.
 * **Model names** are written `openrouter/<vendor>/<model>@<pin>`. The three parts mean different things and come from different places — the table under this list explains each one and how to obtain it. The `@...` part is required, and a moving tag such as `@latest` is refused. Do **not** give these a `quantization` line (the provider owns it).
-* **Do the models exist?** Yes, for the two names in the shipped files: both answered real calls on 2026-10-03 (checked). How to confirm any model yourself is in the table below.
-* **Judges:** one judge is the smallest test, but with one judge nobody can disagree, so the system cannot show agreement figures. For a real accuracy test, use **three** judges from different model families (add two more `[[profiles....panel]]` blocks). An even number such as two is refused: *"panel must hold [1, 3, 5] judges, got 2"*.
+* **Do the models exist?** Yes, for the two names in the example above: both answered real calls on 2026-10-03 (checked). The judges in `live-test.panel.toml` were listed on openrouter.ai, each with a zero-retention host, on 2026-11-19; apart from `qwen3-30b-a3b`, they have not yet answered a real call from this system. How to confirm any model yourself is in the table below.
+* **Judges:** one judge is the smallest test, but with one judge nobody can disagree, so the system cannot show agreement figures. For a real accuracy test, use **three** judges from different model families (add two more `[[profiles....panel]]` blocks), or start from `live-test.panel.toml`, which already has them. An even number such as two is refused: *"panel must hold [1, 3, 5] judges, got 2"*.
 * **`HARNESS_CONCURRENCY`** sets how many calls run at once. The default is 8. Here it *sets* the number (it does not just lower it): `20` is accepted. OpenRouter's own rate limits may refuse a high number.
 
 **The model string, part by part.** A model name such as `openrouter/qwen/qwen3-30b-a3b@2026-06-01` is three parts glued together, each with its own meaning and its own source:

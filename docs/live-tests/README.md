@@ -26,7 +26,7 @@ Windows PowerShell, from the project folder (the one that contains `pyproject.to
    ```
    The last line should list `run, recover, console, cohort, package, author, ingest, results`.
 2. **Get an OpenRouter key** at openrouter.ai, and **set a spending limit in OpenRouter's dashboard** (for example $5). That limit is the real stop: the system's own ceiling only checks an estimate.
-3. **Look at the models** in [`config/live-test.dev-ci.toml`](config/live-test.dev-ci.toml). It ships with one page-reading model and one judge, both of which answered real zero-retention calls on 2026-10-03. If you change them, check the new ones on openrouter.ai/models first. Every line of that file is explained in its comments.
+3. **Look at the models** in [`config/live-test.dev-ci.toml`](config/live-test.dev-ci.toml). It ships with one page-reading model and one judge, both of which answered real zero-retention calls on 2026-10-03. If you change them, check the new ones on openrouter.ai/models first. Every line of that file is explained in its comments. That file is a **smoke profile**: with one judge nobody can disagree, so it cannot show agreement. When the test should say how far the system's marks agree with the teacher's, use [`config/live-test.panel.toml`](config/live-test.panel.toml) instead: three judges from three model families, three escalation judges and the random extra-grader sample on (`$CFG` in Step 0 is the line to change).
 
 ### Step 0: open a terminal and set it up (every new window)
 
@@ -175,7 +175,8 @@ answered: the run stopped before dispatching to it). The full list is in
 
 | Path | What it is |
 |---|---|
-| [`config/live-test.dev-ci.toml`](config/live-test.dev-ci.toml) | The configuration for the test, with every line explained: the `dev-ci` profile, the page-reading model, the judge, the cost ceiling, the Jev decision engine. |
+| [`config/live-test.dev-ci.toml`](config/live-test.dev-ci.toml) | The configuration for the test, with every line explained: the `dev-ci` profile, the page-reading model, the judge, the cost ceiling, the Jev decision engine. A smoke profile: one judge, so it cannot show agreement. |
+| [`config/live-test.panel.toml`](config/live-test.panel.toml) | The same `dev-ci` profile with a panel that can show agreement: three judges from three model families, three escalation judges, and the random extra-grader sample at 0.07 (its comment says how to raise it for a small class). |
 | [`config/ps9-forces-01.package.toml`](config/ps9-forces-01.package.toml), [`config/eng7-read-01.package.toml`](config/eng7-read-01.package.toml) | The two package specs `aeh package build` publishes. Physics: multiple-choice keys and band lines. English: one line of each scoring method — evidence checklist (`evidence_sum`), `bands`, and the teacher's own words (`general`). Build both to grade every rubric type. |
 | [`config/ps9-roster.txt`](config/ps9-roster.txt), [`config/eng7-roster.txt`](config/eng7-roster.txt) | The two class lists for `aeh cohort create --roster` |
 | [`sample-materials/pdf/`](sample-materials/pdf/) | The sample PDFs (18 files): tests, model answers, rubrics, blank answer sheets, finished answer sheets |
