@@ -84,7 +84,8 @@ def _number(value: Any) -> int | float | None:
 def _levels(bands: Any) -> list[dict[str, Any]]:
     return [
         {"name": str(band.get("name") or ""), "points": band.get("points"),
-         "descriptor": str(band.get("descriptor") or "")}
+         "descriptor": "" if _contains_sentinel(band.get("descriptor"))
+         else str(band.get("descriptor") or "")}
         for band in bands if isinstance(band, Mapping)
     ]
 
@@ -100,7 +101,20 @@ def _rubric_line(criterion: Mapping[str, Any], qid: str, pieces: _Pieces) -> dic
         line["correct_option"] = pieces.value(criterion.get("key"), "key", f"key {qid}")
     elif "bands" in criterion:
         bands = criterion.get("bands")
-        levels = pieces.value(bands, f"criterion {qid}", f"bands {qid}")
+        if isinstance(bands, list) and not _is_sentinel(bands):
+            # A level's open descriptor question (FR-AUTHOR-33) is one unanswered piece
+            # each; the levels themselves — names and points — still show.
+            pieces.unanswered += sum(
+                1 for band in bands
+                if isinstance(band, Mapping) and _is_sentinel(band.get("descriptor")))
+            bands_seen: Any = [
+                {key: value for key, value in band.items()
+                 if not (key == "descriptor" and _is_sentinel(value))}
+                if isinstance(band, Mapping) else band
+                for band in bands]
+        else:
+            bands_seen = bands
+        levels = pieces.value(bands_seen, f"criterion {qid}", f"bands {qid}")
         if levels["answered"]:
             levels["value"] = _levels(bands)
         line["levels"] = levels

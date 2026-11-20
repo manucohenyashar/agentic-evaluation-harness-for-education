@@ -23,6 +23,8 @@ from __future__ import annotations
 from aeh.conf import ConfigurationError, ModelRef  # re-exports the chain vocabulary
 from aeh.prov import InferenceProvider
 
+from .descriptors import AUTHOR_EVALUATIVE_TERMS, descriptor_note, \
+    descriptor_item_id, is_placeholder, open_descriptors
 from .errors import AuthoringCancelled, AuthoringInputError, DocumentRefusedError, \
     OverwriteRefusedError
 from .edit import EDIT_OPERATIONS, EditChange, EditOutcome, apply_structured_edit, \
@@ -45,6 +47,7 @@ from .settings import (
     DEFAULT_TIMEOUT_S,
     DEFAULT_TRANSCRIBE,
     DOC_MAX_BYTES_ENV,
+    EVALUATIVE_TERMS_ENV,
     TIMEOUT_ENV,
     TRANSCRIBE_ENV,
     AuthoringSettings,
@@ -147,6 +150,14 @@ __all__ = [
     "gap_question",
     "check_gap_answer",
     "missing_points",
+    # every judged band says what earns it (FR-AUTHOR-33/34): the approval gate's list of
+    # bands still lacking a descriptor, and the review screen's descriptor lint
+    "AUTHOR_EVALUATIVE_TERMS",
+    "EVALUATIVE_TERMS_ENV",
+    "descriptor_note",
+    "is_placeholder",
+    "open_descriptors",
+    "descriptor_item_id",
     # the package-id slug rule (FR-AUTHOR-29): the from-scratch start names a draft with
     # the same rule the fallback id uses, re-exported so the console drives it through
     # this one surface

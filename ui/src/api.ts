@@ -951,7 +951,14 @@ export interface DraftCriterion {
   points: number | null;
   score_method: string | null;
   component_of: string | null;
-  score_levels: Array<{ name: string; points: number | null; descriptor: string }>;
+  /** `note`: the descriptor lint's advice (FR-AUTHOR-34), for a level whose descriptor
+   * says how good the answer is rather than what it does. Advice, never a refusal. */
+  score_levels: Array<{
+    name: string;
+    points: number | null;
+    descriptor: string;
+    note?: string | null;
+  }>;
   key?: string | string[] | null;
 }
 

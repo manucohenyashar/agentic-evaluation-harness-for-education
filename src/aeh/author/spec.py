@@ -22,7 +22,9 @@ from typing import Any
 # that would change is the comment in `validation._plan_issues`).
 from aeh.pipeline.spec_export import _assign, _toml_key, _toml_str
 
-from .questions import gap_question, lowest_grade
+from .descriptors import descriptor_gap_reason, descriptor_gap_supply, \
+    mark_missing_descriptors, parse_descriptor_item_id
+from .questions import gap_question, lowest_grade, question_label
 from .rubric import aspect_present_points
 
 #: The sentinel the draft carries for a field it could not determine (`FR-AUTHOR-11`):
@@ -286,6 +288,15 @@ def _criterion_blocks(assembly: Assembly, criteria: list[dict[str, Any]],
             line["score_method"] = "general"
             line["derivation_description"] = derivation
         criteria.append(line)
+        # A band the teacher named without saying what earns it becomes an open question,
+        # never an invented descriptor (FR-AUTHOR-33): its placeholder stands in the band.
+        for item_id in mark_missing_descriptors({"criterion": [line]}):
+            band, _qid = parse_descriptor_item_id(item_id, {}, qid)
+            gap = Gap(item_id=item_id, reason=descriptor_gap_reason(),
+                      supply=descriptor_gap_supply(band, question_label(qid)),
+                      in_draft=True)
+            assembly.gaps.append(gap)
+            _attribute(assembly, qid, gap)
         return
     if aspects:
         points = question.get("points")
@@ -403,8 +414,7 @@ def render_draft(assembly: Assembly) -> str:
         lines.append("[[criterion]]")
         for key, value in block.items():
             if key == "bands" and isinstance(value, list):
-                lines.append("bands = [" + ", ".join(_band_entry(band) for band in value)
-                             + "]")
+                lines.extend(_bands_lines(assembly, block.get("question"), value))
             else:
                 lines.extend(comment(block.get("question"), value))
                 lines.append(_assign(key, value))
@@ -475,6 +485,32 @@ def _band_points(band: Any) -> Any:
     if "points" not in band:
         raise KeyError("points")
     return band.get("points")
+
+
+def _bands_lines(assembly: Assembly, qid: Any, bands: list[Any]) -> list[str]:
+    """A judged line's bands: one inline line, as ever — or, while any band's descriptor is
+    still a placeholder (FR-AUTHOR-33), one band per line, each placeholder band with its
+    own `# PLACEHOLDER(reason): supply` comment directly above it, so the review walk, the
+    edit round-trip and the build's refusal each read the comment that belongs to it."""
+    if not any(isinstance(band, dict) and _is_sentinel(band.get("descriptor"))
+               for band in bands):
+        return ["bands = [" + ", ".join(_band_entry(band) for band in bands) + "]"]
+    lines = ["bands = ["]
+    for band in bands:
+        descriptor = band.get("descriptor") if isinstance(band, dict) else None
+        if _is_sentinel(descriptor):
+            owner = str(qid) if qid is not None else None
+            gap = _gap_for(assembly, owner, descriptor)
+            if gap is None:
+                band_name, band_qid = parse_descriptor_item_id(
+                    descriptor[len("<<PLACEHOLDER: "):-len(">>")], assembly.spec, owner)
+                gap = Gap(item_id="", reason=descriptor_gap_reason(),
+                          supply=descriptor_gap_supply(band_name, question_label(band_qid)),
+                          in_draft=True)
+            lines.append(f"# PLACEHOLDER({gap.reason}): {gap.supply}")
+        lines.append(_band_entry(band) + ",")
+    lines.append("]")
+    return lines
 
 
 def _band_entry(band: dict[str, Any]) -> str:

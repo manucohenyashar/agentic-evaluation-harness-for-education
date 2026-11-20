@@ -43,6 +43,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
+from .descriptors import mark_missing_descriptors
 from .errors import AuthoringInputError
 from .progress import commit_artifacts
 from .spec import Assembly, Gap, render_draft
@@ -166,6 +167,10 @@ def apply_structured_edit(
     before = _issues_of(spec, plan_before)
 
     changes = _apply(operation, spec, params)
+    # A judged band left without a descriptor is the teacher's open question, as it is on
+    # a fresh draft (FR-AUTHOR-33): the editor sends an unanswered descriptor as empty, so
+    # an edit round-trip keeps the question standing rather than dropping it.
+    mark_missing_descriptors(spec)
 
     plan_after = first_plan_issue(spec)
     new_issues = [

@@ -18,6 +18,8 @@ import re
 from dataclasses import dataclass
 from typing import Any, Mapping
 
+from .descriptors import DESCRIPTOR_FIELD, DESCRIPTOR_MAX_CHARS, parse_descriptor_item_id
+
 #: The answer kinds a teacher field may carry.
 TEXT = "text"
 WHOLE_NUMBER = "whole_number"
@@ -127,7 +129,7 @@ def lowest_grade(grades: Mapping[str, Any]) -> str | None:
     return ranked[0] if len(ranked) >= 2 else None
 
 
-def _question_label(qid: str | None) -> str:
+def question_label(qid: str | None) -> str:
     """"question 2" for `Q2`; the id itself when it is not of that shape."""
     text = str(qid or "").strip()
     if len(text) > 1 and text[0] in "Qq" and text[1:].isdigit():
@@ -153,14 +155,22 @@ def gap_question(item_id: str, spec: Mapping[str, Any],
         return _passing_score_question(spec)
     if head == "grades" and rest:
         return _grade_floor_question(rest, spec)
+    if head == DESCRIPTOR_FIELD and rest:
+        band, band_qid = parse_descriptor_item_id(item_id, spec, owner_qid)
+        return GapQuestion(
+            question=(f"What earns '{band}' on {question_label(band_qid)}? Say what the "
+                      "answer does, not how good it is."),
+            answer_hint=(f"One sentence, from 1 to {DESCRIPTOR_MAX_CHARS} characters, "
+                         "for example: names the law and applies it to the case."),
+            answer_kind=TEXT, answer_min=1, answer_max=DESCRIPTOR_MAX_CHARS)
     if head == "points" and rest:
-        label = _question_label(rest)
+        label = question_label(rest)
         return GapQuestion(
             question=f"How many points is {label} worth?",
             answer_hint=f"A whole number from {POINTS_MIN} to {POINTS_MAX}.",
             answer_kind=WHOLE_NUMBER, answer_min=POINTS_MIN, answer_max=POINTS_MAX)
     qid = rest or owner_qid
-    label = _question_label(qid)
+    label = question_label(qid)
     if head == "type":
         return GapQuestion(
             question=f"Is {label} multiple choice?",
@@ -227,7 +237,7 @@ def _grade_floor_question(name: str, spec: Mapping[str, Any]) -> GapQuestion:
 
 def _waiting(question: str, spec: Mapping[str, Any]) -> GapQuestion:
     waiting = missing_points(spec)
-    labels = ", ".join(_question_label(item.partition(" ")[2]) for item in waiting)
+    labels = ", ".join(question_label(item.partition(" ")[2]) for item in waiting)
     return GapQuestion(
         question=question,
         answer_hint=(f"A whole number. First say how many points {labels} "

@@ -119,6 +119,11 @@ function DraftOutline({ draft }: { draft: NonNullable<AuthoringDraftDoc["draft"]
               {criterion.score_levels.map((band) => (
                 <li key={band.name}>
                   {band.name} ({band.points} point(s)){band.descriptor !== "" ? ` — ${band.descriptor}` : ""}
+                  {band.note !== undefined && band.note !== null && band.note !== "" && (
+                    <p className="descriptor-note">
+                      <span className="placeholder-chip">Note</span> {band.note}
+                    </p>
+                  )}
                 </li>
               ))}
             </ul>

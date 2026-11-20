@@ -54,6 +54,7 @@ import binascii
 import hashlib
 import tempfile
 import threading
+import tomllib
 import uuid
 from collections.abc import Callable
 from pathlib import Path
@@ -75,7 +76,8 @@ from aeh.author import (
     with_approval_marker,
 )
 from aeh.author import slugify_package_id
-from aeh.author import check_gap_answer, missing_points
+from aeh.author import check_gap_answer, descriptor_item_id, gap_question, missing_points, \
+    open_descriptors
 from aeh.author.report import draft_filename
 from aeh.pipeline.packages import (
     PLACEHOLDER_SENTINEL,
@@ -657,6 +659,9 @@ def _approve_draft_package(app: Any, params: Mapping[str, Any]) -> ControlOutcom
             # prefixed, and nothing is built again.
             return _published_outcome(
                 _version_label_from(data_dir, marker[1]), marker[0], already=True)
+        undescribed = _undescribed_bands_refusal(package_id, text)
+        if undescribed is not None:
+            return undescribed
         store = None
         label: PackageVersionLabel | None = None
         try:
@@ -719,6 +724,45 @@ def _approve_draft_package(app: Any, params: Mapping[str, Any]) -> ControlOutcom
         return _published_outcome(label, built.package_id, approved_by=built.approved_by)
 
     return _with_draft_lock(app, path, data_dir, "approve", run)
+
+
+def _undescribed_bands_refusal(package_id: str, text: str) -> ControlOutcome | None:
+    """The approval gate's descriptor check (FR-AUTHOR-33, CT-AUTHOR-28): a draft with any
+    judged band still lacking a descriptor is not approvable, and the refusal names each
+    band and its question — as the open question the teacher answers. `None` when every
+    judged band says what earns it (or the draft cannot be parsed: the build's own refusal
+    then speaks). `text` is the draft as the gate read it, BOM stripped."""
+    try:
+        spec = tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        return None
+    open_bands = open_descriptors(spec)
+    if not open_bands:
+        return None
+    asked = [gap_question(descriptor_item_id(band, qid), spec, qid).question
+             for qid, band in open_bands]
+    what = f"{package_id} was not published."
+    count = len(open_bands)
+    why = (f"{count} score {'level does' if count == 1 else 'levels do'} not yet say what "
+           f"earns {'it' if count == 1 else 'them'}, and the grader needs that to choose "
+           "between levels. Still to answer: " + " ".join(asked))
+    # The other unanswered pieces are counted too, so the list is never read as the whole.
+    asked_here = sum(1 for qid, band in open_bands
+                     if f"<<PLACEHOLDER: {descriptor_item_id(band, qid)}>>" in text)
+    others = text.count(PLACEHOLDER_SENTINEL) - asked_here
+    if others > 0:
+        why += (f" The draft also has {others} other unanswered "
+                f"{'piece' if others == 1 else 'pieces'}.")
+    # A level with no question standing for it (a draft from before levels were asked,
+    # or a hand edit) is described on the editor screen; saving it there asks the rest.
+    next_action = (
+        "Answer the remaining questions on the review screen, then press Approve again."
+        if asked_here == count else
+        "Open the grading point on the editor screen and say what earns each named level "
+        "(or answer the questions on the review screen), then press Approve again.")
+    return ControlOutcome(
+        rows_written=(), refused=True, dispatched=False,
+        detail=f"{what} {why}", what=what, why=why, next_action=next_action)
 
 
 #: Where the teacher goes after a test is published (FR-CONSOLE-73, FR-UI-27).
