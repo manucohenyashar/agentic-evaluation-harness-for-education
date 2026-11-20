@@ -8,7 +8,7 @@ import json
 import sqlite3
 import time
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from .settings import NO_NEW_VALIDATION_EVIDENCE, _ORIGIN_TO_EVIDENCE
 from .admissibility import _is_admissible, _row_mapping, _StoredLabel, _system_side
@@ -17,6 +17,12 @@ from .schema import STATS_STATEMENTS
 from .engines import agreement_by_engine, decision_engine_noninferior, engine_partition
 from .records import ValidationAggregate, ValidationUpdate
 from .comparisons import _paired_sides, _refuse_foreign_cohort, _require_str_or_none
+from .administration import (
+    NO_ENGINE_CONTEXT,
+    STORED_JSON_KEYS,
+    EngineContext,
+    criterion_figures,
+)
 
 if TYPE_CHECKING:
     from .service import ValidationStats
@@ -113,26 +119,77 @@ def _label_scope(label: Any) -> str | None:
     return scope
 
 
+def _label_run(label: Any) -> str | None:
+    """The run a label was written for, from its attribute or its stored row."""
+    run_id = getattr(label, "run_id", None)
+    if run_id is None:
+        run_id = (getattr(label, "_row", {}) or {}).get("run_id")
+    return str(run_id) if run_id else None
+
+
+def _administration_population(
+    population: Sequence[Any], run_id: str | None, absence_reason: str | None
+) -> tuple[list[Any], list[Any]]:
+    """`(population, admissible)` for the administration a promote records.
+
+    A named run narrows the cohort's labels to that run's (one administration per run's draw);
+    a skip collects no evidence, so its admissible population is empty whatever else the
+    cohort holds (FR-STATS-33: a skip writes `blind_count = 0`)."""
+    if run_id is not None:
+        population = [label for label in population if _label_run(label) == run_id]
+    admissible = [] if absence_reason == "skipped" else [
+        label for label in population if _is_admissible(label)]
+    return list(population), admissible
+
+
+def _require_absence_reason(absence_reason: str | None, unmarked_count: int) -> None:
+    if absence_reason not in (None, "skipped", "none_marked"):
+        raise ValueError(
+            f"promote got absence_reason={absence_reason!r}; an administration's record "
+            "names 'skipped', 'none_marked' or no absence (FR-STATS-33)"
+        )
+    if isinstance(unmarked_count, bool) or not isinstance(unmarked_count, int) or (
+            unmarked_count < 0):
+        raise ValueError(
+            f"promote got unmarked_count={unmarked_count!r}; it counts drawn seats left "
+            "unmarked, a whole number of at least 0"
+        )
+
+
 def promote(
     self: "ValidationStats",
     cohort_id: str | None = None,
     *,
     package_version: str | None = None,
+    run_id: str | None = None,
+    absence_reason: str | None = None,
+    unmarked_count: int = 0,
 ) -> ValidationUpdate:
     """Record one administration (FR-STATS-10, CT-STATS-05, CT-STATS-06): claim the
-    administration's unclaimed labels for the named cohort, count what was claimed, and write the
-    record's durable row (the counters, the weakest criterion per population, and the surface-proxy
-    flags) through `aeh.pkg.record_promotion`, so the write happens in M-PKG on M-STATS's behalf
-    (CT-STATS-15).
+    administration's unclaimed labels for the named cohort, count what was claimed, compute the
+    per-criterion figures (FR-STATS-32), and write the record's durable rows through
+    `aeh.pkg.record_promotion`, so the write happens in M-PKG on M-STATS's behalf (CT-STATS-15).
+
+    #879: one record per administration (FR-STATS-33) — when the (package version, cohort)
+    record already exists this call claims nothing, writes nothing and returns the stored record
+    (`already_recorded=True`). ``run_id`` narrows the record to one run's labels; the draw's
+    ``absence_reason`` (`skipped`, `none_marked`) and ``unmarked_count`` are written on the
+    record (migration P2). The anomaly baseline is written from the administration's final
+    scores (FR-STATS-34). M-PIPE's `promote_administration` is the production caller, on draw
+    close only (FR-PIPE-21).
 
     More detail: `docs/code-notes/stats.md`, section `promotion.py: promote`.
     """
-    _require_str_or_none("promote", cohort_id=cohort_id, package_version=package_version)
+    _require_str_or_none("promote", cohort_id=cohort_id, package_version=package_version,
+                         run_id=run_id)
+    _require_absence_reason(absence_reason, unmarked_count)
     _refuse_foreign_cohort(self, cohort_id, "promote")
 
     data_dir = self._data_dir
     if data_dir is None:
-        return self._record_in_memory(cohort_id, package_version)
+        return self._record_in_memory(cohort_id, package_version, run_id=run_id,
+                                      absence_reason=absence_reason,
+                                      unmarked_count=unmarked_count)
 
     # The durable record is keyed on its administration; a promote of neither
     # a passed nor a bound cohort would count the unclaimed labels into a row
@@ -146,6 +203,7 @@ def promote(
             "open_stats(cohort_id=...). An unkeyed record row would leave the "
             "labels unclaimed for the next administration to re-count."
         )
+    administration_key = cohort_id or self._cohort_id or ""
 
     # --- rung 2: the durable claim --------------------------------------------------------------
     database_path = Path(data_dir) / "durable.sqlite"
@@ -163,6 +221,27 @@ def promote(
             _row_mapping(row)
             for row in connection.execute(STATS_STATEMENTS["select_unclaimed_audits"])
         ]
+        # A named run sources the record from its own audit rows, so its figures and baseline
+        # are filed under THAT run's backend and panel build, not whichever unclaimed row
+        # another run left first (FR-STATS-32's scope).
+        run_audits = [row for row in audits if str(row.get("run_id")) == run_id]
+        package_version_id, backend_profile, panel_build_ref = _record_sourcing(
+            package_version, run_audits or audits
+        )
+        # FR-STATS-33: one record per administration. Checked before the claim, so a
+        # second call claims no label twice and writes no second row.
+        existing = connection.execute(
+            STATS_STATEMENTS["select_promotion_record"],
+            {"package_version_id": package_version_id, "cohort_id": administration_key},
+        ).fetchone()
+        if existing is not None:
+            stored_figures = [
+                _row_mapping(row) for row in connection.execute(
+                    STATS_STATEMENTS["select_administration_criterion_stats"],
+                    {"package_version_id": package_version_id,
+                     "cohort_id": administration_key})
+            ]
+            return _stored_update(_row_mapping(existing), stored_figures)
         if cohort_id is not None:
             # Labels only: `audit_record` is append-only (#103's trigger,
             # `FR-DET-10`/`TC-GRADE-23`), so the audit rows' cohort dimension
@@ -184,12 +263,9 @@ def promote(
     finally:
         connection.close()
 
-    population = self._scoped_population(cohort_id)
+    population, admissible = _administration_population(
+        self._scoped_population(cohort_id), run_id, absence_reason)
     recomputation_started = time.perf_counter()
-    package_version_id, backend_profile, panel_build_ref = _record_sourcing(
-        package_version, audits
-    )
-    administration_key = cohort_id or self._cohort_id or ""
     if cohort_id is None:
         claimed_cohorts = {
             getattr(label, "cohort_id", None)
@@ -202,34 +278,63 @@ def promote(
         # nothing is still recorded (the row is the disclosure), but the
         # record speaks for zero cohorts' evidence.
         cohorts_used = 1 if population else 0
-    admissible = [label for label in population if _is_admissible(label)]
     blind_count = len(admissible)
     operational_count = len(population) - blind_count
 
-    per_criterion = _per_criterion_kappas(admissible, self._band_counts)
+    # The declared scale and scoring model of each criterion (Tier P), so QWK's three-band rule
+    # reads the DECLARED band count and each figure carries its model (FR-STATS-03/32). What the
+    # constructor was given wins; the package fills the rest.
+    scales = _pkg_scales(data_dir, package_version_id)
+    band_counts = {criterion: len(scale["bands"]) for criterion, scale in scales.items()}
+    band_counts.update(self._band_counts)
+    scoring_models = {criterion: scale["scoring_model"] for criterion, scale in scales.items()}
+    scoring_models.update(self._scoring_models)
+    band_names = {criterion: scale["bands"] for criterion, scale in scales.items()}
+
+    # This administration's runs: the one named, or the runs its labels were written for.
+    administration_runs = ({run_id} if run_id is not None else
+                           {run for run in map(_label_run, population) if run})
+    context, final_bands, context_close = _administration_context(
+        data_dir, administration_key, administration_runs)
+    try:
+        figures = criterion_figures(admissible, band_counts=band_counts,
+                                    band_names=band_names, scoring_models=scoring_models,
+                                    context=context)
+    finally:
+        context_close()
+    per_criterion = {criterion: figure["kappa"] for criterion, figure in figures.items()}
     if len(per_criterion) == 1:
         agreement_kappa = next(iter(per_criterion.values()))
     else:
         agreement_kappa = None
     weakest = {administration_key: _weakest_entry(per_criterion)}
 
+    # The run's own key parts (#454 reopened): `_record_sourcing` hands back the audit row's
+    # whole profile summary and panel config, which are provenance, not key values. A record a
+    # run's reader must find (FR-PKG-08's six-part key) is filed under the summary's
+    # `backend_profile` and `panel_build_ref`, the values `run_handle` reports — and so are the
+    # per-criterion figures (#879), so FR-STATS-32's backend and panel-build scope is the run's.
+    key_backend, key_panel = _run_key_parts(backend_profile, panel_build_ref)
     connection = sqlite3.connect(str(database_path))
     connection.row_factory = sqlite3.Row
     try:
-        for criterion in sorted(per_criterion):
+        for criterion, figure in sorted(figures.items()):
             connection.execute(
                 STATS_STATEMENTS["record_criterion_stats"],
                 {
                     "package_version_id": package_version_id,
                     "criterion_id": criterion,
-                    "backend_profile": backend_profile,
-                    "panel_build_ref": panel_build_ref,
-                    "n": sum(
-                        1
-                        for label in admissible
-                        if (getattr(label, "criterion_id", "") or "") == criterion
-                    ),
+                    "backend_profile": key_backend,
+                    "panel_build_ref": key_panel,
+                    "n": figure["n"],
                     "cohort_id": administration_key,
+                    "scoring_model": figure["scoring_model"],
+                    "matched": figure["matched"],
+                    "kappa": figure["kappa"],
+                    "qwk": figure["qwk"],
+                    "reason": figure["reason"],
+                    "figures": json.dumps(
+                        {key: figure[key] for key in STORED_JSON_KEYS}, sort_keys=True),
                 },
             )
         connection.commit()
@@ -246,48 +351,21 @@ def promote(
 
     from aeh import pkg as _pkg
 
-    # #373 (`FR-AGG-08`): the baseline distribution, per criterion, so escalation's
-    # distributional-anomaly input has a prior to compare against instead of being
-    # permanently no-data. Counted from `teacher_band`: the administration's blind labels
-    # are its validity evidence (`admissible`), and the TEACHER's band is the judgement
-    # they evidence — the system's own band is the thing a later anomaly is measured
-    # against, so sourcing the baseline from it would compare the system to itself and
-    # report drift only once the system had already drifted twice.
+    # FR-STATS-34 (#879; #373 before it, `FR-AGG-08`): the baseline distribution per judged
+    # criterion, from the administration's FINAL SCORES — the distribution a later cell's
+    # band is an anomaly against. (#373 counted the blind labels' teacher bands; FR-STATS-34
+    # names the final scores, which every graded cell has and a skipped administration still
+    # holds.) Band NAMES go over, not ordinals: the scale those names sit on is Tier P's
+    # (`record_validation_baseline` maps them).
     #
-    # Band NAMES go over, not ordinals: a label carries the band it was given, and the
-    # scale those names sit on is Tier P's (`record_validation_baseline` maps them). A
-    # label whose teacher band is unrecorded is left out rather than bucketed — `#372`'s
-    # rule, that a null is never a value, applies to a histogram as much as to an export.
-    # The outcome per criterion rides the RESULT, not just this function's conscience.
-    # Every way this write can decline is an ordinary event — the commonest being a
-    # promote against a published package, whose validation records `FR-PKG-04` freezes —
-    # so a promote that reported its counters and said nothing about the baseline would
-    # be the seam-4 trap in miniature: a success status sitting on top of a record that
-    # was never written.
-    #
-    # Labels are bucketed by criterion in ONE pass rather than re-scanning `admissible`
-    # per criterion: the same histogram, without the criteria x labels product.
-    histograms: dict[str, dict[str, int]] = {}
-    for label in admissible:
-        criterion = getattr(label, "criterion_id", "") or ""
-        if criterion not in per_criterion:
-            continue
-        band = getattr(label, "teacher_band", None)
-        if band is None or str(band) == "":
-            continue
-        counts = histograms.setdefault(criterion, {})
-        counts[str(band)] = counts.get(str(band), 0) + 1
-    # The run's own key parts (#454 reopened): `_record_sourcing` hands back the audit row's
-    # whole profile summary and panel config, which are provenance, not key values. A record a
-    # run's reader must find (FR-PKG-08's six-part key) is filed under the summary's
-    # `backend_profile` and `panel_build_ref`, the values `run_handle` reports.
-    key_backend, key_panel = _run_key_parts(backend_profile, panel_build_ref)
+    # The outcome per criterion rides the RESULT. Every way this write can decline is an
+    # ordinary event — the commonest being a later administration of a published package,
+    # whose recorded baseline `FR-PKG-04` freezes — so a promote that said nothing about the
+    # baseline would be the seam-4 trap in miniature.
     baseline_outcomes: dict[str, str] = {}
-    for criterion in sorted(per_criterion):
-        histogram = histograms.get(criterion)
+    for criterion in sorted(final_bands):
+        histogram = final_bands[criterion]
         if not histogram:
-            # No teacher band on any of this criterion's admissible labels: there is no
-            # distribution to record, which is a different fact from one that was refused.
             baseline_outcomes[criterion] = _pkg.BASELINE_NO_HISTOGRAM
             continue
         written = _pkg.record_validation_baseline(
@@ -308,10 +386,8 @@ def promote(
     # FR-PKG-23. An engine-off run writes nothing, so the column stays NULL (NFR-SYS-14).
     # Only THIS administration's runs decide: the unclaimed-audit read spans every
     # administration, and an older engine-on run must not make an engine-off promote write a
-    # verdict (or overwrite a recorded 'false') (#454 review).
-    administration_runs = {str(getattr(label, "_row", {}).get("run_id"))
-                           for label in population
-                           if getattr(label, "_row", {}).get("run_id")}
+    # verdict (or overwrite a recorded 'false') (#454 review). The figure itself is computed
+    # for every administration and rides `criterion_figures` (FR-STATS-32).
     noninferiority_outcomes: dict[str, str] = {}
     if any('"decision_engine"' in str(row.get("profile_summary") or "")
            for row in audits if str(row.get("run_id")) in administration_runs):
@@ -331,6 +407,8 @@ def promote(
         weakest_per_population=json.dumps(weakest, sort_keys=True),
         surface_proxy_flags=json.dumps(list(flags)),
         message=message,
+        absence_reason=absence_reason,
+        unmarked_count=unmarked_count,
     )
     return ValidationUpdate(
         cohort_id=administration_key,
@@ -345,6 +423,137 @@ def promote(
         message=message,
         baseline_outcomes=baseline_outcomes,
         noninferiority_outcomes=noninferiority_outcomes,
+        criterion_figures=figures,
+        absence_reason=absence_reason,
+        unmarked_count=unmarked_count,
+    )
+
+
+def administration_record(store: Any, *, package_version_id: str,
+                          cohort_id: str) -> ValidationUpdate | None:
+    """One administration's stored record (FR-STATS-33), as the `ValidationUpdate` its promote
+    returned, or None when the administration was never promoted. A read of stored figures
+    only: it never recomputes a figure (NFR-STATS-07)."""
+    handle = store.durable()
+    rows = handle.query(STATS_STATEMENTS["select_promotion_record"],
+                        package_version_id=package_version_id, cohort_id=cohort_id)
+    if not rows:
+        return None
+    figures = handle.query(STATS_STATEMENTS["select_administration_criterion_stats"],
+                           package_version_id=package_version_id, cohort_id=cohort_id)
+    return _stored_update(_row_mapping(rows[0]), [_row_mapping(row) for row in figures])
+
+
+def _pkg_scales(data_dir: Any, package_version_id: str) -> dict[str, dict[str, Any]]:
+    from aeh import pkg as _pkg
+
+    return _pkg.criterion_scales(data_dir, package_version_id)
+
+
+def _administration_context(
+    data_dir: Any, cohort_id: str, runs: set[str],
+) -> tuple[EngineContext, dict[str, dict[str, int]], Callable[[], None]]:
+    """The cohort reads one administration's promote needs, from one store open: each labelled
+    cell's engine partition and accepted gate confidence (FR-STATS-26/27), and the runs' final
+    band histograms per judged criterion (FR-STATS-34). Returns the context, the histograms and
+    the closer for the store the context reads through. No cohort file → no context and no
+    histograms."""
+    from aeh.store import open_store
+
+    if not cohort_id or not Path(data_dir, "cohorts", f"{cohort_id}.sqlite").exists():
+        return NO_ENGINE_CONTEXT, {}, lambda: None
+    store = open_store(data_dir)
+    try:
+        handle = store.cohort(cohort_id)
+        histograms: dict[str, dict[str, int]] = {}
+        for run in sorted(runs):
+            for row in handle.query(STATS_STATEMENTS["select_run_final_bands"], run_id=run):
+                band = row["band"]
+                if band is None or str(band) == "":
+                    continue
+                counts = histograms.setdefault(str(row["criterion_id"]), {})
+                counts[str(band)] = counts.get(str(band), 0) + 1
+    except Exception:
+        store.close()
+        raise
+
+    def _cell(label: Any) -> tuple[str, str, str] | None:
+        row = getattr(label, "_row", {}) or {}
+        run, student_ref = row.get("run_id"), row.get("student_ref")
+        if not run or not student_ref:
+            return None
+        return str(run), str(student_ref), _criterion_of_label(label)
+
+    def partition_of(label: Any) -> str | None:
+        cell = _cell(label)
+        return None if cell is None else engine_partition(handle, *cell)
+
+    def confidence_of(label: Any) -> tuple[float, float] | None:
+        cell = _cell(label)
+        if cell is None:
+            return None
+        submissions = handle.query(STATS_STATEMENTS["select_submission_for_ref"],
+                                   student_ref=cell[1])
+        if not submissions:
+            return None
+        rows = handle.query(STATS_STATEMENTS["select_cell_accepted_prescreen"], run_id=cell[0],
+                            submission_id=submissions[0]["submission_id"],
+                            criterion_id=cell[2])
+        if not rows:
+            return None
+        threshold = rows[0]["threshold"]
+        return float(rows[0]["band_confidence"]), float(
+            threshold if threshold is not None else 0.80)
+
+    return EngineContext(partition_of, confidence_of), histograms, store.close
+
+
+def _criterion_of_label(label: Any) -> str:
+    return str(getattr(label, "criterion_id", "") or "")
+
+
+def _stored_update(record: Mapping[str, Any],
+                   criterion_rows: Sequence[Mapping[str, Any]]) -> ValidationUpdate:
+    """The `ValidationUpdate` an already-written administration record stands for (FR-STATS-33):
+    the stored counters and figures, read back, with `already_recorded=True`."""
+    figures: dict[str, dict[str, Any]] = {}
+    for row in criterion_rows:
+        try:
+            extra = json.loads(row.get("figures") or "{}")
+        except (TypeError, ValueError):
+            extra = {}
+        figures[str(row["criterion_id"])] = {
+            "criterion_id": str(row["criterion_id"]),
+            "scoring_model": row.get("scoring_model") or "",
+            "n": int(row.get("n") or 0),
+            "matched": row.get("matched"),
+            "kappa": row.get("kappa"),
+            "qwk": row.get("qwk"),
+            "reason": row.get("reason"),
+            **(extra if isinstance(extra, dict) else {}),
+        }
+
+    def _json(raw: Any, default: Any) -> Any:
+        try:
+            return json.loads(raw) if raw else default
+        except (TypeError, ValueError):
+            return default
+
+    return ValidationUpdate(
+        cohort_id=str(record["cohort_id"]),
+        package_version_id=str(record["package_version_id"]),
+        cohorts_used=int(record.get("cohorts_used") or 0),
+        operational_count=int(record.get("operational_count") or 0),
+        blind_count=int(record.get("blind_count") or 0),
+        n=int(record.get("n") or 0),
+        agreement_kappa=record.get("agreement_kappa"),
+        weakest_per_population=_json(record.get("weakest_per_population"), {}),
+        surface_proxy_flags=tuple(_json(record.get("surface_proxy_flags"), [])),
+        message=str(record.get("message") or ""),
+        criterion_figures=figures,
+        absence_reason=record.get("absence_reason"),
+        unmarked_count=int(record.get("unmarked_count") or 0),
+        already_recorded=True,
     )
 
 
@@ -525,19 +734,27 @@ def _record_in_memory(
     self: "ValidationStats",
     cohort_id: str | None,
     package_version: str | None,
+    *,
+    run_id: str | None = None,
+    absence_reason: str | None = None,
+    unmarked_count: int = 0,
 ) -> ValidationUpdate:
     """`promote` for an in-memory instance (from `build_stats`, which has no data directory): the
-    same counters, weakest entry and no-evidence message, with nothing written (CT-STATS-15)."""
-    population = self._scoped_population(cohort_id)
+    same counters, per-criterion figures, weakest entry and no-evidence message as the durable
+    path, with nothing written (CT-STATS-15). With no store there are no cells, so every engine
+    figure reads `insufficient_data`."""
+    population, admissible = _administration_population(
+        self._scoped_population(cohort_id), run_id, absence_reason)
     recomputation_started = time.perf_counter()
     administration_key = (
         cohort_id or self._cohort_id or self._administration_id or ""
     )
     cohorts_used = 1 if population else 0
-    admissible = [label for label in population if _is_admissible(label)]
     blind_count = len(admissible)
     operational_count = len(population) - blind_count
-    per_criterion = _per_criterion_kappas(admissible, self._band_counts)
+    figures = criterion_figures(admissible, band_counts=self._band_counts, band_names={},
+                                scoring_models=self._scoring_models)
+    per_criterion = {criterion: figure["kappa"] for criterion, figure in figures.items()}
     agreement_kappa = (
         next(iter(per_criterion.values())) if len(per_criterion) == 1 else None
     )
@@ -558,4 +775,7 @@ def _record_in_memory(
         weakest_per_population=weakest,
         surface_proxy_flags=flags,
         message=message,
+        criterion_figures=figures,
+        absence_reason=absence_reason,
+        unmarked_count=unmarked_count,
     )

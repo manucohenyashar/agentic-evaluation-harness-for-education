@@ -171,7 +171,13 @@ def test_tc_pipe_18_trace_suffixes_on_and_none_off(engine_on, tmp_path) -> None:
     try:
         off_result = _run(off)
         # #865 (FR-AGG-23): the end-of-run aggregate stage report is additive; projected out.
-        off_lines = sorted(line for s in off_result.stages for line in s.detail
+        # #879 (FR-PIPE-20): a complete run's trace ends with the additive `validity` stage,
+        # absent at the golden's capture. Asserted (a fresh run's draw is not offered yet),
+        # then projected like the additive columns elsewhere.
+        assert off_result.stages[-1].stage == "validity"
+        assert off_result.stages[-1].metrics["state"] == "not_offered_yet"
+        off_lines = sorted(line for s in off_result.stages if s.stage != "validity"
+                           for line in s.detail
                            if not line.startswith("aggregate stage report:"))
         assert not [line for line in off_lines if line.endswith("]")]
         assert off_lines == sorted(line for stage in golden["trace"] for line in stage[4])

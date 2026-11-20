@@ -46,6 +46,12 @@ def cohort_with_mixed_revisions(store: Any = None) -> str:
                 panel_build_ref="9f2a1c",
                 n=n,
                 cohort_id=cohort_id,
+                scoring_model=None,
+                matched=None,
+                kappa=None,
+                qwk=None,
+                reason=None,
+                figures="{}",
             )
     _MIXED_REVISION_COHORTS[cohort_id] = store
     return cohort_id

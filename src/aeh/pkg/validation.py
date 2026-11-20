@@ -21,6 +21,48 @@ def promotion_record(store: Any, *, package_version_id: str, cohort_id: str) -> 
     return dict(rows[0]) if rows else None
 
 
+def criterion_scales(data_dir: Path | str, package_version_id: str) -> dict[str, dict[str, Any]]:
+    """Each criterion of one package version with its declared scale: ``{criterion_id:
+    {"bands": (band names in ordinal order), "scoring_model": str}}`` (FR-STATS-32).
+
+    The validation record's figures need the DECLARED band count — QWK is reported only for a
+    line of three or more bands, and a band count inferred from the labels drawn would drop a
+    band nobody happened to use — and the scoring model each figure is filed under, so atomic
+    and holistic lines stay apart (FR-STATS-03). Read-only; searches the data directory's
+    package files the way `record_validation_baseline` does. Empty when no package holds the
+    version."""
+    directory = Path(data_dir) / "packages"
+    if not directory.is_dir():
+        return {}
+    for database_path in sorted(directory.glob("*.pkg.sqlite")):
+        connection = sqlite3.connect(str(database_path))
+        connection.row_factory = sqlite3.Row
+        try:
+            try:
+                present = connection.execute(
+                    PKG_STATEMENTS["select_version_present"], {"v": package_version_id}
+                ).fetchall()
+            except sqlite3.OperationalError:
+                continue
+            if not present:
+                continue
+            bands: dict[str, list[str]] = {}
+            for row in connection.execute(PKG_STATEMENTS["select_bands"],
+                                          {"v": package_version_id}).fetchall():
+                bands.setdefault(str(row["criterion_id"]), []).append(str(row["band"]))
+            return {
+                str(row["criterion_id"]): {
+                    "bands": tuple(bands.get(str(row["criterion_id"]), ())),
+                    "scoring_model": str(row["scoring_model"] or ""),
+                }
+                for row in connection.execute(PKG_STATEMENTS["select_criteria"],
+                                              {"v": package_version_id}).fetchall()
+            }
+        finally:
+            connection.close()
+    return {}
+
+
 def record_promotion(
     data_dir: Path | str,
     *,
@@ -35,6 +77,8 @@ def record_promotion(
     surface_proxy_flags: str,
     message: str,
     recorded_at: str | None = None,
+    absence_reason: str | None = None,
+    unmarked_count: int = 0,
 ) -> None:
     """Write the validation record's durable row (FR-STATS-10): one `package_validation` row per
     (package version, cohort) in Tier D. M-STATS's `promote` is the only intended caller; the write
@@ -44,7 +88,9 @@ def record_promotion(
     ``agreement_kappa``, the two JSON documents (``weakest_per_population``,
     ``surface_proxy_flags``) — and this function shapes nothing: it is the
     record's transport, not its second author. ``recorded_at`` defaults to
-    now, in UTC, as the durable column requires."""
+    now, in UTC, as the durable column requires. ``absence_reason`` (`skipped`,
+    `none_marked` or None) and ``unmarked_count`` are migration P2's columns
+    (FR-STATS-33); the column's CHECK is the one authority on the reason's domain."""
     if recorded_at is None:
         recorded_at = datetime.now(timezone.utc).isoformat()
     database_path = Path(data_dir) / "durable.sqlite"
@@ -54,10 +100,12 @@ def record_promotion(
             "INSERT OR REPLACE INTO package_validation "
             "(package_version_id, cohort_id, recorded_at, cohorts_used, "
             "operational_count, blind_count, n, agreement_kappa, "
-            "weakest_per_population, surface_proxy_flags, message) VALUES "
+            "weakest_per_population, surface_proxy_flags, message, absence_reason, "
+            "unmarked_count) VALUES "
             "(:package_version_id, :cohort_id, :recorded_at, :cohorts_used, "
             ":operational_count, :blind_count, :n, :agreement_kappa, "
-            ":weakest_per_population, :surface_proxy_flags, :message)",
+            ":weakest_per_population, :surface_proxy_flags, :message, :absence_reason, "
+            ":unmarked_count)",
             {
                 "package_version_id": package_version_id,
                 "cohort_id": cohort_id,
@@ -70,6 +118,8 @@ def record_promotion(
                 "weakest_per_population": weakest_per_population,
                 "surface_proxy_flags": surface_proxy_flags,
                 "message": message,
+                "absence_reason": absence_reason,
+                "unmarked_count": int(unmarked_count),
             },
         )
         connection.commit()

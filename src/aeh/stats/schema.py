@@ -57,11 +57,28 @@ STATS_STATEMENTS: dict[str, Statement] = {
     # criterion-and-administration: the key joins the cohort dimension
     # (#118's migration), so a second administration of the same package is a
     # second record rather than a collision.
+    #
+    # #879 (FR-STATS-32, migration P2): the row carries the figures themselves — kappa, QWK
+    # (NULL below three bands), the scoring model, the matched count, an absent figure's
+    # reason and the engine measurements' JSON — so every read of the record reads what this
+    # promote computed and never recomputes (NFR-STATS-07).
     "record_criterion_stats": Statement(
         "INSERT OR REPLACE INTO criterion_stats "
         "(package_version_id, criterion_id, backend_profile, panel_build_ref, "
-        "n, cohort_id) VALUES (:package_version_id, :criterion_id, "
-        ":backend_profile, :panel_build_ref, :n, :cohort_id)"
+        "n, cohort_id, scoring_model, matched, kappa, qwk, reason, figures) "
+        "VALUES (:package_version_id, :criterion_id, "
+        ":backend_profile, :panel_build_ref, :n, :cohort_id, :scoring_model, :matched, "
+        ":kappa, :qwk, :reason, :figures)"
+    ),
+    # FR-STATS-33 (#879): the administration's record, if one was already written — the
+    # idempotency check `promote` makes before it claims or writes anything.
+    "select_promotion_record": Statement(
+        "SELECT * FROM package_validation WHERE package_version_id = :package_version_id "
+        "AND cohort_id = :cohort_id"
+    ),
+    "select_administration_criterion_stats": Statement(
+        "SELECT * FROM criterion_stats WHERE package_version_id = :package_version_id "
+        "AND cohort_id = :cohort_id ORDER BY criterion_id"
     ),
     # The read `criterion_figures` resolves one administration's record
     # through — the same rows `record_criterion_stats` wrote, keyed on the
@@ -134,6 +151,22 @@ STATS_STATEMENTS: dict[str, Statement] = {
     "select_run_violation_counts": Statement(
         "SELECT criterion_id, judge_id, value FROM run_metrics "
         "WHERE run_id = :run_id AND metric = 'judge_contract_violations'"
+    ),
+    # FR-STATS-34 (#879): the administration's final scores, per judged cell (a deterministic
+    # cell has no panel, `judge_count = 0`; a cell not final is no final score), which the
+    # anomaly baseline is written from.
+    "select_run_final_bands": Statement(
+        "SELECT criterion_id, band FROM criterion_score "
+        "WHERE run_id = :run_id AND judge_count > 0 AND state = 'final' "
+        "ORDER BY criterion_id, submission_id"
+    ),
+    # FR-STATS-27 (#879): an accepted decision-engine verdict's band confidence for one
+    # labelled cell, and the gate threshold it was accepted above.
+    "select_cell_accepted_prescreen": Statement(
+        "SELECT band_confidence, threshold FROM decision_prescreen "
+        "WHERE run_id = :run_id AND submission_id = :submission_id "
+        "AND criterion_id = :criterion_id AND outcome = 'accepted' "
+        "AND band_confidence IS NOT NULL"
     ),
     "select_run_cache_hit_rate": Statement(
         "SELECT value FROM run_metrics WHERE run_id = :run_id AND metric = 'cache_hit_rate'"

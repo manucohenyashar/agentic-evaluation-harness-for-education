@@ -516,15 +516,21 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.pkg.versions:52",
     "aeh.pkg.versions:56",
     "aeh.pkg.versions:99",
-    "aeh.pkg.validation:53",
+    "aeh.pkg.validation:228",
+    "aeh.pkg.validation:245",
+    "aeh.pkg.validation:292",
+    "aeh.pkg.validation:307",
+    "aeh.pkg.validation:339",
+    "aeh.pkg.validation:343",
+    "aeh.pkg.validation:42",
+    "aeh.pkg.validation:50",
+    "aeh.pkg.validation:58",
+    "aeh.pkg.validation:99",
     # #525's re-pin: the docstring extension over `record_validation_baseline`
     # (decision (a), the published append-only exception) moved the module's
     # seven sites; the statements are the same seven. Re-read from the walker,
     # never hand-unioned.
-    "aeh.pkg.validation:257",
     "aeh.pkg.validation:242",
-    "aeh.pkg.validation:289",
-    "aeh.pkg.validation:293",
     "aeh.pkg.validation_reads:35",
     "aeh.pkg.validation_reads:27",
     "aeh.pkg.criteria:246",
@@ -573,9 +579,6 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.pkg.exchange:52",
     "aeh.pkg.exchange:142",
     "aeh.pkg.exchange:140",
-    "aeh.pkg.validation:178",
-    "aeh.pkg.validation:192",
-    "aeh.pkg.validation:195",
     # Lines moved with #234's chain-completeness guard (the IncompleteMigrationChainError
     # class and the COMPLETE_SCHEMA_VERSIONS pin, both above the first site), again with
     # #269's _VersionOrderedRegistry, again with #61's run-lifecycle statements landing
@@ -609,11 +612,13 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # Every one a declared `STATS_STATEMENTS` statement with keyword
     # parameters (FR-STORE-08); the module's other reads go through tier
     # handles, which are not census sites. Pinned from the walker.
-    "aeh.stats.promotion:164",
-    "aeh.stats.promotion:171",
-    "aeh.stats.promotion:176",
-    "aeh.stats.promotion:180",
-    "aeh.stats.promotion:220",
+    "aeh.stats.promotion:222",
+    "aeh.stats.promotion:233",
+    "aeh.stats.promotion:239",
+    "aeh.stats.promotion:250",
+    "aeh.stats.promotion:259",
+    "aeh.stats.promotion:255",
+    "aeh.stats.promotion:322",
     "aeh.stats.revisions:41",
     # The synth site is #97's line number: the single narrative INSERT, declared in
     # SYNTH_STATEMENTS with keyword parameters — the write the ADR-8 primary key
@@ -756,19 +761,19 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # into another cohort's administration. Pinned from the walker.
     "aeh.review.labels:206",
     # (#875 re-pin: the system-band join moved down; same statement.)
-    "aeh.review.blind:1077",
+    "aeh.review.blind:1093",
+    "aeh.review.blind:500",
+    "aeh.review.blind:506",
+    "aeh.review.blind:525",
+    "aeh.review.blind:537",
+    "aeh.review.blind:558",
+    "aeh.review.blind:564",
+    "aeh.review.blind:585",
     # #875 (FR-REVIEW-26/30, cohort migration 37): the stored blind draw. Each a
     # `BLIND_DRAW_STATEMENTS` entry with keyword parameters — the draw and its seats opened in
     # one transaction (484, 490), a skip without a draw (509), a draft upsert (521), the
     # claimed close (542) with an open draw's drafts discarded on a skip (548), and the undo
     # of a close whose labels failed to land (569). Pinned from the walker.
-    "aeh.review.blind:484",
-    "aeh.review.blind:490",
-    "aeh.review.blind:509",
-    "aeh.review.blind:521",
-    "aeh.review.blind:542",
-    "aeh.review.blind:548",
-    "aeh.review.blind:569",
     # The #122/#126 console sites: one — the control row `perform` writes into the
     # run's cohort ledger (`_INSERT_RUN_CONTROL`, keyword-parameterized, the row the
     # orchestrator reads on its own schedule per CT-ORCH-13; re-pinned when the

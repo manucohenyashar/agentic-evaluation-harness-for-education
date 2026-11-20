@@ -159,7 +159,11 @@ def test_tc_stats_38_c_an_engine_off_administration_stores_nothing(tmp_data_dir,
     assert mine == theirs, (
         "an engine-off promote changed a package-tier row the verdict step does not own: "
         f"{sorted(t for t in mine if mine[t] != theirs.get(t))}")
-    assert not called, "an engine-off promote measured engine agreement"
+    # Re-based (#879, FR-STATS-32): promotion now MEASURES per-engine agreement for every
+    # administration (each partition `insufficient_data` below its minimum) and carries it in
+    # the record's figures; what an engine-off administration must not do is WRITE a verdict,
+    # which the twin comparison above and the NULL column below pin.
+    assert called, "promote no longer measures per-engine agreement (FR-STATS-32)"
     assert all(value is None for value in _stored_verdicts(tmp_data_dir, version)), (
         "an engine-off administration wrote a verdict (NFR-SYS-14: the column stays NULL)")
     assert update.noninferiority_outcomes == {}

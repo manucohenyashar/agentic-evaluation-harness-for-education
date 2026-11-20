@@ -25,6 +25,7 @@ from .decision_engine import (
 from .aggregation_report import aggregation_report
 from .hooks import _aggregate_hook, _CellFault, _drain, _FAULT_PREFIX, _integrity_pre_hook
 from .finishing import _grade, _grades_all_final, _synthesize
+from .validity import promote_administration, validity_stage
 
 
 def _over_escalation_budget(orch: Any, run_id: str) -> bool:
@@ -380,6 +381,8 @@ def run_to_completion(
             except Exception:  # noqa: BLE001 - a terminal run refuses a pause
                 pass
             handle = orch.run_handle(run_id)
+        else:
+            stages.append(_validity_stage_safely(store, run_id, handle))
 
     return RunResult(
         run_id=run_id,
@@ -389,6 +392,18 @@ def run_to_completion(
         grades_computed=grades_computed,
         grades_final=grades_final,
     )
+
+
+def _validity_stage_safely(store: Any, run_id: str, handle: Any) -> StageTrace:
+    """The run's `validity` stage after finalization (FR-PIPE-20, CT-PIPE-15). Finalization
+    never closes the blind draw (FR-REVIEW-30), so this reads `not_offered_yet` on a fresh run
+    and never promotes (FR-PIPE-21). A read that fails is named on the stage, never raised: the
+    run's grades are final whatever the validity read can say."""
+    try:
+        return validity_stage(store, run_id, handle=handle)
+    except Exception as error:  # noqa: BLE001 - reported on the trace, never raised
+        return StageTrace("validity", detail=(
+            f"validity stage unavailable: {type(error).__name__}: {error}",))
 
 
 # --- recovery (issue #365, FR-PIPE-07) ------------------------------------------------------
@@ -495,8 +510,24 @@ def recover(
         grading.compute_all(handle.run_id)
         regraded.append(handle.run_id)
 
+    # FR-PIPE-21 (#879): a draw the review window closed while nobody was looking (or a Finish
+    # or Skip whose promotion never ran) is promoted here, once — `promote_administration`
+    # promotes nothing for an open draw or an administration already recorded.
+    promoted: list[str] = []
+    failed: list[str] = []
+    for handle in orchestrator.runs(("complete",)):
+        try:
+            outcome = promote_administration(store, handle.run_id, "recover", clock=clock)
+        except Exception as error:  # noqa: BLE001 - one run's promotion never stops the sweep
+            failed.append(f"{handle.run_id}: {type(error).__name__}: {error}")
+            continue
+        if outcome.promoted:
+            promoted.append(handle.run_id)
+
     return RecoveryReport(
         leases_reclaimed=int(getattr(sweep, "requeued", 0) or 0),
         runs_resumed=tuple(resumed),
         runs_regraded=tuple(regraded),
+        administrations_promoted=tuple(promoted),
+        promotion_failures=tuple(failed),
     )

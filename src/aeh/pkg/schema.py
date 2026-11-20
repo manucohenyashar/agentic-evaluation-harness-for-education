@@ -1021,6 +1021,47 @@ _PKG_DURABLE_008 = Migration(
 )
 
 
+# Durable v14 — migration P2 of the statistical-validity delta (FR-STATS-32/33, #879).
+#
+# `package_validation.absence_reason` / `unmarked_count`: one record per administration says
+# why it carries no evidence (`skipped`, or `none_marked` for a Finish with no seat marked) and
+# how many drawn seats were left unmarked. NULL / 0 on an old row: it recorded neither, and an
+# old row's absence is already disclosed by `blind_count = 0` and its message.
+#
+# The `criterion_stats` figure columns go beyond P2's two literal columns, deliberately: the
+# validity read and the package record (NFR-STATS-07) read STORED figures and never recompute
+# kappa, and the per-criterion row (keyed by version, criterion, backend, panel build and
+# administration — exactly FR-STATS-32's scope) held only `n`. A Tier P `validation_record`
+# cannot hold them: every graded version is published and its agreement column is frozen
+# (FR-PKG-04). `kappa`/`qwk` are NULL when not computable, and `qwk` is NULL for a line with
+# fewer than three bands; `reason` names an absent figure (`too_few_labels`); `figures` is the
+# JSON of the engine measurements (per-engine agreement, gate bins, non-inferiority, each
+# `insufficient_data` below its minimum) and the confusion counts a pooled read sums.
+_PKG_DURABLE_014 = Migration(
+    version=14,
+    name="pkg_validation_administration",
+    statements=(
+        Statement(
+            "ALTER TABLE package_validation ADD COLUMN absence_reason TEXT "
+            "CHECK (absence_reason IN ('skipped', 'none_marked'))"
+        ),
+        Statement(
+            "ALTER TABLE package_validation ADD COLUMN unmarked_count INTEGER "
+            "NOT NULL DEFAULT 0 CHECK (unmarked_count >= 0)"
+        ),
+        Statement("ALTER TABLE criterion_stats ADD COLUMN scoring_model TEXT"),
+        Statement("ALTER TABLE criterion_stats ADD COLUMN matched INTEGER"),
+        Statement("ALTER TABLE criterion_stats ADD COLUMN kappa REAL"),
+        Statement("ALTER TABLE criterion_stats ADD COLUMN qwk REAL"),
+        Statement("ALTER TABLE criterion_stats ADD COLUMN reason TEXT"),
+        Statement(
+            "ALTER TABLE criterion_stats ADD COLUMN figures TEXT NOT NULL DEFAULT '{}'"
+        ),
+    ),
+)
+
+
 TIER_MIGRATIONS[Tier.DURABLE] = tuple(sorted(
-    TIER_MIGRATIONS[Tier.DURABLE] + (_PKG_DURABLE_008,), key=lambda m: m.version
+    TIER_MIGRATIONS[Tier.DURABLE] + (_PKG_DURABLE_008, _PKG_DURABLE_014),
+    key=lambda m: m.version
 ))

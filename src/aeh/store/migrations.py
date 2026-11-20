@@ -534,11 +534,12 @@ def current_schema_version(tier: Tier) -> int:
 #: `aeh.integ`) moved it on; B8's `ingest_quarantine_decision` moved Cohort 34→35 —
 #: `aeh.ingest` holds the tail again. #863's `judge_verdict_reanchored` (migration J1) moved Cohort
 #: 35→36 — `aeh.judge` holds the tail. #875's `review_blind_draw` (migration R1) moved Cohort
-#: 36→37 — `aeh.review` holds the tail.)
+#: 36→37 — `aeh.review` holds the tail. #879's `pkg_validation_administration` (migration P2)
+#: moved Durable 13→14 — `aeh.pkg` holds Durable's tail.)
 COMPLETE_SCHEMA_VERSIONS: Mapping[Tier, int] = {
     Tier.PACKAGE: 16,
     Tier.COHORT: 37,
     # #636's `help_qa_log` — the Q&A log table — is Durable 13, declared here per the
     # migration-11 ruling above: a module the system runs without cannot own a chain link.
-    Tier.DURABLE: 13,
+    Tier.DURABLE: 14,
 }

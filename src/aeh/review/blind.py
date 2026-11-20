@@ -31,6 +31,7 @@ from .records import (
     DRAW_OPEN,
     DRAW_SKIPPED,
     DRAW_TRANSITIONS,
+    DrawRecord,
     LabelRecord,
     SubmissionGrade,
     WriteRecord,
@@ -187,6 +188,21 @@ class BlindSamplingMixin:
         if draw is None:
             return DRAW_SKIPPED if run_id in self._skipped_runs else DRAW_NOT_DRAWN
         return draw.state
+
+    def draw_record(self, run_id: str = "run-1") -> DrawRecord:
+        """The run's draw as stored (FR-REVIEW-30): its state and, once closed, what the close
+        recorded. Reading it settles a lapsed review window first, exactly as `draw_state` does,
+        so a lapsed draw reads `closed_by_window` with its labels written."""
+        draw = self._settled_draw(self._draw_key(run_id), counter_run=run_id)
+        if draw is None:
+            if run_id in self._skipped_runs:
+                return DrawRecord(run_id=run_id, state=DRAW_SKIPPED, absence_reason="skipped")
+            return DrawRecord(run_id=run_id, state=DRAW_NOT_DRAWN)
+        return DrawRecord(
+            run_id=draw.run_id, state=draw.state, labels_written=draw.labels_written,
+            unmarked_count=draw.unmarked_count, absence_reason=draw.absence_reason,
+            closed_at=draw.closed_at,
+        )
 
     def blind_draw_items(self, run_id: str = "run-1") -> tuple[BlindItem, ...]:
         """The run's drawn references in seat order, identity only, WITHOUT drawing: empty for
