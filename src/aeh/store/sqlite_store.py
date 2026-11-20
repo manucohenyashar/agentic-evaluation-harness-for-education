@@ -21,6 +21,14 @@ from .disk_full import _halt_if_disk_full
 from .security import _harden_dir, _harden_files, _refuse_insecure_location, _validated_component
 from .interfaces import Tier
 from .purge import (
+    ADMINISTRATIONS_RECORDED,
+    purge_refusal_grading_in_flight,
+    purge_refusal_next_step,
+    _PURGE_RUNS_IN_FLIGHT,
+    _PURGE_ADMINISTRATION_RECORDED,
+    _PURGE_ADMINISTRATION_TABLE_INFO,
+    _PURGE_ADMINISTRATION_VERSIONS,
+    _PURGE_OPEN_DRAWS,
     _remove_ai_call_journal,
     _assert_purge_order_matches_fk_graph,
     _COHORT_PURGE_ORDER,
@@ -203,14 +211,7 @@ class SqliteStore:
                 "that deletes student work — and FR-STORE-13's read-only entry exists to "
                 "inspect without touching."
             )
-        missing = self._purge_precondition_failures(cohort_id)
-        if missing:
-            raise PurgePreconditionError(
-                f"cohort {cohort_id!r} is not promoted to Tier D (FR-STORE-07, CT-STORE-10); "
-                f"nothing was deleted. Unmet gates: {'; '.join(missing)}. Promotion is "
-                f"M-STATS/M-REVIEW's promote; the gates check Tier D's audit_record, label "
-                f"and criterion_stats tables, scoped by cohort_id."
-            )
+        preconditions_verified = self._purge_preconditions(cohort_id)
 
         path = self.cohort_path(cohort_id)
         # Close **before** evicting: if the close raises (a recorded batch failure
@@ -383,7 +384,7 @@ class SqliteStore:
         self._last_vacuum_ms = vacuum_ms
         return PurgeReport(
             cohort_id=cohort_id,
-            preconditions_verified=tuple(name for name, _table in _PURGE_PRECONDITIONS),
+            preconditions_verified=preconditions_verified,
             tables_cleared=tables_cleared,
             rows_deleted_by_table=rows,
             file_bytes_before=bytes_before,
@@ -457,7 +458,75 @@ class SqliteStore:
                 connection.close()
         return referenced
 
-    def _purge_precondition_failures(self, cohort_id: str) -> list[str]:
+    def _purge_preconditions(self, cohort_id: str) -> tuple[str, ...]:
+        """The preconditions this purge passed, or `PurgePreconditionError` (FR-STORE-07/22).
+
+        In order: an open blind draw in the class refuses with exactly the teacher's next step
+        (its drafts are in flight and promotion has not run for it); a class whose every
+        administration has its Tier D record passes (`ADMINISTRATIONS_RECORDED` — what a real
+        promotion writes, for a finished and a skipped draw alike) unless a run is still
+        grading (`running`/`paused`), which refuses with its own next step; otherwise the three
+        `CT-STORE-10` gates decide. A refusal of a class that holds a grading run is exactly the
+        teacher's next step — the unmet gates ride `unmet_gates` and `detail`, never the
+        teacher's sentence; a class with no run has no blind sample to close, so its refusal
+        names the gates. The cohort file is only read, and only if it exists.
+        """
+        draws_open, in_flight, versions = 0, 0, []
+        path = self.cohort_path(cohort_id)
+        if path.exists():
+            # A raw read-only connection, as the sweep itself uses: opening the tier handle
+            # would migrate the file, and the purge reads the file as it stands.
+            connection = _connect(path, read_only=True, busy_timeout_ms=self._busy_timeout_ms,
+                                  retries=self._retries)
+            try:
+                tables = {str(row[0]) for row in _run(
+                    connection, _SELECT_COHORT_TABLES, retries=self._retries).fetchall()}
+                if "blind_draw" in tables:
+                    draws_open = int(_run(connection, _PURGE_OPEN_DRAWS,
+                                          retries=self._retries).fetchone()[0])
+                if "run" in tables:
+                    versions = sorted(str(row[0]) for row in _run(
+                        connection, _PURGE_ADMINISTRATION_VERSIONS,
+                        retries=self._retries).fetchall())
+                    in_flight = int(_run(connection, _PURGE_RUNS_IN_FLIGHT,
+                                         retries=self._retries).fetchone()[0])
+            finally:
+                connection.close()
+        next_step = purge_refusal_next_step(cohort_id) if (draws_open or versions) else None
+        if draws_open:
+            raise PurgePreconditionError(next_step or "", next_step=next_step)
+        # The administration route never passes a class that is still being graded: its
+        # record is keyed on the package version, not the run.
+        if versions and not in_flight and self._administrations_recorded(cohort_id, versions):
+            return (ADMINISTRATIONS_RECORDED,)
+        if in_flight:
+            next_step = purge_refusal_grading_in_flight(cohort_id)
+        failures = self._purge_precondition_failures(cohort_id)
+        if not failures:
+            return tuple(name for name, _table in _PURGE_PRECONDITIONS)
+        detail = (
+            f"cohort {cohort_id!r} is not promoted to Tier D (FR-STORE-07, CT-STORE-10); "
+            f"nothing was deleted. Unmet gates: {'; '.join(text for _n, text in failures)}. "
+            f"Promotion is M-STATS/M-REVIEW's promote; the gates check Tier D's audit_record, "
+            f"label and criterion_stats tables, scoped by cohort_id."
+        )
+        raise PurgePreconditionError(
+            next_step or detail, next_step=next_step,
+            unmet_gates=tuple(name for name, _text in failures), detail=detail)
+
+    def _administrations_recorded(self, cohort_id: str, versions: list[str]) -> bool:
+        """Whether Tier D holds the record of every one of the class's administrations, one per
+        package version (FR-STATS-33's key). Fail-closed on a Tier D without the table."""
+        durable = self.durable()
+        columns = {str(row[1]) for row in durable.query(_PURGE_ADMINISTRATION_TABLE_INFO)}
+        if not {"package_version_id", "cohort_id"} <= columns:
+            return False
+        return all(
+            durable.query(_PURGE_ADMINISTRATION_RECORDED, package_version_id=version,
+                          cohort_id=cohort_id)[0][0]
+            for version in versions)
+
+    def _purge_precondition_failures(self, cohort_id: str) -> list[tuple[str, str]]:
         """The Tier D promotion checks this cohort has not yet passed; empty when purge may run.
 
         A gate (`CT-STORE-10`'s three, in its words) passes iff Tier D holds the table, the
@@ -471,17 +540,18 @@ class SqliteStore:
         reason.
         """
         durable = self.durable()
-        missing: list[str] = []
+        missing: list[tuple[str, str]] = []
         for name, table in _PURGE_PRECONDITIONS:
             columns = {str(row[1]) for row in durable.query(_PURGE_TABLE_INFO[table])}
             if "cohort_id" not in columns:
-                missing.append(
+                missing.append((name,
                     f"{name} — Tier D's {table!r} does not carry the cohort_id scoping column"
-                )
+                ))
                 continue
             count = durable.query(_PURGE_PROMOTED_ROWS[table], cohort_id=cohort_id)[0][0]
             if not count:
-                missing.append(f"{name} — no {table} rows for cohort {cohort_id!r} in Tier D")
+                missing.append(
+                    (name, f"{name} — no {table} rows for cohort {cohort_id!r} in Tier D"))
         return missing
 
     # -- lifecycle ---------------------------------------------------------------------------------

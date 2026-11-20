@@ -466,6 +466,23 @@ _DURABLE_013: tuple[Statement, ...] = (
 )
 
 
+# --- Tier C, migration 38 (#880, migration S1 of the statistical-validity delta): `purpose` ---
+#
+# What a cohort is FOR: a teacher's class (`'class'`, every cohort before this migration and
+# every cohort created without saying otherwise) or the teacher's marked examples graded under
+# the package's current version (`'calibration'`, FR-CALIB-17), which never appears in class
+# lists, results, exports or review. **Declared here rather than in `aeh.calib`**, by the
+# migration-11 ruling above: M-CALIB may be absent or disabled, and a module the system runs
+# without cannot own a link in a tier's chain — every cohort open in that world would refuse with
+# `IncompleteMigrationChainError`. `cohort` is the store's own base table (`_COHORT_001`).
+_COHORT_038: tuple[Statement, ...] = (
+    Statement(
+        "ALTER TABLE cohort ADD COLUMN purpose TEXT NOT NULL DEFAULT 'class' "
+        "CHECK (purpose IN ('class', 'calibration'))"
+    ),
+)
+
+
 class _VersionOrderedRegistry(dict):
     """Keeps each tier's migration chain in ascending version order, whatever order the owning
     modules are imported in. Owners append at import time, and import order cannot be controlled
@@ -478,7 +495,10 @@ class _VersionOrderedRegistry(dict):
 TIER_MIGRATIONS: Mapping[Tier, tuple[Migration, ...]] = _VersionOrderedRegistry(
     {
         Tier.PACKAGE: (Migration(1, "package_tier_initial", _PACKAGE_001),),
-        Tier.COHORT: (Migration(1, "cohort_tier_initial", _COHORT_001),),
+        Tier.COHORT: (
+            Migration(1, "cohort_tier_initial", _COHORT_001),
+            Migration(38, "store_cohort_purpose", _COHORT_038),
+        ),
         Tier.DURABLE: (
             Migration(1, "durable_tier_initial", _DURABLE_001),
             Migration(2, "durable_lease_clock", _DURABLE_002),
@@ -535,10 +555,12 @@ def current_schema_version(tier: Tier) -> int:
 #: `aeh.ingest` holds the tail again. #863's `judge_verdict_reanchored` (migration J1) moved Cohort
 #: 35→36 — `aeh.judge` holds the tail. #875's `review_blind_draw` (migration R1) moved Cohort
 #: 36→37 — `aeh.review` holds the tail. #879's `pkg_validation_administration` (migration P2)
-#: moved Durable 13→14 — `aeh.pkg` holds Durable's tail.)
+#: moved Durable 13→14 — `aeh.pkg` holds Durable's tail. #880's `store_cohort_purpose`
+#: (migration S1) moved Cohort 37→38 — `aeh.store` holds Cohort's tail, declared here like
+#: migration 11 because M-CALIB, its consumer, may be absent.)
 COMPLETE_SCHEMA_VERSIONS: Mapping[Tier, int] = {
     Tier.PACKAGE: 16,
-    Tier.COHORT: 37,
+    Tier.COHORT: 38,
     # #636's `help_qa_log` — the Q&A log table — is Durable 13, declared here per the
     # migration-11 ruling above: a module the system runs without cannot own a chain link.
     Tier.DURABLE: 14,

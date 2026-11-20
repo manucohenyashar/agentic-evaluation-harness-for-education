@@ -14,11 +14,13 @@ Oracle — **post-purge absence**, against real bytes:
   NO file under the blob directory contains the student's sentence — the
   `TC-STORE-11`/`SEC-13` reclaim-by-evidence idiom, read against extraction's bytes.
 
-**Written ahead of #68** (`M-EXTRACT`). Registered in `WRITTEN_AHEAD_BLOCKERS` under
-`"#68 TC-EXTRACT-14 purge (waits on M-STATS/M-REVIEW promotion)"`: #68 made the
-extraction half runnable, but the purge half needs the Tier D promotion the shipped
-`purge_cohort` gate names (`audit_record`/`label`/`criterion_stats` scoped by
-`cohort_id`, and `promote` itself — M-STATS/M-REVIEW's to land).
+**Written ahead of #68** (`M-EXTRACT`); its purge half waited on promotion. #880
+(FR-STORE-22) made a promoted class purgeable, and the case now promotes the way the
+product does before it purges: the teacher skips the blind sample (M-REVIEW's
+`skip_blind_sample`, which closes the draw) and `aeh.pipeline.promote_administration`
+records the administration. The `WRITTEN_AHEAD_BLOCKERS` entry (keyed on the
+never-shipped `aeh.stats:promote_cohort`, re-keyed by the story to
+`aeh.pipeline:promote_administration`) is gone with the marker, since that surface ships.
 
 **Interface this case assumes of #68**: `ExtractionWorker(store, provider,
 model_ref).process(unit)` and `assemble_request`/`prompt_fields` — as everywhere in
@@ -60,7 +62,7 @@ from tests.support.extract_vocabulary import (
 from tests.support.impl import EXTRACT_MODULE, require
 from tests.support.orch_run import ORCH_COHORT_ID, seed_cohort, seed_package
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = pytest.mark.integration
 
 ISSUE = EXTRACT_ISSUE
 
@@ -99,9 +101,9 @@ def _blob_dir_texts(tmp_data_dir: Any) -> list[str]:
     return texts
 
 
-def _extract(store: Any, provider: Any, version: str) -> str:
-    """One run, one lease, one recorded reply, one worker pass; returns the unit's
-    work_id."""
+def _extract(store: Any, provider: Any, version: str) -> tuple[str, str]:
+    """One run, one lease, one recorded reply, one worker pass; returns the run id and the
+    unit's work_id."""
     AssembleRequest, Worker, ExtractionResult = require(
         EXTRACT_MODULE, ASSEMBLE, WORKER, RESULT_TYPE, issue=ISSUE
     )
@@ -134,7 +136,20 @@ def _extract(store: Any, provider: Any, version: str) -> str:
         ),
     )
     Worker(store, provider, model_ref).process(unit)
-    return unit.work_id
+    return run_id, unit.work_id
+
+
+def _promote_on_skip(store: Any, run_id: str) -> None:
+    """The administration promoted as the product promotes it (FR-PIPE-21, FR-STORE-22): the
+    teacher skips the blind sample, which closes the draw, and the composition root records
+    the administration."""
+    from aeh.pipeline import promote_administration
+    from aeh.review import review_service_over
+
+    review_service_over(store, cohort_ids=[ORCH_COHORT_ID], run_id=run_id,
+                        actor="teacher").skip_blind_sample(run_id)
+    promotion = promote_administration(store, run_id, "skip")
+    assert promotion.promoted, f"precondition: the administration was not promoted: {promotion}"
 
 
 def test_tc_extract_14_extraction_payloads_are_purged_with_the_tier_r_rows(
@@ -148,7 +163,7 @@ def test_tc_extract_14_extraction_payloads_are_purged_with_the_tier_r_rows(
         seed_cohort(store, ("SYN-001",))
         version = seed_package(store, _OPEN_CRITERIA)
         _seed_document(store, "SYN-001", _MARKDOWN)
-        work_id = _extract(store, make_fixture_provider(), version)
+        run_id, work_id = _extract(store, make_fixture_provider(), version)
 
         # Precondition (non-vacuity): the sentence is in BOTH stores, verbatim.
         rows = store.cohort(ORCH_COHORT_ID).query(
@@ -170,7 +185,8 @@ def test_tc_extract_14_extraction_payloads_are_purged_with_the_tier_r_rows(
             "precondition: the document blob does not hold the student's work"
         )
 
-        # The purge (shipped M-STORE instrument).
+        # The purge (shipped M-STORE instrument), once the administration is promoted.
+        _promote_on_skip(store, run_id)
         store.purge_cohort(ORCH_COHORT_ID)
 
         # Post-purge absence, byte-level.

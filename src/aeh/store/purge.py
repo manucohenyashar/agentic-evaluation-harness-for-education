@@ -141,6 +141,63 @@ _PURGE_PRECONDITIONS: tuple[tuple[str, str], ...] = (
 )
 
 
+# --- purge of a graded class (FR-STORE-22, CT-STORE-20; #880) ------------------------------------
+#
+# What a real promotion leaves behind does not meet the three gates above: `audit_record` is
+# append-only and its rows are never stamped with a cohort (promotion reads them *unclaimed*),
+# and a skipped administration writes no label and no per-criterion row. What promotion does
+# write, for every closed draw — Finish, Skip or the window's lapse — is the administration's
+# record in Tier D's `package_validation`, keyed (package version, cohort). So a class is also
+# promoted when **every administration it holds is recorded**: each package version a run of the
+# class graded under (a failed run graded nothing and can never be promoted) has its record.
+# The three gates stay as the other way through, unchanged.
+#
+# An open blind draw refuses first, whatever Tier D holds: the teacher's drafts are in flight and
+# promotion has not run for that draw (FR-PIPE-21). The refusal names what to do in the
+# teacher's words (`purge_refusal_next_step`), never only what is missing.
+
+#: Draws the teacher has not closed, in the cohort file (M-REVIEW's `blind_draw`, migration R1).
+_PURGE_OPEN_DRAWS = Statement("SELECT COUNT(*) FROM blind_draw WHERE state = 'open'")
+
+#: The administrations a class holds: the package versions its runs graded under. A failed run
+#: graded nothing, so it has no administration to promote.
+_PURGE_ADMINISTRATION_VERSIONS = Statement(
+    "SELECT DISTINCT package_version_id FROM run WHERE status <> 'failed'"
+)
+
+#: Runs still grading (started and not finished, or paused). Promotion is keyed on the package
+#: version, so a second run of an already-recorded version would otherwise pass the
+#: administration route mid-flight and the purge would delete the work being graded. A
+#: `pending` run was built and never started: nothing of it is in flight.
+_PURGE_RUNS_IN_FLIGHT = Statement(
+    "SELECT COUNT(*) FROM run WHERE status IN ('running', 'paused')"
+)
+
+#: Fail-closed like the gates: a Tier D without the record table holds no promotion.
+_PURGE_ADMINISTRATION_TABLE_INFO = Statement("PRAGMA table_info(package_validation)")
+
+#: One administration's record, written by promotion through M-PKG (FR-STATS-33).
+_PURGE_ADMINISTRATION_RECORDED = Statement(
+    "SELECT COUNT(*) FROM package_validation "
+    "WHERE package_version_id = :package_version_id AND cohort_id = :cohort_id"
+)
+
+#: The name the alternative route reports in `PurgeReport.preconditions_verified`.
+ADMINISTRATIONS_RECORDED = "every administration recorded"
+
+
+def purge_refusal_next_step(class_name: str) -> str:
+    """What the teacher does about a refused purge of a graded class (FR-STORE-22). The class
+    is named by its name, which in this system is the class's own id (the console lists a
+    class under it)."""
+    return f"Finish or skip the blind sample for {class_name}, then delete the class."
+
+
+def purge_refusal_grading_in_flight(class_name: str) -> str:
+    """What the teacher does about a purge refused because the class is still being graded."""
+    return (f"Let the grading of {class_name} finish, or stop it, then delete the class.")
+
+
 #: Children before parents. Deferred foreign keys make the order irrelevant to correctness —
 #: `PRAGMA defer_foreign_keys` is set before the BEGIN (SQLite makes it a no-op inside a
 #: transaction) and checks the constraints at COMMIT, when every table is empty — but a
