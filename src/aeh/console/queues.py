@@ -135,6 +135,14 @@ class QueuesMixin:
                 for entry in built.shown
                 for item in (getattr(entry, "members", None) or (entry,))
             )
+            # FR-CONSOLE-89 / CT-CONSOLE-56 (#882): while the blind draw is open, a drawn
+            # cell is not offered for review — its item would show the system's mark.
+            from .held_back import drawn_lines
+
+            drawn = drawn_lines(self, run_id)
+            if drawn is not None:
+                shown = tuple(item for item in shown
+                              if (item.submission_id, item.criterion_id) not in drawn.cells)
             queue = QueueContents(
                 flagged_total=built.flagged_total,
                 shown=shown,

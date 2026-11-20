@@ -32,7 +32,9 @@ from tests.support.console_vocabulary import (
     CONTROL_SURFACE_ACTIONS,
     CORRECTIONS_CONTROL_ACTIONS,
     DELTA_CONTROL_ACTIONS,
+    CURRENT_HLD_CONTROL_ACTIONS,
     HLD_CONTROL_ACTIONS,
+    RETIRED_HLD_CONTROL_ACTIONS,
     MOJIBAKE_MARKERS,
     MVP_ABSENT_TOUCHPOINT,
     OBSERVABILITY_METRICS,
@@ -187,8 +189,12 @@ def test_the_control_surface_transcribes_hld_11_8(repo_root):
     assert len(set(CONTROL_SURFACE_ACTIONS)) == len(CONTROL_SURFACE_ACTIONS), (
         "the enumeration has a duplicate"
     )
+    # #882: FR-CONSOLE-83 retired the HLD's per-choice blind submit in favour of draft and
+    # Finish, so the runtime surface is the HLD's fifteen minus the retired ones.
+    assert set(RETIRED_HLD_CONTROL_ACTIONS) <= set(HLD_CONTROL_ACTIONS)
+    assert not set(RETIRED_HLD_CONTROL_ACTIONS) & set(CONTROL_SURFACE_ACTIONS)
     assert CONTROL_SURFACE_ACTIONS == (
-        HLD_CONTROL_ACTIONS + tuple(DELTA_CONTROL_ACTIONS) + tuple(REDESIGN_CONTROL_ACTIONS)
+        CURRENT_HLD_CONTROL_ACTIONS + tuple(DELTA_CONTROL_ACTIONS) + tuple(REDESIGN_CONTROL_ACTIONS)
         + tuple(CORRECTIONS_CONTROL_ACTIONS) + tuple(VALIDITY_CONTROL_ACTIONS)
     )
 

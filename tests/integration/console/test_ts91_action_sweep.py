@@ -433,21 +433,30 @@ def test_tc_console_44_row9_a_blind_label_is_recorded(tmp_path, monkeypatch):
         app = build_console(store=world.store)
         cells = [tuple(r) for r in world.handle.query(
             "SELECT submission_id, criterion_id FROM criterion_score WHERE criterion_id IN ('C1', 'C2')")]
-        outcomes = [app.perform("blind-sample submission", run_id=world.run_id, submission_id=s,
-                                criterion_id=c, band=dev_pipe.band_at(c, 2)) for s, c in cells]
-        # Re-based at #875 (FR-REVIEW-26): a blind choice is a draft until the sample is
-        # finished, so the console's choice writes no label; the label lands at Finish. The
-        # console's own `blind-sample finish` action is S12's, so Finish runs through M-REVIEW.
+        # Re-based at S12 (#882, FR-CONSOLE-83): the per-choice `blind-sample submission` is
+        # gone. The seats read draws once; each drafted seat is named by its seat id; the
+        # console's own `blind-sample finish` writes the labels and reports them as its rows.
+        from aeh.console.blind_actions import blind_seats_payload
+
+        seats = blind_seats_payload(app, world.run_id)["seats"]
+        drawn_cells = {seat["criterion_id"] for seat in seats}
+        outcomes = [app.perform("blind-sample draft", run_id=world.run_id,
+                                seat_id=seat["seat_id"],
+                                band=dev_pipe.band_at(seat["criterion_id"], 2))
+                    for seat in seats]
         drafted = _rows(root, "SELECT 1 FROM blind_draft WHERE run_id = ?", world.run_id)
         labelled_before = _rows(root, "SELECT 1 FROM label WHERE label_type = 'blind'",
                                 tier="durable")
-        app._review_service(world.run_id).finish_blind(world.run_id)
+        finished = app.perform("blind-sample finish", run_id=world.run_id)
     finally:
         world.store.close()
+    assert cells and drawn_cells <= {c for _s, c in cells}, (cells, seats)
     assert any(o.dispatched for o in outcomes), [o.detail[:120] for o in outcomes]
     assert drafted, "no console choice was stored as a draft"
     assert not labelled_before, "a console choice wrote a blind label before Finish"
-    assert _rows(root, "SELECT 1 FROM label WHERE label_type = 'blind'", tier="durable")
+    blind = _rows(root, "SELECT 1 FROM label WHERE label_type = 'blind'", tier="durable")
+    assert finished.dispatched and len(finished.rows_written) == len(blind) == len(seats), (
+        finished, len(blind), len(seats))
 
 
 def test_tc_console_44_row12_amend_a_finalized_grade(tmp_path, monkeypatch):
@@ -528,10 +537,13 @@ def test_adv_14_a_raising_door_is_reported_refused(tmp_path, monkeypatch, action
         elif action == "start run":
             params = {"run_id": world.run_id, "config": edge_cfg(panel=world.panel_refs)}
         else:
+            # Re-based at S12 (#882): a queued cell, so the review action reaches its door.
+            # Since #928 (holistic 0.95) every C1 cell is routed `auto` and is in no queue.
             sid, cid = world.handle.query("SELECT submission_id, criterion_id FROM criterion_score "
-                                          "WHERE criterion_id = 'C1' LIMIT 1")[0]
+                                          "WHERE routing = 'queued' ORDER BY criterion_id "
+                                          "LIMIT 1")[0]
             params = {"run_id": world.run_id, "submission_id": sid, "criterion_id": cid,
-                      "new_band": dev_pipe.band_at("C1", 2), "decision": "edit", "actor": "teacher",
+                      "new_band": dev_pipe.band_at(cid, 2), "decision": "edit", "actor": "teacher",
                       "reason": "r"}
         outcome = app.perform(action, **params)
     finally:

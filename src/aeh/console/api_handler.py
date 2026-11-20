@@ -245,6 +245,40 @@ _READS = {
 }
 
 
+
+#: The teacher-facing reads a drawn line could be read through (FR-CONSOLE-89, CT-CONSOLE-56,
+#: #882): while a run's blind draw is open, each answers with the drawn lines, and the drawn
+#: students' totals, held back. The value says whether a drawn cell's records are left out of
+#: the document's record lists (the review queue's items, the AI-call log's calls). Exports are
+#: not here: they carry every total (R60).
+HELD_BACK_READS: dict[str, bool] = {
+    RESULTS_CLASS_READ: False,
+    RESULTS_STUDENT_READ: False,
+    RESULTS_SCREEN_READ: False,
+    STUDENT_DETAIL_READ: False,
+    PAST_TESTS_READ: False,
+    LOGS_READ: False,
+    ISSUES_READ: False,
+    REVIEW_QUEUE_READ: True,
+    AI_CALLS_READ: True,
+}
+
+
+def _held_back(name: str, reader: Any, drop_records: bool) -> Any:
+    def read(console: Any, app: Any, params: Any, query: Any) -> Any:
+        from .held_back import hold_back
+
+        answer = reader(console, app, params, query)
+        run_id = str(query.get("run_id") or "") if hasattr(query, "get") else ""
+        return hold_back(app, answer, run_id=run_id or None, drop_records=drop_records)
+
+    read.__name__ = f"held_back_{name.replace(' ', '_')}"
+    return read
+
+
+for _name, _drop in HELD_BACK_READS.items():
+    _READS[_name] = _held_back(_name, _READS[_name], _drop)
+
 class ApiRequestsMixin:
     """`/api/` routed from `API_ROUTES`, and the SPA bundle served from `spa_dir`."""
 

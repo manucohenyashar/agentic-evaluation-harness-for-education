@@ -408,12 +408,32 @@ def monitor_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
         progress_payload = asdict(report) if not isinstance(report, dict) else dict(report)
     except Exception:  # noqa: BLE001 — a run with no ledger yet shows its status alone
         progress_payload = None
-    return {
+    payload: dict[str, Any] = {
         "run_id": run_id,
         "status": str(run_row["status"]),
         "pause_reason": str(run_row.get("pause_reason") or "") or None,
         "progress": progress_payload,
     }
+    if payload["status"] == "complete":
+        payload.update(_completion_outcome(app, run_id))
+    return payload
+
+
+def _completion_outcome(app: Any, run_id: str) -> dict[str, Any]:
+    """FR-CONSOLE-82 (#882): a run that finished offers its blind sample first and its results
+    second. The draw opens here, the first time the teacher is shown the run finished, so the
+    lines it draws are held back from Results from the first look (ADR-58). `blind_sample` is
+    the draw's state; a run with nothing to draw, or whose sample is closed, offers the
+    results alone."""
+    from .blind_actions import DRAW_OPEN, RESULTS_NEXT, completion_next, settle_draw
+
+    try:
+        _service, state = settle_draw(app, run_id, open_if_complete=True)
+    except Exception:  # noqa: BLE001 — a draw that cannot be read offers the results alone
+        state = "not_drawn"
+    if state == DRAW_OPEN:
+        return {"blind_sample": state, "next": completion_next()}
+    return {"blind_sample": state, "next": [dict(RESULTS_NEXT)]}
 
 
 def _queue_payload(view: Any) -> dict[str, Any]:
@@ -466,67 +486,18 @@ def review_queue_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
 
 
 def blind_seats_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
-    """The blind screen's document: M-REVIEW's draw for the run, each seat's identity alone —
-    submission, criterion, evaluation mode — beside the rubric's band scale as names. No
-    system output crosses: the draw's items are exactly what M-REVIEW's `BlindSession`
-    carries (`CT-REVIEW-09`), and the payload adds nothing the flow's transport face
-    (`blind_flow`) does not already name."""
-    from aeh.review import REVIEW_DEFAULT_BANDS
+    """The blind screen's document (FR-CONSOLE-83, #882): M-REVIEW's seats for the run, each
+    with exactly `BLIND_SEAT_KEYS` — the seat's identity, the student's answer and the pages it
+    is on, the grading point's levels with their descriptors, and the teacher's draft — beside
+    the draw's state and `progress: {marked, total}`. Nothing derived from grading crosses: the
+    seats are M-REVIEW's, read without a score (CT-REVIEW-09). A complete run that has not drawn
+    draws here, once: opening the sample is where the teacher asks for it (ADR-58)."""
+    from .blind_actions import blind_seats_payload
 
     run_id = str(query.get("run_id") or "") or _bound_run_id(console)
     if not run_id:
         raise ValueError("the blind sample names no run")
-    service = app._review_service(run_id)
-    if service is None:
-        raise ValueError(f"M-REVIEW cannot open run {run_id!r}")
-    # The run's stored draw (#875). A run that has not drawn yet draws here, once: the sample
-    # is fixed the first time it is shown, so the seat the teacher sees is the seat their mark
-    # lands on (a re-draw per request was #867's finding). A closed draw still lists its seats;
-    # a skipped run has none.
-    items = service.blind_draw_items(run_id)
-    if not items and service.draw_state(run_id) == "not_drawn":
-        items = service.blind_sample(run_id).items
-    cohort_id = None
-    run_row = _run_row_of(console, app, query)
-    if run_row is not None:
-        cohort_id = str(run_row["cohort_id"])
-    refs: dict[str, str] = {}
-    if cohort_id:
-        try:
-            refs = {
-                str(row["submission_id"]): str(row["student_ref"])
-                for row in app._store.cohort(cohort_id).query(
-                    "SELECT submission_id, student_ref FROM submission")
-            }
-        except Exception:  # noqa: BLE001 — a seat renders its submission id alone
-            refs = {}
-    names = _roster_names(app._store.cohort(cohort_id)) if cohort_id else {}
-    # Each seat's own scale: the package's declared levels for that grading point, the names
-    # M-REVIEW maps a submitted label through — the rubric, not system output, so the blind
-    # stays blind. A generic label the criterion does not declare is refused by the review
-    # service, so offering only `REVIEW_DEFAULT_BANDS` blocked every custom-band package;
-    # the generic scale remains the fallback for a seat whose package cannot be read.
-    scales = _declared_scales(app, run_row) if run_row is not None else {}
-    labels = _grading_point_labels(app, run_row) if run_row is not None else {}
-    return {
-        "run_id": run_id,
-        "band_scale": [str(band["band"]) for band in REVIEW_DEFAULT_BANDS],
-        "seats": [
-            {
-                "submission_id": str(item.submission_id),
-                "student_ref": refs.get(str(item.submission_id)),
-                # The teacher knows the student by name (the blind hides the system's
-                # verdict, never whose paper it is).
-                "full_name": names.get(refs.get(str(item.submission_id), "")),
-                "criterion_id": str(item.criterion_id),
-                "label": labels.get(str(item.criterion_id), str(item.criterion_id)),
-                "band_scale": [name for name, _points in
-                               scales.get(str(item.criterion_id), ())] or None,
-                "evaluation_mode": str(getattr(item, "evaluation_mode", "") or ""),
-            }
-            for item in items
-        ],
-    }
+    return blind_seats_payload(app, run_id)
 
 
 # --- the results screens ---------------------------------------------------------------------------

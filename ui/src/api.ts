@@ -176,22 +176,32 @@ export interface ReviewQueue {
   run_id: string;
 }
 
+/** One level a blind seat offers: its name and the rubric's description of it (R40). */
+export interface BlindBand {
+  name: string;
+  descriptor: string | null;
+}
+
+/** One blind seat (FR-REVIEW-27, FR-CONSOLE-83): who and which question, the student's
+ * answer and the pages it is on, the levels with their descriptions, and the teacher's draft.
+ * Nothing the system decided about the answer is carried. */
 export interface BlindSeat {
-  submission_id: string;
-  student_ref: string | null;
-  full_name?: string | null;
+  seat_id: string;
+  student_name: string | null;
+  question: string;
   criterion_id: string;
-  /** The grading point's teacher label (the question it grades). */
-  label?: string;
-  /** The grading point's own declared levels; null when the package could not be read. */
-  band_scale?: string[] | null;
-  evaluation_mode: string;
+  answer_text: string | null;
+  page_refs: number[];
+  bands: BlindBand[];
+  draft_band: string | null;
 }
 
 export interface BlindSeats {
   run_id: string;
-  band_scale: string[];
+  /** The draw's state: open while it can be marked; finished, skipped or closed after. */
+  state: string;
   seats: BlindSeat[];
+  progress: { marked: number; total: number };
 }
 
 export interface CriterionBand {

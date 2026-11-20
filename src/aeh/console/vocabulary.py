@@ -19,7 +19,6 @@ CONTROL_SURFACE_ACTIONS: tuple[str, ...] = (
     "pause/resume",
     "resolve quarantine item",
     "review action",
-    "blind-sample submission",
     "correct an answer key after a run",
     "finalize batch",
     "amend a finalized grade",
@@ -92,6 +91,13 @@ CONTROL_SURFACE_ACTIONS: tuple[str, ...] = (
     # and **Resume** continues it from the next unread file. Its own row rather than a widened
     # `pause/resume`, which addresses a run's control queue; a reading job has no run.
     "resume reading",                # FR-CONSOLE-97
+    # The statistical-validity delta's blind sample (#882, FR-CONSOLE-81/83): a seat's band is
+    # a draft, Finish writes the labels and closes the draw, Skip closes it with none. These
+    # three replace HLD §11.8's per-choice "blind-sample submission", which recorded each
+    # choice as it was made (SV-18).
+    "blind-sample draft",            # FR-CONSOLE-83
+    "blind-sample finish",           # FR-CONSOLE-83
+    "blind-sample skip",             # FR-CONSOLE-81
 )
 
 
@@ -226,14 +232,6 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
         "label.label_type",
         "label.band",
     ),
-    # #875 (FR-REVIEW-26): a blind choice is a draft until the sample closes; the first
-    # choice on a run that has not drawn opens (and stores) its draw.
-    "blind-sample submission": (
-        "blind_draft.band",
-        "blind_draft.updated_at",
-        "blind_draw.state",
-        "blind_draw_seat.seat_no",
-    ),
     "correct an answer key after a run": ("criterion.answer_key",),
     "finalize batch": ("submission_grade.finalized_at", "audit_record.actor"),
     "amend a finalized grade": (
@@ -353,6 +351,35 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
     # FR-CONSOLE-97: Resume restarts the class's reading worker on the files its pause kept —
     # console memory (`ADR-47`), no store row; the read itself writes through M-INGEST.
     "resume reading": (),
+    # #882 (FR-CONSOLE-83, FR-REVIEW-26): a seat's band is stored as a draft, changeable
+    # until the draw closes.
+    "blind-sample draft": (
+        "blind_draft.band",
+        "blind_draft.updated_at",
+    ),
+    # #882 (FR-REVIEW-26, FR-PIPE-21): Finish writes one blind label per drafted seat and
+    # closes the draw, then M-PIPE promotes the administration (M-STATS's record).
+    "blind-sample finish": (
+        "label.label_type",
+        "label.band",
+        "label.actor",
+        "blind_draw.state",
+        "blind_draw.closed_at",
+        "blind_draw.labels_written",
+        "blind_draw.unmarked_count",
+        "package_validation.cohort_id",
+        "audit_record.actor",
+    ),
+    # #882 (FR-CONSOLE-81, FR-REVIEW-13): Skip closes the draw with no label, discarding any
+    # draft, then M-PIPE promotes the skipped administration (which the repeated-skip alert
+    # counts).
+    "blind-sample skip": (
+        "blind_draw.state",
+        "blind_draw.closed_at",
+        "blind_draw.absence_reason",
+        "package_validation.cohort_id",
+        "audit_record.actor",
+    ),
 }
 
 
