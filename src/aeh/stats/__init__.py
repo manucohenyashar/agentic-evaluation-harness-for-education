@@ -149,7 +149,9 @@ from .package_record import (
     PackageRecord,
     RecordAdministration,
     RecordCriterion,
+    administration_figure_views,
     administration_pairs,
+    record_figure_views,
     package_record,
 )
 from .history import (
@@ -255,6 +257,8 @@ __all__ = [
     "promote",
     "administration_record",
     "administration_pairs",
+    "administration_figure_views",
+    "record_figure_views",
     "package_record",
     "LabelPair",
     "PackageRecord",

@@ -615,13 +615,17 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # Every one a declared `STATS_STATEMENTS` statement with keyword
     # parameters (FR-STORE-08); the module's other reads go through tier
     # handles, which are not census sites. Pinned from the walker.
-    "aeh.stats.promotion:222",
-    "aeh.stats.promotion:233",
-    "aeh.stats.promotion:239",
-    "aeh.stats.promotion:250",
-    "aeh.stats.promotion:259",
-    "aeh.stats.promotion:255",
-    "aeh.stats.promotion:322",
+    # (#881's re-pin: one import line moved every site down one, and the figures write
+    # gained the earlier-administrations read beside it — `select_earlier_criterion_stats`,
+    # a declared statement with keyword parameters, the cumulative figure's input.)
+    "aeh.stats.promotion:223",
+    "aeh.stats.promotion:234",
+    "aeh.stats.promotion:240",
+    "aeh.stats.promotion:251",
+    "aeh.stats.promotion:260",
+    "aeh.stats.promotion:256",
+    "aeh.stats.promotion:324",
+    "aeh.stats.promotion:332",
     "aeh.stats.revisions:41",
     # The synth site is #97's line number: the single narrative INSERT, declared in
     # SYNTH_STATEMENTS with keyword parameters — the write the ADR-8 primary key

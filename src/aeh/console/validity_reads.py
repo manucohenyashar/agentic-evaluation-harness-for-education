@@ -32,54 +32,21 @@ from .version_labels import read_version_label, teacher_date
 MORE_CREDIT = "more_credit"
 LESS_CREDIT = "less_credit"
 
-#: The scoring model that never carries an agreement figure (R53).
-_DETERMINISTIC = "deterministic"
-
 NO_RUN_DETAIL = "The agreement read names no test run. Choose a test run first."
 UNKNOWN_RUN_DETAIL = "That test run is not in this console's records."
 NO_VERSION_DETAIL = "The record read names no test version. Choose the test again."
 
 
-def _figure_entry(criterion_id: str, label: str, scoring_model: str, *, n: int,
-                  minimum: int, matched: Any, kappa: Any, qwk: Any,
-                  reason: Any) -> dict[str, Any]:
-    entry: dict[str, Any] = {
-        "criterion_id": criterion_id,
-        "label": label,
-        "scoring_model": scoring_model,
-        "matched": matched,
-        "n": n,
-        "kappa": kappa,
-        "min_n_for_headline": minimum,
-        "too_few": n < minimum,
-        "reason": reason,
-    }
-    if qwk is not None:
-        entry["qwk"] = qwk
-    return entry
-
-
-def _record_criteria(record: Any, labels: dict[str, str]) -> list[dict[str, Any]]:
-    """A package record's per-criterion figures as entries (figures withheld below the
-    minimum by M-STATS), each scoped by its backend and panel build."""
-    entries = []
-    for item in record.criteria:
-        if item.scoring_model == _DETERMINISTIC:
-            continue
-        entry = _figure_entry(
-            item.criterion_id, labels.get(item.criterion_id, item.criterion_id),
-            item.scoring_model, n=item.n, minimum=record.min_n_for_headline,
-            matched=item.matched, kappa=item.kappa, qwk=item.qwk, reason=item.reason)
-        entry["backend"] = item.backend_profile
-        entry["panel_build_ref"] = item.panel_build_ref
-        entries.append(entry)
-    return entries
+def _labelled(views: list[dict[str, Any]], labels: dict[str, str]) -> list[dict[str, Any]]:
+    """M-STATS' figure views, each with its grading point's teacher label beside the id."""
+    return [{**view, "label": labels.get(str(view["criterion_id"]), str(view["criterion_id"]))}
+            for view in views]
 
 
 def _prior_record(app: Any, run_row: Any, labels: dict[str, str]) -> dict[str, Any] | None:
     """The test version's record before this class's administration, labelled with its classes,
     population and backend; None when no earlier class took this version."""
-    from aeh.stats import package_record
+    from aeh.stats import package_record, record_figure_views
 
     record = package_record(app._store, str(run_row["package_version_id"]),
                             before_cohort_id=str(run_row["cohort_id"]))
@@ -97,7 +64,7 @@ def _prior_record(app: Any, run_row: Any, labels: dict[str, str]) -> dict[str, A
         "backend": ", ".join(backends) or None,
         "blind_labels": record.blind_labels,
         "min_n_for_headline": record.min_n_for_headline,
-        "criteria": _record_criteria(record, labels),
+        "criteria": _labelled(record_figure_views(record), labels),
     }
 
 
@@ -141,7 +108,11 @@ def validity_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     the differences; and the earlier record under `prior_record`, never in the current
     position. Before the draw closes there are no criteria and no differences."""
     from aeh.pipeline import validity_stage
-    from aeh.stats import STATS_MIN_N_FOR_HEADLINE, administration_record
+    from aeh.stats import (
+        STATS_MIN_N_FOR_HEADLINE,
+        administration_figure_views,
+        administration_record,
+    )
 
     run_id = str(query.get("run_id") or "") or _bound_run_id(console)
     if not run_id:
@@ -170,16 +141,9 @@ def validity_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     record = administration_record(app._store,
                                    package_version_id=str(run_row["package_version_id"]),
                                    cohort_id=str(run_row["cohort_id"]))
-    figures = dict(record.criterion_figures) if record is not None else {}
-    payload["criteria"] = [
-        _figure_entry(criterion, labels.get(criterion, criterion),
-                      str(figure.get("scoring_model") or ""), n=int(figure.get("n") or 0),
-                      minimum=minimum, matched=figure.get("matched"),
-                      kappa=figure.get("kappa"), qwk=figure.get("qwk"),
-                      reason=figure.get("reason"))
-        for criterion, figure in sorted(figures.items())
-        if str(figure.get("scoring_model") or "") != _DETERMINISTIC
-    ]
+    payload["criteria"] = _labelled(
+        administration_figure_views(record, minimum=minimum) if record is not None else [],
+        labels)
     payload["disagreements"] = _disagreements(app, run_row, labels)
     return payload
 
@@ -188,7 +152,7 @@ def package_record_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     """`GET /api/v1/packages/record` (FR-CONSOLE-84): the version's record (FR-STATS-35) with
     its teacher label and class names. An unknown version is refused in teacher words."""
     del console
-    from aeh.stats import package_record
+    from aeh.stats import package_record, record_figure_views
 
     version_id = str(query.get("package_version_id") or "").strip()
     if not version_id:
@@ -218,7 +182,7 @@ def package_record_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
         "blind_labels": record.blind_labels,
         "min_n_for_headline": record.min_n_for_headline,
         "too_few": record.blind_labels < record.min_n_for_headline,
-        "criteria": _record_criteria(record, labels),
+        "criteria": _labelled(record_figure_views(record), labels),
         "administrations": administrations,
     }
 

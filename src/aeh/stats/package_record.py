@@ -184,7 +184,7 @@ def package_record(store: Any, package_version_id: str, *,
         too_few = n < minimum
         criteria.append(RecordCriterion(
             criterion_id=criterion,
-            scoring_model=str(latest.get("scoring_model") or ""),
+            scoring_model=latest.get("scoring_model") or "",
             backend_profile=backend,
             panel_build_ref=panel,
             n=n,
@@ -228,11 +228,64 @@ def administration_pairs(store: Any, *, cohort_id: str,
     return tuple(pairs)
 
 
+def _view(criterion_id: str, scoring_model: str, *, n: int, minimum: int, matched: Any,
+          kappa: Any, qwk: Any, reason: Any) -> dict[str, Any]:
+    view: dict[str, Any] = {
+        "criterion_id": criterion_id,
+        "scoring_model": scoring_model,
+        "matched": matched,
+        "n": n,
+        "kappa": kappa,
+        "min_n_for_headline": minimum,
+        "too_few": n < minimum,
+        "reason": reason,
+    }
+    if qwk is not None:
+        view["qwk"] = qwk
+    return view
+
+
+def administration_figure_views(update: Any, *, minimum: int | None = None
+                                ) -> list[dict[str, Any]]:
+    """One administration's stored per-criterion figures as the console serves them
+    (FR-CONSOLE-80): each judged criterion's scoring model, matched, n, kappa (and qwk only
+    where stored, a three-or-more-band line), the headline minimum and `too_few`. Each view is
+    one criterion's, so atomic and holistic never pool (FR-CONSOLE-10); a deterministic line
+    has no admissible label, so it has no figure and never appears (R53). The figures are
+    passed through, never recomputed: a consumer outside M-STATS names no figure field, and
+    nothing here branches on the scoring model's value (CT-AGG-09)."""
+    limit = int(_settings.STATS_MIN_N_FOR_HEADLINE if minimum is None else minimum)
+    figures = dict(getattr(update, "criterion_figures", None) or {})
+    return [
+        _view(criterion, figure.get("scoring_model") or "", n=int(figure.get("n") or 0),
+              minimum=limit, matched=figure.get("matched"), kappa=figure.get("kappa"),
+              qwk=figure.get("qwk"), reason=figure.get("reason"))
+        for criterion, figure in sorted(figures.items())
+    ]
+
+
+def record_figure_views(record: PackageRecord) -> list[dict[str, Any]]:
+    """A package record's per-criterion figures as the console serves them (FR-CONSOLE-84):
+    the same view as `administration_figure_views`, with the figures withheld below the
+    minimum, and each scoped by its `backend` and `panel_build_ref`."""
+    views = []
+    for item in record.criteria:
+        view = _view(item.criterion_id, item.scoring_model, n=item.n,
+                     minimum=record.min_n_for_headline, matched=item.matched,
+                     kappa=item.kappa, qwk=item.qwk, reason=item.reason)
+        view["backend"] = item.backend_profile
+        view["panel_build_ref"] = item.panel_build_ref
+        views.append(view)
+    return views
+
+
 __all__: Sequence[str] = (
     "LabelPair",
     "PackageRecord",
     "RecordAdministration",
     "RecordCriterion",
+    "administration_figure_views",
     "administration_pairs",
     "package_record",
+    "record_figure_views",
 )

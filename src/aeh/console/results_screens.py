@@ -103,7 +103,7 @@ class ResultsScreensMixin:
     def _rollup_agreement(self, run_id: str) -> str:
         """The agreement block on screen S12, on a real store (FR-CONSOLE-24, #529): THIS
         administration's stored per-criterion figures (its cohort, its package version), each
-        one criterion's — atomic and holistic never merged (FR-CONSOLE-10) — and the absence
+        one criterion's, named by it — atomic and holistic never merged (FR-CONSOLE-10) — and the absence
         sentence when the record holds none. A multi-criterion record carries no single
         figure (FR-STATS-32), so the per-criterion rows are what is read (CT-STATS-29, #881)."""
         row = self._run_row(run_id)
@@ -129,7 +129,7 @@ class ResultsScreensMixin:
             return render_agreement_block(no_new_evidence=True, population=run_id)
         backend = str(_row_get(row, "backend_profile") or "") or None
         return " ".join(
-            f"{figure.get('criterion_id')} ({figure.get('scoring_model') or 'judged'}): "
+            f"{figure.get('criterion_id')}: "
             + render_agreement_block(
                 figure={"kappa": figure["kappa"], "n": figure.get("n"),
                         "band_count": figure.get("band_count"),
