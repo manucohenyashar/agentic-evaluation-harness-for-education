@@ -51,6 +51,8 @@ from .vocabulary import (
     RUN_START_STATE_READ,
     STUDENT_DETAIL_READ,
     SYSTEM_STATUS_READ,
+    PACKAGE_RECORD_READ,
+    VALIDITY_READ,
     WORKBOOK_EXPORT_READ,
 )
 
@@ -178,6 +180,10 @@ def _build_routes() -> tuple[ApiRoute, ...]:
         ApiRoute("GET", f"{API_PREFIX}/results/screen", None, RESULTS_SCREEN_READ),
         ApiRoute("GET", f"{API_PREFIX}/results/student-detail", None, STUDENT_DETAIL_READ),
         ApiRoute("GET", f"{API_PREFIX}/system-status", None, SYSTEM_STATUS_READ),
+        # #881 (FR-CONSOLE-80/84): the agreement shown — one run's validity read and a test
+        # version's cumulative record. Reads of stored figures; neither writes.
+        ApiRoute("GET", f"{API_PREFIX}/results/validity", None, VALIDITY_READ),
+        ApiRoute("GET", f"{API_PREFIX}/packages/record", None, PACKAGE_RECORD_READ),
         # #755 (FR-CONSOLE-47…52, FR-CONSOLE-60): the redesign SPA's read surface. Each is
         # a pure store/service projection — the context header's feed, the secondary pages'
         # documents, the configuration projection and the authoring library's reads. The

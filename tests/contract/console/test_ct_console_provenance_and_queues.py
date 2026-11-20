@@ -91,7 +91,9 @@ def test_tc_console_c10_every_route_that_displays_a_grade_displays_its_provenanc
 # --- CT-CONSOLE-11 — three renderings, three tests ------------------------------------------------
 
 
-def test_tc_console_c11a_any_agreement_statistic_renders_corrected_scoped_and_unmerged():
+def test_tc_console_c11a_any_agreement_statistic_renders_corrected_scoped_and_unmerged(
+    tmp_data_dir,
+):
     """`FR-CONSOLE-10` — four requirements in one sentence, and each has a way of being lost.
 
     Chance-corrected (`R8`: on a four-band scale two judges guessing agree a quarter of the time,
@@ -102,6 +104,11 @@ def test_tc_console_c11a_any_agreement_statistic_renders_corrected_scoped_and_un
 
     Swept over every block on every route rather than asserted once, because the fourth requirement
     fails per block: a page can scope its atomic figure correctly and merge the holistic one.
+
+    Re-based at #881 (FR-CONSOLE-85): the storeless build no longer renders a placeholder figure
+    on S12, so a block carrying the absence sentence is `FR-CONSOLE-24`'s (C11b's) and is not a
+    statistic to judge here; S12's figure arm is a real store whose administration record holds
+    a per-criterion figure, built in the test as FR-CONSOLE-85 says.
     """
     build_console = require(CONSOLE_MODULE, "build_console", issue="#123")
 
@@ -109,12 +116,24 @@ def test_tc_console_c11a_any_agreement_statistic_renders_corrected_scoped_and_un
     failures: list[str] = []
     blocks_seen = 0
 
-    for screen, route in app.screens().items():
-        for block in elements(app.render(route).html, "agreement"):
+    def judge(screen: str, route: str, html: str) -> None:
+        nonlocal blocks_seen
+        for block in elements(html, "agreement"):
+            text = visible_text(block)
+            if NO_NEW_VALIDATION_EVIDENCE in text:
+                continue
             blocks_seen += 1
-            problems = agreement_block_problems(visible_text(block))
+            problems = agreement_block_problems(text)
             if problems:
                 failures.append(f"{screen} ({route}): {problems}")
+
+    for screen, route in app.screens().items():
+        judge(screen, route, app.render(route).html)
+
+    s12_figures = _s12_rollup_with_a_recorded_figure(tmp_data_dir)
+    assert "0.7137" in s12_figures, (
+        f"fixture: the rollup over a recorded per-criterion figure shows {s12_figures!r}")
+    judge("S12", "/runs/{id}/rollup (recorded)", s12_figures)
 
     assert blocks_seen, (
         "no route rendered an agreement block, so this case asserted nothing. S1 and S12 both "
@@ -122,6 +141,33 @@ def test_tc_console_c11a_any_agreement_statistic_renders_corrected_scoped_and_un
         "which is not the same as satisfying FR-CONSOLE-10."
     )
     assert not failures, f"{failures}"
+
+
+def _s12_rollup_with_a_recorded_figure(data_dir) -> str:
+    """S12's rollup on a real store whose administration record holds one atomic criterion's
+    figure (kappa 0.7137 over 25), written as `promote` writes it."""
+    from aeh.console import build_console
+    from aeh.pkg import record_promotion
+    from aeh.store import open_store
+    from tests.support.console_world import seed_scored_run
+
+    store = open_store(data_dir)
+    try:
+        run = seed_scored_run(store, cohort_id="c-c11a", run_id="r-c11a", package_id="pkg-c11a")
+        record_promotion(
+            data_dir, package_version_id=run.package_version_id, cohort_id=run.cohort_id,
+            cohorts_used=1, operational_count=0, blind_count=25, n=25, agreement_kappa=None,
+            weakest_per_population="{}", surface_proxy_flags="[]", message="")
+        with store.durable().transaction() as tx:
+            tx.execute(
+                "INSERT INTO criterion_stats (package_version_id, criterion_id, "
+                "backend_profile, panel_build_ref, n, cohort_id, scoring_model, matched, "
+                "kappa, qwk, reason, figures) VALUES (:v, 'C1', 'edge-local', '', 25, :c, "
+                "'atomic', 20, 0.7137, NULL, NULL, '{}')",
+                v=run.package_version_id, c=run.cohort_id)
+        return build_console(store=store).render("/runs/{id}/rollup", id=run.run_id).html
+    finally:
+        store.close()
 
 
 def test_tc_console_c11b_with_no_blind_labels_the_block_says_so_and_carries_no_prior_figure():

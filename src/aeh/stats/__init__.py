@@ -144,6 +144,14 @@ from .promotion import (
     promote,
     _record_noninferiority_verdicts,
 )
+from .package_record import (
+    LabelPair,
+    PackageRecord,
+    RecordAdministration,
+    RecordCriterion,
+    administration_pairs,
+    package_record,
+)
 from .history import (
     criterion_disagreement_rate,
     criterion_override_history,
@@ -246,6 +254,12 @@ __all__ = [
     "operational_signal",
     "promote",
     "administration_record",
+    "administration_pairs",
+    "package_record",
+    "LabelPair",
+    "PackageRecord",
+    "RecordAdministration",
+    "RecordCriterion",
     "routing_policy_validity",
     "SELF_AGREEMENT_MINIMUM_RUNS",
     "measure_position_bias",

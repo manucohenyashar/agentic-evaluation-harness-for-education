@@ -22,6 +22,7 @@ from .administration import (
     STORED_JSON_KEYS,
     EngineContext,
     criterion_figures,
+    cumulative_figures,
 )
 
 if TYPE_CHECKING:
@@ -318,6 +319,15 @@ def promote(
     connection = sqlite3.connect(str(database_path))
     connection.row_factory = sqlite3.Row
     try:
+        # FR-STATS-35 (#881): the version's record so far, pooled with this administration and
+        # stored beside its own figures, so the package record reads a stored figure.
+        earlier = [_row_mapping(row) for row in connection.execute(
+            STATS_STATEMENTS["select_earlier_criterion_stats"],
+            {"package_version_id": package_version_id, "cohort_id": administration_key})]
+        cumulative = cumulative_figures(figures, earlier, backend_profile=key_backend,
+                                        panel_build_ref=key_panel)
+        for criterion, figure in figures.items():
+            figure["cumulative"] = cumulative[criterion]
         for criterion, figure in sorted(figures.items()):
             connection.execute(
                 STATS_STATEMENTS["record_criterion_stats"],
