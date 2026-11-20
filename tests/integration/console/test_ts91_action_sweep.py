@@ -537,10 +537,13 @@ def test_adv_14_a_raising_door_is_reported_refused(tmp_path, monkeypatch, action
         elif action == "start run":
             params = {"run_id": world.run_id, "config": edge_cfg(panel=world.panel_refs)}
         else:
+            # Re-based at S12 (#882): a queued cell, so the review action reaches its door.
+            # Since #928 (holistic 0.95) every C1 cell is routed `auto` and is in no queue.
             sid, cid = world.handle.query("SELECT submission_id, criterion_id FROM criterion_score "
-                                          "WHERE criterion_id = 'C1' LIMIT 1")[0]
+                                          "WHERE routing = 'queued' ORDER BY criterion_id "
+                                          "LIMIT 1")[0]
             params = {"run_id": world.run_id, "submission_id": sid, "criterion_id": cid,
-                      "new_band": dev_pipe.band_at("C1", 2), "decision": "edit", "actor": "teacher",
+                      "new_band": dev_pipe.band_at(cid, 2), "decision": "edit", "actor": "teacher",
                       "reason": "r"}
         outcome = app.perform(action, **params)
     finally:

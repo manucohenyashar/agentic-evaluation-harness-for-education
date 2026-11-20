@@ -92,14 +92,26 @@ def _other_band(served, cell, ordinal: int) -> str:
     raise AssertionError(f"fixture: no band other than {stored!r} for {cell}")
 
 
+def _requeue_one(served, criterion_id: str = "C1") -> tuple[str, str]:
+    """Route one `auto` cell of `criterion_id` back to `queued`, the way TC-REVIEW-102 already
+    routes a cell `provisional`: a further reviewable cell outside the draw."""
+    cell = served.cells(criterion_id, routing="auto")[0]
+    served.execute("UPDATE criterion_score SET routing = 'queued' WHERE run_id = ? AND "
+                   "submission_id = ? AND criterion_id = ?", served.run_id, *cell)
+    return cell
+
+
 def _label_and_review_the_world(served) -> None:
-    """The TC-REVIEW-100 drive, minus S12: three C1 seats drafted over HTTP with a spread of
-    bands, Finish, then one accept, one edit and one override on the C2 cells over HTTP."""
-    c1 = served.cells("C1")
+    """The TC-REVIEW-100 drive, minus S12: three seats drafted over HTTP with a spread of
+    bands, Finish, then one accept, one edit and one override over HTTP.
+
+    Re-based at S12 (#882): since #928 (FR-AGG-22, holistic 0.95) the F-DEV-PIPE world routes every C1 cell `auto`, so C1 is never flagged and never drawn; the three queued C2 cells are the whole draw. So the seats and the reviewed cells are the same three C2 cells (a
+    blind label and an operational label on one cell is TC-REVIEW-102's own shape); the
+    counts, three blind and three operational labels, are unchanged."""
     c2 = served.cells("C2")
-    assert len(c1) == 3 and len(c2) == 3, f"fixture: queued cells C1={c1} C2={c2}"
-    _draft_blind(served, [(cell, dev_pipe.band_at("C1", ordinal))
-                          for cell, ordinal in zip(c1, (1, 3, 5))])
+    assert len(c2) == 3, f"fixture: queued cells C2={c2}"
+    _draft_blind(served, [(cell, dev_pipe.band_at("C2", ordinal))
+                          for cell, ordinal in zip(c2, (1, 3, 5))])
     report = served.finish_through_the_consoles_service()
     assert len(report.label_ids) == 3, report
     _review(served, c2[0], "accept")
@@ -137,7 +149,7 @@ def test_tc_reg_24_a_console_blind_label_names_the_run_and_the_roster_student(
                 f"a console blind label names the submission {submission_id!r} as its "
                 "student (SV-12)")
         assert_label_identity(served, labels)
-        assert_agreement_scope_is_accepted(served, "C1", blind_count=3)
+        assert_agreement_scope_is_accepted(served, "C2", blind_count=3)
 
 
 # --- TC-REVIEW-101 ---------------------------------------------------------------------------
@@ -179,7 +191,10 @@ def test_tc_review_101_c_origins_through_the_console_and_the_refusal_writes_noth
     written for it."""
     with served_run(tmp_path / "w", monkeypatch, network_guard) as served:
         base_only, with_escalation, with_random = served.cells("C2")
-        underivable = served.cells("C1")[0]
+        # Re-based at S12 (#882): every C1 cell is `auto` since #928, so the underivable
+        # cell is a C1 cell routed back to `queued` (it must be in the queue to be refused
+        # for its provenance rather than for its absence).
+        underivable = _requeue_one(served, "C1")
 
         def units(cell, *origins):
             served.execute("DELETE FROM work_unit WHERE run_id = ? AND submission_id = ? AND "
@@ -265,7 +280,8 @@ def test_tc_review_101_d_census_no_escalation_default_on_the_label_paths():
 
 def test_tc_review_102_a_blind_label_keeps_the_routing_its_cell_had_at_draw(
         tmp_path, monkeypatch, network_guard):
-    """TC-REVIEW-102 (FR-REVIEW-29). A C1 cell is `queued` when the draw opens. It is drafted
+    """TC-REVIEW-102 (FR-REVIEW-29). A C2 cell (C1 before #928; re-based at S12) is `queued`
+    when the draw opens. It is drafted
     blind, then accepted through the console's review action before Finish, so the cell is
     `reviewed` by the time the blind label is written. Expected:
     - the blind label's routing is `queued`, the cell's routing at draw time, not now;
@@ -273,19 +289,20 @@ def test_tc_review_102_a_blind_label_keeps_the_routing_its_cell_had_at_draw(
     - no later action (an edit elsewhere, a refused second Finish, a seat read) rewrites any
       stored label's routing.
 
-    A second C1 cell is `provisional` at draw and goes through the same steps. Its blind label
+    A second C2 cell is `provisional` at draw and goes through the same steps. Its blind label
     must say `provisional`. This is what makes the case sensitive: the console rebuilds its
     review service per request, and a rebuilt service no longer loads a reviewed cell, so a
     writer that read the routing at Finish would fall back to `queued`. On the queued cell that
     fallback is indistinguishable from the right answer. On the provisional cell it is not
     (mutation-checked: reading the routing at close turns this red)."""
     with served_run(tmp_path / "w", monkeypatch, network_guard) as served:
-        queued, provisional, later = served.cells("C1")
+        # Re-based at S12 (#882): since #928 (FR-AGG-22, holistic 0.95) the F-DEV-PIPE world routes every C1 cell `auto`, so C1 is never flagged and never drawn; the three queued C2 cells are the whole draw.
+        queued, provisional, later = served.cells("C2")
         served.execute("UPDATE criterion_score SET routing = 'provisional' WHERE run_id = ? "
                        "AND submission_id = ? AND criterion_id = ?", served.run_id, *provisional)
-        _draft_blind(served, [(queued, dev_pipe.band_at("C1", 2)),
-                              (provisional, dev_pipe.band_at("C1", 3)),
-                              (later, dev_pipe.band_at("C1", 4))])
+        _draft_blind(served, [(queued, dev_pipe.band_at("C2", 2)),
+                              (provisional, dev_pipe.band_at("C2", 3)),
+                              (later, dev_pipe.band_at("C2", 4))])
         for cell in (queued, provisional):
             _review(served, cell, "accept")
             now = served.rows("SELECT routing FROM criterion_score WHERE run_id = ? AND "
@@ -296,7 +313,7 @@ def test_tc_review_102_a_blind_label_keeps_the_routing_its_cell_had_at_draw(
         served.finish_through_the_consoles_service()
 
         for cell, at_draw in ((queued, "queued"), (provisional, "provisional")):
-            score_id = f"{cell[0]}:C1"
+            score_id = f"{cell[0]}:C2"
             labels = [label for label in served.labels() if label["score_id"] == score_id]
             routing = {label["label_type"]: label["routing"] for label in labels}
             assert routing.get("blind") == at_draw, (
@@ -311,11 +328,13 @@ def test_tc_review_102_a_blind_label_keeps_the_routing_its_cell_had_at_draw(
 
         snapshot = {label["label_id"]: label["routing"] for label in served.labels()}
         assert snapshot.get(next(label["label_id"] for label in served.labels()
-                                 if label["score_id"] == f"{later[0]}:C1")) == "queued"
+                                 if label["score_id"] == f"{later[0]}:C2")) == "queued"
         # An override on a cell that already holds a blind label, after Finish. This is the
         # action most likely to rewrite that label's routing, if any action does.
         _review(served, later, "override", _other_band(served, later, 1))
-        other = served.cells("C2")[0]
+        # The edit elsewhere: every C2 cell is in the draw, so it is a C1 cell routed back
+        # to `queued` (re-based at S12, #882).
+        other = _requeue_one(served, "C1")
         _review(served, other, "edit", _other_band(served, other, 1))
         from aeh.review import ReviewError
 
@@ -326,7 +345,7 @@ def test_tc_review_102_a_blind_label_keeps_the_routing_its_cell_had_at_draw(
         assert {k: after[k] for k in snapshot} == snapshot, (
             "a later review action rewrote a stored label's routing (FR-REVIEW-29)")
         assert [label["routing"] for label in served.labels()
-                if label["score_id"] == f"{later[0]}:C1" and label["label_type"] != "blind"
+                if label["score_id"] == f"{later[0]}:C2" and label["label_type"] != "blind"
                 ] == ["reviewed"]
 
 
