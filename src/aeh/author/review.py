@@ -65,6 +65,7 @@ from typing import Any
 
 from aeh.pipeline.spec_export import _toml_str
 
+from .descriptors import DESCRIPTOR_FIELD
 from .errors import AuthoringInputError
 from .progress import check_cancel, commit_artifacts, emit, emit_completion
 from .questions import check_gap_answer, gap_question, two_grade_table
@@ -361,7 +362,8 @@ def run_review(draft_path: Path, answers: Iterable[ReviewAnswer] | None, *,
         # that names no item id — a plan refusal whose `_field_of` extraction yields a
         # message fragment (the residual the follow-up review's MINOR 7 named) — surfaces
         # raw below; the answerable item ids carry the listing first.
-        if any(item_id in issue.field for item_id in remaining):
+        if any(item_id in issue.field or f"{_PREFIX}{item_id}{_SUFFIX}" in issue.message
+               for item_id in remaining):
             continue
         if issue.field not in remaining:
             remaining.append(issue.field)
@@ -584,8 +586,10 @@ def _is_authoring_draft(spec: Mapping[str, Any]) -> bool:
 
 def _plainly_checked(item: _Pending, raw: str) -> bool:
     """Whether the answer is held to its plain question's kind and range: the approver, a
-    grade floor, and a whole grade table answered as one passing score."""
-    if item.item_id == "approved_by" or item.kind == "grades_boundary":
+    grade floor, a band's descriptor (FR-AUTHOR-33), and a whole grade table answered as
+    one passing score."""
+    if item.item_id == "approved_by" or item.kind == "grades_boundary" \
+            or item.item_id.startswith(DESCRIPTOR_FIELD + " "):
         return True
     return item.kind == "grades_table" and not re.search(r"[:=;\n]", raw)
 

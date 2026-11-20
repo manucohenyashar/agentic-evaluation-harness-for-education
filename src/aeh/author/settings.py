@@ -53,6 +53,22 @@ DEFAULT_DOC_MAX_BYTES = 10 * 1024 * 1024
 DOC_MAX_BYTES_CEILING = 100 * 1024 * 1024
 
 
+#: The descriptor lint's extra words (FR-AUTHOR-34: `AUTHOR_EVALUATIVE_TERMS` "extended by
+#: configuration"): comma-separated, read at call time, case-insensitive. The built-in words
+#: always stay; this knob only adds. It changes a review-screen note, never a draft.
+EVALUATIVE_TERMS_ENV = "HARNESS_AUTHOR_EVALUATIVE_TERMS"
+
+
+def extra_evaluative_terms() -> tuple[str, ...]:
+    """The configured extra lint words, lower-cased, blanks dropped, in the order given."""
+    words: list[str] = []
+    for raw in (os.environ.get(EVALUATIVE_TERMS_ENV) or "").split(","):
+        word = raw.strip().lower()
+        if word and word not in words:
+            words.append(word)
+    return tuple(words)
+
+
 @dataclass(frozen=True)
 class AuthoringSettings:
     """The invocation's authoring settings, as the design's Configuration table declares them.

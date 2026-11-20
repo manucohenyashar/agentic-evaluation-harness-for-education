@@ -1750,6 +1750,12 @@ textarea:focus-visible {
   font-weight: 700;
 }
 
+/* FR-AUTHOR-34: the descriptor lint's advice sits under its level — a note, never an error. */
+.descriptor-note {
+  color: var(--color-muted);
+  margin: var(--space-xs) 0 0;
+}
+
 .field-error {
   border-left: 3px solid var(--color-danger);
   padding-left: var(--space-sm);

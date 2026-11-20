@@ -41,7 +41,7 @@ from aeh.author.extraction import (
     extract_documents,
 )
 from aeh.author.intake import NormalizedDocument, normalize_document
-from aeh.author import gap_question, missing_points
+from aeh.author import descriptor_note, gap_question, is_placeholder, missing_points
 from aeh.author.report import draft_filename
 from aeh.author.validation import PLACEHOLDER_PREFIX, validate_draft
 
@@ -200,6 +200,32 @@ def _project_question(question: dict[str, Any]) -> dict[str, Any]:
     return projected
 
 
+def _descriptor_text(descriptor: Any) -> str:
+    """A band's descriptor as the screens show it: empty while its placeholder stands."""
+    if descriptor is None or is_placeholder(descriptor):
+        return ""
+    return str(descriptor)
+
+
+def _descriptor_notes(criteria: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Every descriptor note the draft carries (FR-AUTHOR-34), in document order: the
+    grading point and question it stands on, the level, and the note's sentence."""
+    notes: list[dict[str, Any]] = []
+    for criterion in criteria:
+        for band in criterion.get("bands") or ():
+            if not isinstance(band, dict):
+                continue
+            note = descriptor_note(band.get("descriptor"))
+            if note is not None:
+                notes.append({
+                    "criterion": str(criterion.get("id") or ""),
+                    "question": str(criterion.get("question") or ""),
+                    "level": str(band.get("name") or ""),
+                    "note": note,
+                })
+    return notes
+
+
 def _project_criterion(criterion: dict[str, Any]) -> dict[str, Any]:
     """One grading point, with its score levels as a name list (`ADV-15`: the scale
     travels as names and their descriptors, never under a key the blind-sample arm scans
@@ -215,7 +241,12 @@ def _project_criterion(criterion: dict[str, Any]) -> dict[str, Any]:
             {
                 "name": str(band.get("name") or ""),
                 "points": band.get("points"),
-                "descriptor": str(band.get("descriptor") or ""),
+                # An unanswered descriptor is the open question's, asked beside the
+                # placeholders — never the placeholder's own text (FR-AUTHOR-33).
+                "descriptor": _descriptor_text(band.get("descriptor")),
+                # FR-AUTHOR-34: a descriptor naming how good the answer is gets a note —
+                # shown on the review screen, never a refusal.
+                "note": descriptor_note(band.get("descriptor")),
             }
             for band in (bands or ())
             if isinstance(band, dict)
@@ -308,6 +339,8 @@ def authoring_draft_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
             "placeholders": placeholders,
             "points_questions": points_questions,
             "issues": issue_rows,
+            # FR-AUTHOR-34: the descriptor lint's notes — advice, never a refusal.
+            "notes": _descriptor_notes(criteria),
             "missing_pieces": len(placeholders),
             # FR-CONSOLE-72: the package as it would be published, answers merged in.
             "summary": package_summary(spec, answered_items(path, package_id)),

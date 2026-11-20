@@ -84,7 +84,8 @@ def _number(value: Any) -> int | float | None:
 def _levels(bands: Any) -> list[dict[str, Any]]:
     return [
         {"name": str(band.get("name") or ""), "points": band.get("points"),
-         "descriptor": str(band.get("descriptor") or "")}
+         "descriptor": "" if _contains_sentinel(band.get("descriptor"))
+         else str(band.get("descriptor") or "")}
         for band in bands if isinstance(band, Mapping)
     ]
 
