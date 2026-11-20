@@ -175,3 +175,33 @@ Known limit: confirmation writes its rows through M-PKG's per-call transactions 
 batch write for a method criterion), so a store failure mid-confirmation can leave a partial
 criterion that M-PKG cannot remove; the checks run before the first write to make a rule
 failure there impossible.
+
+### marked_examples.py: the teacher's marked examples (#885)
+
+`FR-SETUP-20/21`, amends `FR-SETUP-15`; `CT-SETUP-11` amended. Per draft version:
+
+- `add_marked_examples({document_id: file_name})` — 1 to 25 examples across uploads
+  (`MARKED_EXAMPLES_MAX`; 10 to 15 recommended), all checked before any is stored. Each
+  document's stored transcript is read through M-INGEST and run through `marked_pages`; a page
+  with marks refuses the upload with exactly *"Page 2 of <file> has marks on it. Please upload
+  an unmarked copy, and enter your marks in the form."* (`MarkedExampleRefused.marked_pages`
+  lists every offender). No ingestor bound → refused, never accepted unchecked.
+- `mark_example(document_id, {criterion_id: band})` — a band for every judged criterion
+  (`evaluation_mode = 'judged'`, `evidence_sum` composites excluded), each one the criterion
+  declares; deterministic criteria are not asked. Stored through
+  `PackageCatalog.record_example_marks` in `calibration_example_mark` (Package migration 17,
+  P1) with the version and `marked_at`.
+- `skip_marked_examples()` / publish — record `default_taken` when the step holds nothing
+  (`FR-SETUP-14`); the step never blocks. The step record `marked_examples` carries the
+  uploaded `(document id, file name)` pairs, which are fully marked, and the check's name.
+
+**OQ-4 (how marks are detected): a check over the stored transcript**, `CLEAN_COPY_CHECK =
+"transcript-marks-v1"` — tick/cross glyphs outside MCQ mark regions; a score standing alone
+(`3/5`, `+2`, `2 marks`) outside the student's answer regions; a described annotation whose
+description names a marker's hand (margin, teacher, red ink). Not a transcriber instruction:
+the transcription prompt is version-pinned (`NFR-INGEST-05`) and changing it re-keys every
+transcript and recording. Limit: a mark the transcriber does not write down (a faint tick it
+omits) passes; a stricter mechanism is a new `CLEAN_COPY_CHECK` version.
+
+`store_calibration_papers` (the `FR-SETUP-15` stored-not-used intake) is left in place for
+its existing callers; the marked-examples step supersedes it.

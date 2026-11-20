@@ -921,6 +921,34 @@ _PKG_PUBLISHED_BASELINE_EVIDENCE = Migration(
 )
 
 
+# Package v17 — migration P1 (FR-SETUP-20, CT-SETUP-11 amended): the teacher's own band for
+# each judged criterion of each marked example, keyed by the package version it was marked
+# under. The documents themselves stay in the cohort that ingested them; this table holds
+# the teacher's marks, entered on a form and never read from the scan (FR-SETUP-21). It is
+# reference data beside the instrument, not part of it, so no §6.2 immutability trigger:
+# a version's marks are not what the lock protects. Not copied on revision either — a new
+# version starts its own record (§6.7).
+_PKG_CALIBRATION_EXAMPLE_MARK = Migration(
+    version=17,
+    name="pkg_calibration_example_mark",
+    statements=(
+        Statement(
+            """
+            CREATE TABLE calibration_example_mark (
+                package_version_id TEXT NOT NULL
+                    REFERENCES package_version(package_version_id),
+                document_id        TEXT NOT NULL CHECK (length(trim(document_id)) > 0),
+                criterion_id       TEXT NOT NULL,
+                band               TEXT NOT NULL CHECK (length(trim(band)) > 0),
+                marked_at          TEXT NOT NULL,
+                PRIMARY KEY (package_version_id, document_id, criterion_id)
+            )
+            """
+        ),
+    ),
+)
+
+
 TIER_MIGRATIONS[Tier.PACKAGE] = (
     TIER_MIGRATIONS[Tier.PACKAGE]
     + (_PKG_VERSION_LINEAGE,)
@@ -937,6 +965,7 @@ TIER_MIGRATIONS[Tier.PACKAGE] = (
     + (_PKG_DECISION_ENGINE_NONINFERIOR,)
     + (_PKG_CRITERION_SCORE_METHOD,)
     + (_PKG_PUBLISHED_BASELINE_EVIDENCE,)
+    + (_PKG_CALIBRATION_EXAMPLE_MARK,)
 )
 
 

@@ -12,6 +12,17 @@
       ],
       "checksum": "e75b97ade11cc76a39359926e47dbd59babe634ab904e695e5ef9a71eeb8f212"
     },
+    "calibration_example_mark": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "document_id",
+        "criterion_id",
+        "band",
+        "marked_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "criterion": {
       "rows": 2,
       "columns": [
@@ -251,6 +262,17 @@
         "descriptor"
       ],
       "checksum": "e75b97ade11cc76a39359926e47dbd59babe634ab904e695e5ef9a71eeb8f212"
+    },
+    "calibration_example_mark": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "document_id",
+        "criterion_id",
+        "band",
+        "marked_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "criterion": {
       "rows": 2,
@@ -492,6 +514,17 @@
       ],
       "checksum": "e75b97ade11cc76a39359926e47dbd59babe634ab904e695e5ef9a71eeb8f212"
     },
+    "calibration_example_mark": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "document_id",
+        "criterion_id",
+        "band",
+        "marked_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "criterion": {
       "rows": 2,
       "columns": [
@@ -731,6 +764,17 @@
         "descriptor"
       ],
       "checksum": "e75b97ade11cc76a39359926e47dbd59babe634ab904e695e5ef9a71eeb8f212"
+    },
+    "calibration_example_mark": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "document_id",
+        "criterion_id",
+        "band",
+        "marked_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "criterion": {
       "rows": 2,
@@ -972,6 +1016,17 @@
       ],
       "checksum": "e75b97ade11cc76a39359926e47dbd59babe634ab904e695e5ef9a71eeb8f212"
     },
+    "calibration_example_mark": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "document_id",
+        "criterion_id",
+        "band",
+        "marked_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "criterion": {
       "rows": 2,
       "columns": [
@@ -1211,6 +1266,17 @@
         "descriptor"
       ],
       "checksum": "e75b97ade11cc76a39359926e47dbd59babe634ab904e695e5ef9a71eeb8f212"
+    },
+    "calibration_example_mark": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "document_id",
+        "criterion_id",
+        "band",
+        "marked_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "criterion": {
       "rows": 2,
@@ -1452,6 +1518,17 @@
       ],
       "checksum": "e75b97ade11cc76a39359926e47dbd59babe634ab904e695e5ef9a71eeb8f212"
     },
+    "calibration_example_mark": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "document_id",
+        "criterion_id",
+        "band",
+        "marked_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "criterion": {
       "rows": 2,
       "columns": [
@@ -1691,6 +1768,17 @@
         "descriptor"
       ],
       "checksum": "e75b97ade11cc76a39359926e47dbd59babe634ab904e695e5ef9a71eeb8f212"
+    },
+    "calibration_example_mark": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "document_id",
+        "criterion_id",
+        "band",
+        "marked_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "criterion": {
       "rows": 2,
@@ -1932,6 +2020,17 @@
       ],
       "checksum": "e75b97ade11cc76a39359926e47dbd59babe634ab904e695e5ef9a71eeb8f212"
     },
+    "calibration_example_mark": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "document_id",
+        "criterion_id",
+        "band",
+        "marked_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "criterion": {
       "rows": 2,
       "columns": [
@@ -2171,6 +2270,17 @@
         "descriptor"
       ],
       "checksum": "e75b97ade11cc76a39359926e47dbd59babe634ab904e695e5ef9a71eeb8f212"
+    },
+    "calibration_example_mark": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "document_id",
+        "criterion_id",
+        "band",
+        "marked_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "criterion": {
       "rows": 2,
@@ -2412,6 +2522,17 @@
       ],
       "checksum": "e75b97ade11cc76a39359926e47dbd59babe634ab904e695e5ef9a71eeb8f212"
     },
+    "calibration_example_mark": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "document_id",
+        "criterion_id",
+        "band",
+        "marked_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "criterion": {
       "rows": 2,
       "columns": [
@@ -2651,6 +2772,17 @@
         "descriptor"
       ],
       "checksum": "e75b97ade11cc76a39359926e47dbd59babe634ab904e695e5ef9a71eeb8f212"
+    },
+    "calibration_example_mark": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "document_id",
+        "criterion_id",
+        "band",
+        "marked_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "criterion": {
       "rows": 2,
@@ -2892,6 +3024,17 @@
       ],
       "checksum": "e75b97ade11cc76a39359926e47dbd59babe634ab904e695e5ef9a71eeb8f212"
     },
+    "calibration_example_mark": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "document_id",
+        "criterion_id",
+        "band",
+        "marked_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "criterion": {
       "rows": 2,
       "columns": [
@@ -3131,6 +3274,17 @@
         "descriptor"
       ],
       "checksum": "e75b97ade11cc76a39359926e47dbd59babe634ab904e695e5ef9a71eeb8f212"
+    },
+    "calibration_example_mark": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "document_id",
+        "criterion_id",
+        "band",
+        "marked_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "criterion": {
       "rows": 2,
@@ -3372,6 +3526,17 @@
       ],
       "checksum": "e75b97ade11cc76a39359926e47dbd59babe634ab904e695e5ef9a71eeb8f212"
     },
+    "calibration_example_mark": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "document_id",
+        "criterion_id",
+        "band",
+        "marked_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "criterion": {
       "rows": 2,
       "columns": [
@@ -3611,6 +3776,268 @@
         "descriptor"
       ],
       "checksum": "e75b97ade11cc76a39359926e47dbd59babe634ab904e695e5ef9a71eeb8f212"
+    },
+    "calibration_example_mark": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "document_id",
+        "criterion_id",
+        "band",
+        "marked_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "criterion": {
+      "rows": 2,
+      "columns": [
+        "criterion_id",
+        "package_version_id",
+        "question_id",
+        "kind",
+        "max_points",
+        "band_count",
+        "scoring_model",
+        "construct_tag",
+        "answer_key",
+        "evidence_type",
+        "band_justification",
+        "multi_select",
+        "partial_credit",
+        "evaluation_mode",
+        "score_method",
+        "component_of"
+      ],
+      "checksum": "8e3a495f890e4d322aa6b046cfe7193743492f93bbfb79608bf59d594a0aba93"
+    },
+    "criterion_dependency": {
+      "rows": 1,
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "depends_on"
+      ],
+      "checksum": "d5b1876775ef79d08708e67582e091a5857215a1939241aa50c4ec50890e4bec"
+    },
+    "criterion_derivation": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "description",
+        "derived_bands",
+        "recorded_at",
+        "confirmed_by",
+        "confirmed_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "elicitation_history": {
+      "rows": 0,
+      "columns": [
+        "elicitation_id",
+        "package_version_id",
+        "question",
+        "options_offered",
+        "answer_given",
+        "resulting_edit",
+        "asked_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "exemplar": {
+      "rows": 1,
+      "columns": [
+        "exemplar_id",
+        "package_version_id",
+        "criterion_id",
+        "band",
+        "provenance",
+        "blob_hash"
+      ],
+      "checksum": "f715a4b07bce8bbd4fa033c11f915d7f10cb5279d5f5fee334180c38f5a02b74"
+    },
+    "export_gate_outcome": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "outcome",
+        "actor",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "grade_boundary": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "grade",
+        "scaled_floor"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "grade_policy": {
+      "rows": 1,
+      "columns": [
+        "package_version_id",
+        "policy",
+        "review_window_hours"
+      ],
+      "checksum": "b03a7dd22bfbb3919ce32b9b49f60d2a2df89538455f49bda581eb03424869e6"
+    },
+    "mcq_option": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "option_id",
+        "label"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "package": {
+      "rows": 1,
+      "columns": [
+        "package_id",
+        "created_at",
+        "contains_real_student_text"
+      ],
+      "checksum": "0c06bb8920d9c05b105661a0ec03c2ead24be777326406d167cd365927506d79"
+    },
+    "package_version": {
+      "rows": 1,
+      "columns": [
+        "package_version_id",
+        "package_id",
+        "revision",
+        "locked",
+        "parent_version_id",
+        "published_by",
+        "published_at"
+      ],
+      "checksum": "57b1da4ff5058bcdd3b80fcb0fd833c1d5f2bb917338ace8766bc22b90e5acab"
+    },
+    "question": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "question_id",
+        "ordinal",
+        "prompt_text",
+        "question_type",
+        "max_points",
+        "reference_solution",
+        "confirmed_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "question_option": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "question_id",
+        "option_id",
+        "ordinal",
+        "label"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "setup_classification": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "classification",
+        "decomposition_basis",
+        "source",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "setup_proposal": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "proposal_id",
+        "assessment_doc_id",
+        "payload",
+        "template_version",
+        "model_ref",
+        "attempts",
+        "created_at",
+        "confirmed_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "setup_readback": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "rubric_doc_id",
+        "assessment_doc_id",
+        "payload",
+        "template_version",
+        "model_ref",
+        "attempts",
+        "created_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "setup_step_record": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "step_id",
+        "status",
+        "payload",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "validation_record": {
+      "rows": 1,
+      "columns": [
+        "validation_record_id",
+        "package_version_id",
+        "backend_profile",
+        "panel_build_ref",
+        "recorded_at",
+        "criterion_id",
+        "population_scope_id",
+        "scoring_model",
+        "agreement",
+        "n",
+        "expected_mean",
+        "expected_sd",
+        "expected_histogram",
+        "decision_engine_noninferior"
+      ],
+      "checksum": "8c690525d7443a559fe53a229226cb29b34e510f19d21f2bcac566f5a2d99712"
+    }
+  },
+  "package@v17": {
+    "band": {
+      "rows": 1,
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "ordinal",
+        "band",
+        "points",
+        "descriptor"
+      ],
+      "checksum": "e75b97ade11cc76a39359926e47dbd59babe634ab904e695e5ef9a71eeb8f212"
+    },
+    "calibration_example_mark": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "document_id",
+        "criterion_id",
+        "band",
+        "marked_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "criterion": {
       "rows": 2,

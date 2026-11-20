@@ -368,3 +368,43 @@ class SetupRecordsMixin:
             "wrote rubric read-back for version %s: %d criterion(s), prompt %s, "
             "attempt %d", v, len(validated), template_version, attempts,
         )
+
+    # -- the teacher's marked examples (migration P1, FR-SETUP-20) ----------------------------
+
+    def record_example_marks(
+        self, v: PackageVersionId, *, document_id: str, bands: Mapping[str, str],
+        marked_at: str,
+    ) -> int:
+        """Store the teacher's band for each named criterion of one marked example, in one
+        transaction (FR-SETUP-20, CT-SETUP-11 amended). Returns the number of rows written.
+
+        Storage only: which criteria must be marked, and whether each band exists, is
+        M-SETUP's check before it calls here. The marks are reference data beside the
+        instrument, so a published version does not refuse them (no §6.2 field is touched);
+        an unknown version is refused."""
+        if not str(document_id).strip():
+            raise PackageError("record_example_marks needs the marked example's document id.")
+        if not bands:
+            raise PackageError(
+                f"record_example_marks for {document_id!r} names no criterion — a marked "
+                "example carries a band for every judged criterion (FR-SETUP-20).")
+        self._refuse_unknown_version(v)
+        with self._handle.transaction() as tx:
+            for criterion_id, band in bands.items():
+                tx.execute(PKG_STATEMENTS["upsert_calibration_example_mark"], v=v,
+                           document_id=str(document_id), criterion_id=criterion_id,
+                           band=band, marked_at=marked_at)
+        LOGGER.info(
+            "stored %d band(s) for marked example %s under version %s (FR-SETUP-20)",
+            len(bands), document_id, v,
+        )
+        return len(bands)
+
+    def example_marks(self, v: PackageVersionId) -> tuple[dict, ...]:
+        """The version's stored marked-example bands, ordered by document then criterion: each
+        row's `package_version_id`, `document_id`, `criterion_id`, `band` and `marked_at`.
+        M-CALIB reads these as the teacher's side of its comparison (FR-CALIB-16)."""
+        return tuple(
+            dict(row) for row in
+            self._handle.query(PKG_STATEMENTS["select_calibration_example_marks"], v=v)
+        )

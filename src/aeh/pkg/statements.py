@@ -640,6 +640,19 @@ PKG_STATEMENTS.update({
         "criterion_id, description, derived_bands, recorded_at, confirmed_by, "
         "confirmed_at FROM criterion_derivation WHERE package_version_id = :old"
     ),
+    # Migration P1 (FR-SETUP-20): the teacher's band per judged criterion of a marked
+    # example. Re-marking an example replaces its bands and their time.
+    "upsert_calibration_example_mark": Statement(
+        "INSERT INTO calibration_example_mark (package_version_id, document_id, "
+        "criterion_id, band, marked_at) VALUES (:v, :document_id, :criterion_id, :band, "
+        ":marked_at) ON CONFLICT (package_version_id, document_id, criterion_id) "
+        "DO UPDATE SET band = excluded.band, marked_at = excluded.marked_at"
+    ),
+    "select_calibration_example_marks": Statement(
+        "SELECT package_version_id, document_id, criterion_id, band, marked_at "
+        "FROM calibration_example_mark WHERE package_version_id = :v "
+        "ORDER BY document_id, criterion_id"
+    ),
 })
 
 
