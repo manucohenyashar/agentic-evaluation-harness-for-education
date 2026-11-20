@@ -20,7 +20,7 @@ from .settings import (
     TRANSCRIPTION_ATTEMPTS_ENV,
     TRANSCRIPTION_PROMPT_VERSION,
 )
-from .markup import TRANSCRIPTION_PROMPT
+from .markup import PAGE_BREAK, TRANSCRIPTION_PROMPT
 from .descriptions import _second_description_min_similarity
 from .errors import IngestError, IngestTranscriptionError
 from .rasterizer import PageImage, Rasterizer
@@ -297,7 +297,7 @@ class Ingestor(DocumentIngestionMixin, SourceChecksMixin, RevisionMixin, TokenCl
     def _assemble(parts: Sequence[str]) -> str:
         """Join page transcripts into the canonical Markdown with a fixed separator, in the order
         the preference ladder produced."""
-        return "\n\n<!-- page break -->\n\n".join(parts)
+        return f"\n\n{PAGE_BREAK}\n\n".join(parts)
 
     @staticmethod
     def _now() -> str:

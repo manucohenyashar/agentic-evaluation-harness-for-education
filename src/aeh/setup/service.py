@@ -19,6 +19,7 @@ from .progress import ProgressMixin
 from .method_drafts import MethodDraftsMixin
 from .general_derivation import GeneralDerivationMixin
 from .evidence_sum import EvidenceSumMixin
+from .marked_examples import MarkedExamplesMixin
 
 
 def setup_service_for_store(
@@ -44,7 +45,8 @@ def setup_service_for_store(
 
 class SetupService(InventoryStepMixin, ReadbackStepMixin, KeysAndPolicyMixin,
                    DecomposabilityMixin, DependencyStepMixin, ProgressMixin,
-                   MethodDraftsMixin, GeneralDerivationMixin, EvidenceSumMixin):
+                   MethodDraftsMixin, GeneralDerivationMixin, EvidenceSumMixin,
+                   MarkedExamplesMixin):
     """Runs setup (Stage A) for one package version, end to end, from code (CT-SETUP-11).
 
     More detail: `docs/code-notes/setup.md`, section `service.py: SetupService`.

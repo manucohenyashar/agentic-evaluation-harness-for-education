@@ -568,6 +568,9 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.pkg.setup_records:357",
     "aeh.pkg.setup_records:321",
     "aeh.pkg.setup_records:329",
+    # #885 (migration P1): the marked-example bands' upsert, a declared statement with
+    # keyword parameters (`upsert_calibration_example_mark`).
+    "aeh.pkg.setup_records:394",
     "aeh.pkg.in_memory:67",
     "aeh.pkg.in_memory:153",
     "aeh.pkg.in_memory:376",

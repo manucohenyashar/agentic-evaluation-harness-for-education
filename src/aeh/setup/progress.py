@@ -335,3 +335,6 @@ class ProgressMixin:
                 "and stored as a default, never silent (FR-SETUP-12, "
                 "FR-SETUP-14)", v,
             )
+        # The marked examples (FR-SETUP-20): recommended, never blocking — a draft that
+        # neither uploaded nor skipped them records the default taken here.
+        self._record_marked_examples_default(v)

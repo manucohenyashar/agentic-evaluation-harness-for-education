@@ -35,6 +35,12 @@ UNTRUSTED_CLOSE = "</untrusted_student_content>"
 SUPERSEDED_PREFIX = "~~superseded-by"
 
 
+#: The marker between pages in the canonical Markdown: assembly joins page transcripts with
+#: it, blank lines either side, so page N of a document is the Nth piece between markers.
+#: A reader that names a page (M-SETUP's clean-copy check, FR-SETUP-21) splits on it.
+PAGE_BREAK = "<!-- page break -->"
+
+
 #: The transcription prompt (v5): v2's region-marker protocol, per-kind description
 #: fields (`FR-INGEST-10`) and retraction markup (`FR-INGEST-12` — BOTH versions of a
 #: struck-through/corrected line are kept); v3's per-region confidence, content-state

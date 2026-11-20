@@ -31,6 +31,7 @@ Files:
     method_drafts.py   rubric-method choices, pending method records and their publish gate
     general_derivation.py  the `general` method: prose -> derived bands -> confirmation
     evidence_sum.py    the `evidence_sum` method: the evidence-checklist builder
+    marked_examples.py the teacher's marked examples: upload, clean-copy check, bands, skip
     service.py         `SetupService`, which runs the steps and publishes the version
 
 Detailed design notes (the full original module description): `docs/code-notes/setup.md`.
@@ -71,7 +72,7 @@ from .settings import (
     SETUP_PROMPT_TEMPLATE_V,
     SETUP_READBACK_TEMPLATE_V,
 )
-from .errors import SetupError, SetupOrderError
+from .errors import MarkedExampleRefused, SetupError, SetupOrderError
 from .records import (
     AspectDraft,
     AspectPromotion,
@@ -98,6 +99,13 @@ from .keys_and_policy import KeysAndPolicyMixin
 from .decomposability import DecomposabilityMixin
 from .dependencies import DependencyStepMixin
 from .progress import ProgressMixin
+from .marked_examples import (
+    CLEAN_COPY_CHECK,
+    marked_pages,
+    MARKED_EXAMPLES_MAX,
+    MARKED_EXAMPLES_RECOMMENDED,
+    MarkedExamplesStep,
+)
 from .service import setup_service_for_store, SetupService
 
 
@@ -105,6 +113,7 @@ __all__ = [
     "AspectDraft",
     "AspectPromotion",
     "CLASSIFICATIONS",
+    "CLEAN_COPY_CHECK",
     "CLASSIFY_ATTEMPTS_DEFAULT",
     "CLASSIFY_ATTEMPTS_ENV",
     "CONFIRMATIONS_DEFAULT",
@@ -119,6 +128,10 @@ __all__ = [
     "EvidenceSumDraft",
     "FIVE_QUESTIONS",
     "InventoryProposal",
+    "MARKED_EXAMPLES_MAX",
+    "MARKED_EXAMPLES_RECOMMENDED",
+    "MarkedExampleRefused",
+    "MarkedExamplesStep",
     "PROPOSAL_ATTEMPTS_DEFAULT",
     "PROPOSAL_ATTEMPTS_ENV",
     "PrefixBudgetReport",
@@ -148,4 +161,5 @@ __all__ = [
     "SetupProgress",
     "SetupService",
     "SetupStep",
+    "marked_pages",
 ]

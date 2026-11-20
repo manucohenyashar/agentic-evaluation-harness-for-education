@@ -10,6 +10,7 @@ from typing import Any, Sequence
 
 from .descriptions import _FIDUCIAL_PATTERN, _PAGE_NUMBER_PATTERN
 from .errors import IngestError, IngestGapError, IngestOrderError
+from .markup import PAGE_BREAK
 
 
 # --- the ingestor ---------------------------------------------------------------------------------
@@ -187,7 +188,7 @@ def assemble_canonical_markdown(
         )
     ordered_texts = [texts[index] for index in ordered_indices]
 
-    canonical = "\n\n<!-- page break -->\n\n".join(ordered_texts)
+    canonical = f"\n\n{PAGE_BREAK}\n\n".join(ordered_texts)
     provenance = [
         {
             "source": identities[index],
