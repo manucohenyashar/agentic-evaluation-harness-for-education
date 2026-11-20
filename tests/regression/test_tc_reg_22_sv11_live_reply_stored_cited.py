@@ -24,7 +24,9 @@ and C1a's band set. Nothing is edited.
 
 Isolation: rung 1 on a real store (`tests/support/citation_world.py`), the live document seeded as
 the submission's canonical bytes, the live offered evidence through the real extraction leg, and
-the live reply recorded under the unit's request key.
+the live reply recorded under the unit's request key. Of the two live offered spans, the one on
+C1a's region-header bytes is left out: since #873 (FR-EXTRACT-14) the extraction leg refuses a
+reply carrying it, so only the clean span the reply cites can still be offered.
 """
 
 from __future__ import annotations
@@ -58,7 +60,13 @@ def test_tc_reg_22_the_live_run_b_reply_is_stored_cited(tmp_data_dir, make_fixtu
     (cited,) = reply["cited_spans"]
     assert set(cited) == {"start", "end"}, "the live reply carries no quote (judge-prompt/3)"
     doc = LIVE["document"].encode("utf-8")
-    offered = [{k: span[k] for k in ("start", "end", "text")} for span in LIVE["offered_evidence"]]
+    live_offered = [{k: span[k] for k in ("start", "end", "text")}
+                    for span in LIVE["offered_evidence"]]
+    # The walk also offered a span inside C1a's region header (`question_id=Q1 conf=0.91 st`):
+    # SV-11's second cause. Since #873 (FR-EXTRACT-14) the extraction leg refuses a reply that
+    # carries it, so the live evidence that can still be offered is the clean span the reply cites.
+    offered = [span for span in live_offered if clear_of_region_markup(doc, span)]
+    assert len(offered) == len(live_offered) - 1, "precondition: one live span is on marker bytes"
     match = next(span for span in offered if (span["start"], span["end"]) == (cited["start"],
                                                                               cited["end"]))
     assert verify_span(doc, match) and clear_of_region_markup(doc, match), (
@@ -70,7 +78,7 @@ def test_tc_reg_22_the_live_run_b_reply_is_stored_cited(tmp_data_dir, make_fixtu
                                criterion_id=LIVE["criterion_id"], question_id="Q1",
                                bands=_bands(), offered=offered, roster_name="E7-001")
         assert [(s["start"], s["end"]) for s in world.request.evidence] == [
-            (s["start"], s["end"]) for s in offered], "precondition: the live evidence is offered"
+            (s["start"], s["end"]) for s in offered], "precondition: the clean live evidence is offered"
         row = world.judge_and_store(LIVE["response"])  # the verbatim reply text
     finally:
         store.close()

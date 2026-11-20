@@ -22,9 +22,9 @@ from aeh.store import lease_clock
 from .schema import EXTRACT_STATEMENTS
 from .settings import _env_bool, SECOND_FAMILY_ENV, _second_family_ref
 from .records import ExtractionResult, ExtractionSpan
-from .assembly import assemble_request, _current_document, document_bytes
+from .assembly import assemble_request, _current_document, document_bytes, unit_question_id
 from .prompt import prompt_fields
-from .spans import parse_spans
+from .spans import parse_spans, unit_region
 
 
 # --- the worker ----------------------------------------------------------------------------------
@@ -123,6 +123,15 @@ class ExtractionWorker:
         )
         payload = prompt_fields(request)
         params = SamplingParams(temperature=0.0)
+        # FR-EXTRACT-14: spans land on the answer text of the unit's question. The model's
+        # offsets are its own count, so a span is re-anchored on its quoted words within this
+        # region (ADR-63); the quote may carry the ref the model read in place of the name.
+        anchoring = {
+            "region": unit_region(md_bytes, unit_question_id(
+                self._store, unit.work_id, str(unit.criterion_id))),
+            "roster_name": getattr(unit, "student_name", None),
+            "student_ref": getattr(unit, "student_ref", None),
+        }
         budget = _env_int(MAX_ATTEMPTS_ENV, ORCH_MAX_ATTEMPTS)
         completion = None
         # `FR-EXTRACT-13`: the latency persisted is the SUCCESSFUL attempt's, so it is set
@@ -137,7 +146,7 @@ class ExtractionWorker:
                     completion = self._provider.complete(
                         payload, self._model_ref, params
                     )
-                spans = parse_spans(completion.text, md_bytes)
+                spans = parse_spans(completion.text, md_bytes, **anchoring)
                 success_latency = int(completion.latency_ms)
                 break
             except (RateLimitedError, ProviderUnavailableError, BuildChangedError):
@@ -169,7 +178,7 @@ class ExtractionWorker:
         second: dict[str, Any] | None = None
         if unit.criterion_id in self._high_risk:
             if _env_bool(SECOND_FAMILY_ENV, True):
-                second = self._second_family_pass(payload, params, md_bytes)
+                second = self._second_family_pass(payload, params, md_bytes, anchoring)
                 if "error" in second:
                     notes = f"second family: {second['error']}"
             else:
@@ -214,7 +223,7 @@ class ExtractionWorker:
         )
 
     def _second_family_pass(
-        self, payload: Any, params: Any, md_bytes: bytes
+        self, payload: Any, params: Any, md_bytes: bytes, anchoring: dict[str, Any]
     ) -> dict[str, Any]:
         """Extract a flagged criterion a second time, with a model from a different family.
 
@@ -235,7 +244,7 @@ class ExtractionWorker:
                     completion = self._provider.complete(
                         payload, self._second_family_model, params
                     )
-                spans = parse_spans(completion.text, md_bytes)
+                spans = parse_spans(completion.text, md_bytes, **anchoring)
                 return {
                     "resolved_build": completion.resolved_build,
                     "spans": [dataclasses.asdict(span) for span in spans],
