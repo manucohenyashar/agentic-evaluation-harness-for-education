@@ -32,7 +32,10 @@ _PINNED_CRITERIA: dict[int, tuple[Any, dict[tuple[str, str, str], Any]]] = {}
 
 
 def _pinned_criterion(store: Any, package_id: str, version: str, criterion_id: str
-                      ) -> tuple[str, str, dict[str, str] | None] | None:
+                      ) -> tuple[tuple[str, str, dict[str, str] | None], str] | None:
+    """The criterion's request parts and the id of the question it belongs to (`""` for a
+    criterion with no question), as the pinned version declares them; None when the version does
+    not declare the criterion."""
     held = _PINNED_CRITERIA.get(id(store))
     if held is None or held[0] is not store:
         if len(_PINNED_CRITERIA) >= 8:
@@ -49,7 +52,8 @@ def _pinned_criterion(store: Any, package_id: str, version: str, criterion_id: s
                          for row in catalog.questions(version)}
             for row in catalog.criteria(version):
                 memo[(package_id, version, str(row.get("criterion_id")))] = (
-                    _criterion_parts(catalog, row, questions))
+                    _criterion_parts(catalog, row, questions),
+                    str(row.get("question_id") or ""))
         memo.setdefault(key, None)
     return memo[key]
 
@@ -82,6 +86,14 @@ def _criterion_of_run(store: Any, work_id: str, criterion_id: str
     It is read through `PackageCatalog` from the run's own package version, so a later draft cannot
     change a running unit's request. A unit whose run is not in the store keeps the empty criterion
     (the storeless path)."""
+    pinned = _pinned_of_run(store, work_id, criterion_id)
+    return pinned[0] if pinned is not None else ("", "", None)
+
+
+def _pinned_of_run(store: Any, work_id: str, criterion_id: str
+                   ) -> tuple[tuple[str, str, dict[str, str] | None], str] | None:
+    """`_pinned_criterion` for the unit's own run, or None when the unit's run is not in the store
+    or its version does not declare the criterion."""
     version_row = None
     for key in _cohort_keys_on_filesystem(store):
         rows = store.cohort(key).query(
@@ -90,10 +102,23 @@ def _criterion_of_run(store: Any, work_id: str, criterion_id: str
             version_row = rows[0]
             break
     if version_row is None:
-        return "", "", None
-    pinned = _pinned_criterion(store, str(version_row["package_id"]),
-                               str(version_row["package_version_id"]), criterion_id)
-    return pinned if pinned is not None else ("", "", None)
+        return None
+    return _pinned_criterion(store, str(version_row["package_id"]),
+                             str(version_row["package_version_id"]), criterion_id)
+
+
+def unit_question_id(store: Any, work_id: str, criterion_id: str) -> str | None:
+    """The question the unit's criterion belongs to, as the unit's run pinned it: `""` for a
+    criterion declared with no question (it reads the whole submission), None when the store
+    cannot say (no run row, the criterion missing from the version, a read that raised).
+
+    It scopes span relocation to the question's answer text (FR-EXTRACT-14, ADR-63). None means
+    the scope is unknown, and the caller relocates nothing: narrow, never widen."""
+    try:
+        pinned = _pinned_of_run(store, work_id, criterion_id)
+    except Exception:
+        return None
+    return pinned[1] if pinned is not None else None
 
 
 def _current_document(store: Any, submission_id: str) -> Any:
