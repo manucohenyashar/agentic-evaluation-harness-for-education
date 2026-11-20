@@ -2343,6 +2343,19 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "raise SystemExit(0 if {'blind-sample draft', 'blind-sample finish'} <= set(A) else 1)\"",
         ("tests/integration/review/test_tc_review_100_107_console_blind_finish.py",),
     ),
+
+    # --- Validity T3 (#896): TC-CONF-47, keyed on S5 (#866) ----------------------------------
+    #
+    # The shipped panel profile and the dev-ci smoke header are docs, not code: S5 ships
+    # `live-test.panel.toml`, rewrites `live-test.dev-ci.toml`'s header and names both in the
+    # live-test README and the deployment tutorial. The new file is the one artifact the case
+    # cannot run without, so the key is its path. T3's other cases (TC-PKG-39/40,
+    # TC-AGG-32..34, TC-CONF-45) run unmarked: S3 (#864) and S4 (#865) have landed.
+    "#866 Validity S5 the panel live profile (T3: TC-CONF-47)": (
+        "path",
+        "docs/live-tests/config/live-test.panel.toml",
+        ("tests/unit/conf/test_tc_conf_47_shipped_panel_profile.py",),
+    ),
 }
 
 def blocker_is_resolved(kind: str, target: str, repo_root: Any) -> bool:
