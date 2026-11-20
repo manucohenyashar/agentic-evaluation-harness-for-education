@@ -4,7 +4,9 @@ and the smoke profile saying it cannot.
 Statistical-validity test plan §3.5 (story T3). Parse `live-test.panel.toml`. Expected:
 
 - three judges from three distinct families;
-- three escalation judges;
+- three escalation judges — distinct models, none of them on the panel (beyond the plan's
+  wording: `panel_for_profile` drops an escalation judge already on the panel, so an overlap would
+  leave fewer than three in practice);
 - `orch_random_arm_rate == 0.07`, with the ~40-cell comment directly above it;
 - `live-test.dev-ci.toml`'s header contains "smoke" and "cannot show agreement";
 - `docs/live-tests/README.md` and the deployment tutorial name both files.

@@ -34,7 +34,7 @@ from hypothesis import strategies as st
 
 from aeh.agg import aggregate
 from aeh.conf import AggKnobs
-from tests.support.agg_vocabulary import band, criterion, panel, signals, verdict
+from tests.support.agg_vocabulary import DESIGN_CAPS, band, criterion, panel, signals, verdict
 
 _BANDS = [band("B0", 0, 0.0), band("B1", 1, 1.0), band("B2", 2, 3.0), band("B3", 3, 6.0)]
 HOLISTIC = criterion(_BANDS, scoring_model="holistic")
@@ -77,7 +77,7 @@ def test_tc_agg_32c_one_adverse_cap_keeps_unanimous_holistic_off_auto(config, ca
     score = aggregate(UNANIMOUS, HOLISTIC, signals(**{cap: ADVERSE[cap]}), config=config)
     assert score.routing != "auto", (cap, score)
     assert cap in score.caps_fired, (cap, score.caps_fired)
-    assert score.confidence < 0.90, (cap, score.confidence)
+    assert score.confidence == pytest.approx(DESIGN_CAPS[cap]), (cap, score.confidence)
 
 
 @CONFIGS
