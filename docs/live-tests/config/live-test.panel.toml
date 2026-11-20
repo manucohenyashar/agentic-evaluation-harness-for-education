@@ -1,0 +1,102 @@
+# Configuration for a live test that can show agreement: the "dev-ci" profile with a three-judge
+# panel, grading through OpenRouter.
+#
+# Use this file, not live-test.dev-ci.toml, when the test should say how far the system's marks
+# agree with the teacher's. live-test.dev-ci.toml is the smoke profile: one judge, so nobody can
+# disagree with it and it cannot show agreement. This file has three judges from three different
+# model families, three escalation judges for the answers that need more judges, and the random
+# extra-grader sample switched on, so every figure the agreement read needs can be produced.
+#
+# Everything else works as in live-test.dev-ci.toml (read its comments first): only cohorts
+# marked "synthetic" or "consented" may be graded, every request to OpenRouter carries zdr=true
+# and data_collection="deny", the retention of every model below is checked before the run
+# starts, and HARNESS_FIXTURE_DIR replays recordings instead of calling OpenRouter.
+#
+# Use it with the checker before anything else:
+#     python docs/live-tests/sample-materials/check_config.py docs/live-tests/config/live-test.panel.toml
+#
+# The secret is NEVER written in this file. Put it in your terminal session instead:
+#     export OPENROUTER_API_KEY="sk-or-..."          (macOS / Linux)
+#     $env:OPENROUTER_API_KEY = "sk-or-..."          (Windows PowerShell)
+#
+# STATUS: on 2026-11-19 every judge model below was listed at https://openrouter.ai/models and
+# had at least one zero-retention host listed as up. The first panel judge (qwen3-30b-a3b)
+# answered real calls through a zero-retention host on 2026-10-03; the other five have not
+# answered a real call from this system yet (the live acceptance run is the first). The page reader and the decision
+# engine are the same as in live-test.dev-ci.toml. If you change a model, confirm the new one on
+# https://openrouter.ai/models first. The date after "@" is the version you are pinning (here,
+# the day the model was confirmed); the system refuses names ending in :latest, @latest, @stable, @main, @head or @newest.
+
+# Which profile this file selects when HARNESS_PROFILE is not set in the terminal. (The terminal
+# wins if both are set.) The profile is dev-ci, the same as the smoke file: the two files differ
+# in their judges, not in their profile.
+HARNESS_PROFILE = "dev-ci"
+
+prompt_template_v = "judge-prompt/4"
+
+[profiles.dev-ci]
+# Spending limit for the whole run, in the currency below. It counts the system's estimate of
+# each call, not the bill (deployment tutorial 7.3). Three judges, more judges on disagreements
+# and the random sample make several times the calls of the one-judge file, hence 15, not 5.
+HARNESS_COST_CEILING = 15
+HARNESS_COST_CURRENCY = "USD"
+
+# A small class: every disagreement may get more judges (the 0.30 default stops a few-paper run).
+orch_escalation_budget = 1.0
+# The random extra-grader sample: about 7 in 100 judged cells get two extra judges whatever their
+# confidence, which is what measures the answers the system was sure about. A class under ~40
+# judged cells draws almost nothing at 0.07 (often not one cell). For a test on a small class,
+# raise the value on this line for that test, for example 0.5 for ten answer sheets, and set it
+# back to 0.07 afterwards. A sampled answer gets two judges more than usual (up to five), so the
+# sample needs at least two of the escalation judges below; a run without them is refused.
+orch_random_arm_rate = 0.07
+
+# The Jev decision engine is ON by default on this profile (FR-CONF-29), with the same build as
+# live-test.dev-ci.toml. Confirm the build on https://openrouter.ai/models before the test day.
+HARNESS_JEV_BUILD = "openrouter/typesafe/jev-1.13@2026-09-17"
+
+# The model that reads the page images and turns them into text (the same as the smoke file).
+[profiles.dev-ci.transcriber]
+role = "transcriber"
+provider = "openrouter"
+build_id = "openrouter/openai/gpt-6-luna@2026-06-01"
+
+# The judge panel: three judges from three different model families (Qwen, Meta Llama, Mistral),
+# so that when they disagree it is not one family's habit outvoting the others. The size must be
+# 1, 3 or 5 (never 2 or 4: an even panel cannot break a tie).
+[[profiles.dev-ci.panel]]
+role = "judge"
+provider = "openrouter"
+build_id = "openrouter/qwen/qwen3-30b-a3b@2026-06-01"
+
+[[profiles.dev-ci.panel]]
+role = "judge"
+provider = "openrouter"
+build_id = "openrouter/meta-llama/llama-3.3-70b-instruct@2026-11-19"
+
+[[profiles.dev-ci.panel]]
+role = "judge"
+provider = "openrouter"
+build_id = "openrouter/mistralai/mistral-small-3.2-24b-instruct@2026-11-19"
+
+# Escalation judges: the real models used when the system adds judges to an answer (two when the
+# judges are unsure or disagree, or when the random sample picks it; one more if a judge call is
+# lost). Each is a different model from the panel and from each other, pinned with a date, and
+# answers under zero retention. Two let the random sample run and the third replaces a lost judge
+# call. A sampled answer that already has five judges and still disagrees would need seven; this
+# file cannot seat that many, so such an answer keeps its score as provisional and goes to
+# teacher review.
+[[profiles.dev-ci.escalation_judge]]
+role = "judge"
+provider = "openrouter"
+build_id = "openrouter/google/gemma-3-27b-it@2026-11-19"
+
+[[profiles.dev-ci.escalation_judge]]
+role = "judge"
+provider = "openrouter"
+build_id = "openrouter/deepseek/deepseek-chat-v3.1@2026-11-19"
+
+[[profiles.dev-ci.escalation_judge]]
+role = "judge"
+provider = "openrouter"
+build_id = "openrouter/qwen/qwen3-32b@2026-11-19"

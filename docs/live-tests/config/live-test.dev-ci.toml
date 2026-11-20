@@ -1,5 +1,11 @@
 # Configuration for the first live teacher test: the "dev-ci" profile, grading through OpenRouter.
 #
+# This is a SMOKE profile: one judge, which proves the whole path works end to end but cannot
+# show agreement (with one judge nobody can disagree, and the random extra-grader sample stays
+# off). For a test that should say how far the system's marks agree with the teacher's, use
+# live-test.panel.toml in this folder: three judges from three model families, three escalation
+# judges and the random sample on.
+#
 # Why dev-ci and not cloud-hosted: the console refuses to start under cloud-hosted (it has no
 # login, so it may only run on one machine, for one person). "dev-ci" also sends student work
 # to OpenRouter, so it is gated by the same consent rule: only cohorts marked "synthetic" or
@@ -62,8 +68,9 @@ build_id = "openrouter/openai/gpt-6-luna@2026-06-01"
 
 # The judge panel. The size must be 1, 3 or 5 (never 2 or 4: an even panel cannot break a tie).
 # One judge is the smallest working test, but with one judge the system has nobody to disagree
-# with, so it cannot show agreement figures. For a real accuracy test use three judges from
-# different model families: uncomment the two extra blocks and replace the names with models you
+# with, so it cannot show agreement figures. For a real accuracy test use live-test.panel.toml,
+# which ships three confirmed judges from different model families and three escalation judges.
+# To grow this file instead, uncomment the two extra blocks and replace the names with models you
 # have confirmed on openrouter.ai/models (they are placeholders, not recommendations).
 [[profiles.dev-ci.panel]]
 role = "judge"

@@ -20,11 +20,10 @@ tutorial" is `docs/tutorials/deployment-tutorial.md` (the plan names one; the he
 `src/aeh/help_assets/manuals/` is not asserted).
 
 **Isolation: rung 0** — static parse of shipped files.
-**Written ahead of implementation: yes** — S5 (#866) ships `live-test.panel.toml` and the
-header; keyed in `WRITTEN_AHEAD_BLOCKERS` on that file's path. Remove the marker (and the entry)
-when #866 lands.
+**Written ahead of implementation: yes, now landed** — S5 (#866) ships `live-test.panel.toml`
+and the header; the marker and its `WRITTEN_AHEAD_BLOCKERS` entry were removed with it.
 
-Markers. `writtenahead`.
+Markers. None (fast tier).
 """
 
 from __future__ import annotations
@@ -36,8 +35,6 @@ from pathlib import Path
 import pytest
 
 from tests.support.live_test_config import openrouter_slug
-
-pytestmark = pytest.mark.writtenahead
 
 REPO = Path(__file__).resolve().parents[3]
 CONFIG_DIR = REPO / "docs" / "live-tests" / "config"
