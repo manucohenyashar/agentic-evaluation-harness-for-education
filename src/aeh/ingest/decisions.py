@@ -97,6 +97,15 @@ _DECISION_STATEMENTS = {
         "UPDATE submission SET student_ref = :student_ref, v3_identity = 'pass' "
         "WHERE submission_id = :submission_id"
     ),
+    # `assign_identity_parked_paper` (FR-CALIB-17): the gates a release reads, and the release.
+    "select_submission_gates": Statement(
+        "SELECT v0_integrity, v1_pages, v2_structure, v3_identity, v4_match, quarantined "
+        "FROM submission WHERE submission_id = :submission_id"
+    ),
+    "release_assigned_submission": Statement(
+        "UPDATE submission SET ingest_status = 'ok', quarantined = 0 "
+        "WHERE submission_id = :submission_id"
+    ),
 }
 INGEST_STATEMENTS.update(_DECISION_STATEMENTS)
 STATEMENTS.update(_DECISION_STATEMENTS)
@@ -206,6 +215,39 @@ def record_quarantine_decision(
     return decision_id
 
 
+def assign_identity_parked_paper(handle: Any, submission_id: str, student_ref: str, *,
+                                 actor: str, note: str | None = None) -> str:
+    """Give a paper parked only because its student was not matched to the named roster entry,
+    and release it to grading, in one transaction: the `assigned` decision recorded, then the
+    paper's status set to `ok`. Returns the decision id.
+
+    The headless form of what the console's parked page does by hand. M-CALIB uses it for a
+    test's marked examples (FR-CALIB-17): their calibration cohort lists one entry per example,
+    and the name written on an example is never the entry's, so each one parks at V3 by design.
+    Refused unless identity is the paper's ONLY failed check — its pages read and complete
+    (V0..V2 `pass`) and the right test (V4 `match`) — so a paper parked for anything else stays
+    parked. Every refusal writes nothing."""
+    rows = list(handle.query(INGEST_STATEMENTS["select_submission_gates"],
+                             submission_id=submission_id))
+    if not rows:
+        raise QuarantineDecisionError(
+            f"no paper {submission_id!r} is in this class. Nothing was written.")
+    gates = rows[0]
+    if not (str(gates["v0_integrity"]) == str(gates["v1_pages"]) == str(gates["v2_structure"])
+            == "pass" and str(gates["v4_match"]) == "match"):
+        raise QuarantineDecisionError(
+            "this paper was parked for a reason other than its student's name (its pages, its "
+            "questions or its test), so it is not released. Nothing was written.")
+    check_assignment(handle, submission_id, student_ref)
+    with handle.transaction() as tx:
+        decision_id = record_quarantine_decision(
+            handle, submission_id, resolution="assigned", actor=actor,
+            student_ref=student_ref, note=note, tx=tx)
+        tx.execute(INGEST_STATEMENTS["release_assigned_submission"],
+                   submission_id=submission_id)
+    return decision_id
+
+
 def quarantine_decisions(handle: Any) -> list[dict[str, Any]]:
     """Every recorded decision in the cohort, oldest first — the audit trail the parked page
     shows beside each paper."""
@@ -214,6 +256,7 @@ def quarantine_decisions(handle: Any) -> list[dict[str, Any]]:
 
 __all__ = [
     "QUARANTINE_DECISIONS",
+    "assign_identity_parked_paper",
     "QuarantineDecisionError",
     "check_assignment",
     "quarantine_decisions",

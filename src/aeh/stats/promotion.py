@@ -468,9 +468,10 @@ def _administration_context(
     band histograms per judged criterion (FR-STATS-34). Returns the context, the histograms and
     the closer for the store the context reads through. No cohort file → no context and no
     histograms."""
-    from aeh.store import open_store
+    from aeh.store import is_calibration_cohort, open_store
 
-    if not cohort_id or not Path(data_dir, "cohorts", f"{cohort_id}.sqlite").exists():
+    if (not cohort_id or is_calibration_cohort(cohort_id)
+            or not Path(data_dir, "cohorts", f"{cohort_id}.sqlite").exists()):
         return NO_ENGINE_CONTEXT, {}, lambda: None
     store = open_store(data_dir)
     try:
@@ -575,9 +576,10 @@ def _record_noninferiority_verdicts(data_dir: Any, cohort_id: str, package_versi
     labels, with each label's partition read from the cohort's own verdicts. M-STATS never switches
     engines (CT-CONF-14)."""
     from aeh import pkg as _pkg
-    from aeh.store import open_store
+    from aeh.store import is_calibration_cohort, open_store
 
-    if not cohort_id or not Path(data_dir, "cohorts", f"{cohort_id}.sqlite").exists():
+    if (not cohort_id or is_calibration_cohort(cohort_id)
+            or not Path(data_dir, "cohorts", f"{cohort_id}.sqlite").exists()):
         return {criterion: "not recorded: the administration has no cohort file to read "
                            "engine partitions from" for criterion in criteria}
     outcomes: dict[str, str] = {}

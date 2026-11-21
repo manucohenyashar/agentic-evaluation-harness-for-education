@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from .schema import STATS_STATEMENTS
@@ -97,8 +96,11 @@ def _score_units_for(store: Any, fixture_submissions: Sequence[str]) -> list[Any
         )
     wanted = set(fixture_submissions)
     units: list[Any] = []
-    for path in sorted(Path(data_dir, "cohorts").glob("*.sqlite")):
-        handle = store.cohort(path.stem)
+    from aeh.store import class_cohort_keys
+
+    # CT-CALIB-18: a calibration cohort's file is never opened here (skipped by its key).
+    for key in class_cohort_keys(data_dir):
+        handle = store.cohort(key)
         for row in handle.query(STATS_STATEMENTS["select_score_units"]):
             if row["submission_id"] not in wanted:
                 continue

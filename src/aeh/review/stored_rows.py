@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from .settings import SCORING_MODEL_EST_SECONDS
@@ -17,11 +16,12 @@ def _newest_run_id(store: Any, cohort_id: str) -> str | None:
 
 
 def _store_cohort_ids(store: Any) -> list[str]:
-    """The cohort ids a store holds, sorted: one `cohorts/<cohort_id>.sqlite` file per
-    administration, the same layout M-DET and M-ORCH use."""
-    return sorted(
-        path.stem for path in Path(store.data_dir, "cohorts").glob("*.sqlite")
-    )
+    """The class cohort ids a store holds, sorted: one `cohorts/<cohort_id>.sqlite` file per
+    administration, the same layout M-DET and M-ORCH use. A calibration cohort (the teacher's
+    marked examples, FR-CALIB-17) is never reviewed, so it is skipped by its key (CT-CALIB-18)."""
+    from aeh.store import class_cohort_keys
+
+    return list(class_cohort_keys(store.data_dir))
 
 
 def _given(
