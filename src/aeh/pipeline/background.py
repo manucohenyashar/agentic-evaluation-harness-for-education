@@ -207,7 +207,7 @@ def drive_run(
     provider: Any = None,
     **drive_keywords: Any,
 ) -> Any:
-    """Create (or reuse a `pending`) run for the cohort and package version and drive it to the
+    """Make (or reuse a `pending`) run for the cohort and package version and drive it to the
     end on THIS thread and store, returning `run_to_completion`'s `RunResult` — the run's stage
     set, its stored status and its counts (FR-PIPE-01).
 
