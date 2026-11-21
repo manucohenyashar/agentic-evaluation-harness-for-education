@@ -3,7 +3,7 @@
 | Case | Asserted |
 |---|---|
 | TC-PIPE-15 | Engine on: `decision_provider_for` builds the provider once, with the engine model, and every `ScoringWorker` receives it and the `RunConfig`; engine off and injected: never called |
-| TC-PIPE-16 | A hedged cloud retention answer, and an OpenJev build mismatch, surface from `run_to_completion` before any lease |
+| TC-PIPE-16 | An OpenJev build mismatch surfaces from `run_to_completion` before any lease; a hedged cloud retention answer for the Jev engine no longer does (exempt, owner decision 2026-11-20) |
 | TC-PIPE-17 | The score stage's summary equals `decision_engine_metrics` value for value |
 | TC-PIPE-18 | Engine-on trace lines carry the engine suffix grammar; engine-off lines carry none and equal the fb12d1e baseline |
 | TC-REQ-104 | The worker consumes Decisions from the double and from a programmed `JevOpenRouterProvider`, touching only `decide` and `decision_capabilities`, never twice |
@@ -99,7 +99,7 @@ def test_tc_pipe_15_the_provider_is_built_once_and_handed_to_every_worker(tmp_pa
 def test_tc_pipe_16_start_checks_fail_before_any_lease(tmp_path) -> None:
     from aeh.conf import CohortRef, resolve_run_config
     from aeh.pipeline import run_to_completion
-    from aeh.prov import BuildChangedError, HttpResponse, JevOpenRouterProvider, OpenJevLocalProvider, RetentionPolicyError
+    from aeh.prov import BuildChangedError, HttpResponse, JevOpenRouterProvider, OpenJevLocalProvider
     from tests.support.conf_builders import edge_cfg, hosted_cfg
 
     world = pipe_world.replay_world(tmp_path / "d")
@@ -111,10 +111,18 @@ def test_tc_pipe_16_start_checks_fail_before_any_lease(tmp_path) -> None:
         cloud = resolve_run_config(hosted_cfg("cloud-hosted", HARNESS_DECISION_ENGINE="jev",
                                               HARNESS_JEV_BUILD="openrouter/typesafe/jev-1.13@2026-09-17"),
                                    CohortRef(cohort_id=world.cohort_id, consent_class="synthetic"))
-        hedged = JevOpenRouterProvider(api_key="k", retention_answers=lambda b: "retention: standard")
-        with pytest.raises(RetentionPolicyError):
-            run_to_completion(world.store, world.run_id, provider=world.provider, run_config=cloud,
-                              decision_provider=hedged, **pipe_world.corpus_refs())
+        # Owner decision 2026-11-20: Jev decision models are exempt from the zero-retention
+        # requirement, so a hedged retention answer is no longer a start-check failure for the
+        # Jev engine (`aeh.prov.retention_exempt`). The arm checks the start check itself, which
+        # neither raises nor asks the engine anything; the build-probe arm below still fails
+        # before any lease.
+        from aeh.pipeline.decision_engine import _decision_run_start_checks
+
+        asked: list = []
+        hedged = JevOpenRouterProvider(api_key="k",
+                                       retention_answers=lambda b: asked.append(b) or "retention: standard")
+        _decision_run_start_checks(cloud, hedged)
+        assert asked == [], "an exempt Jev decision model is not asked about retention"
 
         class _Models:
             def send(self, request):  # noqa: ANN001

@@ -47,12 +47,18 @@ orch_random_arm_rate = 0
 
 # The Jev decision engine is ON by default on this profile (FR-CONF-29): every rubric cell is
 # pre-screened by the Jev decision model, which either settles the band itself or hands the cell
-# back to the judge panel — both outcomes are recorded in run_metrics. The engine needs its own
-# model build, pinned with a date (never :latest). Per test day: confirm the build on
-# https://openrouter.ai/models first, then adjust the pin below. Suggestion for the first day:
-# typesafe/jev-1.13@2026-09-17 (answered real calls through the TypeSafe SDK path); a later day
-# might pin typesafe/jev-1.14@<date> once confirmed.
-HARNESS_JEV_BUILD = "openrouter/typesafe/jev-1.13@2026-09-17"
+# back to the judge panel — both outcomes are recorded in run_metrics. The engine uses
+# OpenRouter's alias typesafe/jev-latest (owner decision 2026-11-20; typesafe/jev-1.13 is no
+# longer listed). On 2026-11-20 the alias serves typesafe/jev-1.14, so a run's recorded
+# resolved_build is expected to read jev-1.14-<date>. Two runs may be graded by different Jev
+# versions. While one process drives a run it stays on one: the first answer fixes the build
+# and any later answer from another stops it (BuildWatch). A run paused and resumed in a new
+# process may continue on a newer build; both then show in the run's recorded builds. The date
+# after "@" records the day the alias
+# was chosen; it does not freeze the version. Jev is exempt from the zero-retention check (owner
+# decision 2026-11-20): the run records it under retention_exempt, not as confirmed. The
+# judges and the page reader are still checked.
+HARNESS_JEV_BUILD = "openrouter/typesafe/jev-latest@2026-11-20"
 
 # For a one-off run with the engine off (every score then has one clear source, the judge
 # panel), set it in the terminal instead of here — the terminal wins, and the file keeps the

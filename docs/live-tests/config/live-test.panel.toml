@@ -9,8 +9,9 @@
 #
 # Everything else works as in live-test.dev-ci.toml (read its comments first): only cohorts
 # marked "synthetic" or "consented" may be graded, every request to OpenRouter carries zdr=true
-# and data_collection="deny", the retention of every model below is checked before the run
-# starts, and HARNESS_FIXTURE_DIR replays recordings instead of calling OpenRouter.
+# and data_collection="deny", the retention of every model below except the Jev decision
+# engine is checked before the run starts (Jev is exempt, owner decision 2026-11-20), and
+# HARNESS_FIXTURE_DIR replays recordings instead of calling OpenRouter.
 #
 # Use it with the checker before anything else:
 #     python docs/live-tests/sample-materials/check_config.py docs/live-tests/config/live-test.panel.toml
@@ -52,8 +53,11 @@ orch_escalation_budget = 1.0
 orch_random_arm_rate = 0.07
 
 # The Jev decision engine is ON by default on this profile (FR-CONF-29), with the same build as
-# live-test.dev-ci.toml. Confirm the build on https://openrouter.ai/models before the test day.
-HARNESS_JEV_BUILD = "openrouter/typesafe/jev-1.13@2026-09-17"
+# live-test.dev-ci.toml: OpenRouter's alias typesafe/jev-latest, which serves typesafe/jev-1.14
+# on 2026-11-20 (a run's resolved_build is expected to read jev-1.14-<date>). Two runs may be
+# graded by different Jev versions; one drive of a run stays on one (BuildWatch), a resumed run
+# may not. Read the comments there.
+HARNESS_JEV_BUILD = "openrouter/typesafe/jev-latest@2026-11-20"
 
 # The model that reads the page images and turns them into text (the same as the smoke file).
 [profiles.dev-ci.transcriber]

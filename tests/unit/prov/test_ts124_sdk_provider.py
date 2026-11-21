@@ -14,7 +14,7 @@ so each case asserts that header. That makes the cases discriminating: on the st
 | TC-PROV-49 | One send per attempt of our loop: no `X-TypeSafe-Retry-Count` header; `Retry-After` honoured by our clock; the budget exhausts to `ProviderUnavailableError` |
 | TC-PROV-50 | `cost`, `model` and `provider` are read from the raw body (the SDK model drops `usage.cost`); NaN/negative cost and a legend mismatch are still refused |
 | TC-PROV-51 | The SDK error mapping, a validation error first: every raised type is `aeh.prov`'s, and no exception in the chain carries the key or the echoed state |
-| TC-PROV-54 | The per-call routing check: an off-list upstream raises `RetentionPolicyError` after one send; an absent `provider` counts `decision_provider_unreported`. The M-JUDGE arm is `tests/integration/judge/test_ts124_routing_refusal.py` |
+| TC-PROV-54 | The per-call routing check: *(re-based, owner decision 2026-11-20: Jev decision models are exempt from zero retention, and FR-PROV-43's refusal is its per-call half)* an off-list upstream is no longer refused, after one send; an absent `provider` counts `decision_provider_unreported`. The M-JUDGE arm is `tests/integration/judge/test_ts124_routing_refusal.py` |
 """
 
 from __future__ import annotations
@@ -314,10 +314,12 @@ def test_tc_prov_54_the_per_call_routing_check() -> None:
     _assert_sdk_path(listed)
     counters = RunCountersTracker()
     off_list = _Transport(_ok(_good_body(provider="OtherHost")))
-    with pytest.raises(RetentionPolicyError):
-        _provider(off_list, counters=counters).decide(jev_corpora.wire_request(), JEV_REF)
-    assert len(off_list.requests) == 1, "terminal, never retried"
-    assert counters.decision_snapshot().decision_calls == 0, "no success is counted"
+    # Owner decision 2026-11-20: FR-PROV-43's refusal is "the per-call half of zero retention",
+    # and Jev decision models are exempt from it. The answer is accepted, after one send.
+    _provider(off_list, counters=counters).decide(jev_corpora.wire_request(), JEV_REF)
+    assert len(off_list.requests) == 1
+    assert counters.decision_snapshot().decision_calls == 1
+    assert counters.decision_snapshot().decision_provider_unreported == 0
     unreported = RunCountersTracker()
     body = _good_body()
     body.pop("provider", None)

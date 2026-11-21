@@ -16,7 +16,7 @@ constructions the plan names.
 | TC-PROV-C22 | behaviour | Local stays local; cloud never floats; `allow_fallbacks: false` in every body |
 | TC-PROV-C23 | behaviour | A fixture miss never reaches the network |
 | TC-PROV-C24 | observe | *(Re-specified, design 1.8, TS-124 #500.)* The six counter names, exactly, `decision_provider_unreported` included |
-| TC-PROV-C25 | security | The decision model sits under the retention gate (rung 1; rung 3 is TC-PIPE-16) |
+| TC-PROV-C25 | security | *(Re-based, owner decision 2026-11-20.)* A Jev decision model is exempt from the retention gate and reported `exempt`, never `confirmed`; a non-exempt model still sits under it (rung 1) |
 """
 
 from __future__ import annotations
@@ -322,14 +322,19 @@ def test_tc_prov_c24_the_counter_names() -> None:
 # --- TC-PROV-C25 (safety property) -------------------------------------------------------------
 
 def test_tc_prov_c25_the_decision_model_is_under_the_retention_gate() -> None:
-    """Rung 1 here. At rung 2, TC-ORCH-53's unconfirmed arm (TS-111) refuses a cloud start whose
-    decision model is unconfirmed, which is the arm the adversarial construction (a retention set
-    built from `cfg.panel` only) turns red."""
+    """Rung 1 here. At rung 2, TC-ORCH-53 (TS-111) records the Jev decision model as
+    `retention_exempt` at a cloud start, never among `retention_verified`."""
+    # Re-based on the owner decision of 2026-11-20 ("do not worry about zero data retention for
+    # Jev models"): the Jev decision model is exempt — reported apart from `confirmed` so the
+    # exemption never reads as a kept promise — and a model that is not exempt keeps the gate.
     transport = _Transport(_ok(WIRE["cloud-well-formed-reported"]["body"]))
     provider = JevOpenRouterProvider(api_key="k", transport=transport, clock=FrozenClock(),
                                      retention_answers=lambda build: "retention: standard")
+    report = provider.verify_retention([JEV_REF])
+    assert report.exempt == (JEV_REF,) and report.confirmed == () and report.unconfirmed == ()
+    not_exempt = dataclasses.replace(JEV_REF, provider="fixture")
     with pytest.raises(RetentionPolicyError):
-        provider.verify_retention([JEV_REF])
+        provider.verify_retention([not_exempt])
     with pytest.raises(RetentionPolicyError):
-        provider.decide(jev_corpora.wire_request(), JEV_REF)
+        provider.decide(jev_corpora.wire_request(), not_exempt)
     assert transport.requests == []

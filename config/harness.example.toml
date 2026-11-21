@@ -55,15 +55,22 @@ quantization = "q4"
 served_as = "qwen3:30b-a3b-q4_K_M"
 
 # --- connected configuration: Jev on OpenRouter ----------------------------------------------------
-# The Jev build is pinned: the wire slug is typesafe/jev-1.13, and the date pins what OpenRouter
-# reports serving (typesafe/jev-1.13-20260917). OPENROUTER_API_KEY comes from the environment only.
+# The Jev build is OpenRouter's alias typesafe/jev-latest (owner decision 2026-11-20), sent on the
+# wire as typesafe/jev-latest; the date records when it was chosen. On 2026-11-20 the alias serves
+# typesafe/jev-1.14, so a run's resolved_build is expected to read jev-1.14-<date>. Two runs may be
+# graded by different Jev versions; one drive of a run stays on one (BuildWatch, FR-PROV-24), but a
+# run resumed in a new process may continue on a newer build (it shows in the run's recorded
+# builds). Jev decision
+# models are exempt from the zero-retention gate (owner decision 2026-11-20) and recorded as
+# retention_exempt; the panel and the transcriber are still checked. OPENROUTER_API_KEY comes from
+# the environment only.
 [profiles.cloud-hosted]
 HARNESS_COST_CEILING = 50
 HARNESS_COST_CURRENCY = "USD"
 retention_setting = "zero-retention"
 HARNESS_DECISION_ENGINE = "jev"
 HARNESS_DECISION_PROVIDER = "openrouter-jev"
-HARNESS_JEV_BUILD = "openrouter/typesafe/jev-1.13@20260917"
+HARNESS_JEV_BUILD = "openrouter/typesafe/jev-latest@2026-11-20"
 
 [profiles.cloud-hosted.transcriber]
 role = "transcriber"
@@ -85,7 +92,8 @@ orch_escalation_budget = 1.0
 orch_random_arm_rate = 0
 HARNESS_DECISION_ENGINE = "jev"
 HARNESS_DECISION_PROVIDER = "openrouter-jev"
-HARNESS_JEV_BUILD = "openrouter/typesafe/jev-1.13@20260917"
+# Same Jev alias as cloud-hosted above (typesafe/jev-latest; serves jev-1.14 on 2026-11-20).
+HARNESS_JEV_BUILD = "openrouter/typesafe/jev-latest@2026-11-20"
 
 [profiles.dev-ci.transcriber]
 role = "transcriber"

@@ -125,7 +125,9 @@ from .decision_base import (
     _decision_status_error,
     DecisionProvider,
     DEFAULT_JEV_TIMEOUT_S,
+    JEV_DECISION_PROVIDERS,
     JEV_TIMEOUT_S_ENV,
+    retention_exempt,
 )
 from .jev_openrouter import (
     DEFAULT_JEV_COST_PER_MTOK_IN,
@@ -243,6 +245,7 @@ __all__ = [
     "RetentionReport",
     "MeteredProvider",
     "RETENTION_PRECHECK_ENV",
+    "retention_exempt",
     "retention_precheck_skipped",
     "retention_probe_cost",
     "SamplingParams",
@@ -268,6 +271,7 @@ __all__ = [
     "ScoreAnswer",
     "ScoreQuestion",
     "decision_provider_for",
+    "JEV_DECISION_PROVIDERS",
     "JevOpenRouterProvider",
     "OpenJevLocalProvider",
     "decision_questions_document",
