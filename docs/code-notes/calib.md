@@ -350,3 +350,33 @@ The disagreement's ``pipeline_stage`` declares where a known model failure
 lives when the caller has that evidence; without it the finding names
 ``panel_composition``, the surface a scored-band disagreement is observed
 on — where it was *seen*, never a guess at where it was *caused*.
+
+## `examples.py`: the teacher's marked examples (FR-CALIB-16/17, #886)
+
+Decisions taken here, recorded because the design leaves them open:
+
+- **Isolation by key, recorded by column.** A version's examples live in the cohort
+  `calibration_cohort_id(v)` — the store's reserved prefix plus a digest of the version id —
+  created with `purpose = 'calibration'` (Cohort migration 38). The readers that must never
+  touch it (`aeh.stats`, the console's `_cohort_keys`, M-REVIEW's store-wide queue) list cohort
+  files through `aeh.store.class_cohort_keys`, which skips the prefix by name; reading the
+  column would already be opening the file. Readers that find a cohort *by run id* (M-DET,
+  M-GRADE, M-ORCH recovery) still see it, because the calibration run is graded by them.
+- **Identity.** The cohort lists one roster entry per example, named after its file. The
+  name written on an example never matches one, so each parks at V3 and is then given to its
+  own entry through M-PIPE's `assign_identity_parked_paper`, which releases a paper only when
+  identity is its one failed check. A page with marks (the clean-copy check) keeps it parked.
+- **One grading per version.** `grade_examples` refuses a second grading; uploads and marks
+  are refused once the version's examples were graded.
+- **Triage rule** (deterministic, no model call): a score that is not `final` or found no
+  evidence -> `model_failure` (extraction); another example the system put in the same band,
+  marked differently by the teacher -> `teacher_inconsistency` (shown side by side); anything
+  else -> `rubric_ambiguity`. One question per ambiguous criterion, about the band the teacher
+  chose most often there, ranked and capped by `elicit`.
+- **Nothing derived is persisted.** `compare` recomputes discovery, triage and the questions
+  from the stored rows on every read; the answers and skips are the elicitation history on R0
+  (a skip records each open question with the answer `skipped`).
+- **Answers need a published R0.** `apply_answers` mints R1 as a child of R0 through M-PKG's
+  revision flow; on an unpublished draft that child would become the draft setup publishes.
+- **R31** is checked before anything is read, independently of the consent gate: on a remote
+  profile only `synthetic` examples are sent.
