@@ -426,13 +426,21 @@ def _completion_outcome(app: Any, run_id: str) -> dict[str, Any]:
     the draw's state; a run with nothing to draw, or whose sample is closed, offers the
     results alone."""
     from .blind_actions import DRAW_OPEN, RESULTS_NEXT, completion_next, settle_draw
+    from .settings import blind_reserve_minutes
 
+    service = None
     try:
-        _service, state = settle_draw(app, run_id, open_if_complete=True)
+        service, state = settle_draw(app, run_id, open_if_complete=True)
     except Exception:  # noqa: BLE001 — a draw that cannot be read offers the results alone
         state = "not_drawn"
     if state == DRAW_OPEN:
-        return {"blind_sample": state, "next": completion_next()}
+        # FR-UI-39's banner names the draw's size and the time reserved for it.
+        try:
+            count = len(service.blind_draw_items(run_id))
+        except Exception:  # noqa: BLE001 — the banner then names no count
+            count = None
+        return {"blind_sample": state, "blind_count": count,
+                "blind_minutes": blind_reserve_minutes(), "next": completion_next()}
     return {"blind_sample": state, "next": [dict(RESULTS_NEXT)]}
 
 

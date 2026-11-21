@@ -16,11 +16,13 @@ the drawn lines of a draw that is already open (`held_back`).
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
 from aeh.review import REVIEW_BLIND_N
 
+from .html import _row_get
 from .settings import blind_reserve_minutes
 
 #: The draw states, as M-REVIEW names them (FR-REVIEW-30).
@@ -227,6 +229,59 @@ def _promote_after_close(app: Any, run_id: str, trigger: str) -> str:
         return ("The comparison with the system's marks could not be worked out yet; it is "
                 "worked out the next time the system starts.")
     return ""
+
+
+# --- the seat's scanned page (FR-UI-40's "View the page") ------------------------------------
+
+#: The canonical document's provenance, chosen the way M-REVIEW chooses the seat's answer text
+#: (the submission's own document before any derived one).
+_SELECT_SEAT_DOCUMENT_PAGES = (
+    "SELECT source_blobs FROM document WHERE submission_id = :submission_id "
+    "ORDER BY CASE kind WHEN 'submission' THEN 0 ELSE 1 END, document_id LIMIT 1"
+)
+
+
+def blind_seat_page(app: Any, run_id: str, seat_id: str, page: Any) -> bytes | None:
+    """The scanned page a blind seat's answer is on, as stored at ingest (the full-page raster,
+    FR-STORE-06), or None.
+
+    Served only while the draw is open, only for a seat of that draw, and only for a page the
+    seat's own `page_refs` name, so the route reaches no other student's page and nothing the
+    system decided (the raster is the scan itself). The seat's submission is resolved from the
+    draw's references in seat order (`blind_draw_items`); the seat payload keeps its eight
+    keys. A page whose raster was not retained answers None."""
+    try:
+        page_no = int(page)
+    except (TypeError, ValueError):
+        return None
+    if not run_id or not seat_id:
+        return None
+    try:
+        service, state = settle_draw(app, run_id)
+        if service is None or state != DRAW_OPEN:
+            return None
+        seats = [dict(seat) for seat in service.blind_seats(run_id)]
+        items = list(service.blind_draw_items(run_id))
+        index = next((i for i, seat in enumerate(seats) if seat.get("seat_id") == seat_id), None)
+        if index is None or index >= len(items):
+            return None
+        if page_no not in {int(p) for p in seats[index].get("page_refs") or ()}:
+            return None
+        run_row = app._run_row(run_id)
+        if run_row is None:
+            return None
+        rows = app._store.cohort(str(run_row["cohort_id"])).query(
+            _SELECT_SEAT_DOCUMENT_PAGES, submission_id=str(items[index].submission_id))
+        if not rows:
+            return None
+        provenance = json.loads(str(_row_get(rows[0], "source_blobs") or "{}"))
+        raster = next((entry.get("raster_hash") for entry in provenance.get("pages") or ()
+                       if int(entry.get("page_no") or 0) == page_no and entry.get("raster_hash")),
+                      None)
+        data = app._store.blobs().get(raster) if raster else None
+    except Exception:  # noqa: BLE001 — an unreadable page is a 404, never a 500 with detail
+        return None
+    return bytes(data) if data else None
 
 
 #: The blind actions, by name (FR-CONSOLE-81/83).

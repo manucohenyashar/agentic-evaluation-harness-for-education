@@ -2032,3 +2032,79 @@ textarea:focus-visible {
 .ai-call-jev p {
   margin: 0 0 var(--space-xs);
 }
+
+/* Blind first (FR-UI-39): the completion banner sits in the flow, not sticky, so it never
+ * covers the shell's outcome banner; its sentence and two buttons wrap inside 1280×720. */
+.blind-first-banner {
+  position: static;
+}
+
+.blind-first-banner .action-outcome {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+/* The blind screen (FR-UI-40/41): the progress line, one card per seat with the answer and
+ * the levels as choices, and the comparison after Finish. */
+.blind-progress {
+  font-weight: 700;
+  margin: 0 0 var(--space-xs);
+}
+
+.blind-seats {
+  list-style: none;
+  margin: var(--space-md) 0 0;
+  padding: 0;
+}
+
+.blind-seat {
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  margin: 0 0 var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.blind-seat-head {
+  font-size: var(--font-size-md);
+  margin: 0 0 var(--space-xs);
+}
+
+.blind-answer {
+  border-left: 3px solid var(--color-line);
+  margin: var(--space-xs) 0;
+  padding-left: var(--space-sm);
+  white-space: pre-wrap;
+}
+
+.blind-levels {
+  border: 0;
+  margin: var(--space-xs) 0 0;
+  padding: 0;
+}
+
+.blind-level {
+  display: block;
+  margin: 0 0 var(--space-xs);
+}
+
+.blind-descriptor {
+  color: var(--color-muted);
+}
+
+.blind-compared {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--space-md);
+}
+
+.blind-differs .blind-direction {
+  font-weight: 700;
+}
+
+/* FR-UI-42: a mark held back while the blind sample is open. */
+.held-back {
+  color: var(--color-muted);
+  font-style: italic;
+}

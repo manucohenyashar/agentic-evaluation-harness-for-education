@@ -19,6 +19,7 @@ from . import manuals_page
 from .settings import CONSOLE_BIND
 from .routes import CLOUD_HOSTED_PROFILE, LOOPBACK_ADDRESSES, SCREENS
 from .vocabulary import CONTROL_SURFACE_ACTIONS
+from .blind_actions import blind_seat_page
 from .queries import _SELECT_CROP_REF_KNOWN
 from .errors import ConsoleBindRefused
 from .html import _row_get, _stylesheet_bytes
@@ -32,6 +33,9 @@ from .teacher_text import teacher_payload
 
 #: Paths the API owns: everything under it is routed from `API_ROUTES` and nothing else.
 _API_ROOT = "/api/"
+
+#: A blind seat's scanned page (FR-UI-40): `?run_id=…&seat=…&page=…`, a PNG or a 404.
+BLIND_PAGE_ROUTE = "/blind-page"
 
 
 #: slug -> action, for `POST /actions/<slug>`. Built from the declared set rather than written
@@ -172,6 +176,19 @@ class _ConsoleRequestHandler(ApiRequestsMixin, BaseHTTPRequestHandler):
             return
         self._respond(200, bytes(data), "image/png")
 
+    def _serve_blind_page(self, query: dict[str, list[str]]) -> None:
+        """Serve the scanned page a blind seat's answer is on (FR-UI-40's "View the page"),
+        only while the draw is open and only for a page that seat names (`blind_seat_page`)."""
+        def last(key: str) -> str:
+            values = query.get(key) or [""]
+            return values[-1]
+
+        data = blind_seat_page(self._console.app, last("run_id"), last("seat"), last("page"))
+        if not data:
+            self._not_found()
+            return
+        self._respond(200, data, "image/png")
+
     def do_GET(self) -> None:  # noqa: N802 — the stdlib's dispatch name
         parsed = urlsplit(self.path)
         route = parsed.path
@@ -214,6 +231,9 @@ class _ConsoleRequestHandler(ApiRequestsMixin, BaseHTTPRequestHandler):
             return
         if route.startswith("/blobs/"):
             self._serve_crop(route[len("/blobs/"):])
+            return
+        if route == BLIND_PAGE_ROUTE:
+            self._serve_blind_page(parse_qs(parsed.query))
             return
         if not _known_route(route):
             self._not_found()

@@ -20,6 +20,7 @@ import {
   FORMAT_CHOOSE_ONE,
   type FieldSpec,
 } from "../wizard/vocabulary";
+import { anyHeldBack, HeldBack } from "../components/HeldBack";
 import { OverrideForm, type OverrideChange } from "../components/Override";
 import { ReadScreen } from "../components/ReadScreen";
 import { useNavigate } from "../navigate";
@@ -46,6 +47,9 @@ import { useRunParams } from "../selection";
  * 16): the "Change a final grade" disclosure opens the override — band selection plus a
  * required reason — riding the console's existing actions.
  */
+
+/** FR-UI-39's addition to the "Approve all grades" confirmation while the draw is open. */
+const BLIND_STILL_OPEN = "This does not finish your blind sample; you can still mark it.";
 
 function matchesFilters(student: ResultStudent, search: string, level: string, flag: string): boolean {
   if (search !== "") {
@@ -192,6 +196,9 @@ export function Results() {
     // answers were accepted as the AI graded them, and that a later change is recorded.
     const not_final = doc.not_final_questions ?? 0;
     const test = (doc.package_version_id ?? "").split("@")[0] ?? "";
+    // FR-UI-39: approving does not close the blind sample, and while it is open (the read
+    // holds its drawn marks back) the confirmation says so.
+    const blindOpen = anyHeldBack(doc.students) ? ` ${BLIND_STILL_OPEN}` : "";
     finalize.open({
       title: "Approve all grades",
       description:
@@ -199,11 +206,11 @@ export function Results() {
           ? `Every grade in these results is already final, so there is nothing left ` +
             "to approve for " +
             `${doc.cohort_id ?? "this class"} — ${test || "this test"}. ` +
-            "You can still change a grade afterward; the change is recorded."
+            "You can still change a grade afterward; the change is recorded." + blindOpen
           : `Approve all grades for ${doc.cohort_id ?? "this class"} — ` +
             `${test || "this test"}? ${not_final} answers you have not checked will be ` +
             "accepted as the AI graded them. You can still change a grade afterward; " +
-            "the change is recorded.",
+            "the change is recorded." + blindOpen,
       confirm: "Approve all",
       action: "finalize batch",
       body: { run_id: doc.run_id, actor: "operator" },
@@ -340,7 +347,11 @@ export function Results() {
                         >
                           {studentLabel(student, shared)}
                         </a>
-                        {student.total_points != null && student.total_max != null ? (
+                        {student.hidden_until_blind === true ? (
+                          <span className="total-grade">
+                            Total grade: <HeldBack link={false} />
+                          </span>
+                        ) : student.total_points != null && student.total_max != null ? (
                           <span className="total-grade">
                             Total grade: {student.total_points} / {student.total_max}
                             {student.grade ? ` — ${student.grade}` : ""}
@@ -353,10 +364,16 @@ export function Results() {
                       <ul className="question-cells">
                         {(student.questions ?? []).map((question) => (
                           <li key={question.question_id} className="question-cell">
-                            <span>
-                              {question.label} · {question.points_awarded ?? "—"} /{" "}
-                              {question.points_max}
-                            </span>
+                            {question.hidden_until_blind === true ? (
+                              <span>
+                                {question.label} · <HeldBack />
+                              </span>
+                            ) : (
+                              <span>
+                                {question.label} · {question.points_awarded ?? "—"} /{" "}
+                                {question.points_max}
+                              </span>
+                            )}
                             {question.state === "not_final" && question.not_final_reason !== null && (
                               <span
                                 className="badge badge-warning check-badge"
@@ -376,9 +393,13 @@ export function Results() {
                                   .map((criterion) => (
                                     <li key={criterion.criterion_id}>
                                       <span className="step-note">{criterion.label}</span>{" "}
-                                      <span className="band-value">
-                                        {criterion.criterion_band}
-                                      </span>
+                                      {criterion.hidden_until_blind === true ? (
+                                        <HeldBack link={false} />
+                                      ) : (
+                                        <span className="band-value">
+                                          {criterion.criterion_band}
+                                        </span>
+                                      )}
                                       {criterion.stored_band !== criterion.criterion_band && (
                                         <span className="band-note">
                                           {" "}(amended from {criterion.stored_band})
@@ -412,7 +433,11 @@ export function Results() {
                           {student.criteria.map((criterion) => (
                             <li key={criterion.criterion_id}>
                               <span className="step-note">{criterion.label}</span>{" "}
-                              <span className="band-value">{criterion.criterion_band}</span>
+                              {criterion.hidden_until_blind === true ? (
+                                <HeldBack />
+                              ) : (
+                                <span className="band-value">{criterion.criterion_band}</span>
+                              )}
                               {criterion.stored_band !== criterion.criterion_band && (
                                 <span className="band-note">
                                   {" "}(amended from {criterion.stored_band})
@@ -429,7 +454,10 @@ export function Results() {
                         </ul>
                       )}
                       <OverrideForm
-                        criteria={student.criteria.map((criterion) => ({
+                        criteria={student.criteria
+                          // A held-back line has no level to change until the sample closes.
+                          .filter((criterion) => criterion.hidden_until_blind !== true)
+                          .map((criterion) => ({
                           criterion_id: criterion.criterion_id,
                           label: criterion.label,
                           criterion_band: criterion.criterion_band,

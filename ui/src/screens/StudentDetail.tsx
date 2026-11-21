@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { FileText, TriangleAlert } from "lucide-react";
 import type { CriterionDetail, LogsDoc, StudentDetail as DetailDoc } from "../api";
+import { HeldBack } from "../components/HeldBack";
 import { ReadScreen } from "../components/ReadScreen";
 import { OverrideForm, type OverrideChange } from "../components/Override";
 import { useToast } from "../state/StateDisplay";
@@ -31,6 +32,18 @@ function CriterionCard({ criterion, doc, setShowDetails, logs, afterOverride }: 
   logs: { error: string | null; data: LogsDoc | null; retry: () => void };
   afterOverride: (_text: string, changes: OverrideChange[], final: boolean) => void;
 }) {
+  if (criterion.hidden_until_blind === true) {
+    // FR-UI-42: a drawn line while the blind sample is open — nothing the system decided
+    // about it, only why it is hidden and the way to the sample.
+    return (
+      <li key={criterion.criterion_id} className="criterion-card">
+        <div className="criterion-head">
+          <strong>{criterion.label}</strong>
+          <HeldBack />
+        </div>
+      </li>
+    );
+  }
   return (
     <li key={criterion.criterion_id} className="criterion-card">
       <div className="criterion-head">
@@ -190,14 +203,20 @@ export function StudentDetail({ submissionId }: { submissionId: string }) {
     <ReadScreen title="Student" read={read}>
       {(doc) => (
         <>
-          <p className="hub-state">
-            {studentName(doc)} — total {doc.total ?? "—"}
-            {doc.state !== null && doc.state !== ""
-              ? `, ${scoreStateLabel(doc.state).toLowerCase()}`
-              : ""}
-            .
-          </p>
-          {doc.total_points != null && doc.total_max != null && (
+          {doc.hidden_until_blind === true ? (
+            <p className="hub-state">
+              {studentName(doc)} — total: <HeldBack />
+            </p>
+          ) : (
+            <p className="hub-state">
+              {studentName(doc)} — total {doc.total ?? "—"}
+              {doc.state !== null && doc.state !== ""
+                ? `, ${scoreStateLabel(doc.state).toLowerCase()}`
+                : ""}
+              .
+            </p>
+          )}
+          {doc.hidden_until_blind !== true && doc.total_points != null && doc.total_max != null && (
             <p className="hub-state">
               Total grade {doc.total_points} / {doc.total_max}
               {doc.grade ? ` — ${doc.grade}` : ""}.
@@ -212,8 +231,16 @@ export function StudentDetail({ submissionId }: { submissionId: string }) {
                 {(doc.questions ?? []).map((question) => (
                   <div key={question.question_id} className="question-group">
                     <h3>
-                      {question.label} — {question.points_awarded ?? "—"} /{" "}
-                      {question.points_max}
+                      {question.hidden_until_blind === true ? (
+                        <>
+                          {question.label} — <HeldBack link={false} />
+                        </>
+                      ) : (
+                        <>
+                          {question.label} — {question.points_awarded ?? "—"} /{" "}
+                          {question.points_max}
+                        </>
+                      )}
                       {question.state === "not_final" && question.not_final_reason !== null && (
                         <span
                           className="badge badge-warning"
@@ -287,7 +314,9 @@ export function StudentDetail({ submissionId }: { submissionId: string }) {
                 {doc.narrative.map((row) => (
                   <li key={`${row.level}-${row.question_id}`}>
                     <span className="step-note">{row.question_id}</span>
-                    <p className="narrative-text">{row.text}</p>
+                    <p className="narrative-text">
+                      {row.hidden_until_blind === true ? <HeldBack link={false} /> : row.text}
+                    </p>
                   </li>
                 ))}
               </ul>
