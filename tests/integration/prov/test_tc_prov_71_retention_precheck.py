@@ -8,6 +8,8 @@ panel at the first call, and only on `cloud-hosted`. FR-PROV-48 widens FR-PROV-1
 remote profile: on `dev-ci` too, run start and the reading job call `verify_retention` for every
 build they will dispatch to — panel, escalation judges, decision engine; the transcriber for the
 reading job — and refuse before the first student byte leaves, naming the model.
+Re-based on the owner decision of 2026-11-20: the Jev decision engine is exempt from zero
+retention, so it is not probed and is recorded as `retention_exempt`.
 `HARNESS_RETENTION_PRECHECK=0` turns the probe off for the recorded tier only. The probe's cost
 is recorded on the run.
 
@@ -179,12 +181,16 @@ def test_tc_prov_71_run_start_probes_every_distinct_build_once_before_any_reques
     try:
         run_id = _start(store, cohort, version, _dev_ci_cfg(), bound, decision_provider=jev)
 
-        wanted = [ref.build_id for ref in PANEL] + [e["build_id"] for e in ESCALATION] + [JEV_BUILD]
+        # The Jev decision engine is exempt from the zero-retention requirement (owner decision
+        # 2026-11-20, `aeh.prov.retention_exempt`): it is not probed, and the run records it
+        # under `retention_exempt`, never `retention_verified`. Every other build still is.
+        wanted = [ref.build_id for ref in PANEL] + [e["build_id"] for e in ESCALATION]
         census = Counter(_probed(events))
         assert all(census[build] == 1 for build in wanted), (
             f"FR-PROV-48: run start on dev-ci must call verify_retention once per distinct "
-            f"build (panel, escalation judges, decision engine) ({_BLOCKER}); probed: "
+            f"build (panel, escalation judges) ({_BLOCKER}); probed: "
             f"{dict(census)}")
+        assert census[JEV_BUILD] == 0, f"the exempt Jev build was probed: {dict(census)}"
         assert max(census.values()) == 1, f"a build was probed twice: {dict(census)}"
         probes = [i for i, event in enumerate(events) if event[0] == "probe"]
         posts = [i for i, event in enumerate(events) if event[:2] == ("send", "POST")]
@@ -198,6 +204,8 @@ def test_tc_prov_71_run_start_probes_every_distinct_build_once_before_any_reques
             "SELECT metric, value FROM run_metrics WHERE run_id = :r", r=run_id)}
         provider_config = json.loads(handle.query(
             "SELECT provider_config FROM run WHERE run_id = :r", r=run_id)[0]["provider_config"])
+        assert provider_config["retention_exempt"] == [JEV_BUILD]
+        assert JEV_BUILD not in provider_config["retention_verified"]
         named = re.compile(r"(retention|probe).*cost|cost.*(retention|probe)")
         figures = {k: v for k, v in {**_flat(provider_config), **metrics}.items()
                    if named.search(k)}

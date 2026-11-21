@@ -5,12 +5,13 @@
 | TC-PROV-26 | *(Re-specified, design 1.8, TS-124 #500.)* The exact wire request through the TypeSafe SDK: `POST …/api/v1/systemone`, auth, body keys, the unversioned model slug, the provider routing object and the per-type `criteria` encoding. A floating alias is refused with zero transport calls. The alpha URL is now refused at construction (TC-PROV-48) |
 | TC-PROV-28 | FR-PROV-23's status table, for both live providers: retried classes, 429 with `Retry-After`, rejections carrying a bounded, state-free excerpt, credential and credit statuses. No message holds the API key |
 | TC-PROV-29 | Served-build identity: OpenRouter's `model` change raises `BuildChangedError` without a retry; OpenJev's vLLM probe runs at run start and every N calls, and a changed served path raises |
-| TC-PROV-33 | The retention gate: confirm, hedge, unreachable; a failed gate refuses `decide` with zero transport calls; OpenJev on loopback is confirmed |
+| TC-PROV-33 | The retention gate: a Jev decision model is exempt (owner decision 2026-11-20), reported `exempt`, never refused; for a non-exempt model a hedge, no source or an unreachable source refuses `decide` with zero transport calls; OpenJev on loopback is confirmed |
 | TC-PROV-36 | *(Re-specified, design 1.8.)* **Live** (`@live`, E2, needs `OPENROUTER_API_KEY`), the `cloud-hosted` release gate: through the SDK on `/api/v1/systemone`, Choice/Score carry `confidence` (Q-J18), `usage.cost` is read from the raw body, the served `provider` is in the pinned order, a request pinned to a non-existent upstream is **refused** (Q-44), and an invalid 11-level Score through a raw call is rejected |
 """
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 
@@ -225,22 +226,32 @@ def test_tc_prov_29_openjev_probes_at_start_and_every_n_calls(monkeypatch) -> No
 # --- TC-PROV-33 --------------------------------------------------------------------------------
 
 def test_tc_prov_33_the_retention_gate_is_fail_closed() -> None:
-    confirmed = JevOpenRouterProvider(api_key=API_KEY, retention_answers=lambda build: "zero-retention")
-    report = confirmed.verify_retention([JEV_REF])
-    assert report.confirmed == (JEV_REF,) and report.unconfirmed == ()
+    """Re-based on the owner decision of 2026-11-20 ("do not worry about zero data retention
+    for Jev models"): the Jev decision model is reported `exempt` — never `confirmed` — and is
+    never refused, whatever its confirmation source says. The fail-closed gate still holds for
+    any model that is not exempt."""
     def unreachable(build):
         raise TransportError("retention source unreachable")
 
-    # A hedge, no source at all, and a source that cannot be reached: each is unconfirmed,
-    # and each arms `decide`'s refusal.
+    for answers in (lambda build: "zero-retention", lambda build: "retention: standard", None,
+                    unreachable):
+        transport = _Transport(_ok(_good_body()))
+        provider = JevOpenRouterProvider(api_key=API_KEY, transport=transport, clock=FrozenClock(),
+                                         retention_answers=answers)
+        report = provider.verify_retention([JEV_REF])
+        assert (report.confirmed, report.unconfirmed, report.exempt) == ((), (), (JEV_REF,))
+        assert transport.requests == [], "verify_retention sends nothing"
+    # A model that is not exempt keeps the fail-closed gate: a hedge, no source, or an
+    # unreachable source each raise and arm `decide`'s refusal for it.
+    other = dataclasses.replace(JEV_REF, provider="fixture")
     for answers in (lambda build: "retention: standard", None, unreachable):
         transport = _Transport(_ok(_good_body()))
         provider = JevOpenRouterProvider(api_key=API_KEY, transport=transport, clock=FrozenClock(),
                                          retention_answers=answers)
         with pytest.raises(RetentionPolicyError):
-            provider.verify_retention([JEV_REF])
+            provider.verify_retention([other])
         with pytest.raises(RetentionPolicyError):
-            provider.decide(jev_corpora.wire_request(), JEV_REF)
+            provider.decide(jev_corpora.wire_request(), other)
         assert transport.requests == []
     local = OpenJevLocalProvider().verify_retention([OJ_REF])
     assert local.confirmed == (OJ_REF,)

@@ -80,13 +80,19 @@ class RunLifecycleMixin:
         # before the run row exists, so a refusal leaves nothing behind.
         retention, probe_cost = self._verify_retention_at_start(cfg, tuple(escalation_refs))
         provider_fields: dict[str, Any] = {}
-        if retention is not None:
+        if retention is not None and probe_cost is not None:
             # "Recorded per run": the confirmed build ids, in the run's frozen snapshot, and
             # what the probe cost (FR-PROV-48).
             provider_fields["retention_verified"] = sorted(
                 ref.build_id for ref in retention.confirmed
             )
             provider_fields["retention_probe_cost"] = str(probe_cost)
+        if retention is not None and retention.exempt:
+            # Owner decision 2026-11-20: the Jev decision model was not confirmed, it was
+            # exempt — recorded apart from `retention_verified` so it never reads as kept.
+            provider_fields["retention_exempt"] = sorted(
+                ref.build_id for ref in retention.exempt
+            )
         provider_fields.update(_pin_records(model_pins))
         if orch_knobs is not None:
             provider_fields.update(orch_knobs.to_record())
@@ -170,6 +176,10 @@ class RunLifecycleMixin:
         unconfirmed, raises `RetentionPolicyError` naming the model — the gate is never skipped
         on live traffic, because a skipped check reads as a kept privacy promise.
 
+        One exemption: a Jev decision model (`aeh.prov.retention_exempt`, owner decision
+        2026-11-20) is not probed and is returned in the report's `exempt`, never `confirmed`;
+        `probe_cost` is then None when nothing else was probed.
+
         Two declared skips. `HARNESS_RETENTION_PRECHECK=0` skips the probe for a provider that
         is the recorded tier (M-PROV decides which, `retention_precheck_skipped`). And a
         `dev-ci` orchestrator bound to no `InferenceProvider` — no seam, or only a pricing
@@ -180,7 +190,7 @@ class RunLifecycleMixin:
         if profile not in REMOTE_PROFILES:
             return None, None
         from aeh.prov import (
-            RetentionPolicyError, RetentionReport, retention_precheck_skipped,
+            RetentionPolicyError, RetentionReport, retention_exempt, retention_precheck_skipped,
             retention_probe_cost,
         )
 
@@ -214,7 +224,14 @@ class RunLifecycleMixin:
             confirmed.extend(getattr(report, "confirmed", ()))
             cost = retention_probe_cost(self._provider, asked)
         engine = getattr(cfg, "decision_engine", None)
-        if engine is not None and engine.model.build_id not in judges:
+        exempt: tuple[Any, ...] = ()
+        if (engine is not None and engine.model.build_id not in judges
+                and retention_exempt(engine.model)):
+            # Jev decision models are exempt from the zero-retention requirement (owner
+            # decision 2026-11-20; `retention_exempt`): not probed, no probe cost, and recorded
+            # as exempt beside the confirmed builds — never among them.
+            exempt = (engine.model,)
+        elif engine is not None and engine.model.build_id not in judges:
             # FR-ORCH-40 / FR-PROV-28: the decision model sends student work off the machine
             # too, so it passes the same fail-closed gate before anything is created. Its own
             # provider answers when one is bound; otherwise the provider seam speaks for it.
@@ -235,9 +252,10 @@ class RunLifecycleMixin:
                     )
                 confirmed.append(engine.model)
                 cost = (cost or 0) + retention_probe_cost(engine_provider, (engine.model,))
-        if cost is None:
+        if cost is None and not exempt:
             return None, None
-        return RetentionReport(confirmed=tuple(confirmed), unconfirmed=()), cost
+        # `cost` stays None when no probe ran and only an exemption is to be recorded.
+        return RetentionReport(confirmed=tuple(confirmed), unconfirmed=(), exempt=exempt), cost
 
     # -- resume (FR-ORCH-02) --------------------------------------------------------------------
 

@@ -198,6 +198,10 @@ class RetentionReport:
 
     confirmed: tuple[ModelRef, ...]
     unconfirmed: tuple[ModelRef, ...]
+    #: Models not asked about because they are exempt (`retention_exempt`: Jev decision
+    #: models, owner decision 2026-11-20). Kept apart from `confirmed`, so an exemption never
+    #: reads as a confirmation.
+    exempt: tuple[ModelRef, ...] = ()
 
     @property
     def all_confirmed(self) -> bool:

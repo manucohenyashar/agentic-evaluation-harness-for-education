@@ -61,6 +61,25 @@ _FIXTURE_DECISION_CAPABILITIES = DecisionCapabilities(
 _UNSHIPPED_DECISION_PROVIDERS: dict[str, str] = {}
 
 
+#: The decision providers that serve a Jev model: hosted (`openrouter-jev`) and OpenJev, which
+#: may be pointed at a deliberately remote host (FR-PROV-22). The recorded double is not one.
+JEV_DECISION_PROVIDERS: frozenset[str] = frozenset({"openrouter-jev", "openjev", "openjev-small"})
+
+
+def retention_exempt(model_ref: ModelRef) -> bool:
+    """Whether `model_ref` is exempt from the zero-retention requirement.
+
+    Jev decision models are exempt from the zero-retention requirement (owner decision
+    2026-11-20: "do not worry about zero data retention for Jev models"). This supersedes
+    FR-PROV-28/43/48 and CT-PROV-09 for the decision model only. Every other remote model —
+    panel judges, escalation judges, the transcriber and page reader — keeps the gate
+    unchanged. Keyed on the decision provider name, never on the build name, so a Jev-named
+    build put on the panel through `openrouter` is still gated. The one place that says so:
+    every retention site calls this rather than testing the provider itself, and a run records
+    an exempt model as exempt, never as confirmed."""
+    return str(getattr(model_ref, "provider", "") or "") in JEV_DECISION_PROVIDERS
+
+
 #: Every error a live decision provider can raise (FR-PROV-23), so the double can declare each.
 _DECISION_ERRORS: dict[str, type[Exception]] = {
     cls.__name__: cls for cls in (

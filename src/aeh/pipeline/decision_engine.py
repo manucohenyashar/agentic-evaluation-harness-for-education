@@ -50,7 +50,12 @@ def _decision_run_start_checks(run_config: Any, decision_provider: Any, *,
     engine = getattr(run_config, "decision_engine", None)
     if engine is None or decision_provider is None:
         return
-    if getattr(run_config, "backend_profile", None) == "cloud-hosted" and not retention_checked:
+    from aeh.prov import retention_exempt
+
+    # A Jev decision model is exempt from the zero-retention requirement (owner decision
+    # 2026-11-20, `retention_exempt`), so it is not asked here; any other decision model is.
+    if (getattr(run_config, "backend_profile", None) == "cloud-hosted" and not retention_checked
+            and not retention_exempt(engine.model)):
         report = decision_provider.verify_retention((engine.model,))
         confirmed = {ref.build_id for ref in getattr(report, "confirmed", ())}
         if engine.model.build_id not in confirmed or getattr(report, "unconfirmed", ()):

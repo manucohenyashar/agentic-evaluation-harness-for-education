@@ -33,6 +33,7 @@ from .decision_base import (
     _env_decimal,
     _env_positive_float,
     JEV_TIMEOUT_S_ENV,
+    retention_exempt,
 )
 
 
@@ -69,15 +70,27 @@ DEFAULT_JEV_COST_PER_MTOK_IN = Decimal("0.042")
 
 
 def _jev_wire_model(build_id: str) -> str:
-    """The hosted router's model name for a pinned build, with the `openrouter/` prefix and the
-    `@<pin>` suffix removed (FR-PROV-21). A floating alias is refused: the grader must not change
-    during a run."""
+    """The hosted router's model name for a build, with the `openrouter/` prefix and the `@<pin>`
+    suffix removed (FR-PROV-21).
+
+    The router's own `-latest` model name is accepted (owner decision 2026-11-20: "we should use
+    Jev latest ... its called typesafe/jev-latest"; superseding FR-PROV-21's refusal of it). On
+    2026-11-20 `typesafe/jev-latest` serves `typesafe/jev-1.14`, so a run's recorded
+    `resolved_build` reads `jev-1.14-<date>`. The grader cannot change within one drive of a
+    run: `BuildWatch` (FR-PROV-24, `_BaseDecisionProvider._decide_http`) records the build the
+    first answer was served by and raises `BuildChangedError` on any later answer from another,
+    and every verdict records its `resolved_build`. Two runs may be graded by different Jev
+    versions. Limit: the watch belongs to the provider instance, which each drive builds anew,
+    so a run paused and resumed in a new process may continue on a newer build; that shows in
+    the run's `resolved_builds`, not as a refusal. A `~` alias and a `:latest` tag are still refused: they
+    are not the router's model name for Jev, and a `:latest` tag is also refused by `ModelRef`
+    (FR-CONF-20)."""
     slug = build_id[len("openrouter/"):] if build_id.startswith("openrouter/") else build_id
     slug = slug.split("@", 1)[0]
-    if not slug or slug.startswith("~") or slug.endswith("-latest") or ":latest" in slug:
+    if not slug or slug.startswith("~") or ":latest" in slug:
         raise ConfigurationError(
-            f"decision build {build_id!r} names a floating alias; pin a versioned Jev slug such "
-            f"as 'openrouter/typesafe/jev-1.13@<pin>' (FR-PROV-21, FR-CONF-20).")
+            f"decision build {build_id!r} names a floating alias; name the router's Jev model "
+            f"such as 'openrouter/typesafe/jev-latest@<date>' (FR-PROV-21, FR-CONF-20).")
     return slug
 
 
@@ -189,7 +202,8 @@ class JevOpenRouterProvider(_BaseDecisionProvider):
 
     Design 1.8 (FR-PROV-38…43, ADR-28): the request is sent through the TypeSafe SDK to
     OpenRouter's `/api/v1/systemone`, for a pinned Jev build, with the upstream pinned,
-    fallbacks disabled and zero-retention routing requested. The SDK stays inside this class:
+    fallbacks disabled and zero-retention routing requested (requested, not required: Jev
+    decision models are exempt from the zero-retention gate, `retention_exempt`). The SDK stays inside this class:
     its HTTP goes through the injected `Transport` (an `httpx2` transport adapter), its retries
     are off so the shared loop owns them, every kept value is read from the raw response body,
     and every SDK error is mapped to a harness error. Separate from the local providers by
@@ -222,6 +236,8 @@ class JevOpenRouterProvider(_BaseDecisionProvider):
         if session_id is not None and (not isinstance(session_id, str) or not 0 < len(session_id) <= 256):
             raise ConfigurationError("session_id must be a non-empty string of at most 256 characters.")
         self._session_id = session_id if session_id is not None else uuid.uuid4().hex
+        # Consulted only for a model that is not exempt; a Jev decision model never is asked
+        # (`retention_exempt`, owner decision 2026-11-20).
         self._retention_answers = retention_answers
         self._retention_gate_failed = False
 
@@ -236,9 +252,9 @@ class JevOpenRouterProvider(_BaseDecisionProvider):
     def decide(self, request: DecisionRequest, model_ref: ModelRef) -> Decision:
         if not isinstance(request, DecisionRequest):
             raise TypeError(f"decide takes a DecisionRequest, got {type(request).__name__}")
-        if self._retention_gate_failed:
+        if self._retention_gate_failed and not retention_exempt(model_ref):
             raise RetentionPolicyError(
-                "zero-retention routing was not confirmed for the decision model at run start; "
+                "zero-retention routing was not confirmed for this model at run start; "
                 "nothing has been or will be dispatched (FR-PROV-28).")
         wire_model = _jev_wire_model(model_ref.build_id)
         if not self._api_key:
@@ -288,28 +304,31 @@ class JevOpenRouterProvider(_BaseDecisionProvider):
             return self._client
 
     def _prepare_document(self, document: Any) -> Any:
-        """The per-call routing check on the raw response (FR-PROV-43): a response served by an
-        upstream outside the pinned list raises `RetentionPolicyError`, which is final and never
-        retried. A missing `provider` field is counted as unreported, not refused."""
+        """Counts a response carrying no `provider` field as unreported (FR-PROV-43's counter).
+
+        FR-PROV-43's refusal of a response served by an upstream outside the pinned order is
+        not applied. The design calls it "the per-call half of zero retention" (Jev design
+        delta, FR-PROV-43), so it is a retention check, and Jev decision models are exempt from
+        those (`retention_exempt`, owner decision 2026-11-20). Which build answered is still
+        guarded per run by `BuildWatch` (FR-PROV-24), not by this check, and the request still
+        pins the upstream with fallbacks off."""
         if isinstance(document, dict):
-            served = document.get("provider")
             # Per attempt: only the attempt whose body is accepted decides the count.
-            self._unreported.flag = served is None
-            if served is None:
-                pass
-            elif str(served).strip().lower() != self._upstream.strip().lower():
-                raise RetentionPolicyError(
-                    f"the decision response was served by {served!r}, outside the pinned provider "
-                    f"order [{self._upstream!r}]; zero-retention routing is not assured (FR-PROV-43).")
+            self._unreported.flag = document.get("provider") is None
         return document
 
     def verify_retention(self, model_refs: Sequence[ModelRef]) -> RetentionReport:
-        """Confirm zero retention for the decision model, refusing when it cannot be confirmed, as
-        `OpenRouterProvider.verify_retention` does (FR-PROV-28). An unconfirmed model raises and
-        makes `decide` refuse."""
+        """Jev decision models are exempt from the zero-retention requirement (owner decision
+        2026-11-20, `retention_exempt`; supersedes FR-PROV-28 here): such a model is reported as
+        `exempt`, never as confirmed, nothing is asked, and nothing is armed to refuse `decide`.
+        Any other model is asked as before; when unconfirmed it raises and makes `decide` refuse
+        it."""
+        exempt = tuple(ref for ref in model_refs if retention_exempt(ref))
         confirmed: list[ModelRef] = []
         unconfirmed: list[ModelRef] = []
         for ref in model_refs:
+            if retention_exempt(ref):
+                continue
             if self._retention_answers is not None:
                 try:
                     answer = self._retention_answers(ref.build_id)
@@ -322,8 +341,9 @@ class JevOpenRouterProvider(_BaseDecisionProvider):
                 answer = None  # no confirmation source: unconfirmed, fail-closed
             (confirmed if _is_retention_confirmed(answer) else unconfirmed).append(ref)
         if unconfirmed:
+            # Arms `decide` for a non-exempt model only; an exempt Jev model is never refused.
             self._retention_gate_failed = True
             raise RetentionPolicyError(
                 f"zero-retention routing unconfirmed for decision model(s): "
                 f"{'; '.join(r.build_id for r in unconfirmed)}. The run does not start (FR-PROV-28).")
-        return RetentionReport(confirmed=tuple(confirmed), unconfirmed=())
+        return RetentionReport(confirmed=tuple(confirmed), unconfirmed=(), exempt=exempt)

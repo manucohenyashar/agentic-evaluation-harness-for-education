@@ -261,19 +261,19 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # as before, and the re-pin is line drift only. `run_lifecycle.py` is unchanged on
     # main, so #664's numbers hold; `enumeration.py` is #597's SQL-ready rewrite, whose
     # sites are main's re-pin.
-    "aeh.orch.run_lifecycle:121",
+    "aeh.orch.run_lifecycle:127",
     "aeh.orch.enumeration:103",
     "aeh.orch.enumeration:112",
-    "aeh.orch.run_lifecycle:314",
-    "aeh.orch.run_lifecycle:309",
-    "aeh.orch.run_lifecycle:303",
-    "aeh.orch.run_lifecycle:335",
-    "aeh.orch.run_lifecycle:347",
-    "aeh.orch.run_lifecycle:375",
+    "aeh.orch.run_lifecycle:332",
+    "aeh.orch.run_lifecycle:327",
+    "aeh.orch.run_lifecycle:321",
+    "aeh.orch.run_lifecycle:353",
+    "aeh.orch.run_lifecycle:365",
+    "aeh.orch.run_lifecycle:393",
+    "aeh.orch.run_lifecycle:513",
     "aeh.orch.run_lifecycle:495",
-    "aeh.orch.run_lifecycle:477",
-    "aeh.orch.run_lifecycle:519",
-    "aeh.orch.run_lifecycle:527",
+    "aeh.orch.run_lifecycle:537",
+    "aeh.orch.run_lifecycle:545",
     "aeh.orch.leasing:234",
     "aeh.orch.leasing:253",
     "aeh.orch.leasing:265",
@@ -318,7 +318,7 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # so a run recovery REFUSED to resume - a profile switch, FR-CONF-15 - would keep a
     # stale reason that answers a different question. Declared statement,
     # keyword-parameterized, in the caller's transaction (FR-STORE-08).
-    "aeh.orch.run_lifecycle:615",
+    "aeh.orch.run_lifecycle:633",
     "aeh.orch.leasing:672",
     "aeh.orch.leasing:674",
     "aeh.orch.dispatch:461",

@@ -218,11 +218,14 @@ def test_tc_pipe_26_aeh_run_binds_the_provider_before_the_run_exists(
 
 def test_tc_pipe_26_a_decision_model_is_answered_by_its_own_provider(tmp_data_dir, tmp_path,
                                                                    monkeypatch):
-    """With the Jev engine on, the run-start gate must ask the decision provider about the
-    decision model. Before the decision provider was bound, the gate fell back to the
-    completion provider, whose enforcement answer "confirmed" a model it never dispatches to:
-    the run was created and started, then failed, left `running`, with a retention record
-    naming the Jev build. Now the refusal comes at `create_run` and nothing is created."""
+    """With the Jev engine on, the run-start gate asks the decision provider about the
+    decision model, never the completion provider (whose enforcement answer once "confirmed" a
+    model it never dispatches to).
+
+    Re-based on the owner decision of 2026-11-20 ("do not worry about zero data retention for
+    Jev models"): the Jev decision model is exempt, so this start — whose decision provider has
+    no confirmation source — is no longer refused. The run is created and the engine is
+    recorded as `retention_exempt`, never among `retention_verified`. The drive is stubbed."""
     pytest.importorskip("typesafe_sdk")
     from aeh.pipeline import cli
 
@@ -235,20 +238,33 @@ def test_tc_pipe_26_a_decision_model_is_answered_by_its_own_provider(tmp_data_di
         version = seed_package(store, _CRITERIA)
     finally:
         store.close()
+    jev_build = "openrouter/typesafe/jev-latest@2026-11-20"
     config = tmp_path / "cloud-jev.toml"
     config.write_text(_CLOUD_TOML.replace(
         'HARNESS_DECISION_ENGINE = "off"',
-        'HARNESS_DECISION_ENGINE = "jev"\nHARNESS_JEV_BUILD = "openrouter/typesafe/jev-1.13@20260917"'),
+        f'HARNESS_DECISION_ENGINE = "jev"\nHARNESS_JEV_BUILD = "{jev_build}"'),
         encoding="utf-8")
+    driven = {}
+
+    def _drive(store, run_id, **_):  # noqa: ANN001
+        driven.update(run_id=run_id)
+        from aeh.pipeline.results import RunResult
+        return RunResult(run_id=run_id, status="complete", stages=(), pause_reason=None,
+                         grades_computed=0, grades_final=0)
+
+    monkeypatch.setattr(cli, "run_to_completion", _drive)
     code = cli.main(["run", "--data-dir", str(tmp_data_dir), "--cohort", ORCH_COHORT_ID,
                      "--package-version", version, "--config", str(config)])
-    assert code == 1
+    assert code == 0
     store = open_store(tmp_data_dir)
     try:
-        assert list(Orchestrator(store).runs()) == [], (
-            "TC-PIPE-26: a refused run must leave nothing behind")
+        recorded = json.loads(store.cohort(ORCH_COHORT_ID).query(
+            "SELECT provider_config FROM run WHERE run_id = :r",
+            r=driven["run_id"])[0]["provider_config"])
     finally:
         store.close()
+    assert recorded["retention_exempt"] == [jev_build]
+    assert jev_build not in recorded["retention_verified"]
 
 
 def test_tc_pipe_26_the_console_start_binds_the_launchers_provider(tmp_data_dir, monkeypatch):

@@ -129,7 +129,7 @@ The ready-made file is [`config/live-test.dev-ci.toml`](config/live-test.dev-ci.
 |---|---|---|
 | `[profiles.dev-ci]` | The profile this section configures | `dev-ci` |
 | `HARNESS_COST_CEILING`, `HARNESS_COST_CURRENCY` | Spend guard for one run. Required for `dev-ci` and `cloud-hosted`. Currency is a three-letter code such as `USD`. | `5`, `USD` |
-| `HARNESS_JEV_BUILD` | The pinned build of the Jev decision engine, which pre-screens every rubric cell before the judge panel sees it. Must be a pinned build (`@<date>`), like the other model names. | `openrouter/typesafe/jev-1.13@2026-09-17` |
+| `HARNESS_JEV_BUILD` | The Jev decision engine, which pre-screens every rubric cell before the judge panel sees it. Written with an `@<date>` like the other model names. It is OpenRouter's alias `typesafe/jev-latest` (owner decision 2026-11-20), which serves `typesafe/jev-1.14` on 2026-11-20, so a run's recorded build is expected to read `jev-1.14-<date>`. Two runs may be graded by different Jev versions. While one process drives a run it stays on one (an answer from a different build stops the run); a run resumed in a new process may continue on a newer build, which then shows in its recorded builds. Jev is exempt from the run-start zero-retention check (owner decision 2026-11-20) and is recorded as `retention_exempt`, not as confirmed. | `openrouter/typesafe/jev-latest@2026-11-20` |
 | `HARNESS_PROFILE` (top of the file) | Which profile this file selects when the terminal does not say. The terminal wins if both are set. | `dev-ci` |
 | `[profiles.dev-ci.transcriber]` | The model that reads page images | the repository's example model, **unconfirmed** |
 | `[[profiles.dev-ci.panel]]` | The judges. **Must be 1, 3 or 5** (an even panel cannot break a tie). | one judge, **unconfirmed** |
@@ -155,7 +155,7 @@ ACCEPTED
   profile ............ dev-ci   (from the config file; cohort consent class: synthetic)
   page reader ........ openrouter/qwen/qwen3-vl-8b-instruct@2026-06-01
   judge 1 ............ openrouter/qwen/qwen3-30b-a3b@2026-06-01
-  decision engine .... openrouter/typesafe/jev-1.13@2026-09-17
+  decision engine .... openrouter/typesafe/jev-latest@2026-11-20
   cost ceiling ....... 5 USD
   concurrency ........ 8 calls at a time
   OPENROUTER_API_KEY . NOT SET in this terminal
@@ -211,7 +211,7 @@ Tick each before the test.
 - [ ] A spending limit is set in OpenRouter's dashboard.
 - [ ] Only `synthetic` cohorts will be graded. `HARNESS_ALLOW_REMOTE_REAL_WORK` is not set.
 - [ ] The cost ceiling is set in the config file.
-- [ ] The privacy owner has documented approval for sending the selected cohort and documents to an eligible zero-retention OpenRouter endpoint. The software requests zero retention on every call and refuses when no matching endpoint exists; this technical gate does not replace the school's approval.
+- [ ] The privacy owner has documented approval for sending the selected cohort and documents to an eligible zero-retention OpenRouter endpoint. The software requests zero retention on every call and refuses when no matching endpoint exists; this technical gate does not replace the school's approval. The Jev decision engine is exempt from the run-start zero-retention check (owner decision 2026-11-20): the approval should cover sending answers to Jev without a confirmed zero-retention guarantee.
 - [ ] A backup of the data folder will be taken after the test, before anything is purged.
 - [ ] Nobody will try to bind the console to a network address.
 
