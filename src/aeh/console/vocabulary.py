@@ -146,7 +146,8 @@ RESULTS_SCREEN_READ = "results screen"
 STUDENT_DETAIL_READ = "student detail"
 SYSTEM_STATUS_READ = "system status"
 #: The agreement shown (FR-CONSOLE-80/84, #881): one run's validity read, and a test version's
-#: cumulative record. Reads of figures M-STATS stored; neither writes.
+#: cumulative record. Reads of figures M-STATS stored; the validity read settles a
+#: window-closed draw first, as every results read does.
 VALIDITY_READ = "results validity"
 PACKAGE_RECORD_READ = "package record"
 

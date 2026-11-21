@@ -181,7 +181,8 @@ def _build_routes() -> tuple[ApiRoute, ...]:
         ApiRoute("GET", f"{API_PREFIX}/results/student-detail", None, STUDENT_DETAIL_READ),
         ApiRoute("GET", f"{API_PREFIX}/system-status", None, SYSTEM_STATUS_READ),
         # #881 (FR-CONSOLE-80/84): the agreement shown — one run's validity read and a test
-        # version's cumulative record. Reads of stored figures; neither writes.
+        # version's cumulative record. Reads of stored figures (the validity read settles a
+        # window-closed draw first, as every results read does).
         ApiRoute("GET", f"{API_PREFIX}/results/validity", None, VALIDITY_READ),
         ApiRoute("GET", f"{API_PREFIX}/packages/record", None, PACKAGE_RECORD_READ),
         # #755 (FR-CONSOLE-47…52, FR-CONSOLE-60): the redesign SPA's read surface. Each is

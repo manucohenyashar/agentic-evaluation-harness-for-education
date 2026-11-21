@@ -128,8 +128,12 @@ class ResultsScreensMixin:
         if not figures:
             return render_agreement_block(no_new_evidence=True, population=run_id)
         backend = str(_row_get(row, "backend_profile") or "") or None
+        # Each figure is named by its question, the teacher's name for it, not the id.
+        from .screen_reads import _grading_point_labels
+
+        labels = _grading_point_labels(self, row)
         return " ".join(
-            f"{figure.get('criterion_id')}: "
+            f"{labels.get(str(figure.get('criterion_id')), figure.get('criterion_id'))}: "
             + render_agreement_block(
                 figure={"kappa": figure["kappa"], "n": figure.get("n"),
                         "band_count": figure.get("band_count"),
