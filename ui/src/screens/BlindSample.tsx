@@ -291,7 +291,7 @@ function Comparison({ data }: { data: BlindSeatsDoc }) {
     const matches = paired.filter(
       (item) => item.criterion_id === seat.criterion_id && item.student === seat.student_name,
     );
-    const pair = matches.length === 1 ? matches[0] : null;
+    const pair = matches.length === 1 ? (matches[0] ?? null) : null;
     const yours = seat.draft_band ?? "";
     const system = pair?.system_band ?? null;
     const difference = pair !== null && system !== yours ? pair : null;
