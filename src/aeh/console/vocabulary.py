@@ -98,6 +98,15 @@ CONTROL_SURFACE_ACTIONS: tuple[str, ...] = (
     "blind-sample draft",            # FR-CONSOLE-83
     "blind-sample finish",           # FR-CONSOLE-83
     "blind-sample skip",             # FR-CONSOLE-81
+    # The statistical-validity delta's marked examples (#886, FR-CONSOLE-87, D5): upload them
+    # into the test's calibration cohort, mark them on the form, check them under the rubric
+    # as written (FR-CALIB-17), answer the capped questions (FR-CALIB-16), or skip at any
+    # point (FR-CALIB-13). None of them computes or returns an agreement figure (CT-CALIB-03).
+    "examples upload",               # FR-CONSOLE-87
+    "examples mark",                 # FR-CONSOLE-87
+    "examples grade",                # FR-CONSOLE-87, FR-CALIB-17
+    "examples answer",               # FR-CONSOLE-87, FR-CALIB-16
+    "examples skip",                 # FR-CONSOLE-87, FR-CALIB-13
 )
 
 
@@ -142,6 +151,11 @@ RUN_START_STATE_READ = "run start state"
 MONITOR_READ = "monitor"
 REVIEW_QUEUE_READ = "review queue"
 BLIND_SEATS_READ = "blind seats"
+#: #886 (FR-CONSOLE-87): the marked examples' reads — the step's state and cost, the
+#: differences grouped by cause, and the questions. Reads; none carries a rate (CT-CALIB-03).
+CALIBRATION_EXAMPLES_READ = "calibration examples"
+CALIBRATION_DIFFERENCES_READ = "calibration differences"
+CALIBRATION_QUESTIONS_READ = "calibration questions"
 RESULTS_SCREEN_READ = "results screen"
 STUDENT_DETAIL_READ = "student detail"
 SYSTEM_STATUS_READ = "system status"
@@ -384,6 +398,38 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
         "blind_draw.absence_reason",
         "package_validation.cohort_id",
         "audit_record.actor",
+    ),
+    # #886 (FR-CONSOLE-87): the examples are read into the test's calibration cohort through
+    # M-PIPE's paper door (M-INGEST writes the paper; the cohort and its one-entry-per-example
+    # list are M-ORCH's), and each is given to its own entry once identity is its only failed
+    # check.
+    "examples upload": (
+        "cohort.purpose",
+        "roster.full_name",
+        "submission.student_ref",
+        "submission.ingest_status",
+        "quarantine_decision.resolution",
+    ),
+    # FR-SETUP-20: the teacher's band per judged criterion, through M-PKG.
+    "examples mark": (
+        "calibration_example_mark.band",
+        "calibration_example_mark.marked_at",
+    ),
+    # FR-CALIB-17: a run of the calibration cohort through M-PIPE (`run_to_completion`).
+    "examples grade": (
+        "run.status",
+        "criterion_score.band",
+    ),
+    # FR-CALIB-16: `apply_answers` mints the clarified version through M-PKG's lock and
+    # appends each answer to the elicitation history (FR-CALIB-14).
+    "examples answer": (
+        "package_version.package_version_id",
+        "elicitation_history.answer_given",
+        "elicitation_history.resulting_edit",
+    ),
+    # FR-CALIB-13/14: each open question recorded as skipped.
+    "examples skip": (
+        "elicitation_history.answer_given",
     ),
 }
 

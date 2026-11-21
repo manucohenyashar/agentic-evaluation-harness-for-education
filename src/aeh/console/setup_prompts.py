@@ -31,17 +31,18 @@ _SETUP_STEP_COPY: dict[str, tuple[str, str]] = {
         "choice).",
     ),
     "Answer ambiguity-elicitation questions": (
-        "This surface arrives in version 2 (Phase 4). It is rendered present-and-"
-        "unavailable rather than silently absent.",
-        "nothing changes: no question is pending in this version, and skipping a "
-        "surface that cannot be worked records the skip in the telemetry like any "
-        "other step.",
+        "Where your marks and the system's differed because the rubric may be unclear, "
+        "answer a few short questions (at most six) about how you meant it. Your answers "
+        "make a clarified rubric that is checked on your next class before it is used.",
+        "the test is marked with your rubric as written, and the parts a question was "
+        "about are marked with more caution.",
     ),
     "Mark 10 to 15 calibration papers": (
-        "Mark 10 to 15 calibration papers so later versions have a fixed reference to "
-        "re-read the rubric against.",
-        "the papers stay stored with the package for a later version, and this "
-        "administration runs without a fixed reference.",
+        "Mark a few papers yourself so the system can check it reads your rubric the way "
+        "you do. Upload unmarked copies (10 to 15 recommended, at most 25), enter your "
+        "marks in the form, then check them. They are marked separately and never appear "
+        "in a class's results; no percentage is given.",
+        "the test is marked with your rubric as written; nothing else changes.",
     ),
     "aggregation": (
         "Aggregation routing runs on declared constants: the per-signal confidence "

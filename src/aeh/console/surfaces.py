@@ -366,18 +366,18 @@ def render_agreement_block(
 
 
 #: HLD §7.9's teacher-touchpoint inventory, transcribed in the document's order, with
-#: the surface each row lives on. Eleven of the twelve are Phase 1; the one the MVP does
-#: not implement (`MVP_ABSENT_TOUCHPOINT`'s row — Stage B ambiguity elicitation is Phase
-#: 4, HLD §11.2) renders present-and-unavailable naming the version, a labelled
-#: placeholder rather than a gap (`FR-CONSOLE-25`, R72).
+#: the surface each row lives on. The two calibration rows (FR-CONSOLE-86, #886) live on the
+#: marked examples' API reads; they report implemented only while those reads are served and
+#: M-CALIB is present, so unregistering a read turns its row back into a present-and-
+#: unavailable placeholder naming the version (`FR-CONSOLE-25`, R72) rather than a false claim.
 TEACHER_TOUCHPOINT_ROUTES: dict[str, str] = {
     "Confirm the question inventory": "/setup/inventory",
     "Supply multiple-choice answer keys": "/setup/answer-keys",
     "Approve how the rubric was understood": "/setup/inventory",
     "Confirm decomposability classifications": "/setup/inventory",
     "Declare the grade policy and boundaries": "/setup/optional",
-    "Answer ambiguity-elicitation questions": CALIBRATION_ARRIVES_IN,
-    "Mark 10 to 15 calibration papers": "/setup/optional",
+    "Answer ambiguity-elicitation questions": "/api/v1/calibration/questions",
+    "Mark 10 to 15 calibration papers": "/api/v1/calibration/examples",
     "Work the review queue": "/runs/{id}/review",
     "Blind sample": "/runs/{id}/blind",
     "Whole-grade sample": "/runs/{id}/sample",
@@ -386,17 +386,39 @@ TEACHER_TOUCHPOINT_ROUTES: dict[str, str] = {
 }
 
 
-MVP_ABSENT_TOUCHPOINT = "Answer ambiguity-elicitation questions"
+#: What each calibration row needs served before it reports implemented (FR-CONSOLE-86): the
+#: reads FR-CONSOLE-87 names for it. Marking needs the step's read and the differences the
+#: check produces; answering needs the questions and the differences they come from.
+CALIBRATION_TOUCHPOINT_READS: dict[str, tuple[str, ...]] = {
+    "Mark 10 to 15 calibration papers": (
+        "/api/v1/calibration/examples", "/api/v1/calibration/differences"),
+    "Answer ambiguity-elicitation questions": (
+        "/api/v1/calibration/questions", "/api/v1/calibration/differences"),
+}
+
+
+def _served(path: str) -> bool:
+    """Whether the console's API serves `GET path` with a registered reader."""
+    from .api import API_ROUTES
+    from .api_handler import _READS
+
+    return any(route.method == "GET" and route.path == path and route.read in _READS
+               for route in API_ROUTES)
 
 
 def touchpoint_surface(app: Any = None) -> dict[str, TouchpointRender]:
     """Every touchpoint in the teacher's workflow, listed against all twelve rows of §7.9
     (CT-CONSOLE-17). Each is either implemented or shown as present but unavailable with the
-    version it arrives in. A touchpoint can only be missing here if it was dropped from the list,
-    which the vocabulary test checks."""
+    version it arrives in. A calibration row is implemented only when its reads are served and
+    M-CALIB is present (FR-CONSOLE-86). A touchpoint can only be missing here if it was dropped
+    from the list, which the vocabulary test checks."""
+    from .examples_actions import examples_available
+
+    calibration = examples_available()
     rendered: dict[str, TouchpointRender] = {}
-    for name, surface in TEACHER_TOUCHPOINT_ROUTES.items():
-        if name == MVP_ABSENT_TOUCHPOINT:
+    for name in TEACHER_TOUCHPOINT_ROUTES:
+        needs = CALIBRATION_TOUCHPOINT_READS.get(name)
+        if needs is not None and not (calibration and all(_served(p) for p in needs)):
             rendered[name] = TouchpointRender(
                 implemented=False,
                 present=True,

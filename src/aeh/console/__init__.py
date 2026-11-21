@@ -134,7 +134,6 @@ from . import write_rows  # noqa: F401  (imported for its registrations)
 from .surfaces import (
     amend_finalized_grade,
     export_package,
-    MVP_ABSENT_TOUCHPOINT,
     render_agreement_block,
     render_calibration_surface,
     render_conformance_surface,
