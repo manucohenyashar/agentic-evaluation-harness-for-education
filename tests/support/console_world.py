@@ -90,6 +90,7 @@ def seed_scored_run(
     finalize: bool = False,
     reuse_version: str | None = None,
     config: Any = None,
+    open_scoring_models: dict[str, str] | None = None,
 ) -> ScoredRun:
     """Seed and score one run end to end through the shipped modules.
 
@@ -100,7 +101,8 @@ def seed_scored_run(
     same package version to a new cohort. `config` freezes the run under a configuration
     other than `edge_cfg()` — the effective configuration dict a restart must re-resolve the
     run under (`RES-19` restarts a console under the run's own frozen profile, so the run
-    must be seeded under it).
+    must be seeded under it). `open_scoring_models` overrides an open criterion's scoring
+    model (default `holistic`), so a world can carry an atomic line beside a holistic one.
     """
     ids = tuple(f"sub-{cohort_id}-{index + 1:02d}" for index in range(submissions))
     if choices is None:
@@ -131,8 +133,9 @@ def seed_scored_run(
         catalog.set_answer_key(version, criterion_id, key)
     if with_open_criteria and reuse_version is None:
         for criterion_id, question_id in OPEN_CRITERIA:
-            catalog.add_criterion(version, criterion_id, question_id=question_id,
-                                  kind="open", scoring_model="holistic")
+            catalog.add_criterion(
+                version, criterion_id, question_id=question_id, kind="open",
+                scoring_model=(open_scoring_models or {}).get(criterion_id, "holistic"))
 
     cohort = store.cohort(cohort_id)
     with cohort.transaction() as tx:
