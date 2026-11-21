@@ -334,6 +334,12 @@ PKG_STATEMENTS.update({
         "VALUES (:id, :v, :question, :options_offered, :answer_given, "
         ":resulting_edit, datetime('now'))"
     ),
+    # FR-CALIB-16 (#886): the history read back, so the examples step knows what was answered.
+    "select_elicitation_history": Statement(
+        "SELECT elicitation_id, question, options_offered, answer_given, resulting_edit, "
+        "asked_at FROM elicitation_history WHERE package_version_id = :v "
+        "ORDER BY asked_at, rowid"
+    ),
     # -- export gate, provenance, import (#31) --------------------------------------------
     "select_package_flag": Statement(
         "SELECT contains_real_student_text AS flag FROM package WHERE package_id = :p"

@@ -32,6 +32,16 @@ class SetupRecordsMixin:
                        answer_given=answer_given, resulting_edit=resulting_edit)
         return elicitation_id
 
+    def elicitation_history(self, v: PackageVersionId) -> tuple[dict, ...]:
+        """The version's calibration-history rows, oldest first: each row's `question`, the
+        `options_offered` (a JSON list), the `answer_given` and the `resulting_edit` (the version
+        an edit landed on, or empty). M-CALIB reads it to know which questions were answered or
+        skipped (FR-CALIB-14, FR-CALIB-16)."""
+        return tuple(
+            dict(row) for row in
+            self._handle.query(PKG_STATEMENTS["select_elicitation_history"], v=v)
+        )
+
     def record_proposal(
         self, v: PackageVersionId, *, proposal_id: str, assessment_doc_id: str,
         payload: str, template_version: str, model_ref: str, attempts: int,
