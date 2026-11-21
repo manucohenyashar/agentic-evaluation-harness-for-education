@@ -185,6 +185,31 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
         "package_validation.cohort_id",
         "audit_record.actor",
     ),
+    # #886 (FR-CONSOLE-87): the marked examples — the calibration cohort's papers, the form's
+    # bands, the run under R0, the clarified version and the elicitation history.
+    "examples upload": (
+        "cohort.purpose",
+        "roster.full_name",
+        "submission.student_ref",
+        "submission.ingest_status",
+        "quarantine_decision.resolution",
+    ),
+    "examples mark": (
+        "calibration_example_mark.band",
+        "calibration_example_mark.marked_at",
+    ),
+    "examples grade": (
+        "run.status",
+        "criterion_score.band",
+    ),
+    "examples answer": (
+        "package_version.package_version_id",
+        "elicitation_history.answer_given",
+        "elicitation_history.resulting_edit",
+    ),
+    "examples skip": (
+        "elicitation_history.answer_given",
+    ),
     "correct an answer key after a run": ("criterion.answer_key",),
     "finalize batch": ("submission_grade.finalized_at", "audit_record.actor"),
     "amend a finalized grade": (

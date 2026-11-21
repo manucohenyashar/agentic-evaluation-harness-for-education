@@ -81,6 +81,9 @@ from .spa_reads import (
     parked_read,
 )
 from .vocabulary import (
+    CALIBRATION_DIFFERENCES_READ,
+    CALIBRATION_EXAMPLES_READ,
+    CALIBRATION_QUESTIONS_READ,
     AI_CALLS_READ,
     AUTHORING_DRAFT_READ,
     AUTHORING_PREVIEW_READ,
@@ -217,6 +220,13 @@ _READS = {
     MONITOR_READ: lambda console, app, _params, query: monitor_read(console, app, query),
     REVIEW_QUEUE_READ: lambda console, app, _params, query: review_queue_read(console, app, query),
     BLIND_SEATS_READ: lambda console, app, _params, query: blind_seats_read(console, app, query),
+    # #886 (FR-CONSOLE-87): the marked examples' reads.
+    CALIBRATION_EXAMPLES_READ: lambda console, app, _params, query: _examples_read(
+        "examples_read", console, app, query),
+    CALIBRATION_DIFFERENCES_READ: lambda console, app, _params, query: _examples_read(
+        "differences_read", console, app, query),
+    CALIBRATION_QUESTIONS_READ: lambda console, app, _params, query: _examples_read(
+        "questions_read", console, app, query),
     RESULTS_SCREEN_READ: lambda console, app, _params, query: results_screen_read(console, app, query),
     STUDENT_DETAIL_READ: lambda console, app, _params, query: student_detail_read(console, app, query),
     SYSTEM_STATUS_READ: lambda _console, app, _params, query: system_status_read(_console, app, query),
@@ -251,6 +261,12 @@ _READS = {
         _console, _app, body),
 }
 
+
+
+def _examples_read(name: str, console: Any, app: Any, query: Any) -> Any:
+    from . import examples_actions
+
+    return getattr(examples_actions, name)(console, app, query)
 
 
 #: The teacher-facing reads a drawn line could be read through (FR-CONSOLE-89, CT-CONSOLE-56,

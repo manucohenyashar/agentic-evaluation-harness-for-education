@@ -21,7 +21,7 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import PureWindowsPath
-from typing import Mapping
+from typing import Any, Mapping
 
 from aeh.ingest import DocumentId, PAGE_BREAK
 from aeh.pkg import PackageVersionId
@@ -146,6 +146,50 @@ def _marked_page_message(offenders: list[tuple[str, int]]) -> str:
     return f"{pages} Please upload unmarked copies, and enter your marks in the form."
 
 
+def judged_criteria(catalog: Any, v: PackageVersionId) -> dict[str, frozenset[str]]:
+    """The criteria the teacher marks by hand, each with the bands it declares: evaluation
+    mode `judged`, excluding `evidence_sum` composites, which are never judged themselves
+    (their aspects are, FR-JUDGE-38). Deterministic criteria are keyed, not marked."""
+    rows = catalog.criteria(v)
+    return {
+        row["criterion_id"]: frozenset(
+            band["band"] for band in catalog.bands(row["criterion_id"]))
+        for row in rows
+        if row.get("evaluation_mode") == "judged"
+        and row.get("score_method") != "evidence_sum"
+    }
+
+
+def check_example_bands(catalog: Any, v: PackageVersionId, bands: Mapping[str, str],
+                        file_label: str) -> None:
+    """Refuse a marking form that is not a band for every judged criterion, each one a band the
+    criterion declares (FR-SETUP-20). `file_label` names the example in the refusal. Raises
+    `MarkedExampleRefused` in the teacher's words; a look only, nothing is written. The console's
+    examples step checks a form this way before it stores the bands (FR-CONSOLE-87)."""
+    judged = judged_criteria(catalog, v)
+    if not judged:
+        raise MarkedExampleRefused(
+            "This test has no parts you mark by hand yet, so there is nothing to enter "
+            "on the form. Finish reading the rubric first.")
+    not_asked = [criterion_id for criterion_id in bands if criterion_id not in judged]
+    if not_asked:
+        raise MarkedExampleRefused(
+            f"The form for {file_label} gives a mark for "
+            f"{len(not_asked)} question part(s) that are marked automatically or are "
+            "not on this test. Only the parts you mark by hand need a mark.")
+    missing = [criterion_id for criterion_id in judged if criterion_id not in bands]
+    if missing:
+        raise MarkedExampleRefused(
+            f"Enter a mark for every part of {file_label} you mark by hand: "
+            f"{len(missing)} of {len(judged)} still need one.")
+    unknown = [criterion_id for criterion_id, band in bands.items()
+               if band not in judged[criterion_id]]
+    if unknown:
+        raise MarkedExampleRefused(
+            f"{len(unknown)} mark(s) on the form for {file_label} are not one of "
+            "the levels that part offers. Choose a level from the list.")
+
+
 @dataclass(frozen=True)
 class MarkedExamplesStep:
     """What the marked-examples step holds after an upload, a marking or a skip (FR-SETUP-20).
@@ -244,28 +288,7 @@ class MarkedExamplesMixin:
             raise SetupOrderError(
                 f"document {document_id!r} is not one of this draft's marked examples — "
                 "add_marked_examples first; the form marks an uploaded example.")
-        judged = self._judged_criteria(v)
-        if not judged:
-            raise MarkedExampleRefused(
-                "This test has no parts you mark by hand yet, so there is nothing to enter "
-                "on the form. Finish reading the rubric first.")
-        not_asked = [criterion_id for criterion_id in bands if criterion_id not in judged]
-        if not_asked:
-            raise MarkedExampleRefused(
-                f"The form for {held[document_id]} gives a mark for "
-                f"{len(not_asked)} question part(s) that are marked automatically or are "
-                "not on this test. Only the parts you mark by hand need a mark.")
-        missing = [criterion_id for criterion_id in judged if criterion_id not in bands]
-        if missing:
-            raise MarkedExampleRefused(
-                f"Enter a mark for every part of {held[document_id]} you mark by hand: "
-                f"{len(missing)} of {len(judged)} still need one.")
-        unknown = [criterion_id for criterion_id, band in bands.items()
-                   if band not in judged[criterion_id]]
-        if unknown:
-            raise MarkedExampleRefused(
-                f"{len(unknown)} mark(s) on the form for {held[document_id]} are not one of "
-                "the levels that part offers. Choose a level from the list.")
+        check_example_bands(self._catalog, v, bands, held[document_id])
         self._catalog.record_example_marks(
             v, document_id=document_id, bands=dict(bands), marked_at=_now())
         marked = set(record["marked"])
@@ -288,16 +311,7 @@ class MarkedExamplesMixin:
     # -- helpers ------------------------------------------------------------------------------
 
     def _judged_criteria(self, v: PackageVersionId) -> dict[str, frozenset[str]]:
-        """The criteria the teacher marks by hand, each with the bands it declares: evaluation
-        mode `judged`, excluding `evidence_sum` composites, which are never judged themselves
-        (their aspects are, FR-JUDGE-38). Deterministic criteria are keyed, not marked."""
-        return {
-            row["criterion_id"]: frozenset(
-                band["band"] for band in self._catalog.bands(row["criterion_id"]))
-            for row in self._catalog.criteria(v)
-            if row.get("evaluation_mode") == "judged"
-            and row.get("score_method") != "evidence_sum"
-        }
+        return judged_criteria(self._catalog, v)
 
     def _marked_examples_payload(self, v: PackageVersionId) -> dict:
         stored = self._catalog.step_record(v, MARKED_EXAMPLES_STEP)

@@ -282,9 +282,13 @@ _CONSOLE_BARE_MIGRATION_IMPORTS: frozenset[str] = frozenset(
 #:   library's own intake (`normalize_document`), and a refusal carries the matrix
 #:   sentence (`DocumentRefusedError`) verbatim — the console adds no paraphrase of its
 #:   own (`FR-AUTHOR-28`). The same declared M-AUTHOR library edge #755 opened, read side.
+#: - `aeh.calib` — #886, `FR-CONSOLE-87`. The marked examples' actions and reads compose
+#:   M-CALIB's `examples` (the design's `M-CONSOLE` <- `M-CALIB` consumer edge, §4.7). Imported
+#:   inside each function, never at module scope, so the console runs whole with M-CALIB absent
+#:   (`CT-CALIB-01`).
 _CONSOLE_SYMBOL_IMPORT_MODULES: frozenset[str] = frozenset(
     {"aeh.author", "aeh.author.errors", "aeh.author.extraction", "aeh.author.intake",
-     "aeh.author.report", "aeh.author.validation",
+     "aeh.author.report", "aeh.author.validation", "aeh.calib",
      "aeh.conf", "aeh.conf.decision_engine", "aeh.conf.qa_model", "aeh.det", "aeh.grade",
      "aeh.grade.pdf", "aeh.help", "aeh.orch", "aeh.pipeline", "aeh.pipeline.cli",
      "aeh.pipeline.driver", "aeh.pipeline.packages", "aeh.pipeline.runtime", "aeh.pkg",

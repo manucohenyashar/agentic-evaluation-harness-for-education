@@ -119,10 +119,20 @@ from .write_queue import WriteQueue
 from .tier_handle import SqliteTierHandle
 from .sqlite_store import open_store, SqliteStore, store_metrics
 from .statements import STATEMENTS
+from .cohort_purpose import (
+    CALIBRATION_COHORT_PREFIX,
+    class_cohort_keys,
+    COHORT_PURPOSES,
+    is_calibration_cohort,
+)
 
 
 __all__ = [
     "BlobStore",
+    "CALIBRATION_COHORT_PREFIX",
+    "class_cohort_keys",
+    "COHORT_PURPOSES",
+    "is_calibration_cohort",
     "COMPLETE_SCHEMA_VERSIONS",
     "CrossTierTransactionError",
     "DiskFullError",

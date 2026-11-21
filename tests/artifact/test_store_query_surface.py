@@ -331,8 +331,8 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # roster through ORCH_STATEMENTS, and ingest marks interrupted submissions
     # not_reached through INGEST_STATEMENTS - declared statements, keyword parameters,
     # in the caller's transaction (FR-STORE-08). The rest of this re-pin is line drift.
-    "aeh.orch.cohorts:131",
-    "aeh.orch.cohorts:146",
+    "aeh.orch.cohorts:141",
+    "aeh.orch.cohorts:170",
     "aeh.ingest.sources:64",
     "aeh.orch.escalation:159",
     "aeh.orch.escalation:172",
@@ -436,8 +436,12 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # B8: the operator's parked-paper decision (aeh.ingest.decisions) — the assignment of a
     # nameless paper to a roster student and the append-only decision row, both declared
     # INGEST_STATEMENTS with keyword parameters, in the caller's transaction.
-    "aeh.ingest.decisions:191",
-    "aeh.ingest.decisions:193",
+    "aeh.ingest.decisions:200",
+    "aeh.ingest.decisions:202",
+    # #886 (FR-CALIB-17): `assign_identity_parked_paper`'s release of a paper parked only at
+    # the identity check, the declared `release_assigned_submission`, keyword-parameterized,
+    # in the same transaction as its `assigned` decision.
+    "aeh.ingest.decisions:246",
     # The teacher-corrections delta (FR-CONSOLE-64..68, FR-INGEST-41): a matched paper moved to
     # its student and recorded (reassign_paper), a second paper for one student parked
     # (park_second_paper), a listed name corrected and a mistaken entry removed (M-ORCH), and
@@ -446,8 +450,8 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.ingest.corrections:107",
     "aeh.ingest.corrections:109",
     "aeh.ingest.corrections:129",
-    "aeh.orch.cohorts:217",
-    "aeh.orch.cohorts:243",
+    "aeh.orch.cohorts:241",
+    "aeh.orch.cohorts:267",
     "aeh.store.discard:162",
     "aeh.store.discard:163",
     "aeh.store.discard:165",
@@ -551,26 +555,26 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.pkg.exchange:323",
     "aeh.pkg.exchange:338",
     "aeh.pkg.versions:40",
-    "aeh.pkg.setup_records:54",
-    "aeh.pkg.setup_records:109",
-    "aeh.pkg.setup_records:57",
-    "aeh.pkg.setup_records:117",
-    "aeh.pkg.setup_records:121",
-    "aeh.pkg.setup_records:184",
-    "aeh.pkg.setup_records:247",
+    "aeh.pkg.setup_records:64",
+    "aeh.pkg.setup_records:119",
+    "aeh.pkg.setup_records:67",
+    "aeh.pkg.setup_records:127",
+    "aeh.pkg.setup_records:131",
+    "aeh.pkg.setup_records:194",
+    "aeh.pkg.setup_records:257",
     "aeh.pkg.policy_and_keys:253",
-    "aeh.pkg.setup_records:215",
+    "aeh.pkg.setup_records:225",
     "aeh.pkg.policy_and_keys:254",
-    "aeh.pkg.setup_records:267",
-    "aeh.pkg.setup_records:361",
-    "aeh.pkg.setup_records:353",
-    "aeh.pkg.setup_records:337",
-    "aeh.pkg.setup_records:357",
-    "aeh.pkg.setup_records:321",
-    "aeh.pkg.setup_records:329",
+    "aeh.pkg.setup_records:277",
+    "aeh.pkg.setup_records:371",
+    "aeh.pkg.setup_records:363",
+    "aeh.pkg.setup_records:347",
+    "aeh.pkg.setup_records:367",
+    "aeh.pkg.setup_records:331",
+    "aeh.pkg.setup_records:339",
     # #885 (migration P1): the marked-example bands' upsert, a declared statement with
     # keyword parameters (`upsert_calibration_example_mark`).
-    "aeh.pkg.setup_records:394",
+    "aeh.pkg.setup_records:404",
     "aeh.pkg.in_memory:67",
     "aeh.pkg.in_memory:153",
     "aeh.pkg.in_memory:376",
@@ -836,7 +840,7 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # (Seventh re-pin, PR #794's follow-up: the widened `_write_rows` return
     # and its docstring reflow shifted the pause/resume site down again; same
     # statement. Re-read from the walker, never hand-unioned.)
-    "aeh.console.controls:248",
+    "aeh.console.controls:255",
     # (#875 re-pin: the blind effect's draft wording moved the quarantine site; same
     # statement. #882 re-pin: the blind effect moved to `blind_actions`, moving it up
     # again; same statement.)

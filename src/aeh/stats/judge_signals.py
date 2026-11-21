@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from .settings import _env_float, _env_int
@@ -151,8 +150,11 @@ def _cohort_handle_for_run(source: Any, run_id: str, durable: Any) -> tuple[Any,
             "judge_signals was handed something that is neither a store (no data_dir) nor a "
             f"tier handle: {type(source).__name__}"
         )
-    for path in sorted(Path(data_dir, "cohorts").glob("*.sqlite")):
-        handle = source.cohort(path.stem)
+    from aeh.store import class_cohort_keys
+
+    # CT-CALIB-18: a calibration cohort's file is never opened here (skipped by its key).
+    for key in class_cohort_keys(data_dir):
+        handle = source.cohort(key)
         if handle.query(STATS_STATEMENTS["select_run_score_units"], run_id=run_id):
             return handle, (durable if durable is not None else source.durable())
     raise ValueError(

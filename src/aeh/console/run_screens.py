@@ -74,10 +74,10 @@ class RunScreensMixin:
             "<p>Transcription starts after the assembled order is accepted.</p></section>"
             + _prompt_section(
                 "Mark 10 to 15 calibration papers",
-                "The calibration papers you upload are stored with the package for a later "
-                "version; they are not scored in this administration.",
-                "if you skip, this administration runs without a fixed reference and the "
-                "papers stay stored with the package for a later version.",
+                "Marked examples are separate from this class's papers: they are marked on "
+                "their own, against the test's rubric as written, and never appear in this "
+                "class's results.",
+                "if you skip, this class is marked with the rubric as written.",
             )
         )
 

@@ -29,6 +29,9 @@ class SheetOutcome:
     submission_id: str | None = None
     gates: dict[str, str] = field(default_factory=dict)
     detail: str = ""
+    #: The transcript the sheet became, when its pages were read (M-CALIB keys a marked
+    #: example's bands by it, FR-SETUP-20).
+    document_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -195,7 +198,8 @@ def _ingest_files(store: Any, run_config: Any, cohort_id: str, package_version: 
                 "one student is never graded on two papers"))))
         record(SheetOutcome(file=path.name, status=status,
                             submission_id=report.submission_id, gates=dict(report.gates),
-                            detail=findings))
+                            detail=findings,
+                            document_id=getattr(report, "document_id", None)))
     read = sum(1 for o in outcomes if o.submission_id)
     return IntakeResult(
         cohort_id=cohort_id, package_version=package_version, assessment=assessment_note,

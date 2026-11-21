@@ -31,17 +31,18 @@ _SETUP_STEP_COPY: dict[str, tuple[str, str]] = {
         "choice).",
     ),
     "Answer ambiguity-elicitation questions": (
-        "This surface arrives in version 2 (Phase 4). It is rendered present-and-"
-        "unavailable rather than silently absent.",
-        "nothing changes: no question is pending in this version, and skipping a "
-        "surface that cannot be worked records the skip in the telemetry like any "
-        "other step.",
+        "Where your marks and the system's differed because the rubric may be unclear, "
+        "answer a few short questions about how you meant it. Your answers "
+        "make a clarified rubric that is checked on your next class before it is used.",
+        "the test is marked with your rubric as written, and the parts a question was "
+        "about are recorded as possibly unclear.",
     ),
     "Mark 10 to 15 calibration papers": (
-        "Mark 10 to 15 calibration papers so later versions have a fixed reference to "
-        "re-read the rubric against.",
-        "the papers stay stored with the package for a later version, and this "
-        "administration runs without a fixed reference.",
+        "Mark a few papers yourself so the system can check it reads your rubric the way "
+        "you do. Upload unmarked copies (10 to 15 recommended, at most 25), enter your "
+        "marks in the form, then check them. They are marked separately and never appear "
+        "in a class's results; no percentage is given.",
+        "the test is marked with your rubric as written; nothing else changes.",
     ),
     "aggregation": (
         "Aggregation routing runs on declared constants: the per-signal confidence "
@@ -81,4 +82,22 @@ def render_setup_step(step: str) -> str:
     body, cost = _SETUP_STEP_COPY.get(
         step, (_SETUP_STEP_GENERIC_BODY, _SETUP_STEP_GENERIC_COST)
     )
+    if step in _CALIBRATION_STEPS:
+        # FR-CONSOLE-86: the copy claims only what is served. With M-CALIB absent the step is
+        # present and unavailable, naming the version it arrives in (FR-CONSOLE-25).
+        from .examples_actions import examples_available
+
+        if not examples_available():
+            from .vocabulary import CALIBRATION_ARRIVES_IN
+
+            body = (f"This step arrives in {CALIBRATION_ARRIVES_IN}. It is shown here, "
+                    "unavailable, rather than left out.")
+            cost = "nothing changes: the test is marked with your rubric as written."
     return _prompt_section(step, body, cost)
+
+
+#: The two calibration steps, whose copy depends on M-CALIB being present.
+_CALIBRATION_STEPS = frozenset({
+    "Answer ambiguity-elicitation questions",
+    "Mark 10 to 15 calibration papers",
+})

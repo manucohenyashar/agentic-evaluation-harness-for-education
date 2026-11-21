@@ -64,9 +64,10 @@ ORCH_STATEMENTS: dict[str, Statement] = {
     "select_cohort_created": Statement(
         "SELECT consent_class, created_at FROM cohort WHERE cohort_id = :cohort_id"
     ),
+    # `purpose` (Cohort migration 38): a class, or the teacher's marked examples (FR-CALIB-17).
     "insert_cohort": Statement(
-        "INSERT INTO cohort (cohort_id, consent_class, created_at) "
-        "VALUES (:cohort_id, :consent_class, :created_at)"
+        "INSERT INTO cohort (cohort_id, consent_class, created_at, purpose) "
+        "VALUES (:cohort_id, :consent_class, :created_at, :purpose)"
     ),
     "insert_roster_entry": Statement(
         "INSERT INTO roster (cohort_id, student_ref, full_name) "

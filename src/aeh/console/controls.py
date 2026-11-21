@@ -168,6 +168,13 @@ class ControlActionsMixin:
             from .authoring_actions import apply_authoring_action
 
             return apply_authoring_action(self, action, params)
+        if action.startswith("examples "):
+            # The marked examples (#886, FR-CONSOLE-87): each writes through the module that
+            # owns it (M-CALIB, M-SETUP/M-PKG), and the two long steps carry the job id the
+            # step follows, which the row path has no place for.
+            from .examples_actions import apply_examples_action
+
+            return apply_examples_action(self, action, params)
         if action == "resume reading":
             # FR-CONSOLE-97: restarts the class's reading worker — console memory, no row —
             # and carries the job id the papers screen follows, which the row path cannot.

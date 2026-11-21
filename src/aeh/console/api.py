@@ -24,6 +24,9 @@ from .vocabulary import (
     AUTHORING_DRAFT_READ,
     AUTHORING_PREVIEW_READ,
     BLIND_SEATS_READ,
+    CALIBRATION_DIFFERENCES_READ,
+    CALIBRATION_EXAMPLES_READ,
+    CALIBRATION_QUESTIONS_READ,
     CLASS_ROSTER_READ,
     CLI_HELP_READ,
     CONTEXT_READ,
@@ -177,6 +180,13 @@ def _build_routes() -> tuple[ApiRoute, ...]:
         ApiRoute("GET", f"{API_PREFIX}/monitor", None, MONITOR_READ),
         ApiRoute("GET", f"{API_PREFIX}/review-queue", None, REVIEW_QUEUE_READ),
         ApiRoute("GET", f"{API_PREFIX}/blind-seats", None, BLIND_SEATS_READ),
+        # #886 (FR-CONSOLE-87): the marked examples' reads. Pure projections of M-CALIB's
+        # comparison over the stored rows; none writes, none carries a rate (CT-CALIB-03).
+        ApiRoute("GET", f"{API_PREFIX}/calibration/examples", None, CALIBRATION_EXAMPLES_READ),
+        ApiRoute("GET", f"{API_PREFIX}/calibration/differences", None,
+                 CALIBRATION_DIFFERENCES_READ),
+        ApiRoute("GET", f"{API_PREFIX}/calibration/questions", None,
+                 CALIBRATION_QUESTIONS_READ),
         ApiRoute("GET", f"{API_PREFIX}/results/screen", None, RESULTS_SCREEN_READ),
         ApiRoute("GET", f"{API_PREFIX}/results/student-detail", None, STUDENT_DETAIL_READ),
         ApiRoute("GET", f"{API_PREFIX}/system-status", None, SYSTEM_STATUS_READ),

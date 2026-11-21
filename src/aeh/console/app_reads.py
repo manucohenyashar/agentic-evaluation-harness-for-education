@@ -92,13 +92,14 @@ class StoreReadsMixin:
             return []
 
     def _cohort_keys(self) -> tuple[str, ...]:
-        """The keys of the store's cohort files, sorted: one file per cohort under
+        """The keys of the store's class cohort files, sorted: one file per cohort under
         `<data_dir>/cohorts/`, the same files M-GRADE, M-DET and M-ORCH read. A store with no files
-        (the audit double) has none."""
-        data_dir = getattr(self._store, "data_dir", None)
-        if data_dir is None:
-            return ()
-        return tuple(path.stem for path in Path(data_dir, "cohorts").glob("*.sqlite"))
+        (the audit double) has none. A calibration cohort — a test's marked examples
+        (FR-CALIB-17) — is skipped by its key, so no class list, result, export, review queue or
+        run read the console serves ever reaches one (CT-CALIB-18)."""
+        from aeh.store import class_cohort_keys
+
+        return class_cohort_keys(getattr(self._store, "data_dir", None))
 
     def _review_service(self, run_id: str) -> Any:
         """M-REVIEW's service for this run, or None when there is no store.

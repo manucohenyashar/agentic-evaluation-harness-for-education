@@ -132,6 +132,7 @@ from .uploads import record_upload_part, upload_parts_in_order
 from .decisions import (
     QUARANTINE_DECISIONS,
     QuarantineDecisionError,
+    assign_identity_parked_paper,
     check_assignment,
     quarantine_decisions,
     record_quarantine_decision,
@@ -169,6 +170,7 @@ __all__ = [
     "reassign_paper",
     "QUARANTINE_DECISIONS",
     "QuarantineDecisionError",
+    "assign_identity_parked_paper",
     "check_assignment",
     "quarantine_decisions",
     "record_quarantine_decision",

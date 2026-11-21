@@ -31,6 +31,8 @@ from .roster_entries import (
     check_roster,
     check_student_refs,
 )
+from aeh.store import CALIBRATION_COHORT_PREFIX, COHORT_PURPOSES, is_calibration_cohort
+
 from .statements import ORCH_STATEMENTS
 
 __all__ = ["CONSENT_CLASSES", "CohortSetupError", "CohortSummary", "RosterEntry",
@@ -98,8 +100,15 @@ def cohort_summary(store: Any, cohort_id: str) -> CohortSummary | None:
 
 
 def create_cohort(store: Any, cohort_id: str, consent_class: str,
-                  roster: Iterable[Any], created_at: str | None = None) -> CohortSummary:
+                  roster: Iterable[Any], created_at: str | None = None, *,
+                  purpose: str = "class") -> CohortSummary:
     """Create a cohort with its consent class and roster, in one transaction.
+
+    `purpose` (Cohort migration 38) is `'class'` unless M-CALIB creates the cohort that holds a
+    package version's marked examples (`'calibration'`, FR-CALIB-17). The two are told apart by
+    the id as well as by the column: a calibration cohort's id carries the store's reserved
+    prefix and a class's may not, so the readers that must never open a calibration file can
+    skip it by name (`aeh.store.class_cohort_keys`, CT-CALIB-18).
 
     `roster` holds `RosterEntry`s (or mappings with `full_name` and an optional `student_ref`):
     every entry needs a name, and an IDs-only roster is refused (`FR-INGEST-40`); an entry with
@@ -111,6 +120,7 @@ def create_cohort(store: Any, cohort_id: str, consent_class: str,
     command; `add_to_roster` adds students later. Every refusal writes nothing.
     """
     check_cohort_id(cohort_id)
+    _check_purpose(cohort_id, purpose)
     if consent_class not in CONSENT_CLASSES:
         raise CohortSetupError(
             f"consent class {consent_class!r} is not one of {', '.join(CONSENT_CLASSES)}. It is "
@@ -129,7 +139,7 @@ def create_cohort(store: Any, cohort_id: str, consent_class: str,
     try:
         with store.cohort(cohort_id).transaction() as tx:
             tx.execute(ORCH_STATEMENTS["insert_cohort"], cohort_id=cohort_id,
-                       consent_class=consent_class, created_at=stamp)
+                       consent_class=consent_class, created_at=stamp, purpose=purpose)
             _insert_entries(tx, cohort_id, checked)
     except (sqlite3.IntegrityError, sqlite3.OperationalError) as error:
         # Two creates for one id at once: the loser fails on the cohort key, or inside the
@@ -139,6 +149,20 @@ def create_cohort(store: Any, cohort_id: str, consent_class: str,
             f"{type(error).__name__})") from error
     return CohortSummary(cohort_id=cohort_id, consent_class=consent_class, created_at=stamp,
                          roster_size=len(checked))
+
+
+def _check_purpose(cohort_id: str, purpose: str) -> None:
+    """Refuse a purpose outside migration 38's set, a class whose id takes the calibration
+    prefix, and a calibration cohort whose id lacks it."""
+    if purpose not in COHORT_PURPOSES:
+        raise CohortSetupError(
+            f"cohort purpose {purpose!r} is not one of {', '.join(COHORT_PURPOSES)}. Nothing "
+            f"was written.")
+    if (purpose == "calibration") != is_calibration_cohort(cohort_id):
+        raise CohortSetupError(
+            f"cohort id {cohort_id!r} is not allowed for a {purpose}: ids starting "
+            f"{CALIBRATION_COHORT_PREFIX!r} are kept for the marked examples of a test, and "
+            f"only those. Choose another name. Nothing was written.")
 
 
 def _insert_entries(tx: Any, cohort_id: str, entries: Iterable[CheckedEntry]) -> None:

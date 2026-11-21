@@ -100,7 +100,9 @@ from .decomposability import DecomposabilityMixin
 from .dependencies import DependencyStepMixin
 from .progress import ProgressMixin
 from .marked_examples import (
+    check_example_bands,
     CLEAN_COPY_CHECK,
+    judged_criteria,
     marked_pages,
     MARKED_EXAMPLES_MAX,
     MARKED_EXAMPLES_RECOMMENDED,
@@ -129,6 +131,8 @@ __all__ = [
     "FIVE_QUESTIONS",
     "InventoryProposal",
     "MARKED_EXAMPLES_MAX",
+    "check_example_bands",
+    "judged_criteria",
     "MARKED_EXAMPLES_RECOMMENDED",
     "MarkedExampleRefused",
     "MarkedExamplesStep",

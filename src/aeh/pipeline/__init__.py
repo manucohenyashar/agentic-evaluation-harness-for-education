@@ -60,7 +60,9 @@ from .validity import (
 )
 from .runtime import _provider_for
 from .background import (
+    assign_identity_parked_paper,
     check_parked_assignment,
+    drive_run,
     cohort_has_test_paper,
     move_paper_to_student,
     parked_decisions,

@@ -53,41 +53,22 @@ def _reapply_frozen_pins(handle: Any, drive_keywords: dict[str, Any]) -> None:
                            quantization=quantization))
 
 
-def start_run_in_background(
+def _prepare_run(
     store: Any,
     *,
     cohort_id: str,
     package_version_id: str,
     config: Mapping[str, Any],
-    run_id: str | None = None,
-    thread_name: str = "aeh-run",
-    provider: Any = None,
-    allow_running: bool = False,
-    **drive_keywords: Any,
-) -> tuple[str, Any]:
-    """Start a run on a worker thread: the console's "start run" action (FR-CONSOLE-34,
-    NFR-CONSOLE-08).
-
-    Synchronously, on the caller's store: resolve the run configuration exactly as
-    `aeh run` does, then create the run, or reuse a `pending` run for the same cohort and
-    package version (or the one `run_id` names). A run that already left `pending`
-    raises `RunAlreadyStartedError` and nothing is written.
-
-    Then return at once, with the run driven on a **server-owned worker thread** that
-    opens its own store at the same data directory (SQLite connections belong to their
-    thread): `start` if still pending, then `run_to_completion`. A failure inside the
-    worker is recorded on the run as its pause reason (`Orchestrator.record_pause_reason`),
-    never swallowed. Closing the browser does not stop the worker, and killing the server
-    leaves the run resumable by `recover` (`NFR-CONSOLE-03`).
-
-    `provider` and `drive_keywords` pass through to `run_to_completion` (a replay against
-    a recorded corpus supplies its refs this way); by default the provider is the one the
-    resolved profile names, as `aeh run` builds it.
-
-    Returns `(run_id, thread)`. The thread is a daemon: a server that exits does not wait
-    on it, and `recover` is what continues an interrupted run."""
-    import threading
-
+    run_id: str | None,
+    provider: Any,
+    allow_running: bool,
+    drive_keywords: dict[str, Any],
+) -> tuple[str, Any, Any]:
+    """Resolve the configuration exactly as `aeh run` does, then create the run, or reuse a
+    `pending` run for the same cohort and package version (or the one `run_id` names). A run
+    that already left `pending` raises `RunAlreadyStartedError` and nothing is written. Fills
+    `drive_keywords` with what `run_to_completion` needs and returns `(run_id, run_config,
+    provider)`. Shared by the worker-thread start and the in-process drive."""
     from aeh.conf import resolve_orch_knobs, resolve_run_config
 
     run_config = resolve_run_config(dict(config), Orchestrator(store).cohort_ref(cohort_id))
@@ -140,6 +121,48 @@ def start_run_in_background(
     # the build the run froze. A fresh create_run records no pins, so the re-apply is a
     # no-op there.
     _reapply_frozen_pins(orchestrator.run_handle(run_id), drive_keywords)
+    return run_id, run_config, bound
+
+
+def start_run_in_background(
+    store: Any,
+    *,
+    cohort_id: str,
+    package_version_id: str,
+    config: Mapping[str, Any],
+    run_id: str | None = None,
+    thread_name: str = "aeh-run",
+    provider: Any = None,
+    allow_running: bool = False,
+    **drive_keywords: Any,
+) -> tuple[str, Any]:
+    """Start a run on a worker thread: the console's "start run" action (FR-CONSOLE-34,
+    NFR-CONSOLE-08).
+
+    Synchronously, on the caller's store: resolve the run configuration exactly as
+    `aeh run` does, then create the run, or reuse a `pending` run for the same cohort and
+    package version (or the one `run_id` names). A run that already left `pending`
+    raises `RunAlreadyStartedError` and nothing is written.
+
+    Then return at once, with the run driven on a **server-owned worker thread** that
+    opens its own store at the same data directory (SQLite connections belong to their
+    thread): `start` if still pending, then `run_to_completion`. A failure inside the
+    worker is recorded on the run as its pause reason (`Orchestrator.record_pause_reason`),
+    never swallowed. Closing the browser does not stop the worker, and killing the server
+    leaves the run resumable by `recover` (`NFR-CONSOLE-03`).
+
+    `provider` and `drive_keywords` pass through to `run_to_completion` (a replay against
+    a recorded corpus supplies its refs this way); by default the provider is the one the
+    resolved profile names, as `aeh run` builds it.
+
+    Returns `(run_id, thread)`. The thread is a daemon: a server that exits does not wait
+    on it, and `recover` is what continues an interrupted run."""
+    import threading
+
+    run_id, run_config, bound = _prepare_run(
+        store, cohort_id=cohort_id, package_version_id=package_version_id, config=config,
+        run_id=run_id, provider=provider, allow_running=allow_running,
+        drive_keywords=drive_keywords)
     data_dir = getattr(store, "data_dir", None)
     if data_dir is None:
         raise ValueError("start_run_in_background needs a store with a data_dir")
@@ -173,6 +196,45 @@ def start_run_in_background(
     thread = threading.Thread(target=_drive, name=f"{thread_name}-{started}", daemon=True)
     thread.start()
     return started, thread
+
+
+def drive_run(
+    store: Any,
+    *,
+    cohort_id: str,
+    package_version_id: str,
+    config: Mapping[str, Any],
+    provider: Any = None,
+    **drive_keywords: Any,
+) -> Any:
+    """Make (or reuse a `pending`) run for the cohort and package version and drive it to the
+    end on THIS thread and store, returning `run_to_completion`'s `RunResult` — the run's stage
+    set, its stored status and its counts (FR-PIPE-01).
+
+    The same preparation as `start_run_in_background` — the configuration resolved as `aeh run`
+    resolves it, so the consent gate, the retention check and the run cost ceiling all apply —
+    for a caller that wants the result rather than a worker: M-CALIB grading a test's marked
+    examples (FR-CALIB-17, CT-PIPE-01). A run that already left `pending` raises
+    `RunAlreadyStartedError` and nothing is written."""
+    run_id, run_config, bound = _prepare_run(
+        store, cohort_id=cohort_id, package_version_id=package_version_id, config=config,
+        run_id=None, provider=provider, allow_running=False, drive_keywords=drive_keywords)
+    orchestrator = Orchestrator(store, provider=bound,
+                                decision_provider=drive_keywords["decision_provider"])
+    if orchestrator.run_handle(run_id).status == "pending":
+        orchestrator.start(run_id)
+    return run_to_completion(store, run_id, provider=bound, run_config=run_config,
+                             **drive_keywords)
+
+
+def assign_identity_parked_paper(store: Any, cohort_id: str, submission_id: str,
+                                 student_ref: str, *, actor: str,
+                                 note: str | None = None) -> str:
+    """Give a paper parked only at the identity check to a roster entry and release it to
+    grading, through M-INGEST (`assign_identity_parked_paper`). No SQL here."""
+    from aeh.ingest import assign_identity_parked_paper as _assign
+
+    return _assign(store.cohort(cohort_id), submission_id, student_ref, actor=actor, note=note)
 
 
 def resume_runs_in_background(
