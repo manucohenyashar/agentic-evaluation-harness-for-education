@@ -36,7 +36,7 @@ from tests.support.console_vocabulary import (
     HLD_CONTROL_ACTIONS,
     RETIRED_HLD_CONTROL_ACTIONS,
     MOJIBAKE_MARKERS,
-    MVP_ABSENT_TOUCHPOINT,
+    CALIBRATION_TOUCHPOINTS,
     OBSERVABILITY_METRICS,
     OPERATOR_ROUTES,
     OPTIONAL_SETUP_STEPS,
@@ -141,28 +141,23 @@ def test_the_touchpoint_inventory_transcribes_hld_7_9_in_full(repo_root):
     )
 
 
-def test_exactly_one_touchpoint_is_absent_from_the_mvp(repo_root):
-    """The row that makes `CT-CONSOLE-17` a test rather than a tautology.
+def test_the_calibration_touchpoints_replace_the_mvp_absence(repo_root):
+    """`CT-CONSOLE-17` as the statistical-validity delta amends it (FR-CONSOLE-86, #886).
 
-    *"Either implemented or rendered present-and-unavailable"* is satisfied by the first branch
-    alone if every touchpoint is implemented — the clause would assert nothing and the case would
-    be green against a console with no placeholder mechanism at all. HLD §11.9 says the MVP
-    executes *"§7.9's inventory minus one touchpoint"*, so exactly one row must take the second
-    branch, and `CT-CONSOLE-17` asserts that it does with a version named.
+    HLD §11.9 once executed *"§7.9's inventory minus one touchpoint"* (`MVP_ABSENT_TOUCHPOINT`,
+    elicitation). The delta withdraws that row: both calibration touchpoints are inventory rows,
+    neither blocks grades (R60), and the console no longer exports the absent-row marker. The
+    placeholder branch is still exercised — by the census unregistering a calibration read
+    (`test_ct_console_finalization_and_touchpoints.py`).
     """
-    hld = _normalized(repo_root, HLD)
+    import aeh.console as console
 
-    assert MVP_ABSENT_TOUCHPOINT in TEACHER_TOUCHPOINTS, (
-        "the touchpoint the MVP omits must be one of the inventory's own rows"
-    )
-    assert not TEACHER_TOUCHPOINTS[MVP_ABSENT_TOUCHPOINT], (
-        "the omitted touchpoint blocks grades, which would mean the MVP cannot deliver a grade at "
-        "all — R60's test would already be failing"
-    )
-    assert "inventory minus one touchpoint" in hld, (
-        "HLD §11.9 no longer says the console executes the inventory minus one touchpoint. If the "
-        "MVP now implements all twelve, CT-CONSOLE-17's second branch is untested by this suite."
-    )
+    for name in CALIBRATION_TOUCHPOINTS:
+        assert name in TEACHER_TOUCHPOINTS, f"{name!r} is not one of the inventory's own rows"
+        assert not TEACHER_TOUCHPOINTS[name], (
+            f"{name!r} blocks grades, which would mean the MVP cannot deliver a grade without it")
+    assert not hasattr(console, "MVP_ABSENT_TOUCHPOINT"), (
+        "aeh.console still exports MVP_ABSENT_TOUCHPOINT; FR-CONSOLE-86 withdraws it")
 
 
 def test_the_control_surface_transcribes_hld_11_8(repo_root):

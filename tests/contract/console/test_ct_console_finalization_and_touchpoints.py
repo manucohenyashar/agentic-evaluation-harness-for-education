@@ -22,7 +22,7 @@ from __future__ import annotations
 import pytest
 
 from tests.support.console_vocabulary import (
-    MVP_ABSENT_TOUCHPOINT,
+    CALIBRATION_TOUCHPOINTS,
     TEACHER_TOUCHPOINTS,
     visible_text,
 )
@@ -205,9 +205,11 @@ def test_tc_console_c17_every_teacher_touchpoint_is_implemented_or_labelled_pres
     explicit that *"an absent step reads as one they skipped by accident"*. A teacher who was told
     the system would ask about their own marking, and finds no such step, concludes they missed it.
 
-    Exactly one row takes the second branch (`MVP_ABSENT_TOUCHPOINT`), which is what keeps this
-    from being satisfiable by a console that implements everything and has no placeholder
-    mechanism at all — asserted in `test_ct_console_vocabulary.py`, green today.
+    Amended by the statistical-validity delta (FR-CONSOLE-86, #886): `MVP_ABSENT_TOUCHPOINT` is
+    withdrawn and every row is implemented — the two calibration rows only while FR-CONSOLE-87
+    serves their reads. What keeps this from being satisfiable by a console with no placeholder
+    mechanism at all is the second half below: unregister one calibration read and both rows
+    take the present-and-unavailable branch, naming the version.
     """
     # #125's symbol first: this case is registered against #125, and `require()` reports whichever
     # blocker it reaches first. Naming #122 on a test that #122 landing does not unmark is how a
@@ -226,19 +228,25 @@ def test_tc_console_c17_every_teacher_touchpoint_is_implemented_or_labelled_pres
 
     for name in TEACHER_TOUCHPOINTS:
         surface = rendered[name]
-        if name == MVP_ABSENT_TOUCHPOINT:
-            assert not surface.implemented, (
-                f"{name!r} is implemented, but HLD §11.2 places Stage B elicitation in Phase 4. If "
-                f"that has changed, this suite's fixture is stale rather than this console wrong."
-            )
-            assert surface.present and not surface.available, (
-                f"{name!r} is not rendered present-and-unavailable — it is simply not there"
-            )
-            assert surface.available_in_version, (
-                f"{name!r} is marked unavailable without naming the version it arrives in, so a "
-                f"teacher cannot tell 'later' from 'never'"
-            )
-        else:
-            assert surface.implemented and surface.available, (
-                f"{name!r} is a Phase 1 touchpoint and the console does not implement it"
-            )
+        assert surface.implemented and surface.available, (
+            f"{name!r} is a touchpoint the console serves and it reports not implemented"
+        )
+
+    # The placeholder branch, still reachable: with the differences read unregistered, both
+    # calibration rows are present-and-unavailable with a version named, never absent.
+    from aeh.console import api_handler
+
+    reader = api_handler._READS.pop("calibration differences")
+    try:
+        degraded = touchpoints(build_console())
+    finally:
+        api_handler._READS["calibration differences"] = reader
+    for name in CALIBRATION_TOUCHPOINTS:
+        surface = degraded[name]
+        assert not surface.implemented, (
+            f"{name!r} reports implemented with the differences read unregistered")
+        assert surface.present and not surface.available, (
+            f"{name!r} is not rendered present-and-unavailable — it is simply not there")
+        assert surface.available_in_version, (
+            f"{name!r} is marked unavailable without naming the version it arrives in, so a "
+            f"teacher cannot tell 'later' from 'never'")

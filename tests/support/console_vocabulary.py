@@ -111,14 +111,16 @@ BLOCKING_TOUCHPOINTS: frozenset[str] = frozenset(
     {"Confirm the question inventory", "Supply multiple-choice answer keys"}
 )
 
-#: The one touchpoint the MVP does **not** implement, named in HLD §11.2 and §11.9: *"The life
-#: cycle this console executes is §7.9's inventory minus one touchpoint."*
-#:
-#: This is what makes `CT-CONSOLE-17` a real case rather than a tautology. If every touchpoint were
-#: implemented, "either implemented or rendered present-and-unavailable" would be satisfied by the
-#: first half alone and the clause would assert nothing. Exactly one row must take the second
-#: branch, and it is this one — so the case asserts the branch is taken, with a version named.
-MVP_ABSENT_TOUCHPOINT = "Answer ambiguity-elicitation questions"
+#: The two calibration touchpoints. HLD §11.2/§11.9 once left elicitation out of the MVP
+#: (`MVP_ABSENT_TOUCHPOINT`); the statistical-validity delta amends `CT-CONSOLE-17`
+#: (FR-CONSOLE-86, #886): both rows report implemented **only while** FR-CONSOLE-87 serves
+#: their reads, and `MVP_ABSENT_TOUCHPOINT` is withdrawn. The present-and-unavailable branch
+#: stays reachable — unregister a read and the row takes it, naming the version — which is
+#: what keeps `CT-CONSOLE-17` a real case now that every row is implemented.
+CALIBRATION_TOUCHPOINTS: tuple[str, ...] = (
+    "Mark 10 to 15 calibration papers",
+    "Answer ambiguity-elicitation questions",
+)
 
 # --- HLD §11.8's control surface (CT-CONSOLE-21's coupling half) ---------------------------------
 #
@@ -220,6 +222,12 @@ VALIDITY_CONTROL_ACTIONS: dict[str, str] = {
     "blind-sample draft": "FR-CONSOLE-83",
     "blind-sample finish": "FR-CONSOLE-83",
     "blind-sample skip": "FR-CONSOLE-81",
+    # #886 (§3.4.4): the teacher's marked examples.
+    "examples upload": "FR-CONSOLE-87",
+    "examples mark": "FR-CONSOLE-87",
+    "examples grade": "FR-CONSOLE-87",
+    "examples answer": "FR-CONSOLE-87",
+    "examples skip": "FR-CONSOLE-87",
 }
 
 #: HLD §11.8 actions a later delta retired from the runtime surface, each with the requirement
