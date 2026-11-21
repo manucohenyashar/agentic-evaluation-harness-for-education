@@ -58,7 +58,7 @@ export function BlindSample() {
                     title: "Finish the blind sample",
                     description:
                       unmarked > 0
-                        ? `Finish with ${unmarked} answers unmarked? Only the ones you marked will count.`
+                        ? `Finish with ${unmarked} ${unmarked === 1 ? "answer" : "answers"} unmarked? Only the ones you marked will count.`
                         : `Finish with all ${total} answers marked? Your marks can't be changed afterwards.`,
                     confirm: "Finish",
                     action: "blind-sample finish",
@@ -238,7 +238,8 @@ function ClosedSample({ data }: { data: BlindSeatsDoc }) {
 interface Compared {
   seat: BlindSeat;
   yours: string;
-  system: string;
+  /** The system's level, or null when the read pairs none with this answer. */
+  system: string | null;
   difference: ValidityDisagreement | null;
 }
 
@@ -252,8 +253,8 @@ function directionSentence(difference: ValidityDisagreement): string {
  * The comparison (FR-UI-41): each answer the teacher marked, "You: <level>" beside "The
  * system: <level>", the differences first, each saying whether the system gave more or less
  * credit. The teacher's levels are the seats' own marks; the system's come from the validity
- * read (FR-CONSOLE-80), which lists the differences — an answer it does not list got the same
- * level. The comparison renders only once the read says the sample is `recorded`; before that
+ * read's `compared` (FR-CONSOLE-80), every mark paired with the system's level. An answer
+ * the read pairs nothing with is shown as not compared, never as agreeing. The comparison renders only once the read says the sample is `recorded`; before that
  * an empty list would read as "everything matched".
  */
 function Comparison({ data }: { data: BlindSeatsDoc }) {
@@ -283,24 +284,36 @@ function Comparison({ data }: { data: BlindSeatsDoc }) {
       </p>
     );
   }
-  const differences = validity.data.disagreements;
+  const paired = validity.data.compared ?? [];
   const rows: Compared[] = marked.map((seat) => {
-    const difference =
-      differences.find(
-        (item) => item.criterion_id === seat.criterion_id && item.student === seat.student_name,
-      ) ?? null;
+    // The system's level for this answer: the one pairing for this student and grading point.
+    // None (or two students sharing a name) leaves it unknown — never assumed to agree.
+    const matches = paired.filter(
+      (item) => item.criterion_id === seat.criterion_id && item.student === seat.student_name,
+    );
+    const pair = matches.length === 1 ? matches[0] : null;
     const yours = seat.draft_band ?? "";
-    return { seat, yours, system: difference?.system_band ?? yours, difference };
+    const system = pair?.system_band ?? null;
+    const difference = pair !== null && system !== yours ? pair : null;
+    return { seat, yours, system, difference };
   });
-  rows.sort((a, b) => Number(b.difference !== null) - Number(a.difference !== null));
+  // Differences first, then the answers the system's level is unknown for, then agreements.
+  const rank = (row: Compared): number => (row.difference !== null ? 0 : row.system === null ? 1 : 2);
+  rows.sort((a, b) => rank(a) - rank(b));
   const differing = rows.filter((row) => row.difference !== null).length;
+  const unknown = rows.filter((row) => row.system === null).length;
+  const known = rows.length - unknown;
   return (
     <section className="blind-comparison" aria-label="Your marks beside the system's">
       <h2>Your marks beside the system's</h2>
       <p className="hub-state">
         {differing === 0
-          ? `The system gave the same level as you on all ${rows.length} answers you marked.`
+          ? known === rows.length
+            ? `The system gave the same level as you on all ${rows.length} answers you marked.`
+            : `The system gave the same level as you on ${known} of the ${rows.length} answers you marked.`
           : `The system gave a different level on ${differing} of the ${rows.length} answers you marked.`}
+        {unknown > 0 &&
+          ` For ${unknown} of them the system's level could not be read, so they are not compared.`}
       </p>
       <ul className="rows-list">
         {rows.map((row) => (
@@ -312,7 +325,9 @@ function Comparison({ data }: { data: BlindSeatsDoc }) {
               {row.seat.student_name ?? "A student"} — {row.seat.question}
             </span>
             <span className="blind-yours">You: {row.yours}</span>
-            <span className="blind-system">The system: {row.system}</span>
+            <span className="blind-system">
+              The system: {row.system ?? "its level could not be read"}
+            </span>
             {row.difference !== null && (
               <span className="blind-direction">{directionSentence(row.difference)}</span>
             )}

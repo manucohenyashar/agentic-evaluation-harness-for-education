@@ -226,6 +226,9 @@ export interface ValidityDoc {
   run_id: string;
   state: "not_offered_yet" | "in_progress" | "skipped" | "recorded" | (string & {});
   disagreements: ValidityDisagreement[];
+  /** Every blind mark paired with the system's level, matched or not (`direction` null
+   * where they agree). A mark the system has no level for is absent. */
+  compared?: ValidityDisagreement[];
 }
 
 /** FR-CONSOLE-89: a line, question, narrative or student total held back while the run's
