@@ -337,6 +337,17 @@ def test_tc_console_24_an_administration_without_blind_labels_never_shows_the_pr
             surface_proxy_flags="[]",
             message="blind sample promoted",
         )
+        # #881 (FR-STATS-32, CT-STATS-29): the figure the rollup shows is the record's
+        # per-criterion row, as `promote` writes it; `agreement_kappa` is never the displayed
+        # figure (a multi-criterion record leaves it NULL).
+        with store.durable().transaction() as tx:
+            tx.execute(
+                "INSERT INTO criterion_stats (package_version_id, criterion_id, "
+                "backend_profile, panel_build_ref, n, cohort_id, scoring_model, matched, "
+                "kappa, qwk, reason, figures) VALUES (:v, 'C1', 'edge-local', '', 25, :c, "
+                "'atomic', 20, 0.7137, NULL, NULL, '{}')",
+                v=first.package_version_id, c=first.cohort_id,
+            )
         prior = store.durable().query(
             "SELECT agreement_kappa FROM package_validation WHERE package_version_id = :v",
             v=first.package_version_id,

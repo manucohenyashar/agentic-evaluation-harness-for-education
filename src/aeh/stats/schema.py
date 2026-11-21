@@ -80,6 +80,29 @@ STATS_STATEMENTS: dict[str, Statement] = {
         "SELECT * FROM criterion_stats WHERE package_version_id = :package_version_id "
         "AND cohort_id = :cohort_id ORDER BY criterion_id"
     ),
+    # FR-STATS-35 (#881): the package record. `promote` pools this administration with the
+    # version's earlier per-criterion rows (their stored confusion counts) into the stored
+    # cumulative figure; `package_record` reads the version's records and figures back, and
+    # never recomputes one (NFR-STATS-07).
+    "select_earlier_criterion_stats": Statement(
+        "SELECT * FROM criterion_stats WHERE package_version_id = :package_version_id "
+        "AND cohort_id != :cohort_id"
+    ),
+    "select_version_promotion_records": Statement(
+        "SELECT * FROM package_validation WHERE package_version_id = :package_version_id "
+        "ORDER BY recorded_at, cohort_id"
+    ),
+    "select_version_criterion_stats": Statement(
+        "SELECT * FROM criterion_stats WHERE package_version_id = :package_version_id "
+        "ORDER BY criterion_id"
+    ),
+    # The run an administration was graded by, for its backend and panel build when the
+    # record carries no per-criterion row (a skipped or unmarked administration). Read from
+    # the class's own file, newest run first.
+    "select_version_runs": Statement(
+        "SELECT run_id, backend_profile, provider_config, started_at FROM run "
+        "WHERE package_version_id = :package_version_id ORDER BY started_at DESC"
+    ),
     # The read `criterion_figures` resolves one administration's record
     # through — the same rows `record_criterion_stats` wrote, keyed on the
     # cohort dimension the migration added, so a figure the consumer reads is

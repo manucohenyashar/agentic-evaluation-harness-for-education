@@ -9,7 +9,6 @@ from typing import Any, Mapping
 
 from aeh.grade import rollup_findings
 
-from .vocabulary import STANDING_AGREEMENT_FIGURE
 from .queries import _SELECT_GRADES, _SELECT_NARRATIVE, _SELECT_SCORES
 from .html import _band_control, _band_section, _prompt_section, _row_get, _section
 from .provenance import (
@@ -72,26 +71,14 @@ class ResultsScreensMixin:
         # Invariant 20 vs invariant 5 (`FR-CONSOLE-24` / `FR-CONSOLE-10`): the block
         # branches on what the administration actually collected. With no blind labels
         # the absence sentence renders — never a zero, never the prior administration's
-        # figure (`RISK-08`). The scoped, chance-corrected figure renders on the audit
-        # double and the storeless default build only — the same discriminator
-        # `_write_rows` uses — where the standing shape above is the declared
-        # presentation. A real store renders the absence sentence too until the console
-        # reads `M-STATS`'s validation record: a kappa this module cannot verify is not
-        # one it may print.
+        # figure (`RISK-08`). A real store shows THIS administration's own per-criterion
+        # figures when its record holds any (#529, #881); a build with no store has no
+        # record to read, so it renders the absence sentence too — never a placeholder
+        # figure (FR-CONSOLE-85).
         if getattr(self._store, "data_dir", None) is not None:
-            # FR-CONSOLE-24 (#529): a real store shows THIS administration's own validation
-            # record when one exists (its cohort, its package version), and the absence
-            # sentence only when none does or it holds no blind labels. Never another
-            # administration's figure (RISK-08).
             agreement = self._rollup_agreement(run_id)
-        elif self._blind_labels == 0:
-            agreement = render_agreement_block(no_new_evidence=True, population=run_id)
         else:
-            agreement = render_agreement_block(
-                figure=STANDING_AGREEMENT_FIGURE,
-                population=run_id,
-                package_version=GRADE_PROVENANCE["package_version"],
-            )
+            agreement = render_agreement_block(no_new_evidence=True, population=run_id)
         return (
             _prompt_section(
                 "Finalize the batch",
@@ -114,14 +101,18 @@ class ResultsScreensMixin:
         )
 
     def _rollup_agreement(self, run_id: str) -> str:
-        """The agreement block on screen S12, on a real store (FR-CONSOLE-24, #529)."""
+        """The agreement block on screen S12, on a real store (FR-CONSOLE-24, #529): THIS
+        administration's stored per-criterion figures (its cohort, its package version), each
+        one criterion's, named by it — atomic and holistic never merged (FR-CONSOLE-10) — and the absence
+        sentence when the record holds none. A multi-criterion record carries no single
+        figure (FR-STATS-32), so the per-criterion rows are what is read (CT-STATS-29, #881)."""
         row = self._run_row(run_id)
         record = None
         if row is not None:
-            from aeh.pkg import promotion_record
+            from aeh.stats import administration_record
 
             try:
-                record = promotion_record(
+                record = administration_record(
                     self._store, package_version_id=str(row["package_version_id"]),
                     cohort_id=str(row["cohort_id"]))
             except sqlite3.OperationalError as error:
@@ -130,16 +121,27 @@ class ResultsScreensMixin:
                 if "no such table" not in str(error):
                     raise
                 record = None
-        if (record is None or not record.get("blind_count")
-                or record.get("agreement_kappa") is None):
+        figures = [] if record is None or not record.blind_count else [
+            figure for _criterion, figure in sorted(dict(record.criterion_figures).items())
+            if figure.get("kappa") is not None
+        ]
+        if not figures:
             return render_agreement_block(no_new_evidence=True, population=run_id)
-        # The record is keyed by (package version, cohort): the cohort is its population, and
-        # it records no backend, so the figure says so rather than claiming one (#529 review).
-        return render_agreement_block(
-            figure={"kappa": record["agreement_kappa"], "n": record.get("n"),
-                    "population_scope_id": str(row["cohort_id"]), "backend_profile": None,
-                    "panel_build_ref": None},
-            population=run_id, package_version=str(row["package_version_id"]))
+        backend = str(_row_get(row, "backend_profile") or "") or None
+        # Each figure is named by its question, the teacher's name for it, not the id.
+        from .screen_reads import _grading_point_labels
+
+        labels = _grading_point_labels(self, row)
+        return " ".join(
+            f"{labels.get(str(figure.get('criterion_id')), figure.get('criterion_id'))}: "
+            + render_agreement_block(
+                figure={"kappa": figure["kappa"], "n": figure.get("n"),
+                        "band_count": figure.get("band_count"),
+                        "population_scope_id": str(row["cohort_id"]),
+                        "backend_profile": backend, "panel_build_ref": None},
+                population=run_id, package_version=str(row["package_version_id"]))
+            for figure in figures
+        )
 
     def _render_rubric_findings(self, run_id: str, queries: list[str]) -> str:
         """The findings block on screen S12 (§3.19): criteria the panel could not apply, read

@@ -70,6 +70,7 @@ from .screen_reads import (
 )
 from .ai_calls import ai_calls_read, with_verbatim_calls
 from .history_reads import past_tests_read
+from .validity_reads import package_record_read, validity_read
 from .spa_reads import (
     context_read,
     impact_read,
@@ -94,6 +95,7 @@ from .vocabulary import (
     JOBS_READ,
     LOGS_READ,
     MONITOR_READ,
+    PACKAGE_RECORD_READ,
     PACKAGE_SETUP_READ,
     PAPERS_ESTIMATE_READ,
     PAPERS_READ,
@@ -111,6 +113,7 @@ from .vocabulary import (
     STUDENT_DETAIL_READ,
     SYSTEM_STATUS_READ,
     WORKBOOK_EXPORT_READ,
+    VALIDITY_READ,
 )
 
 JSON_TYPE = "application/json; charset=utf-8"
@@ -217,6 +220,10 @@ _READS = {
     RESULTS_SCREEN_READ: lambda console, app, _params, query: results_screen_read(console, app, query),
     STUDENT_DETAIL_READ: lambda console, app, _params, query: student_detail_read(console, app, query),
     SYSTEM_STATUS_READ: lambda _console, app, _params, query: system_status_read(_console, app, query),
+    # #881 (FR-CONSOLE-80/84): the agreement shown, from figures M-STATS stored.
+    VALIDITY_READ: lambda console, app, _params, query: validity_read(console, app, query),
+    PACKAGE_RECORD_READ: lambda console, app, _params, query: package_record_read(
+        console, app, query),
     # #755 (FR-CONSOLE-47…52, FR-CONSOLE-60): the redesign SPA's read surface. Each takes
     # the console, the app and the query like the reads above, and answers a document the
     # SPA renders as is. The authoring preview is the one POST read: its `query` argument

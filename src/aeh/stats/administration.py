@@ -20,6 +20,7 @@ figures (TC-STATS-42); only the engine context differs, and with none every engi
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Sequence
 
@@ -148,13 +149,16 @@ def criterion_figures(
         confusion: list[list[int]] = []
         band_count = max(declared, len(bands))
         matched = sum(1 for system, teacher in paired if str(system) == str(teacher))
+        if paired:
+            # The confusion counts ride every paired line, one pair included, so a cumulative
+            # figure (`cumulative_figures`) pools every pair the record holds.
+            ordinals, band_count = _ordinal_pairs(paired, bands, declared)
+            confusion = _confusion(ordinals, band_count)
         if len(paired) < 2:
             reason = TOO_FEW_LABELS
         else:
-            ordinals, band_count = _ordinal_pairs(paired, bands, declared)
             kappa, weighted, _alpha, _po, _pe = _corrected_statistics(ordinals, band_count)
             qwk = weighted if band_count >= 3 else None
-            confusion = _confusion(ordinals, band_count)
             if kappa is None:
                 reason = INSUFFICIENT_DATA
         figures[criterion] = {
@@ -174,9 +178,82 @@ def criterion_figures(
     return figures
 
 
+def _stored_extra(row: Mapping[str, Any]) -> dict[str, Any]:
+    try:
+        extra = json.loads(row.get("figures") or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return extra if isinstance(extra, dict) else {}
+
+
+def _summed(matrices: Sequence[Sequence[Sequence[int]]]) -> list[list[int]]:
+    """The cell-wise sum of confusion matrices, each padded to the largest band count (the
+    declared scale is the same for one package version, so positions line up)."""
+    size = max((len(matrix) for matrix in matrices), default=0)
+    total = [[0] * size for _ in range(size)]
+    for matrix in matrices:
+        for i, row in enumerate(matrix):
+            for j, count in enumerate(row):
+                total[i][j] += int(count)
+    return total
+
+
+def cumulative_figures(
+    figures: Mapping[str, Mapping[str, Any]],
+    prior_rows: Sequence[Mapping[str, Any]],
+    *,
+    backend_profile: str,
+    panel_build_ref: str,
+) -> dict[str, dict[str, Any]]:
+    """Each criterion's figure over the package version's whole record so far (FR-STATS-35):
+    this administration's labels pooled with every earlier administration's stored ones on the
+    same criterion, backend and panel build, from their stored confusion counts.
+
+    Computed here, when an administration is promoted, and stored beside its own figures, so
+    the package record and the validity read's prior record read a stored figure and never
+    recompute one (NFR-STATS-07). Atomic and holistic never pool: a criterion has one scoring
+    model in a version. `administrations` counts the records pooled."""
+    cumulative: dict[str, dict[str, Any]] = {}
+    for criterion, figure in sorted(figures.items()):
+        earlier = [
+            row for row in prior_rows
+            if str(row.get("criterion_id")) == criterion
+            and str(row.get("backend_profile") or "") == backend_profile
+            and str(row.get("panel_build_ref") or "") == panel_build_ref
+        ]
+        extras = [_stored_extra(row) for row in earlier]
+        matrices = [figure.get("confusion") or []] + [extra.get("confusion") or []
+                                                      for extra in extras]
+        confusion = _summed([matrix for matrix in matrices if matrix])
+        band_count = max([len(confusion), int(figure.get("band_count") or 0)]
+                         + [int(extra.get("band_count") or 0) for extra in extras])
+        ordinals = [(i, j) for i, row in enumerate(confusion)
+                    for j, count in enumerate(row) for _ in range(count)]
+        kappa = qwk = None
+        reason: str | None = None
+        if len(ordinals) < 2:
+            reason = TOO_FEW_LABELS
+        else:
+            kappa, weighted, _alpha, _po, _pe = _corrected_statistics(ordinals, band_count)
+            qwk = weighted if band_count >= 3 else None
+            if kappa is None:
+                reason = INSUFFICIENT_DATA
+        cumulative[criterion] = {
+            "n": int(figure.get("n") or 0) + sum(int(row.get("n") or 0) for row in earlier),
+            "paired": len(ordinals),
+            "matched": sum(confusion[i][i] for i in range(len(confusion))),
+            "kappa": kappa,
+            "qwk": qwk,
+            "reason": reason,
+            "administrations": 1 + len(earlier),
+        }
+    return cumulative
+
+
 #: The keys of a criterion's figures that ride the stored row's `figures` JSON (the rest have
-#: columns of their own).
+#: columns of their own). `cumulative` is the version's pooled figure as of this administration
+#: (`cumulative_figures`).
 STORED_JSON_KEYS: tuple[str, ...] = (
     "paired", "band_count", "bands", "confusion", "per_engine", "gate_bins",
-    "gate_threshold", "noninferiority",
+    "gate_threshold", "noninferiority", "cumulative",
 )

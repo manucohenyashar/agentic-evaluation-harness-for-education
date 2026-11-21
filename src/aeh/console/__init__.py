@@ -105,7 +105,6 @@ from .vocabulary import (
     PRE_LOCK_ACTIONS,
     QUARANTINE_STATES,
     REVIEW_BANDS,
-    STANDING_AGREEMENT_FIGURE,
 )
 from . import queries  # noqa: F401  (imported for its registrations)
 from .errors import ConsoleBindRefused, ConsoleReadError, ProvenanceRefused

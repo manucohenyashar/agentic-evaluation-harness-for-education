@@ -153,6 +153,14 @@ _STATS_SANCTIONED = (
     "scoring_model=None,",
     "n, cohort_id, scoring_model, matched, kappa, qwk, reason, figures)",
     ":cohort_id, :scoring_model, :matched,",
+    # #881 (FR-STATS-35, FR-CONSOLE-80/84): the package record and the console's figure
+    # views carry each stored figure's declared scoring model through to the reader, so a
+    # figure is always one criterion's (FR-CONSOLE-10). Pass-throughs of the stored column,
+    # never a branch on the value.
+    'scoring_model=latest.get("scoring_model") or "",',
+    '"scoring_model": scoring_model,',
+    '_view(criterion, figure.get("scoring_model") or "", n=int(figure.get("n") or 0),',
+    "view = _view(item.criterion_id, item.scoring_model, n=item.n,",
 )
 #: M-CALIB's sanctioned scoring-model references, each its clause: the §6.2 vocabulary
 #: entry naming the locked field (the HLD's own name for it, the same name

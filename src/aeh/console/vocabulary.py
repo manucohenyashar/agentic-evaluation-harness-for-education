@@ -145,6 +145,11 @@ BLIND_SEATS_READ = "blind seats"
 RESULTS_SCREEN_READ = "results screen"
 STUDENT_DETAIL_READ = "student detail"
 SYSTEM_STATUS_READ = "system status"
+#: The agreement shown (FR-CONSOLE-80/84, #881): one run's validity read, and a test version's
+#: cumulative record. Reads of figures M-STATS stored; the validity read settles a
+#: window-closed draw first, as every results read does.
+VALIDITY_READ = "results validity"
+PACKAGE_RECORD_READ = "package record"
 
 
 #: The redesign SPA's read surface (FR-CONSOLE-47…52, FR-CONSOLE-60, #755): the secondary
@@ -480,11 +485,3 @@ _STATE_PRESENTATION: dict[str, str] = {
 REVIEW_BANDS: tuple[str, ...] = ("met", "partially met", "not met")
 
 
-#: The standing agreement figure the rollup renders on the audit double and the
-#: storeless default build (`data_dir is None`, the same discriminator `_write_rows`
-#: uses): HLD §11.5's S12 mock — κ = 0.63, n = 15 — scoped by the block that renders
-#: it. A build that states `blind_labels_collected = 0` renders the absence sentence
-#: instead (`FR-CONSOLE-24`); a real store renders the absence sentence too, until the
-#: console reads `M-STATS`'s validation record — never this placeholder, which the
-#: module cannot verify against any ledger.
-STANDING_AGREEMENT_FIGURE: dict[str, Any] = {"kappa": 0.63, "n": 15}
