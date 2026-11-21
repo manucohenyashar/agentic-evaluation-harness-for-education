@@ -82,4 +82,22 @@ def render_setup_step(step: str) -> str:
     body, cost = _SETUP_STEP_COPY.get(
         step, (_SETUP_STEP_GENERIC_BODY, _SETUP_STEP_GENERIC_COST)
     )
+    if step in _CALIBRATION_STEPS:
+        # FR-CONSOLE-86: the copy claims only what is served. With M-CALIB absent the step is
+        # present and unavailable, naming the version it arrives in (FR-CONSOLE-25).
+        from .examples_actions import examples_available
+
+        if not examples_available():
+            from .vocabulary import CALIBRATION_ARRIVES_IN
+
+            body = (f"This step arrives in {CALIBRATION_ARRIVES_IN}. It is shown here, "
+                    "unavailable, rather than left out.")
+            cost = "nothing changes: the test is marked with your rubric as written."
     return _prompt_section(step, body, cost)
+
+
+#: The two calibration steps, whose copy depends on M-CALIB being present.
+_CALIBRATION_STEPS = frozenset({
+    "Answer ambiguity-elicitation questions",
+    "Mark 10 to 15 calibration papers",
+})

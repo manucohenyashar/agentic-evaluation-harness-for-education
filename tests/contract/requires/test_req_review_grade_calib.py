@@ -496,9 +496,16 @@ def test_tc_req_89_the_console_works_without_calibration_and_offers_no_rubric_ch
                       for c in controls.finditer(html) if re.search(verb, c.group(0), re.I)})
     assert not offenders, f"a console surface offers a rubric-change approval: {offenders}"
     elicitation = [v for k, v in out["touch"].items() if "elicitation" in k.lower()]
-    assert elicitation == [[True, False, out["arrives"]]], f"elicitation touchpoint: {out['touch']}"
-    assert re.search(r"version \d", out["arrives"]), out["arrives"]
-    assert "version 2" in out["arrives"] and "version 2" in out["pages"]["S5"] and "Phase 4" in out["pages"]["S5"], (
-        f"S5 does not name the version calibration arrives in ({out['arrives']!r})")
+    # CT-CONSOLE-17 amended (FR-CONSOLE-86, #886): the calibration rows report implemented only
+    # while M-CALIB serves them. Absent, the row is present-and-unavailable naming the version
+    # and S5 says so; disabled (importable, every function broken), the console still renders
+    # whole and the row is served — the step refuses when used, never the console.
+    if mode == "absent":
+        assert elicitation == [[True, False, out["arrives"]]], f"elicitation touchpoint: {out['touch']}"
+        assert re.search(r"version \d", out["arrives"]), out["arrives"]
+        assert "version 2" in out["arrives"] and "version 2" in out["pages"]["S5"] and "Phase 4" in out["pages"]["S5"], (
+            f"S5 does not name the version calibration arrives in ({out['arrives']!r})")
+    else:
+        assert elicitation and elicitation[0][0], f"elicitation touchpoint: {out['touch']}"
     fields = {f.name for f in dataclasses.fields(ElicitationQuestion)}
     assert not {"proposed_edit", "edit", "diff", "patch"} & fields, fields
