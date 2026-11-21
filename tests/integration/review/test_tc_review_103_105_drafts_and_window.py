@@ -198,8 +198,9 @@ def test_tc_review_103_a_drafts_survive_a_restart_and_become_labels_only_at_fini
         world.open()
         with served(world, monkeypatch, network_guard) as console:
             seats = _seats(console)
-            assert {seat["seat_id"]: seat["draft_band"] for seat in seats}[first] == L3, (
-                f"after the restart seat 1 reads {seats[0]['draft_band']!r}, not the last draft")
+            drafts = {seat["seat_id"]: seat["draft_band"] for seat in seats}
+            assert drafts[first] == L3, (
+                f"after the restart seat 1 reads {drafts[first]!r}, not the last draft")
             assert world.blind_labels() == [], "a draft was written as a blind label"
             for seat in seats[1:12]:
                 _draft(console, seat["seat_id"], L2)
@@ -227,6 +228,9 @@ def test_tc_review_103_a_drafts_survive_a_restart_and_become_labels_only_at_fini
             status, second = console.action("blind-sample finish", run_id=console.run_id)
             assert not second.get("dispatched"), f"a second Finish was dispatched: {second!r}"
             assert len(world.blind_labels()) == 12, "a second Finish wrote labels"
+            status, read = console.get("/api/v1/blind-seats", run_id=console.run_id)
+            assert status == 200 and read["state"] == "finished", (
+                f"the console's draw route after Finish answered {status} {read!r}")
             assert world.service().draw_state(world.run_id) == "finished"
 
 

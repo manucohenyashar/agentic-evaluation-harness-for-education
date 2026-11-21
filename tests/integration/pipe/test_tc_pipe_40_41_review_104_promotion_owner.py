@@ -270,6 +270,9 @@ def test_tc_pipe_41_a_validity_stage_through_finish(tmp_path, monkeypatch, netwo
         assert metrics["unmarked_count"] == 1, metrics
         assert "C2" in metrics["figures"], metrics["figures"]
         assert all(isinstance(figure, dict) for figure in metrics["figures"].values())
+        assert metrics["figures"]["C2"].get("n") == 2, (
+            f"C2's figure was not computed over the two claimed labels: {metrics['figures']}")
+        assert metrics["absent"], "fixture: no absent figure, so the reason check is vacuous"
         reasons = {item["reason"] for item in metrics["absent"]}
         assert reasons <= ABSENT_REASONS, f"absent figures with reasons outside FR-PIPE-20: {reasons}"
         assert all(item["reason"] for item in metrics["absent"]), metrics["absent"]
