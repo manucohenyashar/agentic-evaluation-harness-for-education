@@ -113,7 +113,7 @@ def _teacher_words(error: BaseException) -> str:
     if calib is not None:
         worded += (calib.ExamplesRefused,)
     try:
-        from aeh.setup.errors import MarkedExampleRefused
+        from aeh.setup import MarkedExampleRefused
 
         worded += (MarkedExampleRefused,)
     except ImportError:  # pragma: no cover - M-SETUP always ships with the console
