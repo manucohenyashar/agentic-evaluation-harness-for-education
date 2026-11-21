@@ -100,6 +100,17 @@ def promote_administration(store: Any, run_id: str, trigger: str, *,
             f"when its draw closes, by one of {list(PROMOTION_TRIGGERS)}"
         )
     handle = _run_handle(store, run_id)
+    from aeh.store import is_calibration_cohort
+
+    if is_calibration_cohort(handle.cohort_id):
+        # FR-CALIB-17 / CT-CALIB-18 (#886): a test's marked examples are never an
+        # administration — they produce no labels and no agreement (D5) — so nothing is read
+        # and nothing is promoted, whatever the trigger.
+        return AdministrationPromotion(
+            run_id=run_id, trigger=trigger, draw_state="not_offered_yet", promoted=False,
+            reason="the run grades a test's marked examples, which are never promoted",
+            update=None, stage=StageTrace("validity", detail=(
+                "calibration cohort: the marked examples are never promoted (CT-CALIB-18)",)))
     review = _review_for(store, handle, clock)
     draw = review.draw_record(run_id)
     existing = _stored_record(store, handle)

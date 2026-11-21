@@ -32,10 +32,10 @@ _SETUP_STEP_COPY: dict[str, tuple[str, str]] = {
     ),
     "Answer ambiguity-elicitation questions": (
         "Where your marks and the system's differed because the rubric may be unclear, "
-        "answer a few short questions (at most six) about how you meant it. Your answers "
+        "answer a few short questions about how you meant it. Your answers "
         "make a clarified rubric that is checked on your next class before it is used.",
         "the test is marked with your rubric as written, and the parts a question was "
-        "about are marked with more caution.",
+        "about are recorded as possibly unclear.",
     ),
     "Mark 10 to 15 calibration papers": (
         "Mark a few papers yourself so the system can check it reads your rubric the way "

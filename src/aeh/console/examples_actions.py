@@ -22,6 +22,7 @@ from __future__ import annotations
 import base64
 import binascii
 import threading
+import uuid
 from typing import Any, Mapping
 
 from .html import _now
@@ -56,6 +57,10 @@ CAUSES: dict[str, tuple[str, str]] = {
     "teacher_inconsistency": ("Two similar answers were marked differently",
                               "Both are shown side by side; nothing is changed."),
 }
+
+#: The versions whose examples are being checked now, so a second Check is refused.
+_GRADING: set[str] = set()
+_GRADING_GUARD = threading.Lock()
 
 #: The step's format line (FR-UI-44).
 UPLOAD_FORMAT = "Unmarked PDF copies, one per student, 10 to 15 recommended (at most 25)."
@@ -95,10 +100,27 @@ def _config(app: Any) -> dict[str, Any]:
     return compose_run_start_config(app, {})
 
 
+#: What the teacher reads when a refusal is not one worded for them (FR-UI-23: no ids,
+#: references, paths or settings names reach teacher text).
+_GENERIC_REFUSAL = "This could not be done. Nothing was changed; please try again."
+
+
 def _teacher_words(error: BaseException) -> str:
-    """A refusal as the teacher reads it: M-CALIB's own refusals are already teacher text;
-    anything else loses its exception name."""
-    text = _strip_exception_name(error) or "It could not be done."
+    """A refusal as the teacher reads it: M-CALIB's and M-SETUP's own refusals are written for
+    the teacher and pass through; anything else becomes a plain sentence."""
+    calib = _calib()
+    worded: tuple[type, ...] = ()
+    if calib is not None:
+        worded += (calib.ExamplesRefused,)
+    try:
+        from aeh.setup.errors import MarkedExampleRefused
+
+        worded += (MarkedExampleRefused,)
+    except ImportError:  # pragma: no cover - M-SETUP always ships with the console
+        pass
+    if not worded or not isinstance(error, worded):
+        return _GENERIC_REFUSAL
+    text = _strip_exception_name(error) or _GENERIC_REFUSAL
     return text if text.endswith((".", "!", "?")) else text + "."
 
 
@@ -110,7 +132,7 @@ def _start_job(app: Any, *, kind: str, version: str, label: str, work: Any) -> s
     job's `current` line is the sentence `work` returns, or the refusal it raised."""
     from aeh.pipeline.runtime import _open_store
 
-    job_id = f"{kind}-{abs(hash((version, _now()))) % 10**10}"
+    job_id = f"{kind}-{uuid.uuid4().hex[:12]}"
     registry = app._jobs
     registry.register(job_id=job_id, kind=kind, total=1, current=label, started_at=_now())
     data_dir = str(app._store.data_dir)
@@ -281,10 +303,21 @@ def grade_effect(app: Any, params: Mapping[str, Any]) -> ControlOutcome:
     except Exception as error:  # noqa: BLE001 — refused before any call
         return _refused(_teacher_words(error))
 
+    # One check per test at a time: a double click must not start two workers on one run.
+    with _GRADING_GUARD:
+        if version in _GRADING:
+            return _refused("Your examples are already being checked.")
+        _GRADING.add(version)
+
     def work(worker_store: Any) -> str:
-        grading = calib.grade_examples(worker_store, version, config=config)
+        try:
+            grading = calib.grade_examples(worker_store, version, config=config)
+        finally:
+            with _GRADING_GUARD:
+                _GRADING.discard(version)
         if grading.result.status != "complete":
-            raise ValueError("The check of your examples stopped before it finished.")
+            raise calib.ExamplesRefused(
+                "The check of your examples stopped before it finished.")
         return "Your examples were checked. See where the system read your rubric differently."
 
     job_id = _start_job(app, kind=EXAMPLES_GRADE_JOB_KIND, version=version,
@@ -315,8 +348,8 @@ def answer_effect(app: Any, params: Mapping[str, Any]) -> ControlOutcome:
         return _refused(_teacher_words(error))
     if in_advance:
         detail = ("Your students saw this rubric before the test, so it is not changed now: "
-                  "this class is marked with it as written, and your clarifications apply to "
-                  "the next class.")
+                  "this class is marked with it as written. Your answers are kept, and your "
+                  "clarifications apply to the next class.")
     elif outcome.revised_version:
         detail = ("Thank you. Your answers made a clarified version of the rubric. It is "
                   "checked on your next class before it is used; this test is still marked "
@@ -344,7 +377,7 @@ def skip_effect(app: Any, params: Mapping[str, Any]) -> ControlOutcome:
     detail = "Skipped. Your test is marked with your rubric as written."
     if outcome.lower_confidence_criteria:
         detail += (f" The {len(outcome.lower_confidence_criteria)} part(s) a question was "
-                   "about are marked with more caution.")
+                   "about are recorded as possibly unclear in your rubric.")
     return ControlOutcome(rows_written=(), refused=False, dispatched=True, detail=detail)
 
 
@@ -379,6 +412,12 @@ def _read_version(app: Any, query: Mapping[str, Any]) -> tuple[Any, str]:
     return calib, version
 
 
+def _limit() -> int:
+    from aeh.setup import MARKED_EXAMPLES_MAX
+
+    return int(MARKED_EXAMPLES_MAX)
+
+
 def _money(value: Any) -> str | None:
     return None if value is None else format(value.normalize(), "f")
 
@@ -410,7 +449,7 @@ def examples_read(console: Any, app: Any, query: Mapping[str, Any]) -> dict[str,
         "package_version": version,
         "status": status,
         "format": UPLOAD_FORMAT,
-        "limit": 25,
+        "limit": _limit(),
         "recommended": [10, 15],
         "examples": [
             {"document_id": e.document_id, "file_name": e.file_name, "number": e.number,

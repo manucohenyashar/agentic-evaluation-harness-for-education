@@ -35,6 +35,7 @@ No value this module returns carries a count of matches, a rate or an agreement 
 from __future__ import annotations
 
 import hashlib
+import threading
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -60,6 +61,12 @@ _ADMITTED = frozenset({"ok", "low_confidence_ocr"})
 
 #: The run statuses that end a grading (the run will not move on its own).
 _SETTLED = frozenset({"complete", "failed", "paused"})
+
+
+#: `elicit` keeps the questions it asked in a process-global session that `apply_answers`
+#: resolves `q1..qn` against. The console serves reads on many threads, so a comparison and an
+#: answer hold this lock: no other comparison can replace the session between the two.
+_SESSION_LOCK = threading.RLock()
 
 
 class ExamplesRefused(CalibrationError):
@@ -271,6 +278,10 @@ def add_examples(
     if summary is not None and grading_run(store, package_version_id) is not None:
         raise ExamplesRefused(
             "Your examples have already been checked, so no more can be added to this test.")
+    if test_paper is None and (summary is None or not cohort_has_test_paper(store, cohort_id)):
+        raise ExamplesRefused(
+            "Upload the blank test paper with your first examples: each example is checked "
+            "against it. Nothing was read.")
     held = examples_of(store, package_version_id)
     if len(held) + len(files) > limit:
         raise ExamplesRefused(
@@ -307,11 +318,11 @@ def add_examples(
                                      kind="sheet", filename=name, data=data,
                                      provider=provider)
         sheet = result.sheets[0] if result.sheets else None
+        if sheet is not None and sheet.status == "skipped":
+            refused.append((name, "It was already uploaded."))
+            continue
         if sheet is None or not sheet.submission_id or not sheet.document_id:
             refused.append((name, "It could not be read. Check it is a clear PDF scan."))
-            continue
-        if sheet.status == "skipped":
-            refused.append((name, "It was already uploaded."))
             continue
         if clean_copy_check is not None:
             markdown = _rows(store, cohort_id, "select_document_markdown",
@@ -536,6 +547,14 @@ def _category(paper: str, criterion_id: str, model: dict[str, dict[str, Any]],
 
 def compare(store: Any, package_version_id: str, *,
             environ: Mapping[str, str] | None = None) -> Comparison:
+    """`discover` -> `triage` -> `elicit` over the stored rows (see `_compare`), under the
+    elicitation session's lock."""
+    with _SESSION_LOCK:
+        return _compare(store, package_version_id, environ=environ)
+
+
+def _compare(store: Any, package_version_id: str, *,
+             environ: Mapping[str, str] | None = None) -> Comparison:
     """`discover` -> `triage` -> `elicit` over the version's graded examples and the teacher's
     bands, read fresh from the stored rows (FR-CALIB-16). Before the grading has completed the
     comparison holds the examples and nothing else."""
@@ -659,8 +678,18 @@ def answer_questions(
     the published R0, under M-PKG's §6.2 lock (FR-CALIB-16): an edit lands on a new version R1,
     pending its gates on the first class (FR-CALIB-18); the class is still graded with R0. A
     rubric published to students in advance defaults to R0 and says the clarifications apply to
-    the next class (CT-CALIB-10): nothing is applied."""
-    comparison = compare(store, package_version_id, environ=environ)
+    the next class (CT-CALIB-10): nothing is applied, and the answers are kept in the
+    elicitation history (no resulting edit) for the next class's rubric."""
+    with _SESSION_LOCK:
+        return _answer_questions(store, package_version_id, answers,
+                                 rubric_published_in_advance=rubric_published_in_advance,
+                                 environ=environ)
+
+
+def _answer_questions(store: Any, package_version_id: str, answers: Mapping[str, str], *,
+                      rubric_published_in_advance: bool,
+                      environ: Mapping[str, str] | None) -> CalibrationRunOutcome:
+    comparison = _compare(store, package_version_id, environ=environ)
     if not comparison.questions:
         raise ExamplesRefused("There are no questions to answer for this test.")
     if comparison.answered or comparison.skipped:
@@ -671,6 +700,13 @@ def answer_questions(
         raise ExamplesRefused("Some answers do not match a question shown. Reload the "
                               "questions and answer them again.")
     if rubric_published_in_advance:
+        from .elicitation import QUESTION_OPTIONS
+
+        catalog = _catalog(store, package_version_id)
+        by_id = {question.question_id: question for question in comparison.questions}
+        for question_id, answer in sorted(answers.items()):
+            catalog.append_elicitation(package_version_id, by_id[question_id].question,
+                                       list(QUESTION_OPTIONS), str(answer), resulting_edit="")
         return run_for_assignment(assignment(
             rubric_published_in_advance=True, r0_version=package_version_id,
             ambiguous_criteria=comparison.ambiguous_criteria))
