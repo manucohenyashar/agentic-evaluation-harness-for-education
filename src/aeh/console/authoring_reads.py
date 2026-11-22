@@ -44,7 +44,7 @@ from aeh.author.intake import NormalizedDocument, normalize_document
 from aeh.author import descriptor_note, gap_question, is_placeholder, missing_points
 from aeh.author.report import draft_filename
 from aeh.author.validation import PLACEHOLDER_PREFIX, validate_draft
-from aeh.pkg.spec_criteria import draft_line_scoring
+from aeh.pkg import draft_line_scoring
 
 from .package_summary import answered_items, package_summary
 from .settings import author_doc_max_bytes
