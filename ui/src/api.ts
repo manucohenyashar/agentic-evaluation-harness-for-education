@@ -452,7 +452,6 @@ export interface GateBin {
 export interface GradersCriterion {
   criterion_id: string;
   label: string;
-  scoring_model: string;
   per_engine: Record<"decision" | "llm_fallback" | "llm_engine_off", EngineFigure>;
   gate_bins: GateBin[];
   gate_threshold: number | null;

@@ -299,7 +299,7 @@ def promote(
     administration_runs = ({run_id} if run_id is not None else
                            {run for run in map(_label_run, population) if run})
     context, final_bands, context_close, measured_correlations = _administration_context(
-        data_dir, administration_key, administration_runs)
+        data_dir, administration_key, administration_runs, band_names)
     try:
         figures = criterion_figures(admissible, band_counts=band_counts,
                                     band_names=band_names, scoring_models=scoring_models,
@@ -472,16 +472,22 @@ def _pearson(pairs: Sequence[tuple[float, float]]) -> float | None:
     return sxy / math.sqrt(sxx * syy)
 
 
-def _length_correlations(handle: Any, runs: set[str]) -> dict[str, dict[str, float]]:
-    """Per judged criterion, the correlation of a final cell's points with its paper's length
-    (FR-STATS-07's `response_length_tokens` feature). The length is the transcription's
-    characters, a linear stand-in for tokens; a criterion with fewer than three cells or no
-    spread has no entry, so an unmeasured feature is absent rather than measured at zero."""
+def _length_correlations(handle: Any, runs: set[str],
+                         band_names: Mapping[str, Sequence[str]]) -> dict[str, dict[str, float]]:
+    """Per judged criterion, the correlation of a final cell's level (its band's ordinal on the
+    declared scale) with its paper's length (FR-STATS-07's `response_length_tokens` feature).
+    The length is the transcription's characters, a linear stand-in for tokens; a band outside
+    the declared scale is skipped, and a criterion with fewer than three cells or no spread has
+    no entry, so an unmeasured feature is absent rather than measured at zero."""
     pairs: dict[str, list[tuple[float, float]]] = {}
     for run in sorted(runs):
-        for row in handle.query(STATS_STATEMENTS["select_run_points_and_length"], run_id=run):
-            pairs.setdefault(str(row["criterion_id"]), []).append(
-                (float(row["response_length"] or 0), float(row["points"])))
+        for row in handle.query(STATS_STATEMENTS["select_run_bands_and_length"], run_id=run):
+            criterion = str(row["criterion_id"])
+            scale = [str(name) for name in band_names.get(criterion, ())]
+            if str(row["band"]) not in scale:
+                continue
+            pairs.setdefault(criterion, []).append(
+                (float(row["response_length"] or 0), float(scale.index(str(row["band"])))))
     correlations: dict[str, dict[str, float]] = {}
     for criterion, measured in sorted(pairs.items()):
         r = _pearson(measured)
@@ -513,6 +519,7 @@ def _pkg_scales(data_dir: Any, package_version_id: str) -> dict[str, dict[str, A
 
 def _administration_context(
     data_dir: Any, cohort_id: str, runs: set[str],
+    band_names: Mapping[str, Sequence[str]] | None = None,
 ) -> tuple[EngineContext, dict[str, dict[str, int]], Callable[[], None],
            dict[str, dict[str, float]]]:
     """The cohort reads one administration's promote needs, from one store open: each labelled
@@ -537,7 +544,7 @@ def _administration_context(
                     continue
                 counts = histograms.setdefault(str(row["criterion_id"]), {})
                 counts[str(band)] = counts.get(str(band), 0) + 1
-        correlations = _length_correlations(handle, runs)
+        correlations = _length_correlations(handle, runs, band_names or {})
     except Exception:
         store.close()
         raise

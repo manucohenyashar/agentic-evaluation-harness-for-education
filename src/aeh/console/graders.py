@@ -52,17 +52,34 @@ def _decimal(value: Any) -> Decimal | None:
         return None
 
 
+#: FR-AGG-20's setting, read off the console's effective configuration.
+JEV_FINAL_SETTING = "HARNESS_JEV_FINAL_ON_ACCEPT"
+
+
 def jev_final_on(app: Any) -> bool:
     """Whether a confident Jev answer confirmed by one judge is final, as the console's
-    effective configuration says (`HARNESS_JEV_FINAL_ON_ACCEPT`, default on)."""
-    from aeh.conf.sources import JEV_FINAL_ON_ACCEPT_KEY, parse_jev_final_on_accept
+    effective configuration says (`HARNESS_JEV_FINAL_ON_ACCEPT`, default on): the value the
+    resolver freezes for a run (`RunConfig.jev_final_on_accept`), and when the configuration
+    does not resolve, the setting itself — only an explicit `false` turns it off."""
+    resolved = _resolved(app)
+    if resolved is not None:
+        return bool(resolved.jev_final_on_accept)
+    config = getattr(app, "run_config", None)
+    raw = config.get(JEV_FINAL_SETTING) if isinstance(config, Mapping) else None
+    return str(raw).strip().lower() not in ("false", "0", "no", "off") if raw is not None else True
+
+
+def _resolved(app: Any) -> Any:
+    """The console's effective configuration resolved as a run resolves it, or None."""
+    from aeh.conf import CohortRef, resolve_run_config
 
     config = getattr(app, "run_config", None)
-    config = config if isinstance(config, Mapping) else {}
+    if not isinstance(config, Mapping):
+        return None
     try:
-        return parse_jev_final_on_accept(config.get(JEV_FINAL_ON_ACCEPT_KEY))
-    except Exception:  # noqa: BLE001 - an unreadable value is refused at run start; default
-        return True
+        return resolve_run_config(config, CohortRef("graders-check", "synthetic"))
+    except Exception:  # noqa: BLE001 - an unresolvable configuration has no dimensions
+        return None
 
 
 def graders_status(app: Any, run_row: Any) -> dict[str, Any]:
@@ -151,15 +168,10 @@ def approval_configuration(app: Any) -> tuple[dict[str, Any], Decimal | None]:
     """The grader configuration the console would run a class under now, and its run cost
     ceiling: the effective configuration resolved as a run resolves it. `({}, None)` when it
     does not resolve (the MVVP then records an unknown configuration)."""
-    from aeh.conf import CohortRef, resolve_run_config
     from aeh.stats import grader_configuration
 
-    config = getattr(app, "run_config", None)
-    if not isinstance(config, Mapping):
-        return {}, None
-    try:
-        resolved = resolve_run_config(config, CohortRef("graders-check", "synthetic"))
-    except Exception:  # noqa: BLE001 - an unresolvable configuration has no dimensions
+    resolved = _resolved(app)
+    if resolved is None:
         return {}, None
     return grader_configuration(resolved.to_persisted_dict()), resolved.cost_ceiling
 

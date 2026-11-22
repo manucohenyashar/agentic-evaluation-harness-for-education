@@ -310,7 +310,6 @@ def graders_figures(store: Any, package_version_id: str | None = None) -> dict[s
                      for name in ENGINE_PARTITIONS}
         criteria.append({
             "criterion_id": criterion,
-            "scoring_model": figure.get("scoring_model") or "",
             "per_engine": by_engine,
             "gate_bins": [_bin_view(dict(item), bin_minimum)
                           for item in figure.get("gate_bins") or ()],
