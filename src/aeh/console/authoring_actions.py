@@ -728,7 +728,10 @@ def _approve_draft_package(app: Any, params: Mapping[str, Any]) -> ControlOutcom
 
             on_package_approved(app, built.package_version)
         except Exception:  # noqa: BLE001 - the measurement never fails the approval
-            pass
+            import logging
+
+            logging.getLogger("aeh.console.graders").exception(
+                "the MVVP for %s could not be scheduled", built.package_version)
         return _published_outcome(label, built.package_id, approved_by=built.approved_by)
 
     return _with_draft_lock(app, path, data_dir, "approve", run)

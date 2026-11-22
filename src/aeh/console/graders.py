@@ -107,7 +107,8 @@ def graders_status(app: Any, run_row: Any) -> dict[str, Any]:
                 "package_version_id": figures["package_version_id"]})
         except Exception:  # noqa: BLE001 - a figure keeps its id when no label is found
             labels = {}
-    criteria = [{**item, "label": labels.get(item["criterion_id"], item["criterion_id"])}
+    # A criterion with no teacher label reads as "a question", never as its id (FR-UI-23).
+    criteria = [{**item, "label": labels.get(item["criterion_id"]) or "A question"}
                 for item in figures["criteria"]]
     failing = [item["label"] for item in criteria if item["noninferiority"] == "false"]
     reference = _calib_reference()
@@ -143,7 +144,9 @@ def _release(version: str) -> None:
         _IN_FLIGHT.discard(version)
 
 
-def _on_thread(app: Any, name: str, work: Any) -> threading.Thread:
+def _on_thread(app: Any, version: str, name: str, work: Any) -> threading.Thread:
+    """Run `work(store)` on a server-owned thread with its own store; the version's claim is
+    released however the thread ends, the store's open included."""
     from aeh.pipeline.runtime import _open_store
 
     data_dir = str(app._store.data_dir)
@@ -156,11 +159,16 @@ def _on_thread(app: Any, name: str, work: Any) -> threading.Thread:
         except Exception:  # noqa: BLE001 - a measurement never fails its trigger
             LOGGER.exception("the graders' measurement %s did not finish", name)
         finally:
+            _release(version)
             if store is not None:
                 store.close()
 
     thread = threading.Thread(target=run, name=f"aeh-graders-{name}", daemon=True)
-    thread.start()
+    try:
+        thread.start()
+    except Exception:
+        _release(version)
+        raise
     return thread
 
 
@@ -181,19 +189,16 @@ def on_package_approved(app: Any, package_version_id: str) -> threading.Thread |
     thread, or None when a measurement of this version is already under way."""
     from aeh.stats import PACKAGE_APPROVAL_TRIGGER, schedule_mvvp
 
+    configuration, ceiling = approval_configuration(app)
     if not _claim(package_version_id):
         return None
-    configuration, ceiling = approval_configuration(app)
 
     def work(store: Any) -> None:
-        try:
-            schedule_mvvp(store, package_version_id=package_version_id,
-                          trigger=PACKAGE_APPROVAL_TRIGGER, configuration=configuration,
-                          cost_ceiling=ceiling)
-        finally:
-            _release(package_version_id)
+        schedule_mvvp(store, package_version_id=package_version_id,
+                      trigger=PACKAGE_APPROVAL_TRIGGER, configuration=configuration,
+                      cost_ceiling=ceiling)
 
-    return _on_thread(app, f"approval-{package_version_id}", work)
+    return _on_thread(app, package_version_id, f"approval-{package_version_id}", work)
 
 
 def run_grader_configuration(store: Any, cohort_id: str,
@@ -235,19 +240,16 @@ def on_run_started(app: Any, *, run_id: str, cohort_id: str, package_version_id:
         return None
 
     def work(worker_store: Any) -> None:
-        try:
-            if mvvp_changes:
-                schedule_mvvp(worker_store, package_version_id=package_version_id,
-                              trigger=",".join(mvvp_changes), configuration=configuration,
-                              cost_ceiling=ceiling)
-            if reference_changes and isinstance(config, Mapping):
-                reference.regrade_reference_set(
-                    worker_store, package_version_id, config=dict(config),
-                    trigger=",".join(reference_changes), configuration=configuration)
-        finally:
-            _release(package_version_id)
+        if mvvp_changes:
+            schedule_mvvp(worker_store, package_version_id=package_version_id,
+                          trigger=",".join(mvvp_changes), configuration=configuration,
+                          cost_ceiling=ceiling)
+        if reference_changes and isinstance(config, Mapping):
+            reference.regrade_reference_set(
+                worker_store, package_version_id, config=dict(config),
+                trigger=",".join(reference_changes), configuration=configuration)
 
-    return _on_thread(app, f"run-{run_id}", work)
+    return _on_thread(app, package_version_id, f"run-{run_id}", work)
 
 
 __all__ = [

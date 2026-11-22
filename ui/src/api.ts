@@ -474,6 +474,14 @@ export interface MvvpRecord {
   trigger: string;
   outcome: "ran" | "refused";
   refusal: string | null;
+  /** The six protocol steps, each its own outcome (FR-STATS-05), keyed "1".."6". */
+  steps: Record<string, { requirement: string; outcome: unknown }>;
+}
+
+/** The compression check promotion ran (R44, FR-STATS-06). */
+export interface CompressionCheck {
+  n: number;
+  panel_narrower: boolean | null;
 }
 
 /** System status's graders block (FR-CONSOLE-88). */
@@ -486,6 +494,7 @@ export interface Graders {
   decision_answers: number;
   noninferiority: "true" | "false" | "insufficient_data";
   noninferiority_failing: string[];
+  compression: CompressionCheck | null;
   jev_final_on: boolean;
   consistency_report: ConsistencyReport | null;
   mvvp: MvvpRecord | null;

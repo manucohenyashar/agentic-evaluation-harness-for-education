@@ -1,4 +1,4 @@
-import type { EngineFigure, Graders, GradersCriterion } from "../api";
+import type { CompressionCheck, EngineFigure, Graders, GradersCriterion } from "../api";
 
 /**
  * The graders measured on System status (FR-UI-46, FR-CONSOLE-88, FR-CALIB-19, FR-STATS-36):
@@ -109,18 +109,72 @@ function triggerWords(trigger: string): string {
   return trigger === "package_approval" ? "the test was published" : "the marking models changed";
 }
 
+/** The six protocol steps in the teacher's words, in step order. */
+const STEP_NAMES: Record<string, string> = {
+  "1": "Agreement with your blind marks",
+  "2": "Whether the order of the worked examples changes a mark",
+  "3": "Whether the same answer gets the same mark when marked again",
+  "4": "Agreement checked for each kind of test separately",
+  "5": "Extra checks on markers that always agree with themselves",
+  "6": "Whether the marks bunch toward the middle",
+};
+
+function anyMeasured(outcome: unknown): boolean {
+  if (outcome === null || typeof outcome !== "object") return false;
+  return Object.values(outcome as Record<string, unknown>).some(
+    (value) =>
+      value !== null &&
+      typeof value === "object" &&
+      ((value as Record<string, unknown>).measured === true ||
+        (value as Record<string, unknown>).self_agreement_measured === true),
+  );
+}
+
+function compressionWords(check: CompressionCheck | null): string {
+  if (check === null || check.n === 0 || check.panel_narrower === null) return "not measured yet";
+  return check.panel_narrower
+    ? `the system's levels are more bunched than yours (${check.n} answers)`
+    : `the system's levels are not more bunched than yours (${check.n} answers)`;
+}
+
+function stepState(step: string, outcome: unknown): string {
+  if (step === "6") return compressionWords(outcome as CompressionCheck | null);
+  if (step === "2" || step === "3" || step === "5") {
+    return anyMeasured(outcome) ? "measured" : "not measured yet";
+  }
+  return "recorded";
+}
+
 export function ValidationChecks({ graders }: { graders: Graders }) {
   const record = graders.mvvp;
-  if (record === null) return null;
   return (
     <section className="panel" data-component="validation-checks">
       <h2>Validation checks</h2>
-      <p>
-        {record.outcome === "ran"
-          ? `Last run on ${teacherDate(record.recorded_at)}, after ${triggerWords(record.trigger)}.`
-          : `Not run on ${teacherDate(record.recorded_at)}, after ${triggerWords(record.trigger)}: ` +
-            "they would cost more than the run cost limit."}
-      </p>
+      {record === null ? (
+        <p>No validation checks have run yet.</p>
+      ) : (
+        <>
+          <p>
+            {record.outcome === "ran"
+              ? `Last run on ${teacherDate(record.recorded_at)}, after ${triggerWords(record.trigger)}.`
+              : `Not run on ${teacherDate(record.recorded_at)}, after ${triggerWords(record.trigger)}: ` +
+                "they would cost more than the run cost limit."}
+          </p>
+          {record.outcome === "ran" && (
+            <ul className="rows-list">
+              {Object.keys(STEP_NAMES)
+                .filter((step) => step in (record.steps ?? {}))
+                .map((step) => (
+                  <li key={step}>
+                    <span className="step-name">{STEP_NAMES[step]}</span>
+                    <span className="step-state">{stepState(step, record.steps[step]?.outcome)}</span>
+                  </li>
+                ))}
+            </ul>
+          )}
+        </>
+      )}
+      <p>{`On the latest class's blind answers: ${compressionWords(graders.compression)}.`}</p>
     </section>
   );
 }

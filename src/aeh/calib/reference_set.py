@@ -70,12 +70,17 @@ def _complete_runs(store: Any, package_version_id: str) -> list[str]:
 def reference_set_due(store: Any, package_version_id: str,
                       configuration: Mapping[str, Any]) -> tuple[str, ...]:
     """The FR-STATS-19 dimensions on which `configuration` differs from the configuration the
-    version's examples were last graded under, or `()`: no graded examples, or no change,
-    means no re-grade."""
+    version's examples were last measured under, or `()`: no graded examples, or no change,
+    means no re-grade. The baseline is the last re-grade recorded, ran or refused — a refusal
+    is not retried until the graders change again — else the R0 grading's own run."""
+    from aeh.pkg import graders_records
+
     runs = _complete_runs(store, package_version_id)
     if not runs or not examples_of(store, package_version_id):
         return ()
-    previous = run_configuration(store, calibration_cohort_id(package_version_id), runs[-1])
+    records = graders_records(store, kind="reference_set", package_version_id=package_version_id)
+    previous = (records[0]["configuration"] if records else
+                run_configuration(store, calibration_cohort_id(package_version_id), runs[-1]))
     if not previous:
         return ()
     return tuple(dimension for dimension in REFERENCE_DIMENSIONS
@@ -164,7 +169,7 @@ def regrade_reference_set(
         summary = cohort_summary(store, cohort_id)
         refuse_remote_real_work(config, str(summary.consent_class if summary else "real"))
         result = drive_run(store, cohort_id=cohort_id, package_version_id=package_version_id,
-                           config=config, provider=provider, **drive_keywords)
+                           config=config, provider=provider, fresh=True, **drive_keywords)
     except Exception as error:  # noqa: BLE001 — the refusal is the recorded outcome
         return _refused(str(error), previous)
     if str(result.status) != "complete":
