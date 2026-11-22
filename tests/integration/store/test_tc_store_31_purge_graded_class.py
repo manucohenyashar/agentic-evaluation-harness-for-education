@@ -136,10 +136,11 @@ def test_tc_store_31_an_open_draw_refuses_even_when_tier_d_holds_the_record(
     an earlier closed draw of the same version), which alone would pass the administration
     route."""
     import sqlite3
+    from contextlib import closing
 
     world, administration = graded_class(tmp_path / "w", "c-open-recorded", drafted=1)
     try:
-        with sqlite3.connect(world.root / "durable.sqlite") as connection:
+        with closing(sqlite3.connect(world.root / "durable.sqlite")) as connection, connection:
             connection.execute(
                 "INSERT INTO package_validation (package_version_id, cohort_id, recorded_at, "
                 "cohorts_used, operational_count, blind_count, n, weakest_per_population, "

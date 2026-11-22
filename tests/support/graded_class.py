@@ -9,6 +9,7 @@ Skip go through M-REVIEW's store-backed service; promotion is M-PIPE's `promote_
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -43,13 +44,13 @@ def cohort_file(world: ValidityStore, cohort_id: str) -> Path:
 
 def cohort_counts(world: ValidityStore, cohort_id: str) -> dict[str, int]:
     """Row count per swept table, read from the file as it stands."""
-    with sqlite3.connect(cohort_file(world, cohort_id)) as connection:
+    with closing(sqlite3.connect(cohort_file(world, cohort_id))) as connection:
         return {table: int(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
                 for table in SWEPT}
 
 
 def run_status(world: ValidityStore, administration: Administration) -> str:
-    with sqlite3.connect(cohort_file(world, administration.cohort_id)) as connection:
+    with closing(sqlite3.connect(cohort_file(world, administration.cohort_id))) as connection:
         return str(connection.execute("SELECT status FROM run WHERE run_id = ?",
                                       (administration.run_id,)).fetchone()[0])
 

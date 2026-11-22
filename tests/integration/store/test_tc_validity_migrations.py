@@ -32,7 +32,8 @@ migrations (`tests/support/tier_at_version.py`), then upgraded by opening a real
 import arm runs in a fresh interpreter with controlled imports.
 
 **Written ahead: no, in effect.** The issue says `yes`, but R1 (#875), P2 (#879), S1 (#880), P1
-(#885) and J1 (#863/#918) are merged, so every case here runs in the gate. No case needs P3.
+(#885) and J1 (#863/#918) are merged, so no case is written ahead and every case passes (they
+are `integration`, so `pytest -q` runs them, not the fast-tier gate). No case needs P3.
 """
 
 from __future__ import annotations
@@ -315,7 +316,7 @@ def test_tc_review_108_the_draw_tables_are_not_ingest_owned():
     texts = _module_statement_texts(ingest)
     assert texts, "the ingest statement registry read nothing"
     writes = [t for t in texts
-              if t.lstrip().split(" ", 1)[0].upper() in {"INSERT", "UPDATE", "DELETE", "REPLACE"}]
+              if t.split(None, 1)[0].upper() in {"INSERT", "UPDATE", "DELETE", "REPLACE"}]
     assert writes, "no ingest write statement found; the sweep inspects nothing"
     assert not [t for t in writes if any(name in t for name in draw_tables)]
 
@@ -381,11 +382,11 @@ import sqlite3, sys, pathlib
 import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.ingest, aeh.integ, aeh.judge, aeh.orch
 import aeh.pkg, aeh.review, aeh.synth
 from aeh.store import open_store
-loaded = sorted(m for m in sys.modules if m == "aeh.calib" or m.startswith("aeh.calib."))
 root = pathlib.Path(sys.argv[1])
 store = open_store(root)
 store.cohort("c-fresh")
 store.close()
+loaded = sorted(m for m in sys.modules if m == "aeh.calib" or m.startswith("aeh.calib."))
 connection = sqlite3.connect(root / "cohorts" / "c-fresh.sqlite")
 columns = [row[1] for row in connection.execute("PRAGMA table_info(cohort)")]
 connection.close()
