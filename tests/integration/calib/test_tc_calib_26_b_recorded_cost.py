@@ -52,6 +52,5 @@ def test_tc_calib_26_b_recorded_examples_cost_no_more_than_the_recorded_class_ru
         class_cost = _run_cost(world, run["run_id"])
         read = world.examples_read()
     assert 0 < examples_cost <= class_cost, (examples_cost, class_cost)
-    assert examples_cost / 4 * 15 <= class_cost / 4 * 15
     assert float(read["cost"]["spent"]) == pytest.approx(examples_cost)
     assert read["cost"]["ceiling"] is not None and "run cost limit" in read["cost"]["text"]

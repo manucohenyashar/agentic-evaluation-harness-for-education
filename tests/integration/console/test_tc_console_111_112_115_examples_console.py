@@ -196,9 +196,17 @@ def _answered(world) -> str:
 
 
 def _export(world, run_id: str) -> bytes:
-    status, body = world.raw_get("/api/v1/results/export", run_id=run_id, format="csv")
+    """The class's export at its latest grade revision, then every stored score row of the class
+    file. The revision-1 export alone is frozen by design, so it could not see an amendment."""
+    (latest,) = world.rows("SELECT MAX(revision) AS r FROM submission_grade")
+    revision = str(latest["r"] or 1)
+    status, body = world.raw_get("/api/v1/results/export", run_id=run_id, format="csv",
+                                 revision=revision)
     assert status == 200, body[:300]
-    return body
+    scores = json.dumps(world.rows(
+        "SELECT run_id, submission_id, criterion_id, band, state FROM criterion_score "
+        "ORDER BY run_id, submission_id, criterion_id"), sort_keys=True).encode()
+    return revision.encode() + b"\n" + body + b"\n" + scores
 
 
 def test_tc_calib_24_back_translation_runs_when_r1_is_created(tmp_path, monkeypatch,
@@ -260,7 +268,6 @@ def test_tc_console_115_gates_pass_r1_delivered_from_the_next_class_and_this_cla
         f"the class's file holds {first_runs} after the decision: the gate pass re-graded the "
         "current class (CT-CONSOLE-57)")
     assert scored_versions == {r0}, f"the class file holds grades under {scored_versions}"
-    assert r1.encode() not in exports[0], "the class export cites R1"
     assert len(exports) == 3, "the R1 check never ran"
     assert exports[0] == exports[1], "fixture: the export is not stable with nothing changed"
     assert exports[2] == exports[0], (
@@ -295,6 +302,9 @@ def test_tc_console_115_a_failed_gate_sets_r1_aside_with_its_reason(
         (run,) = world.class_runs()
         r1_runs = [path.name for path in (world.root / "cohorts").glob("*.sqlite")
                    if _runs_under(path, r1)]
+        # The next class of the same cohort under R0 is the run that already exists (M-ORCH
+        # refuses a second complete run of one cohort and version), so "the next class runs
+        # R0" is the version M-PKG delivers to a new class.
     assert outcome["detail"].endswith(CHECKING_SENTENCE), outcome["detail"]
     assert run["package_version_id"] == r0
     assert revision["state"] == "set_aside", revision

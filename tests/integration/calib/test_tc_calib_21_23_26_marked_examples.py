@@ -224,7 +224,10 @@ def test_tc_calib_22_examples_reach_no_sink(tmp_path, monkeypatch, network_guard
     """Grade 4 examples, then a class run, Finish the blind sample (which promotes): no
     calibration cohort id, examples run id, example submission id or example document id is in
     any class list, results or student read, export, the review queue, the label table,
-    `package_validation`, `validation_record` or the package record read. `aeh.stats` opened
+    `package_validation`, `validation_record` or the package record read; the label rows name only
+    the class's submissions and run, and `package_validation`'s blind count is the class's.
+    (Nothing in this flow writes a `validation_record` row - only M-CONFORM does - so that scan
+    is present but not exercised here.) `aeh.stats` opened
     the class's file and never a calibration one — and the same trace, with calibration files
     listed in `class_cohort_keys` (the CT-CALIB-18 mutation), catches the leak."""
     from aeh.store import CALIBRATION_COHORT_PREFIX
@@ -247,7 +250,10 @@ def test_tc_calib_22_examples_reach_no_sink(tmp_path, monkeypatch, network_guard
         tokens |= {r["submission_id"] for r in _calib_rows(world,
                                                            "SELECT submission_id FROM submission")}
         tokens |= {r["document_id"] for r in _calib_rows(world, "SELECT document_id FROM document")}
-        class_ids = {r["submission_id"] for r in world.rows("SELECT submission_id FROM submission")}
+        class_submissions = {r["submission_id"] for r in
+                             world.rows("SELECT submission_id FROM submission")}
+        class_ids = set(class_submissions)
+        class_refs = {r["student_ref"] for r in world.rows("SELECT student_ref FROM submission")}
         class_ids |= {r["document_id"] for r in world.rows("SELECT document_id FROM document")}
         assert not (tokens & class_ids), "fixture: example and class ids collide; the scan " \
                                          "could not tell them apart"
@@ -276,6 +282,14 @@ def test_tc_calib_22_examples_reach_no_sink(tmp_path, monkeypatch, network_guard
         mutated_keys = trace.stats_keys()
 
     assert labels, "fixture: Finish wrote no label row, so the label scan proves nothing"
+    # Beyond the ids: no example's score or band folded into the class's figures.
+    assert {row["student_ref"] for row in labels} <= class_refs, (
+        "a label row names a student outside the class")
+    assert {row["run_id"] for row in labels} == {run["run_id"]}, labels
+    blind = [row for row in labels if row["label_type"] == "blind"]
+    assert [row["blind_count"] for row in validations] == [len(blind)], (
+        f"package_validation counts {[r['blind_count'] for r in validations]} blind labels and "
+        f"the class has {len(blind)}: something else was counted in")
     assert validations, "fixture: Finish promoted nothing, so the validation scan proves nothing"
     leaks = [(where, token) for where, body in bodies.items() for token in tokens
              if token in body]
@@ -418,6 +432,7 @@ def test_tc_calib_23_tc_console_112_skip_at_any_step_leaves_r0_with_the_ambiguou
         assert "The 1 part(s) a question was about are recorded as possibly unclear" in \
             outcome["detail"], outcome
         assert [row["answer_given"] for row in history] == ["skipped"], history
+        assert "C2" in history[0]["question"], f"the skipped question is not C2's: {history}"
         assert questions["status"] == "skipped", questions
 
 
@@ -454,8 +469,9 @@ def _run_cost(world, run_id: str) -> float:
 def test_tc_calib_26_stand_in_examples_cost_no_more_than_the_class_run(
         tmp_path, monkeypatch, network_guard):
     """Under the stand-in transport (same per-call price for every call): grading the 4 ENG7
-    sheets as examples costs no more than grading the same 4 sheets as a class, per paper and so
-    at the NFR's 15 papers by scaling; the examples read carries that spend and the ceiling.
+    sheets as examples costs no more than grading the same 4 sheets as a class (the NFR's
+    15-paper figure scales both sides by one factor, so the per-class comparison is the check);
+    the examples read carries that spend and the ceiling.
     The plan's oracle is the same comparison on TC-E2E-21's recordings (written ahead)."""
     with _world(tmp_path, monkeypatch, network_guard) as world:
         examples_checked(world)
@@ -466,6 +482,5 @@ def test_tc_calib_26_stand_in_examples_cost_no_more_than_the_class_run(
         class_cost = _run_cost(world, run["run_id"])
         read = world.examples_read()
     assert 0 < examples_cost <= class_cost, (examples_cost, class_cost)
-    assert examples_cost / 4 * 15 <= class_cost / 4 * 15
     assert float(read["cost"]["spent"]) == pytest.approx(examples_cost), read["cost"]
     assert read["cost"]["ceiling"] == "15" and "run cost limit" in read["cost"]["text"]

@@ -4,7 +4,7 @@ CT-CALIB-02, CT-CALIB-13). Rung 1.
 Test plan (statistical-validity r2, §3.12):
 
 - Back-translation runs at R₁ creation. (Rung 3, through the console's `examples answer`:
-  `tests/integration/console/test_tc_console_112_115_examples_console.py::
+  `tests/integration/console/test_tc_console_111_112_115_examples_console.py::
   test_tc_calib_24_back_translation_runs_when_r1_is_created`.)
 - Assumption threshold 0.10: 10 % of marks moving passes, 11 % fails.
 - No path ships R₁ with a warning: a decision table over {BT pass/fail} × {NI pass/fail} gives
