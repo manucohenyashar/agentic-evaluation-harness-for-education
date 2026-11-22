@@ -119,15 +119,37 @@ const STEP_NAMES: Record<string, string> = {
   "6": "Whether the marks bunch toward the middle",
 };
 
-function anyMeasured(outcome: unknown): boolean {
-  if (outcome === null || typeof outcome !== "object") return false;
-  return Object.values(outcome as Record<string, unknown>).some(
-    (value) =>
-      value !== null &&
-      typeof value === "object" &&
-      ((value as Record<string, unknown>).measured === true ||
-        (value as Record<string, unknown>).self_agreement_measured === true),
+type Row = Record<string, unknown>;
+
+function rows(outcome: unknown): Row[] {
+  if (outcome === null || typeof outcome !== "object") return [];
+  return Object.values(outcome as Row).filter(
+    (value): value is Row => value !== null && typeof value === "object",
   );
+}
+
+/** Per-marker steps (2, 3, 5): how many of the markers were measured, never a rate. */
+function markersMeasured(outcome: unknown, step: string): string {
+  const judges = rows(outcome);
+  if (judges.length === 0) return "not measured yet";
+  const flag = step === "5" ? "self_agreement_measured" : "measured";
+  const measured = judges.filter((judge) => judge[flag] === true).length;
+  if (measured === 0) return "not measured yet";
+  const words = `measured for ${measured} of ${judges.length} markers`;
+  if (step !== "5") return words;
+  const paired = judges.filter((judge) => judge.pairing_required === true).length;
+  return paired > 0 ? `${words}; ${paired} need the extra check` : words;
+}
+
+/** Agreement steps (1, 4): whether a figure exists and over how many answers. The figure
+ * itself is on the results screens, with its minimum; this line never shows one. */
+function agreementRecorded(figures: Row[]): string {
+  const measured = figures.filter(
+    (figure) => typeof figure.kappa === "number" && typeof figure.n === "number",
+  );
+  if (measured.length === 0) return "not measured yet";
+  const answers = measured.reduce((total, figure) => total + (figure.n as number), 0);
+  return `measured over ${answers} blind answers`;
 }
 
 function compressionWords(check: CompressionCheck | null): string {
@@ -139,10 +161,13 @@ function compressionWords(check: CompressionCheck | null): string {
 
 function stepState(step: string, outcome: unknown): string {
   if (step === "6") return compressionWords(outcome as CompressionCheck | null);
-  if (step === "2" || step === "3" || step === "5") {
-    return anyMeasured(outcome) ? "measured" : "not measured yet";
+  if (step === "2" || step === "3" || step === "5") return markersMeasured(outcome, step);
+  if (step === "1") {
+    const single = outcome !== null && typeof outcome === "object" && "n" in (outcome as Row);
+    return agreementRecorded(single ? [outcome as Row] : rows(outcome));
   }
-  return "recorded";
+  const figures = (outcome as Row | null)?.figures;
+  return agreementRecorded(rows(figures));
 }
 
 export function ValidationChecks({ graders }: { graders: Graders }) {
