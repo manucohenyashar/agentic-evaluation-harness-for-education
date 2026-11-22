@@ -5,6 +5,7 @@ import {
   type ContextDoc,
   type PackageSetup as PackageSetupDoc,
 } from "../api";
+import { PackageRecord } from "../components/Agreement";
 import { ConfirmDialog, useActionState } from "../components/Confirm";
 import { FormatLine, formatIdFor } from "../components/Field";
 import { ReadScreen } from "../components/ReadScreen";
@@ -106,6 +107,16 @@ export function PackageSetup({ context }: { context: ContextDoc | null }) {
                 </button>
               )}
             </section>
+          )}
+          {/* FR-UI-43: each published test's record — how well it has been marked so far. */}
+          {published.map((p) =>
+            p.published_version_id === null ? null : (
+              <PackageRecord
+                key={p.published_version_id}
+                versionId={p.published_version_id}
+                name={packageName(p.package_id)}
+              />
+            ),
           )}
           {action.pending !== null && (
             <ConfirmDialog pending={action.pending} onClose={action.close} onDone={action.finish} />

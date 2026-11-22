@@ -7,6 +7,7 @@ import {
   type DraftPlaceholder,
   type PackageSummary,
 } from "../api";
+import { scoringModelLabel } from "../components/Agreement";
 import { ConfirmDialog, useActionState } from "../components/Confirm";
 import { describedBy, errorIdFor, FieldError, FormatLine, formatIdFor } from "../components/Field";
 import { BusyButton, DisabledReason, useOutcome } from "../components/Outcome";
@@ -109,6 +110,12 @@ function DraftOutline({ draft }: { draft: NonNullable<AuthoringDraftDoc["draft"]
             Grades {criterion.question === "" ? "no question yet" : questionLabel(criterion.question)}
             {criterion.points !== null ? `, ${criterion.points} point(s)` : ""}
           </p>
+          {scoringModelLabel(criterion.scoring) !== null && (
+            <p className="outline-meta scoring-model">
+              {scoringModelLabel(criterion.scoring)}
+              {criterion.chosen_automatically === true ? " (chosen automatically)" : ""}
+            </p>
+          )}
           {criterion.key !== undefined && criterion.key !== null && (
             <p className="outline-meta">
               Answer key: {Array.isArray(criterion.key) ? criterion.key.join(", ") : criterion.key}

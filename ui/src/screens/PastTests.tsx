@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { PastTestRun, PastTestsDoc } from "../api";
+import { PackageRecord } from "../components/Agreement";
 import { ReadScreen } from "../components/ReadScreen";
 import { FormatLine, formatIdFor } from "../components/Field";
 import { useNavigate } from "../navigate";
@@ -183,6 +184,10 @@ function PastTestsBody({
           ))}
         </ul>
       )}
+      {/* FR-UI-43: each test version these runs graded, once, with its record. */}
+      {[...new Set(runs.map((run) => run.package_version_id))].map((versionId) => (
+        <PackageRecord key={versionId} versionId={versionId} name={versionName(versionId)} />
+      ))}
       {doc.unreadable_runs > 0 && (
         <p className="step-note">
           The grades of {doc.unreadable_runs} run(s) could not be read; they are listed without

@@ -47,6 +47,31 @@ def default_scoring_model(*, score_method: str | None, band_count: int | None,
     return JUDGED_SCORING
 
 
+def draft_line_scoring(line: Mapping[str, Any]) -> dict[str, Any] | None:
+    """A draft rubric line's model as publication will set it (FR-UI-37): `{"scoring": model,
+    "chosen_automatically": bool}` — the declared `scoring` when the line names one, else
+    FR-PKG-29's structural default, decided by the same rule `_scoring_for` applies at the
+    write, so the review screen cannot show a model the publish then contradicts.
+
+    None for a line that is not marked by judgement: an answer-key line (`key`), and an
+    `evidence_sum` composite, which carries no band set and is marked through its aspects —
+    each aspect is a line of its own and carries its own model."""
+    if "key" in line:
+        return None
+    method = line.get("score_method") or "bands"
+    if method == "evidence_sum":
+        return None
+    declared = line.get("scoring")
+    if isinstance(declared, str) and declared:
+        return {"scoring": declared, "chosen_automatically": False}
+    bands = line.get("bands")
+    model = default_scoring_model(
+        score_method=method,
+        band_count=len(bands) if isinstance(bands, list) else None,
+        component_of=line.get("component_of") or None)
+    return {"scoring": model, "chosen_automatically": True}
+
+
 def defaulted_scoring(step_record: Mapping[str, Any] | None) -> dict[str, str]:
     """The criteria (id -> model) that took FR-PKG-29's default, read from the version's
     `SCORING_DEFAULT_STEP` row; empty when every line declared its model or there is no row

@@ -20,6 +20,7 @@ import {
   FORMAT_CHOOSE_ONE,
   type FieldSpec,
 } from "../wizard/vocabulary";
+import { AgreementBlock } from "../components/Agreement";
 import { anyHeldBack, HeldBack } from "../components/HeldBack";
 import { OverrideForm, type OverrideChange } from "../components/Override";
 import { ReadScreen } from "../components/ReadScreen";
@@ -238,6 +239,7 @@ export function Results() {
             ) : (
               <>
                 <FinalGradesBanner doc={doc} onApproveAll={() => openFinalize(doc)} />
+                {doc.run_id !== null && <AgreementBlock runId={doc.run_id} />}
                 <section className="results-overview">
                   <h2>The run</h2>
                   <p className="run-clock">

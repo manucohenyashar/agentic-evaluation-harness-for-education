@@ -221,10 +221,42 @@ export interface ValidityDisagreement {
   direction: "more_credit" | "less_credit" | null;
 }
 
-/** The validity read (FR-CONSOLE-80), as far as the blind screen's comparison reads it. */
+/** One judged grading point's stored agreement figure (FR-CONSOLE-80/84): never pooled
+ * across scoring models, always with its n and whether it is too few to rely on. A record's
+ * figure is withheld (null) below the minimum. */
+export interface ValidityFigure {
+  criterion_id: string;
+  /** The grading point's teacher label (its question). */
+  label: string;
+  scoring_model: string;
+  matched: number | null;
+  n: number;
+  kappa: number | null;
+  qwk?: number | null;
+  min_n_for_headline: number;
+  too_few: boolean;
+}
+
+/** The test's record before this class (FR-CONSOLE-80's `prior_record`): never in the
+ * current-administration position. */
+export interface PriorRecord {
+  label: string;
+  classes: string[];
+  population: string;
+  backend: string | null;
+  blind_labels: number;
+  min_n_for_headline: number;
+  criteria: ValidityFigure[];
+}
+
+/** The validity read (FR-CONSOLE-80): the run's blind-sample state, each judged grading
+ * point's figure, the differences by student name, and the earlier record. */
 export interface ValidityDoc {
   run_id: string;
   state: "not_offered_yet" | "in_progress" | "skipped" | "recorded" | (string & {});
+  min_n_for_headline?: number;
+  criteria?: ValidityFigure[];
+  prior_record?: PriorRecord | null;
   disagreements: ValidityDisagreement[];
   /** Every blind mark paired with the system's level, matched or not (`direction` null
    * where they agree). A mark the system has no level for is absent. */
@@ -993,6 +1025,11 @@ export interface DraftCriterion {
     note?: string | null;
   }>;
   key?: string | string[] | null;
+  /** FR-UI-37: a judged line's model as publication will set it, and whether FR-PKG-29's
+   * default chose it. Absent on an answer-key line and on a composite (marked through its
+   * aspects, each a line of its own). */
+  scoring?: string;
+  chosen_automatically?: boolean;
 }
 
 /** One validation issue the draft already carries, as the read projects it. */
@@ -1076,4 +1113,27 @@ export interface PastTestRun {
 export interface PastTestsDoc {
   runs: PastTestRun[];
   unreadable_runs: number;
+}
+
+/** One class's contribution to a test's record (FR-STATS-35): its date and name, and the
+ * blind answers it collected or why it collected none. */
+export interface RecordAdministration {
+  date: string;
+  class_name: string;
+  blind_count?: number;
+  absence_reason?: "skipped" | "none_marked" | (string & {});
+  unmarked_count?: number;
+}
+
+/** The package record (`GET /api/v1/packages/record`, FR-CONSOLE-84): a test version's blind
+ * answers across every class that took it, per-question agreement once there are enough,
+ * and each class's contribution. */
+export interface PackageRecordDoc {
+  package_version_id: string;
+  version_label: string;
+  blind_labels: number;
+  min_n_for_headline: number;
+  too_few: boolean;
+  criteria: ValidityFigure[];
+  administrations: RecordAdministration[];
 }
