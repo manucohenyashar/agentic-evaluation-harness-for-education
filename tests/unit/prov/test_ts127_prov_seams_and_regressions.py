@@ -131,7 +131,9 @@ def test_tc_prov_55_jev_injected_seams_are_behaviour_neutral():
                                          transport=_Transport(_throttled_now(), _good()),
                                          counters=counters, **seams)
         if seams:
-            assert provider.verify_retention([JEV_REF]).confirmed == (JEV_REF,)
+            # Jev decision models are exempt from zero retention (owner decision 2026-11-20,
+            # PR #940): reported as exempt, never confirmed.
+            assert provider.verify_retention([JEV_REF]).exempt == (JEV_REF,)
         decision = provider.decide(jev_corpora.wire_request(), JEV_REF)
         outcomes.append((decision.answers if hasattr(decision, "answers") else decision,
                          counters.decision_snapshot()))
