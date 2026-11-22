@@ -6,7 +6,9 @@ the operator commands, then graded by the console's own `start run` action over 
 the shipped dev-ci config with the stand-in OpenRouter transport. The run completes on the
 console's worker thread. Every cell is routed `provisional` (the stand-in judge answers at
 confidence 0.1), so M-REVIEW draws 15 of the 16 judged cells; which 15 is random per run, so
-callers read the draw (`drawn_cells`) rather than assume it.
+callers read the draw (`drawn_cells`) rather than assume it. The stand-in judge marks `C2`
+at its top band (`TOP_BAND_CRITERION`) and every other line at its lowest, so totals are not
+0.0 and teacher/system differences can run both ways.
 
 The world is served by a real `serve_console()` on a loopback port (rung 3). The run-start
 outcome is kept on the world (`start_outcome`) for TC-CONSOLE-106.
@@ -25,6 +27,38 @@ from tests.support.label_identity_world import ServedRun
 
 #: How long the console's run worker may take on a slow box (seconds). Env-gated (seam 3).
 RUN_JOIN_TIMEOUT_ENV = "AEH_TEST_ENG7_RUN_TIMEOUT_S"
+
+#: The criterion the stand-in judge marks at its TOP band (every other line stays at the
+#: lowest, `eng7_sample`'s default). Without it every band is the lowest and every point and
+#: total is 0.0, so an export or a total that dropped a drawn line's points would still read
+#: right, and every difference with the teacher could only run one way.
+TOP_BAND_CRITERION = "C2"
+
+
+def _judge_top_band_on(fake: Any, criterion_id: str) -> None:
+    """Wrap the stand-in transport so judge calls on `criterion_id` answer its last band."""
+    import json
+    import re
+
+    from aeh.prov.live import _fields_from_wire
+
+    original = fake.send
+
+    def send(request: Any) -> Any:
+        response = original(request)
+        fields = dict(_fields_from_wire(json.loads(request.body)))
+        if "evidence_rules" not in fields or \
+                f"criterion_id: {criterion_id}\n" not in fields.get("criterion", "") + "\n":
+            return response
+        bands = re.findall(r"^- ([^:\n]+)", fields.get("bands", ""), re.M)
+        body = json.loads(response.body)
+        content = json.loads(body["choices"][0]["message"]["content"])
+        content["band"] = bands[-1]
+        body["choices"][0]["message"]["content"] = json.dumps(content)
+        return type(response)(response.status, response.headers,
+                              json.dumps(body).encode("utf-8"))
+
+    fake.send = send
 
 
 @dataclass
@@ -106,6 +140,7 @@ def eng7_console(root: Path, work: Path, monkeypatch: Any,
     server = None
     try:
         world = ingest_eng7(root, work, monkeypatch, DEV_CI_CONFIG)
+        _judge_top_band_on(world.fake, TOP_BAND_CRITERION)
         cfg = parse_config_document(DEV_CI_CONFIG.read_text(encoding="utf-8"), "toml")
         store = open_store(root)
         network_guard.uninstall()

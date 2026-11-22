@@ -192,7 +192,9 @@ def test_tc_console_105_skip_answers_the_sentence_promotes_once_and_refuses_a_dr
         status, validity = served.get("/api/v1/results/validity", run_id=served.run_id)
         assert status == 200 and validity["state"] == "skipped", validity
 
-        with pytest.raises(Exception):
+        from aeh.review import ReviewError
+
+        with pytest.raises(ReviewError, match="skipped"):
             served.service().blind_sample(served.run_id)
         status, seats = served.get("/api/v1/blind-seats", run_id=served.run_id)
         assert not (status == 200 and seats.get("state") == "open"), seats

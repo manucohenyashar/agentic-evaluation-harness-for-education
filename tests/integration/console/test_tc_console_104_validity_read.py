@@ -83,9 +83,16 @@ def test_tc_console_104_a_the_lifecycle_and_differences_by_name(
         assert (during["criteria"], during["disagreements"]) == ([], []), during
 
         seats = served.seat_cells(read)
+        cells = served.judged_cells()
+        teacher_of: dict[str, str] = {}
         for seat in read["seats"]:
+            # The stand-in judge marks C2 at its top band and every other line at its lowest:
+            # the teacher answers the opposite end, so differences run both ways.
+            system = cells[seats[seat["seat_id"]]]["band"]
+            scale = [band["name"] for band in seat["bands"]]
+            teacher_of[seat["seat_id"]] = scale[0] if system == scale[-1] else scale[-1]
             served.dispatched("blind-sample draft", run_id=served.run_id,
-                              seat_id=seat["seat_id"], band=seat["bands"][-1]["name"])
+                              seat_id=seat["seat_id"], band=teacher_of[seat["seat_id"]])
         served.dispatched("blind-sample finish", run_id=served.run_id)
         after = _read(served, served.run_id)
         assert after["state"] == "recorded", after
@@ -93,23 +100,27 @@ def test_tc_console_104_a_the_lifecycle_and_differences_by_name(
         names = served.names()
         refs = {row["submission_id"]: row["student_ref"]
                 for row in served.rows("SELECT submission_id, student_ref FROM submission")}
-        cells = served.judged_cells()
         expected = {}
         for seat in read["seats"]:
             sub, crit = seats[seat["seat_id"]]
-            teacher = seat["bands"][-1]["name"]
-            if cells[(sub, crit)]["band"] != teacher:
-                expected[(names[sub], crit)] = (teacher, cells[(sub, crit)]["band"])
-        got = {(item["student"], item["criterion_id"]): (item["teacher_band"],
-                                                         item["system_band"])
-               for item in after["disagreements"]}
+            scale = [band["name"] for band in seat["bands"]]
+            teacher, system = teacher_of[seat["seat_id"]], cells[(sub, crit)]["band"]
+            if system != teacher:
+                direction = ("less_credit" if scale.index(system) < scale.index(teacher)
+                             else "more_credit")
+                expected[(names[sub], crit)] = (teacher, system, direction)
+        got = {(item["student"], item["criterion_id"]): (
+            item["teacher_band"], item["system_band"], item["direction"])
+            for item in after["disagreements"]}
         assert got == expected, f"differences {got} != the marked seats' {expected}"
+        assert {d for _t, _s, d in expected.values()} == {"less_credit", "more_credit"}, (
+            f"fixture: the differences run one way only: {expected}")
         for item in after["disagreements"]:
             assert item["student"] in names.values() and item["student"] not in refs.values(), (
                 f"a difference names {item['student']!r}, not the student's roster name")
-            assert item["direction"] == "less_credit", item
-        assert all(view["criterion_id"] in {c for _s, c in seats.values()}
-                   for view in after["criteria"]), after["criteria"]
+        assert after["criteria"] and all(
+            view["criterion_id"] in {c for _s, c in seats.values()}
+            for view in after["criteria"]), after["criteria"]
 
 
 def test_tc_console_104_b_per_criterion_figures_and_the_prior_record_apart(

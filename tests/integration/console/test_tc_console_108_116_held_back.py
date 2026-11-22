@@ -23,7 +23,9 @@ the per-line arm is reported in the PR as not implementable as written.
 
 **Mutations (run by hand, recorded in the PR).** `AI_CALLS_READ` taken out of the drop list in
 `HELD_BACK_READS` -> 108 red (a drawn cell's work id is served). `points_awarded` taken out of
-`held_back.QUESTION_KEYS` -> 108's per-question arm red.
+`held_back.QUESTION_KEYS` -> 108's per-question arm red. The legacy rollup's and student page's
+hold-backs in `results_screens.py` bypassed -> 108's legacy-page arm red (the rollup served
+`total 3.0`, the student page the narrative).
 """
 
 from __future__ import annotations
@@ -154,6 +156,36 @@ def _total_leaks(answer: Any, ctx: Context, drawn_students: set[str]) -> list[st
     return found
 
 
+#: The stand-in's narrative text (`tests/support/eng7_sample.py`), the same for every student.
+STAND_IN_NARRATIVE = "The answer names some of what the question asks for."
+
+
+def _legacy_leaks(answers: dict[str, Any], drawn: set[tuple[str, str]],
+                  kept: tuple[str, str]) -> list[str]:
+    """The server-rendered pages, checked page by page: the rollup holds back every drawn
+    student's grade line (total, grade, range: D6), and the student page of a student whose
+    every line is drawn shows none of the paper's narrative."""
+    import html as html_lib
+
+    problems = []
+    rollup = html_lib.unescape(answers["/runs/{id}/rollup"])
+    for sub in sorted({s for s, _c in drawn}):
+        match = re.search(r'<div data-role="grade"([^>]*)><p>' + re.escape(sub) +
+                          r":([^<]*)</p>", rollup)
+        if match is None:
+            problems.append(f"rollup: no grade line for {sub}")
+            continue
+        attrs, text = match.groups()
+        if 'data-hidden-until-blind="true"' not in attrs or re.search(
+                r"total|range|grade|\d", text):
+            problems.append(f"rollup: {sub}'s grade line is served: {text.strip()!r}")
+    for sub in sorted({s for s, _c in drawn} - {kept[0]}):
+        page = html_lib.unescape(answers[f"/students/{sub}"])
+        if STAND_IN_NARRATIVE in page:
+            problems.append(f"/students/{sub}: the drawn paper's narrative is shown")
+    return problems
+
+
 def _keep_one_cell(served: Eng7Console) -> tuple[str, str]:
     """Route (first student, C3) `auto` before the draw opens, so it is never drawn."""
     first = sorted(served.names())[0]
@@ -249,6 +281,7 @@ def test_tc_console_108_no_teacher_facing_read_says_what_a_drawn_line_says(
                          for leak in _question_points_leaks(answer, ctx, fully_drawn)]
             problems += [f"{where}: a drawn student's total (D6) {leak}"
                          for leak in _total_leaks(answer, ctx, {s for s, _c in drawn})]
+        problems += _legacy_leaks(answers, drawn, kept)
         assert not problems, "drawn lines readable while the draw is open:\n  " + \
             "\n  ".join(sorted(set(problems))[:60])
 
@@ -362,3 +395,18 @@ def test_tc_console_116_held_back_while_open_and_shown_after_the_close(
             served.dispatched("blind-sample skip", run_id=served.run_id)
         problems = _all_shown(served, cells)
         assert not problems, f"after {close}:\n  " + "\n  ".join(problems)
+
+        # R60: the mark the export carried while the draw was open is the whole total, drawn
+        # lines' points included (the stand-in marks C2 at its top band, so it is not 0).
+        stored = {}
+        for (sub, _crit), row in cells.items():
+            stored[sub] = stored.get(sub, 0.0) + float(row["points"] or 0)
+        status, screen = served.get("/api/v1/results/screen", run_id=served.run_id)
+        shown = {s["submission_id"]: s["total_points"] for s in screen["students"]}
+        for sub, mark in marks.items():
+            assert stored[sub] > 0, f"fixture: {sub} has no points"
+            assert shown[sub] == pytest.approx(stored[sub]), (sub, shown[sub], stored[sub])
+            assert float(mark) == pytest.approx(float(listed[sub])), (sub, mark, listed[sub])
+            assert float(mark) > 0, (
+                f"{sub}: the export, with the draw open, carried mark {mark} without the drawn "
+                f"lines' points ({stored[sub]} stored)")

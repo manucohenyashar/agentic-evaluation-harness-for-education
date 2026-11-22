@@ -2323,13 +2323,15 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # by the case: FR-CONSOLE-81 makes `BLIND_SAMPLE_SKIPPED_ALERT` reachable through the
     # console's `blind-sample skip`, and today only M-STATS' in-memory `alerts()` (fed by
     # `build_stats(administrations=...)`) knows it — no console read carries it. The probe
-    # resolves once the console names the alert; the case's own oracle then decides.
+    # resolves once any module outside M-STATS names the alert (its constant or its value),
+    # wherever the fix routes it; the case's own oracle then decides.
     "#901 defect — FR-CONSOLE-81 repeated-skip alert unreachable": (
         "command",
         "python -c \"import pathlib, sys; "
         "text = ''.join(p.read_text(encoding='utf-8') "
-        "for p in pathlib.Path('src/aeh/console').rglob('*.py')); "
-        "sys.exit(0 if 'BLIND_SAMPLE_SKIPPED_ALERT' in text else 1)\"",
+        "for p in pathlib.Path('src/aeh').rglob('*.py') if 'stats' not in p.parts); "
+        "sys.exit(0 if 'BLIND_SAMPLE_SKIPPED_ALERT' in text or "
+        "'blind_sample_skipped_consecutive_administrations' in text else 1)\"",
         ("tests/integration/console/test_tc_console_105_b_repeated_skip_alert.py",),
     ),
 }
