@@ -2334,6 +2334,42 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "'blind_sample_skipped_consecutive_administrations' in text else 1)\"",
         ("tests/integration/console/test_tc_console_105_b_repeated_skip_alert.py",),
     ),
+
+    # Validity T9 (#902). Every other T9 case runs unmarked: S15 (#885), S16 (#886) and
+    # S17 (#887) had merged. Three arms wait:
+    #
+    # TC-CALIB-26 on TC-E2E-21's recordings: no ENG7 grading recordings exist until T17's
+    # capture run (#906) writes them, and they are never hand-written. Resolves when a
+    # `test_tc_e2e_21*` case exists; the case's `RECORDINGS` path is then re-pointed if T17
+    # chose another folder (its `require_path` names the folder it looked in).
+    "#906 TC-E2E-21 capture — TC-CALIB-26's recorded cost": (
+        "command",
+        "python -c \"import pathlib, sys; "
+        "sys.exit(0 if any(pathlib.Path('tests').rglob('test_tc_e2e_21*.py')) else 1)\"",
+        ("tests/integration/calib/test_tc_calib_26_b_recorded_cost.py",),
+    ),
+    # TC-SETUP-28's "the old 'not used' behaviour is gone": S15 kept the legacy
+    # `store_calibration_papers` (TC-REQ-69 and TC-E2E-01 call it), which still records
+    # `stored_not_used`. A finding, not a missing story: resolves when no M-SETUP module
+    # writes that status.
+    "#902 defect — TC-SETUP-28 legacy store_calibration_papers 'not used'": (
+        "command",
+        "python -c \"import pathlib, sys; "
+        "text = ''.join(p.read_text(encoding='utf-8') "
+        "for p in pathlib.Path('src/aeh/setup').rglob('*.py')); "
+        "sys.exit(1 if 'stored_not_used' in text else 0)\"",
+        ("tests/integration/setup/test_tc_setup_28_b_not_used_retired.py",),
+    ),
+    # TC-CONSOLE-111's "the legacy upload copy claims nothing the SPA lacks": the SPA examples
+    # step is S18 (#888). Resolves when the SPA source calls the examples read.
+    "#888 SPA examples step — TC-CONSOLE-111's SPA arm": (
+        "command",
+        "python -c \"import pathlib, sys; "
+        "text = ''.join(p.read_text(encoding='utf-8') "
+        "for p in pathlib.Path('ui/src').rglob('*.ts*')); "
+        "sys.exit(0 if '/api/v1/calibration/examples' in text else 1)\"",
+        ("tests/integration/console/test_tc_console_111_b_spa_examples_step.py",),
+    ),
 }
 
 def blocker_is_resolved(kind: str, target: str, repo_root: Any) -> bool:
