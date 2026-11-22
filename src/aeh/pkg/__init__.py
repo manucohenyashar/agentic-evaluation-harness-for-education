@@ -113,6 +113,7 @@ from .setup_records import SetupRecordsMixin
 from .setup_checks import SetupChecksMixin
 from .catalog import PackageCatalog
 from .rubric_methods import COMPOSITE_METHOD, composite_aspects, is_composite
+from .spec_criteria import draft_line_scoring
 from .in_memory import (
     export_package,
     ExportSummary,
@@ -172,4 +173,5 @@ __all__ = [
     "COMPOSITE_METHOD",
     "composite_aspects",
     "is_composite",
+    "draft_line_scoring",
 ]

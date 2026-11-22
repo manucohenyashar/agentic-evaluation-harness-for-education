@@ -44,6 +44,7 @@ from aeh.author.intake import NormalizedDocument, normalize_document
 from aeh.author import descriptor_note, gap_question, is_placeholder, missing_points
 from aeh.author.report import draft_filename
 from aeh.author.validation import PLACEHOLDER_PREFIX, validate_draft
+from aeh.pkg import draft_line_scoring
 
 from .package_summary import answered_items, package_summary
 from .settings import author_doc_max_bytes
@@ -254,6 +255,11 @@ def _project_criterion(criterion: dict[str, Any]) -> dict[str, Any]:
     }
     if criterion.get("key") is not None:
         projected["key"] = criterion.get("key")
+    # FR-UI-37: a judged line's model as publication will set it, and whether FR-PKG-29's
+    # default chose it — decided on the package side, passed through unread.
+    scoring = draft_line_scoring(criterion)
+    if scoring is not None:
+        projected.update(scoring)
     return projected
 
 
