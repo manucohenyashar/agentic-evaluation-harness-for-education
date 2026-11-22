@@ -80,6 +80,9 @@ from tests.support.console_redesign_world import (
     wait_for_job,
 )
 from tests.support.console_world import seed_scored_run
+from tests.support.teacher_text_census import CENSUS_PATTERNS as _CENSUS_PATTERNS
+from tests.support.teacher_text_census import exempt as _exempt
+from tests.support.teacher_text_census import strings as _strings
 
 pytestmark = pytest.mark.integration
 
@@ -87,16 +90,9 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 ENG7_SPEC = REPO_ROOT / "docs" / "live-tests" / "config" / "eng7-read-01.package.toml"
 ENG7 = "ENG7-READ-01"
 
-#: FR-UI-23's patterns, as TC-CONSOLE-87 states them.
-CENSUS_PATTERNS: dict[str, re.Pattern[str]] = {
-    "requirement or test id": re.compile(r"\b(FR|NFR|CT|TC|ADR|RS)-[A-Z0-9]+(-\d+)?\b"),
-    "package-version hash": re.compile(r"@[0-9a-f]{12}\b"),
-    "internal package ref": re.compile(r"\bpkg-"),
-    "uuid": re.compile(
-        r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"),
-    "file path": re.compile(r"[\\/][^\s\\/'\"]*\.(sqlite|toml)\b"),
-    "toml fragment": re.compile(r"\[\["),
-}
+#: FR-UI-23's patterns, as TC-CONSOLE-87 states them (`tests/support/teacher_text_census.py`,
+#: shared with TC-CONSOLE-110).
+CENSUS_PATTERNS = _CENSUS_PATTERNS
 
 #: A sentence ends in `.`, `!` or `?`, optionally inside a closing quote or bracket.
 SENTENCE_END = re.compile(r"[.!?][\"'”’)\]]*\Z")
@@ -319,22 +315,7 @@ def _eng7_version(store: Any) -> str:
 # --- the census ---------------------------------------------------------------------------------
 
 
-def _exempt(key: str) -> bool:
-    return key == "id" or key.endswith("_id") or key.endswith("_ids")
-
-
-def _strings(value: Any, where: str = "") -> Iterator[tuple[str, str]]:
-    """Every string field of a JSON answer as `(json path, text)`, ID fields skipped."""
-    if isinstance(value, str):
-        yield where, value
-    elif isinstance(value, dict):
-        for key, item in value.items():
-            if _exempt(str(key)):
-                continue
-            yield from _strings(item, f"{where}.{key}")
-    elif isinstance(value, list):
-        for index, item in enumerate(value):
-            yield from _strings(item, f"{where}[{index}]")
+# `_exempt` and `_strings` live in `tests/support/teacher_text_census.py` (imported above).
 
 
 def _report(lines: list[str], limit: int = 150) -> str:

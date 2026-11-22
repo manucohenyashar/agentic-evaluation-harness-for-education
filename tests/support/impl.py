@@ -2318,6 +2318,20 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # T21 (#905): S30 (#872) landed — TC-PROV-71 and TC-CONSOLE-123 run unmarked.
 
     # Validity T4 (#897): S12 (#882) landed — TC-REVIEW-100 and TC-REVIEW-107 (a) run unmarked.
+
+    # Validity T8 (#901): TC-CONSOLE-105's alert arm. Not a missing story but a defect found
+    # by the case: FR-CONSOLE-81 makes `BLIND_SAMPLE_SKIPPED_ALERT` reachable through the
+    # console's `blind-sample skip`, and today only M-STATS' in-memory `alerts()` (fed by
+    # `build_stats(administrations=...)`) knows it — no console read carries it. The probe
+    # resolves once the console names the alert; the case's own oracle then decides.
+    "#901 defect — FR-CONSOLE-81 repeated-skip alert unreachable": (
+        "command",
+        "python -c \"import pathlib, sys; "
+        "text = ''.join(p.read_text(encoding='utf-8') "
+        "for p in pathlib.Path('src/aeh/console').rglob('*.py')); "
+        "sys.exit(0 if 'BLIND_SAMPLE_SKIPPED_ALERT' in text else 1)\"",
+        ("tests/integration/console/test_tc_console_105_b_repeated_skip_alert.py",),
+    ),
 }
 
 def blocker_is_resolved(kind: str, target: str, repo_root: Any) -> bool:
