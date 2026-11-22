@@ -114,11 +114,22 @@ function RecordFigures({
   if (criteria.length === 0) {
     return <p className="record-headline">{blindLabels} blind answers collected</p>;
   }
+  // A record keeps one figure per grading point and marking setup (a new backend or grader
+  // panel starts its own figure, never pooled); when a question has more than one, each is
+  // numbered so two lines for the same question never read as a contradiction.
+  const total = new Map<string, number>();
+  for (const figure of criteria) {
+    total.set(figure.criterion_id, (total.get(figure.criterion_id) ?? 0) + 1);
+  }
+  const seen = new Map<string, number>();
   return (
     <ul className="record-figures">
-      {criteria.map((figure, index) => (
-        <li key={`${figure.criterion_id}-${index}`}>{figureLine(figure)}</li>
-      ))}
+      {criteria.map((figure, index) => {
+        const nth = (seen.get(figure.criterion_id) ?? 0) + 1;
+        seen.set(figure.criterion_id, nth);
+        const setup = (total.get(figure.criterion_id) ?? 1) > 1 ? ` (marking setup ${nth})` : "";
+        return <li key={`${figure.criterion_id}-${index}`}>{figureLine(figure)}{setup}</li>;
+      })}
     </ul>
   );
 }
