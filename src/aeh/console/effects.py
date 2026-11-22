@@ -469,19 +469,24 @@ class DomainEffectsMixin:
         self._run_threads[started] = thread
         from .blind_actions import run_start_sample_sentence
 
-        # FR-CONSOLE-90 (#887): a fresh class run of a test whose clarified rubric is pending
-        # carries the R1 pass beside it; the class itself is graded and delivered under R0.
+        # FR-CONSOLE-90 (#887): a class run of a test whose clarified rubric is pending carries
+        # the R1 pass beside it; the class itself is graded and delivered under R0. A resume
+        # may carry it too: a paused first class released its claim, and resuming re-claims.
+        # The plan may instead re-arm an earlier class's check that a restart orphaned — then
+        # it names that class's (completed) run, and the watcher waits on nothing.
         from .run_start import plan_clarified_rubric_check, watch_first_class
 
         check_sentence = ""
         plan = plan_clarified_rubric_check(
             self, cohort_id=cohort_id, package_version=package_version, run_id=started)
         if plan is not None:
-            check_sentence = " " + plan.sentence
+            if plan.sentence:
+                check_sentence = " " + plan.sentence
             if plan.planned:
                 actor = str(params.get("actor") or "").strip() or None
-                self._run_threads[f"{started}:clarified-rubric"] = watch_first_class(
-                    self, plan, thread, config, approved_by=actor)
+                waits_on = thread if plan.run_id == started else None
+                self._run_threads[f"{plan.run_id}:clarified-rubric"] = watch_first_class(
+                    self, plan, waits_on, config, approved_by=actor)
         # FR-CONSOLE-82 (#882): the run-start outcome states the coming blind sample.
         return (
             f"run {started} started on a server-owned worker thread; it continues if the "

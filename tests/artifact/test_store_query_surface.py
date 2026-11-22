@@ -859,7 +859,7 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # statement. #882 re-pin: the blind effect moved to `blind_actions`, moving it up
     # again; same statement. #887 re-pin: the start-run effect's clarified-rubric check moved
     # it down; same statement.)
-    "aeh.console.effects:803",
+    "aeh.console.effects:808",
     "aeh.console.key_correction:140",
     "aeh.console.driver:120",
     "aeh.console.driver:159",

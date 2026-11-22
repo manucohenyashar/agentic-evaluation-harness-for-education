@@ -26,6 +26,7 @@ grades under the version it is given and leaves R1 pending.
 from __future__ import annotations
 
 import hashlib
+import threading
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -36,6 +37,7 @@ from aeh.store import CALIBRATION_COHORT_PREFIX, Statement
 from .constants import LOGGER
 from .dual_scoring import DualScoringPlan, authorize, plan_dual_scoring, run_dual_scoring
 from .errors import CalibrationError
+from . import gates
 from .gates import _noninferiority_threshold_from_env, back_translate, non_inferiority
 from .rosters import CALIB_STATEMENTS, register_dual_scored_roster
 
@@ -84,6 +86,23 @@ FIRST_CLASS_STATEMENTS: dict[str, Statement] = {
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+#: The clarified versions whose first-class check is being finished in this process, so a
+#: re-armed check (see `plan_first_class`) never runs the R1 pass twice at once.
+_FINISHING: set[str] = set()
+_FINISHING_GUARD = threading.Lock()
+
+
+def _declared_threshold(environ: Mapping[str, str] | None) -> float | None:
+    """The declared non-inferiority threshold, in the gate's own order after an argument: a
+    standing institutional declaration (consumed here, by the comparison it was declared for),
+    then the deployment's environment channel. Never defaulted (CT-CALIB-13)."""
+    if gates._INSTITUTIONAL_THRESHOLD is not None:
+        value = float(gates._INSTITUTIONAL_THRESHOLD)
+        gates._clear_institutional_threshold()
+        return value
+    return _noninferiority_threshold_from_env(environ)
 
 
 def gate_decision(back_translation: str, non_inferiority_outcome: str) -> str:
@@ -138,7 +157,7 @@ def open_revision(store: Any, r0: str, r1: str, *, off_panel: Any = None) -> Rev
                                 off_panel=off_panel)
         outcome = "pass" if result.outcome == "pass" else "fail"
         notes = tuple(result.notes)
-    except CalibrationError as error:
+    except Exception as error:  # noqa: BLE001 - every failure ends at R0 (CT-CALIB-02)
         outcome = "fail"
         notes = (f"unavailable: {type(error).__name__}: {error}",)
     catalog.open_calibration_revision(r1, base=r0, back_translation=outcome,
@@ -157,9 +176,14 @@ def pending_revision(store: Any, r0: str) -> dict | None:
 def revision_status(store: Any, r0: str) -> dict | None:
     """The newest clarified version of `r0` as the teacher reads it: its state (`pending`,
     `live`, `set_aside`) and, once decided, the reason. None when there is none."""
-    rows = _catalog(store, r0).calibration_revisions(r0)
+    catalog = _catalog(store, r0)
+    rows = catalog.calibration_revisions(r0)
     if not rows:
-        return None
+        # Once R1 went live it is the version the teacher's screens name: its own record.
+        own = catalog.calibration_revision(r0)
+        if own is None or own["state"] != "live":
+            return None
+        rows = [own]
     row = rows[-1]
     return {"state": str(row["state"]), "reason": str(row["reason"] or ""),
             "checking_on_a_class": bool(row["first_class_run_id"])}
@@ -193,34 +217,95 @@ def plan_first_class(store: Any, *, cohort_id: str, r0: str, run_id: str,
     version pending (FR-CONSOLE-90). None when there is nothing to plan: no R1 pending, or
     another class's run already carries its pass."""
     revision = pending_revision(store, r0)
-    if revision is None or revision["first_class_run_id"]:
+    if revision is None:
         return None
     r1 = str(revision["revision_version_id"])
     back_translation = str(revision["back_translation"])
-    threshold = _noninferiority_threshold_from_env(environ)
+    catalog = _catalog(store, r0)
+    if revision["first_class_run_id"]:
+        claimed = _rearm(store, catalog, revision, environ)
+        if claimed is not None or revision_still_claimed(store, catalog, r1):
+            return claimed
+    threshold = _declared_threshold(environ)
     if back_translation == "pass" and threshold is None:
         return FirstClassPlan(r0=r0, r1=r1, cohort_id=cohort_id, run_id=run_id,
                               back_translation=back_translation, planned=False,
                               sentence=WAITING_SENTENCE,
                               notes=("no non-inferiority threshold is declared (CT-CALIB-13): "
                                      "no pass planned, R1 stays pending",))
-    catalog = _catalog(store, r0)
     if not catalog.plan_calibration_revision(r1, cohort_id=cohort_id, run_id=run_id,
                                              planned_at=_now()):
         return None
     dual = None
     if back_translation == "pass":
-        papers = int(store.cohort(cohort_id).query(
-            FIRST_CLASS_STATEMENTS["select_admitted_papers"], cohort_id=cohort_id)[0]["n"])
-        criteria = len(catalog.criteria(r0))
-        dual = plan_dual_scoring(cohort_id, r0, r1, None, class_size=max(papers, 1),
-                                 criteria_count=max(criteria, 1))
-        authorize(dual)
+        dual = _authorized_pass(store, catalog, cohort_id, r0, r1)
     LOGGER.info("R1 %s of %s: first-class pass planned beside run %s of %s", r1, r0, run_id,
                 cohort_id)
     return FirstClassPlan(r0=r0, r1=r1, cohort_id=cohort_id, run_id=run_id,
                           back_translation=back_translation, planned=True,
                           sentence=CHECKING_SENTENCE, threshold=threshold, dual=dual)
+
+
+def _run_status(store: Any, cohort_id: str, run_id: str) -> str | None:
+    try:
+        rows = store.cohort(cohort_id).query(FIRST_CLASS_STATEMENTS["select_run_status"],
+                                             run_id=run_id)
+    except Exception:  # noqa: BLE001 - an unreadable class is a run that is not there
+        return None
+    return str(rows[0]["status"]) if rows else None
+
+
+def revision_still_claimed(store: Any, catalog: Any, r1: str) -> bool:
+    """Whether R1's claim is still held (after `_rearm` may have released it)."""
+    row = catalog.calibration_revision(r1)
+    return bool(row and row["state"] == "pending" and row["first_class_run_id"])
+
+
+def _rearm(store: Any, catalog: Any, revision: dict,
+           environ: Mapping[str, str] | None) -> FirstClassPlan | None:
+    """A claim whose check nobody is finishing — the console stopped between the class run's
+    start and the decision. A claimed class run that completed gets its check back (a plan
+    for THAT run, with no sentence for the class being started now); one that paused or
+    failed, or is gone, releases the claim so this class can carry the pass. A run still
+    going, or a check being finished in this process, is left alone."""
+    r1 = str(revision["revision_version_id"])
+    cohort_id = str(revision["first_class_cohort_id"] or "")
+    run_id = str(revision["first_class_run_id"])
+    with _FINISHING_GUARD:
+        if r1 in _FINISHING:
+            return None
+    status = _run_status(store, cohort_id, run_id) if cohort_id else None
+    if status in ("pending", "running"):
+        return None
+    if status != "complete":
+        catalog.unplan_calibration_revision(r1, run_id=run_id)
+        return None
+    back_translation = str(revision["back_translation"])
+    threshold = revision["threshold"]
+    if threshold is None:
+        threshold = _declared_threshold(environ)
+    if back_translation == "pass" and threshold is None:
+        return None
+    dual = None
+    if back_translation == "pass":
+        dual = _authorized_pass(store, catalog, cohort_id, str(revision["base_version_id"]), r1)
+    LOGGER.info("R1 %s: re-armed the first-class check on completed run %s", r1, run_id)
+    return FirstClassPlan(r0=str(revision["base_version_id"]), r1=r1, cohort_id=cohort_id,
+                          run_id=run_id, back_translation=back_translation, planned=True,
+                          sentence="", threshold=threshold, dual=dual,
+                          notes=("re-armed: the claimed class run completed with no decision "
+                                 "recorded",))
+
+
+def _authorized_pass(store: Any, catalog: Any, cohort_id: str, r0: str, r1: str) -> Any:
+    """Disclose and authorize the R1 pass on the class's admitted papers × criteria."""
+    papers = int(store.cohort(cohort_id).query(
+        FIRST_CLASS_STATEMENTS["select_admitted_papers"], cohort_id=cohort_id)[0]["n"])
+    criteria = len(catalog.criteria(r0))
+    dual = plan_dual_scoring(cohort_id, r0, r1, None, class_size=max(papers, 1),
+                             criteria_count=max(criteria, 1))
+    authorize(dual)
+    return dual
 
 
 def shadow_cohort_id(r1: str, cohort_id: str) -> str:
@@ -298,11 +383,18 @@ def _score_under_r1(store: Any, plan: FirstClassPlan, config: Mapping[str, Any],
     if missing:
         raise CalibrationError(f"the R1 pass left {len(missing)} cell(s) the R0 run scored "
                                "unscored: the gate scores the full class or refuses")
-    # The plan disclosed the class's shape at start; the R0 run is what it actually scored.
+    # The plan disclosed the class's shape at start (its admitted papers); the R0 run is what
+    # was actually scored — a paper withheld but scored on a deterministic criterion, or one
+    # added mid-run, moves it. The pass is then disclosed and authorized again on the shape
+    # it actually covers, with the change named in its notes, before anything is joined.
     if (len(papers), len(criteria)) != (plan.dual.class_size, plan.dual.criteria_count):
-        raise CalibrationError(
-            f"the class run scored {len(papers)} × {len(criteria)} and the authorized pass "
-            f"covers {plan.dual.class_size} × {plan.dual.criteria_count}")
+        before = (plan.dual.class_size, plan.dual.criteria_count)
+        plan.dual = plan_dual_scoring(plan.cohort_id, plan.r0, plan.r1, None,
+                                      class_size=len(papers), criteria_count=len(criteria))
+        plan.dual.notes = plan.dual.notes + (
+            f"re-disclosed: planned on {before[0]} × {before[1]} at start, the class run "
+            f"scored {len(papers)} × {len(criteria)}",)
+        authorize(plan.dual)
     plan.dual.provider = _StoredPass(tuple(
         tuple(r1_bands[(paper, criterion)] for criterion in criteria) for paper in papers))
     run_dual_scoring(plan.dual)
@@ -320,6 +412,21 @@ def finish_first_class(store: Any, plan: FirstClassPlan, *, config: Mapping[str,
     class is graded with it; the first class's own file is never written. Returns None — R1
     left pending and the claim released for the next class — when the class run did not
     complete, since there is then no class to compare against."""
+    with _FINISHING_GUARD:
+        if plan.r1 in _FINISHING:
+            return None
+        _FINISHING.add(plan.r1)
+    try:
+        return _finish(store, plan, config=config, approved_by=approved_by,
+                       drive_keywords=drive_keywords)
+    finally:
+        with _FINISHING_GUARD:
+            _FINISHING.discard(plan.r1)
+
+
+def _finish(store: Any, plan: FirstClassPlan, *, config: Mapping[str, Any],
+            approved_by: str | None, drive_keywords: Mapping[str, Any]
+            ) -> FirstClassOutcome | None:
     catalog = _catalog(store, plan.r0)
     rows = store.cohort(plan.cohort_id).query(FIRST_CLASS_STATEMENTS["select_run_status"],
                                               run_id=plan.run_id)
