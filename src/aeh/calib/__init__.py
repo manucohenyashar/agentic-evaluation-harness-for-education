@@ -25,6 +25,8 @@ Files:
     driver.py        `run_for_assignment`: one calibration run, stage by stage
     examples.py      the teacher's marked examples graded under R0 in a calibration cohort, and
                      the discovery, triage and questions over them (FR-CALIB-16/17)
+    first_class.py   the clarified rubric's gates: back-translation at creation, the R1 pass
+                     planned beside the first class's run and decided after it (FR-CALIB-18)
     off_panel.py     the off-panel checker model: its identity, sessions and providers
     rosters.py       class rosters: each paper's band under R0 and R1
     gates.py         the non-inferiority and back-translation gates, and pinning R1

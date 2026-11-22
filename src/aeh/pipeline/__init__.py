@@ -62,6 +62,7 @@ from .runtime import _provider_for
 from .background import (
     assign_identity_parked_paper,
     check_parked_assignment,
+    copy_read_papers,
     drive_run,
     cohort_has_test_paper,
     move_paper_to_student,

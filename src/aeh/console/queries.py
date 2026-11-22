@@ -266,9 +266,12 @@ _SELECT_LEDGER_POPULATION = (
 
 
 #: The versions of one package, with the published flag: the context read's package
-#: entities and their wizard state.
+#: entities and their wizard state. Newest revision first, so the first published row is the
+#: version a new class is graded with — a clarified rubric is published only once both its
+#: gates passed on the first class (FR-CALIB-18), and it then replaces the one it clarifies.
 _SELECT_PACKAGE_VERSIONS = (
-    "SELECT package_version_id, locked FROM package_version ORDER BY package_version_id"
+    "SELECT package_version_id, locked FROM package_version "
+    "ORDER BY revision DESC, package_version_id"
 )
 
 

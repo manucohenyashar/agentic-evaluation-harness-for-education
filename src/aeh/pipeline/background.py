@@ -237,6 +237,17 @@ def assign_identity_parked_paper(store: Any, cohort_id: str, submission_id: str,
     return _assign(store.cohort(cohort_id), submission_id, student_ref, actor=actor, note=note)
 
 
+def copy_read_papers(store: Any, *, source_cohort_id: str, target_cohort_id: str) -> int:
+    """Copy a class's read papers into another cohort, ids kept, so they can be scored again
+    without being read again — M-CALIB's first-class pass under a clarified rubric
+    (FR-CALIB-18). The target's cohort row and class list must exist. No SQL here: M-INGEST
+    owns the paper tables."""
+    from aeh.ingest import copy_read_papers as _copy
+
+    return _copy(store.cohort(source_cohort_id), store.cohort(target_cohort_id),
+                 source_cohort_id=source_cohort_id, target_cohort_id=target_cohort_id)
+
+
 def resume_runs_in_background(
     store: Any, *, config: Mapping[str, Any], provider: Any = None, **drive_keywords: Any,
 ) -> list[tuple[str, Any]]:

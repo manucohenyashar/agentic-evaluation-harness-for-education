@@ -129,6 +129,7 @@ from .sanitizer import PdfSanitizer, PypdfSanitizer, SanitizeResult
 from .residency import ResidencySlot
 from .schema import INGEST_STATEMENTS
 from .uploads import record_upload_part, upload_parts_in_order
+from .copies import copy_read_papers
 from .decisions import (
     QUARANTINE_DECISIONS,
     QuarantineDecisionError,
@@ -165,6 +166,7 @@ from .ingestor import Ingestor
 
 
 __all__ = [
+    "copy_read_papers",
     "PaperCorrectionError",
     "park_second_paper",
     "reassign_paper",

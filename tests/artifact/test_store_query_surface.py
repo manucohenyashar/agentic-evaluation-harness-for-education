@@ -575,6 +575,20 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # #885 (migration P1): the marked-example bands' upsert, a declared statement with
     # keyword parameters (`upsert_calibration_example_mark`).
     "aeh.pkg.setup_records:404",
+    # #887 (migration 18): the clarified version's gate record — open, plan (and the
+    # read-back of the claim in the same transaction), release, settle — each a declared
+    # statement with keyword parameters.
+    "aeh.pkg.setup_records:437",
+    "aeh.pkg.setup_records:460",
+    "aeh.pkg.setup_records:462",
+    "aeh.pkg.setup_records:470",
+    "aeh.pkg.setup_records:484",
+    # #887: a class's read papers copied into the calibration cohort its R1 pass runs in
+    # (`COPY_STATEMENTS`, every column named, keyword parameters).
+    "aeh.ingest.copies:125",
+    "aeh.ingest.copies:127",
+    "aeh.ingest.copies:129",
+    "aeh.ingest.copies:131",
     "aeh.pkg.in_memory:67",
     "aeh.pkg.in_memory:153",
     "aeh.pkg.in_memory:376",
@@ -843,8 +857,9 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.console.controls:255",
     # (#875 re-pin: the blind effect's draft wording moved the quarantine site; same
     # statement. #882 re-pin: the blind effect moved to `blind_actions`, moving it up
-    # again; same statement.)
-    "aeh.console.effects:790",
+    # again; same statement. #887 re-pin: the start-run effect's clarified-rubric check moved
+    # it down; same statement.)
+    "aeh.console.effects:803",
     "aeh.console.key_correction:140",
     "aeh.console.driver:120",
     "aeh.console.driver:159",

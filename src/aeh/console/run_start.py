@@ -5,6 +5,7 @@ confirmation's start composes, shared by the preview and the effect that writes.
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from aeh.conf import (
@@ -26,6 +27,9 @@ from aeh.conf import (
 #: cannot run under `cloud-hosted` itself (CT-CONSOLE-05), so a hosted run is NAMED per
 #: request rather than inherited from the console process's environment.
 PROFILE_KEY = "HARNESS_PROFILE"
+
+
+LOGGER = logging.getLogger("aeh.console")
 
 
 def compose_run_start_config(app: Any, params: Any) -> dict[str, Any]:
@@ -213,3 +217,67 @@ def run_start_preview_read(app: Any, query: Any) -> dict[str, Any]:
     banner = format_profile_banner(run_config, profile_source_note,
                                    orch_knobs=resolve_orch_knobs(composed))
     return {"banner": banner, "estimate": None if estimate is None else str(estimate)}
+
+
+# --- the clarified rubric's pass beside the first class (FR-CONSOLE-90, CT-CONSOLE-57) ----------
+
+
+def _first_class() -> Any:
+    """`aeh.calib.first_class`, or None when M-CALIB is absent: the run then grades under R0 and
+    nothing else happens (CT-CALIB-01)."""
+    try:
+        from aeh.calib import first_class
+    except ImportError:
+        return None
+    return first_class
+
+
+def plan_clarified_rubric_check(app: Any, *, cohort_id: str, package_version: str,
+                                run_id: str) -> Any:
+    """Ask M-CALIB to plan and authorize the R1 pass beside the class run just started, when the
+    test it grades has a clarified version pending (FR-CONSOLE-90). Returns the plan — its
+    `sentence` is what the run-start outcome adds — or None when there is nothing to check.
+    A plan that cannot be made never stops the class's run: the class is graded under R0
+    either way."""
+    first_class = _first_class()
+    if first_class is None:
+        return None
+    try:
+        return first_class.plan_first_class(app._store, cohort_id=cohort_id,
+                                            r0=package_version, run_id=run_id)
+    except Exception:  # noqa: BLE001 - the class's own run is never put at risk
+        LOGGER.exception("could not plan the clarified rubric's pass beside run %s", run_id)
+        return None
+
+
+def watch_first_class(app: Any, plan: Any, run_thread: Any, config: Any,
+                      approved_by: str | None = None) -> Any:
+    """When the class run's worker ends, run the R1 pass and record the gates' decision on the
+    package (FR-CONSOLE-90's "when both finish"), on a server-owned thread with its own store.
+    Returns the thread. A console restart before it ends leaves R1 pending with its claim held
+    by that run."""
+    import threading
+
+    from aeh.pipeline.runtime import _open_store
+
+    first_class = _first_class()
+    data_dir = str(app._store.data_dir)
+
+    def work() -> None:
+        if run_thread is not None:
+            run_thread.join()
+        store = None
+        try:
+            store = _open_store(data_dir)
+            first_class.finish_first_class(store, plan, config=config,
+                                           approved_by=approved_by)
+        except Exception:  # noqa: BLE001 - logged; R1 stays pending
+            LOGGER.exception("the clarified rubric's check on run %s did not finish",
+                             plan.run_id)
+        finally:
+            if store is not None:
+                store.close()
+
+    thread = threading.Thread(target=work, name=f"aeh-r1-check-{plan.run_id}", daemon=True)
+    thread.start()
+    return thread

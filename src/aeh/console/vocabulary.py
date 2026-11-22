@@ -226,7 +226,14 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
         "grade_boundary.cut",
     ),
     "set review window": ("grade_policy.review_window_hours",),
-    "start run": ("run.run_id", "run.status"),
+    # FR-CONSOLE-90 (#887): with a clarified rubric pending, the start claims the class that
+    # carries its pass, and the decision lands on the package when both finish.
+    "start run": (
+        "run.run_id",
+        "run.status",
+        "calibration_revision.first_class_run_id",
+        "calibration_revision.state",
+    ),
     "pause/resume": ("run.status",),
     "resolve quarantine item": (
         "submission.ingest_status",
@@ -426,6 +433,7 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
         "package_version.package_version_id",
         "elicitation_history.answer_given",
         "elicitation_history.resulting_edit",
+        "calibration_revision.back_translation",
     ),
     # FR-CALIB-13/14: each open question recorded as skipped.
     "examples skip": (
