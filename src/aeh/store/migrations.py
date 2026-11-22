@@ -559,9 +559,9 @@ def current_schema_version(tier: Tier) -> int:
 #: (migration S1) moved Cohort 37→38 — `aeh.store` holds Cohort's tail, declared here like
 #: migration 11 because M-CALIB, its consumer, may be absent. #885's
 #: `pkg_calibration_example_mark` (migration P1) moved Package 16→17 — `aeh.pkg` holds
-#: Package's tail.)
+#: Package's tail. #887's `pkg_calibration_revision` moved Package 17→18 — `aeh.pkg` keeps it.)
 COMPLETE_SCHEMA_VERSIONS: Mapping[Tier, int] = {
-    Tier.PACKAGE: 17,
+    Tier.PACKAGE: 18,
     Tier.COHORT: 38,
     # #636's `help_qa_log` — the Q&A log table — is Durable 13, declared here per the
     # migration-11 ruling above: a module the system runs without cannot own a chain link.

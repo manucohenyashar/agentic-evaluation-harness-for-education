@@ -949,6 +949,49 @@ _PKG_CALIBRATION_EXAMPLE_MARK = Migration(
 )
 
 
+# Package v18 — the clarified rubric's gates on the first class (FR-CALIB-18, FR-CONSOLE-90,
+# CT-CONSOLE-57). One row per clarified version R1 that the teacher's answers minted: the
+# version it clarifies (R0), back-translation's outcome at R1's creation, the class whose run
+# carries the R1 pass (planned once, so a second class started meanwhile plans none), the
+# non-inferiority outcome when that pass finishes, and the decision — `live` only when both
+# gates passed, else `set_aside` with the teacher-facing reason. Reference data beside the
+# instrument, like P1: no §6.2 trigger, and not copied on revision. Declared here because the
+# console reads it with M-CALIB absent (TC-REQ-89).
+_PKG_CALIBRATION_REVISION = Migration(
+    version=18,
+    name="pkg_calibration_revision",
+    statements=(
+        Statement(
+            """
+            CREATE TABLE calibration_revision (
+                revision_version_id   TEXT NOT NULL PRIMARY KEY
+                    REFERENCES package_version(package_version_id),
+                base_version_id       TEXT NOT NULL
+                    REFERENCES package_version(package_version_id),
+                state                 TEXT NOT NULL DEFAULT 'pending'
+                    CHECK (state IN ('pending', 'live', 'set_aside')),
+                back_translation      TEXT NOT NULL
+                    CHECK (back_translation IN ('pass', 'fail')),
+                back_translation_note TEXT NOT NULL DEFAULT '',
+                created_at            TEXT NOT NULL,
+                first_class_cohort_id TEXT,
+                first_class_run_id    TEXT,
+                planned_at            TEXT,
+                non_inferiority       TEXT
+                    CHECK (non_inferiority IN ('pass', 'fail', 'not_run')),
+                shifted_papers        INTEGER,
+                class_size            INTEGER,
+                threshold             REAL,
+                reason                TEXT NOT NULL DEFAULT '',
+                decided_at            TEXT,
+                approved_by           TEXT
+            )
+            """
+        ),
+    ),
+)
+
+
 TIER_MIGRATIONS[Tier.PACKAGE] = (
     TIER_MIGRATIONS[Tier.PACKAGE]
     + (_PKG_VERSION_LINEAGE,)
@@ -966,6 +1009,7 @@ TIER_MIGRATIONS[Tier.PACKAGE] = (
     + (_PKG_CRITERION_SCORE_METHOD,)
     + (_PKG_PUBLISHED_BASELINE_EVIDENCE,)
     + (_PKG_CALIBRATION_EXAMPLE_MARK,)
+    + (_PKG_CALIBRATION_REVISION,)
 )
 
 

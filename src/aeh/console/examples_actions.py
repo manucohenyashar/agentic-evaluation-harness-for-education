@@ -463,7 +463,33 @@ def examples_read(console: Any, app: Any, query: Mapping[str, Any]) -> dict[str,
             "currency": cost.currency,
             "text": _cost_text(cost),
         },
+        # FR-CALIB-18: where the clarified rubric stands, in the teacher's words.
+        "clarified_rubric": _clarified_rubric(store, version),
     }
+
+
+#: What the teacher reads while the clarified rubric waits for, or is on, its first class.
+_PENDING_TEXT = ("Your clarified rubric is checked on your next class before it is used; "
+                 "that class is graded with your original rubric.")
+_CHECKING_TEXT = ("Your clarified rubric is being checked on a class; that class is graded "
+                  "with your original rubric.")
+
+
+def _clarified_rubric(store: Any, version: str) -> dict[str, Any] | None:
+    """The newest clarified version of `version`: its state and the sentence shown. None when
+    the teacher's answers made none."""
+    try:
+        from aeh.calib import first_class
+    except ImportError:
+        return None
+    status = first_class.revision_status(store, version)
+    if status is None:
+        return None
+    if status["state"] == "pending":
+        text = _CHECKING_TEXT if status["checking_on_a_class"] else _PENDING_TEXT
+    else:
+        text = status["reason"]
+    return {"state": status["state"], "text": text}
 
 
 def _cost_text(cost: Any) -> str:

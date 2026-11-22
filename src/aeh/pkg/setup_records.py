@@ -418,3 +418,80 @@ class SetupRecordsMixin:
             dict(row) for row in
             self._handle.query(PKG_STATEMENTS["select_calibration_example_marks"], v=v)
         )
+
+    # -- the clarified version's gates on the first class (migration 18, FR-CALIB-18) ---------
+
+    def open_calibration_revision(
+        self, r1: PackageVersionId, *, base: PackageVersionId, back_translation: str,
+        note: str, created_at: str,
+    ) -> None:
+        """Record a clarified version R1 of `base` (R0) as pending its first-class check, with
+        back-translation's outcome at R1's creation (`pass` or `fail`). Storage only: the
+        gates are M-CALIB's; this module keeps their record."""
+        if back_translation not in ("pass", "fail"):
+            raise PackageError(
+                f"back-translation's outcome is 'pass' or 'fail', got {back_translation!r}.")
+        self._refuse_unknown_version(r1)
+        self._refuse_unknown_version(base)
+        with self._handle.transaction() as tx:
+            tx.execute(PKG_STATEMENTS["insert_calibration_revision"], r1=r1, r0=base,
+                       back_translation=back_translation, note=str(note),
+                       created_at=created_at)
+        LOGGER.info("clarified version %s of %s pending its first-class check "
+                    "(back-translation %s)", r1, base, back_translation)
+
+    def calibration_revisions(self, base: PackageVersionId) -> tuple[dict, ...]:
+        """Every clarified version recorded against `base`, oldest first, each row with its
+        state (`pending`, `live`, `set_aside`), both gate outcomes and the reason."""
+        return tuple(dict(row) for row in self._handle.query(
+            PKG_STATEMENTS["select_calibration_revisions"], r0=base))
+
+    def calibration_revision(self, r1: PackageVersionId) -> dict | None:
+        """One clarified version's record, or None."""
+        rows = self._handle.query(PKG_STATEMENTS["select_calibration_revision"], r1=r1)
+        return dict(rows[0]) if rows else None
+
+    def plan_calibration_revision(self, r1: PackageVersionId, *, cohort_id: str, run_id: str,
+                                  planned_at: str) -> bool:
+        """Claim the class whose run carries R1's pass. True only for the one claim that
+        landed: a revision already planned, or no longer pending, is not claimed again, so
+        two classes started together plan one pass between them."""
+        with self._handle.transaction() as tx:
+            tx.execute(PKG_STATEMENTS["plan_calibration_revision"], r1=r1,
+                       cohort_id=cohort_id, run_id=run_id, planned_at=planned_at)
+            rows = tx.execute(PKG_STATEMENTS["select_calibration_revision"], r1=r1)
+        return bool(rows) and rows[0]["first_class_run_id"] == run_id \
+            and rows[0]["planned_at"] == planned_at
+
+    def unplan_calibration_revision(self, r1: PackageVersionId, *, run_id: str) -> None:
+        """Release a claim whose class run never started or never finished: R1 stays pending
+        and the next class carries its pass."""
+        with self._handle.transaction() as tx:
+            tx.execute(PKG_STATEMENTS["unplan_calibration_revision"], r1=r1, run_id=run_id)
+
+    def settle_calibration_revision(
+        self, r1: PackageVersionId, *, state: str, non_inferiority: str | None,
+        reason: str, decided_at: str, shifted_papers: int | None = None,
+        class_size: int | None = None, threshold: float | None = None,
+        approved_by: str | None = None,
+    ) -> None:
+        """Record the decision on a pending R1: `live` (both gates passed — the caller
+        publishes R1 in the same step) or `set_aside`, with the reason the teacher reads. A
+        decided revision is never decided again."""
+        if state not in ("live", "set_aside"):
+            raise PackageError(f"a decided revision is 'live' or 'set_aside', got {state!r}.")
+        with self._handle.transaction() as tx:
+            tx.execute(PKG_STATEMENTS["settle_calibration_revision"], r1=r1, state=state,
+                       non_inferiority=non_inferiority, shifted_papers=shifted_papers,
+                       class_size=class_size, threshold=threshold, reason=str(reason),
+                       decided_at=decided_at, approved_by=approved_by)
+        LOGGER.info("clarified version %s decided: %s (non-inferiority %s)", r1, state,
+                    non_inferiority)
+
+    def delivered_version(self) -> PackageVersionId | None:
+        """The version a new class is graded with: the newest published one. A clarified
+        version is published only when both its gates passed (FR-CALIB-18), so until then
+        this is the version it clarifies."""
+        rows = self._handle.query(PKG_STATEMENTS["select_delivered_version"],
+                                  p=self._package_id)
+        return rows[0]["package_version_id"] if rows else None

@@ -662,6 +662,48 @@ PKG_STATEMENTS.update({
         "FROM calibration_example_mark WHERE package_version_id = :v "
         "ORDER BY document_id, criterion_id"
     ),
+    # Package migration 18 (FR-CALIB-18, FR-CONSOLE-90): the clarified version's gates.
+    "insert_calibration_revision": Statement(
+        "INSERT INTO calibration_revision (revision_version_id, base_version_id, state, "
+        "back_translation, back_translation_note, created_at) VALUES (:r1, :r0, 'pending', "
+        ":back_translation, :note, :created_at)"
+    ),
+    "select_calibration_revisions": Statement(
+        "SELECT revision_version_id, base_version_id, state, back_translation, "
+        "back_translation_note, created_at, first_class_cohort_id, first_class_run_id, "
+        "planned_at, non_inferiority, shifted_papers, class_size, threshold, reason, "
+        "decided_at, approved_by FROM calibration_revision WHERE base_version_id = :r0 "
+        "ORDER BY created_at, revision_version_id"
+    ),
+    "select_calibration_revision": Statement(
+        "SELECT revision_version_id, base_version_id, state, back_translation, "
+        "back_translation_note, created_at, first_class_cohort_id, first_class_run_id, "
+        "planned_at, non_inferiority, shifted_papers, class_size, threshold, reason, "
+        "decided_at, approved_by FROM calibration_revision WHERE revision_version_id = :r1"
+    ),
+    # Planned once: the guard on `first_class_run_id IS NULL` is what keeps a second class
+    # started meanwhile from planning a second pass.
+    "plan_calibration_revision": Statement(
+        "UPDATE calibration_revision SET first_class_cohort_id = :cohort_id, "
+        "first_class_run_id = :run_id, planned_at = :planned_at "
+        "WHERE revision_version_id = :r1 AND state = 'pending' "
+        "AND first_class_run_id IS NULL"
+    ),
+    "unplan_calibration_revision": Statement(
+        "UPDATE calibration_revision SET first_class_cohort_id = NULL, "
+        "first_class_run_id = NULL, planned_at = NULL "
+        "WHERE revision_version_id = :r1 AND state = 'pending' AND first_class_run_id = :run_id"
+    ),
+    "settle_calibration_revision": Statement(
+        "UPDATE calibration_revision SET state = :state, non_inferiority = :non_inferiority, "
+        "shifted_papers = :shifted_papers, class_size = :class_size, threshold = :threshold, "
+        "reason = :reason, decided_at = :decided_at, approved_by = :approved_by "
+        "WHERE revision_version_id = :r1 AND state = 'pending'"
+    ),
+    "select_delivered_version": Statement(
+        "SELECT package_version_id FROM package_version WHERE package_id = :p AND locked = 1 "
+        "ORDER BY revision DESC LIMIT 1"
+    ),
 })
 
 

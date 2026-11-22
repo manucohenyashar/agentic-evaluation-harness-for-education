@@ -131,7 +131,14 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
         "grade_boundary.cut",
     ),
     "set review window": ("grade_policy.review_window_hours",),
-    "start run": ("run.run_id", "run.status"),
+    # FR-CONSOLE-90 (#887): with a clarified rubric pending, the start claims the class that
+    # carries its pass, and the decision lands on the package when both finish.
+    "start run": (
+        "run.run_id",
+        "run.status",
+        "calibration_revision.first_class_run_id",
+        "calibration_revision.state",
+    ),
     "pause/resume": ("run.status",),
     # Reconciled at #126's landing: the resolve action's real write clears the park
     # flag beside the diagnosis it writes — `submission.quarantined` is the column
@@ -206,6 +213,7 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
         "package_version.package_version_id",
         "elicitation_history.answer_given",
         "elicitation_history.resulting_edit",
+        "calibration_revision.back_translation",
     ),
     "examples skip": (
         "elicitation_history.answer_given",

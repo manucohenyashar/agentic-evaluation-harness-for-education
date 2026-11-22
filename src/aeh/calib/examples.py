@@ -716,6 +716,14 @@ def _answer_questions(store: Any, package_version_id: str, answers: Mapping[str,
             "Publish the test first. Your answers then make a clarified version that is "
             "checked on your first class before it is used.")
     revised = apply_answers(dict(answers), catalog=catalog, package_version=package_version_id)
+    gate_notes: tuple[str, ...] = ()
+    if revised is not None:
+        # FR-CALIB-18: back-translation runs at R1's creation, and R1 is recorded as pending
+        # its non-inferiority check on the first class.
+        from .first_class import open_revision
+
+        opened = open_revision(store, package_version_id, revised)
+        gate_notes = (f"back-translation at creation: {opened.back_translation}",)
     lower = comparison.ambiguous_criteria if revised is None else ()
     LOGGER.info("examples answers for %s: %d answer(s), revision %s", package_version_id,
                 len(answers), revised or "none")
@@ -732,7 +740,7 @@ def _answer_questions(store: Any, package_version_id: str, answers: Mapping[str,
         lower_confidence_criteria=lower,
         revision_shipped=False,
         notes=("R1 pending: back-translation and the first-class dual score decide "
-               "(FR-CALIB-18)",) if revised else (),
+               "(FR-CALIB-18)",) + gate_notes if revised else (),
     )
 
 

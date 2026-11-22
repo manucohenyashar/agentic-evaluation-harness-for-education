@@ -61,7 +61,9 @@ PLAN_DEFAULT_CLASS_SIZE: int = 100
 PLAN_DEFAULT_CRITERIA_COUNT: int = 1
 
 
-def plan_dual_scoring(cohort_id: str, r0: str, r1: str, provider: Any) -> DualScoringPlan:
+def plan_dual_scoring(cohort_id: str, r0: str, r1: str, provider: Any, *,
+                      class_size: int | None = None,
+                      criteria_count: int | None = None) -> DualScoringPlan:
     """Tell the operator what one more full-class dual-scoring pass will cost, before they
     authorize it (NFR-CALIB-03, CT-CALIB-12).
 
@@ -69,7 +71,23 @@ def plan_dual_scoring(cohort_id: str, r0: str, r1: str, provider: Any) -> DualSc
     declared example class, with the assumption in the plan's notes (see the module
     docstring). The plan makes **no** provider calls — the cost is estimated from the
     class's shape, and nothing is spent before `authorize` records the operator's
-    approval."""
+    approval.
+
+    A caller that knows the class's true shape — the console's start-run, which has the
+    class in front of it (FR-CONSOLE-90) — passes ``class_size`` and ``criteria_count``, and
+    the plan is built on exactly that shape, said so in its notes."""
+    if class_size is not None or criteria_count is not None:
+        if class_size is None or criteria_count is None or class_size < 1 or criteria_count < 1:
+            raise CalibrationError(
+                "a plan on the class's own shape names both its submissions and its criteria, "
+                f"each at least one; got {class_size!r} × {criteria_count!r}")
+        return DualScoringPlan(
+            cohort_id=cohort_id, r0=r0, r1=r1, provider=provider, class_size=class_size,
+            criteria_count=criteria_count, estimated_calls=class_size * criteria_count,
+            disclosed_at=_next_timestamp(),
+            notes=(f"planned against the class's own shape for {cohort_id!r}: {class_size} "
+                   f"submissions on {criteria_count} criteria",),
+        )
     roster = _CLASS_ROSTERS.get(cohort_id)
     if roster is None:
         class_size = PLAN_DEFAULT_CLASS_SIZE
