@@ -1200,7 +1200,10 @@ def student_detail_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
 
 def system_status_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     """The system status screen's document: the hub's three facts beside the store's own
-    shape — how many cohort ledgers and package files this console serves."""
+    shape — how many cohort ledgers and package files this console serves — and the graders
+    measured (FR-CONSOLE-88): the engine measurements, Jev-final, the consistency report and
+    the latest MVVP, under `graders`."""
+    from .graders import graders_status
     from .hub_state import engine_in_use
 
     run_row = _run_row_of(console, app, query)
@@ -1215,5 +1218,6 @@ def system_status_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
         "engine": engine_in_use(getattr(app, "run_config", None)),
         "cohorts": len(app._cohort_keys()),
         "packages": packages,
+        "graders": graders_status(app, run_row),
     }
 

@@ -1134,7 +1134,41 @@ _PKG_DURABLE_014 = Migration(
 )
 
 
+# Durable v15 — the graders measured (FR-STATS-36, FR-CALIB-19, FR-CONSOLE-88, #889).
+#
+# `graders_record` is the append-only log of the measurements of the graders themselves: each
+# scheduled MVVP (`kind = 'mvvp'`, at package approval or on an FR-STATS-19 trigger) and each
+# re-grade of a test's marked examples (`kind = 'reference_set'`, FR-CALIB-19's consistency
+# check). `configuration` is the grader configuration the event measured (JSON of the
+# FR-STATS-19 dimensions plus the decision engine), so the next trigger check compares against
+# it; `outcome` says whether it ran or was refused (the run cost ceiling), and `detail` holds
+# the result (the MVVP steps' summary, or the per-criterion moved counts) or the refusal.
+# `package_validation.compression` is the compression check (R44, FR-STATS-06) promotion now
+# runs per administration, as JSON; NULL on a row written before it.
+_PKG_DURABLE_015 = Migration(
+    version=15,
+    name="pkg_graders_record",
+    statements=(
+        Statement(
+            """
+            CREATE TABLE graders_record (
+                record_id          TEXT NOT NULL PRIMARY KEY,
+                package_version_id TEXT NOT NULL,
+                kind               TEXT NOT NULL CHECK (kind IN ('mvvp', 'reference_set')),
+                trigger            TEXT NOT NULL,
+                configuration      TEXT NOT NULL DEFAULT '{}',
+                outcome            TEXT NOT NULL CHECK (outcome IN ('ran', 'refused')),
+                detail             TEXT NOT NULL DEFAULT '{}',
+                recorded_at        TEXT NOT NULL
+            )
+            """
+        ),
+        Statement("ALTER TABLE package_validation ADD COLUMN compression TEXT"),
+    ),
+)
+
+
 TIER_MIGRATIONS[Tier.DURABLE] = tuple(sorted(
-    TIER_MIGRATIONS[Tier.DURABLE] + (_PKG_DURABLE_008, _PKG_DURABLE_014),
+    TIER_MIGRATIONS[Tier.DURABLE] + (_PKG_DURABLE_008, _PKG_DURABLE_014, _PKG_DURABLE_015),
     key=lambda m: m.version
 ))

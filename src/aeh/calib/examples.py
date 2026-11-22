@@ -104,6 +104,9 @@ EXAMPLES_STATEMENTS: dict[str, Statement] = {
     "select_run_provider_config": Statement(
         "SELECT provider_config FROM run WHERE run_id = :run_id"
     ),
+    "select_run_frozen_config": Statement(
+        "SELECT panel_config, provider_config FROM run WHERE run_id = :run_id"
+    ),
     "select_run_scores": Statement(
         "SELECT submission_id, criterion_id, band, state, evidence_present "
         "FROM criterion_score WHERE run_id = :run_id ORDER BY submission_id, criterion_id"
@@ -354,15 +357,24 @@ def add_examples(
 
 
 def grading_run(store: Any, package_version_id: str) -> tuple[str, str] | None:
-    """The latest run grading the version's examples, as (run id, status), or None."""
+    """The run that graded the version's examples under R0, as (run id, status), or None.
+
+    The first run: a later run in the same cohort is a reference-set re-grade after a model
+    change (FR-CALIB-19, `aeh.calib.reference_set`), which the comparison and its cost do not
+    read."""
+    runs = example_runs(store, package_version_id)
+    return runs[0] if runs else None
+
+
+def example_runs(store: Any, package_version_id: str) -> list[tuple[str, str]]:
+    """Every run over the version's examples, oldest first, as (run id, status): the R0
+    grading, then any reference-set re-grades (FR-CALIB-19)."""
     cohort_id = calibration_cohort_id(package_version_id)
     if not _cohort_exists(store, cohort_id):
-        return None
-    runs = _rows(store, cohort_id, "select_version_runs", cohort_id=cohort_id,
-                 package_version_id=package_version_id)
-    if not runs:
-        return None
-    return str(runs[-1]["run_id"]), str(runs[-1]["status"])
+        return []
+    return [(str(row["run_id"]), str(row["status"]))
+            for row in _rows(store, cohort_id, "select_version_runs", cohort_id=cohort_id,
+                             package_version_id=package_version_id)]
 
 
 @dataclass(frozen=True)
