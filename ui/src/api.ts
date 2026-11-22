@@ -153,6 +153,11 @@ export interface MonitorState {
   status: string | null;
   pause_reason: string | null;
   progress: Record<string, unknown> | null;
+  /** FR-CONSOLE-82 / FR-UI-39, on a completed run: the blind draw's state, and while it is
+   * open the number of answers drawn and the minutes reserved for marking them. */
+  blind_sample?: string;
+  blind_count?: number | null;
+  blind_minutes?: number;
 }
 
 export interface ReviewItem {
@@ -204,6 +209,34 @@ export interface BlindSeats {
   progress: { marked: number; total: number };
 }
 
+/** One answer the system marked differently from the teacher's blind mark (FR-CONSOLE-80):
+ * the student by name, the question, both levels, and whether the system gave more or less
+ * credit (null when the levels' points do not say). */
+export interface ValidityDisagreement {
+  student: string;
+  criterion_id: string;
+  question: string;
+  teacher_band: string;
+  system_band: string;
+  direction: "more_credit" | "less_credit" | null;
+}
+
+/** The validity read (FR-CONSOLE-80), as far as the blind screen's comparison reads it. */
+export interface ValidityDoc {
+  run_id: string;
+  state: "not_offered_yet" | "in_progress" | "skipped" | "recorded" | (string & {});
+  disagreements: ValidityDisagreement[];
+  /** Every blind mark paired with the system's level, matched or not (`direction` null
+   * where they agree). A mark the system has no level for is absent. */
+  compared?: ValidityDisagreement[];
+}
+
+/** FR-CONSOLE-89: a line, question, narrative or student total held back while the run's
+ * blind draw is open carries this flag, its graded fields blanked. */
+export interface HeldBack {
+  hidden_until_blind?: boolean;
+}
+
 export interface CriterionBand {
   criterion_id: string;
   criterion_band: string;
@@ -215,7 +248,7 @@ export type FlagKind = "second_opinion" | "low_confidence" | "not_final" | (stri
 /** One grading point's row in a student's results line — its effective score level (an
  * amended grade shows the amended level), the aggregation's own level beside it, and the
  * routing, state and flag the aggregation wrote. */
-export interface ResultCriterion {
+export interface ResultCriterion extends HeldBack {
   criterion_id: string;
   /** The question this scoring line belongs to (FR-UI-31's expandable detail groups by it). */
   question_id?: string | null;
@@ -231,7 +264,7 @@ export interface ResultCriterion {
 /** One question's grade for a student (FR-CONSOLE-76): the points on the question's
  * top-level lines, the question's state, and — when it is not final — the reason code
  * the FR-UI-32 sentences name. */
-export interface StudentQuestion {
+export interface StudentQuestion extends HeldBack {
   question_id: string;
   label: string;
   points_awarded: number | null;
@@ -259,7 +292,7 @@ export interface StageTiming {
   seconds: number;
 }
 
-export interface ResultStudent {
+export interface ResultStudent extends HeldBack {
   submission_id: string;
   student_ref: string | null;
   /** The student's listed name — what the teacher knows them by (FR-CONSOLE-70). */
@@ -309,7 +342,7 @@ export interface ResultsScreen {
   review_window_ends?: string | null;
 }
 
-export interface NarrativeRow {
+export interface NarrativeRow extends HeldBack {
   level: string;
   question_id: string;
   text: string;
@@ -325,7 +358,7 @@ export interface GraderVerdict {
 
 /** One grading point of a student's drill-down: the effective level, the aggregate's own
  * reason text, the declared scale the override offers, and the grader trail behind it. */
-export interface CriterionDetail {
+export interface CriterionDetail extends HeldBack {
   criterion_id: string;
   /** The question this grading point scores (FR-UI-31's per-question grouping). */
   question_id?: string | null;
@@ -351,7 +384,7 @@ export interface AmendmentEntry {
   at: string;
 }
 
-export interface StudentDetail {
+export interface StudentDetail extends HeldBack {
   run_id: string;
   submission_id: string;
   student_ref: string | null;

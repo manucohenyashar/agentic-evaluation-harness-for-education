@@ -68,9 +68,10 @@ def _prior_record(app: Any, run_row: Any, labels: dict[str, str]) -> dict[str, A
     }
 
 
-def _disagreements(app: Any, run_row: Any, labels: dict[str, str]) -> list[dict[str, Any]]:
-    """Each blind mark the system's level differed from, by the student's name, with whether
-    the system gave more or less credit than the teacher (by the levels' points)."""
+def _compared(app: Any, run_row: Any, labels: dict[str, str]) -> list[dict[str, Any]]:
+    """Every blind mark paired with the system's level (FR-UI-41's comparison), matched or
+    not, by the student's name; `direction` is None where the levels agree. A mark the system
+    has no level for is not paired, so it is absent here rather than shown as agreeing."""
     from aeh.stats import administration_pairs
 
     cohort_id, run_id = str(run_row["cohort_id"]), str(run_row["run_id"])
@@ -82,8 +83,6 @@ def _disagreements(app: Any, run_row: Any, labels: dict[str, str]) -> list[dict[
         names = {}
     entries = []
     for pair in pairs:
-        if pair.system_band == pair.teacher_band:
-            continue
         points = dict(scales.get(pair.criterion_id, ()))
         system, teacher = points.get(pair.system_band), points.get(pair.teacher_band)
         direction = None
@@ -134,6 +133,7 @@ def validity_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
         "min_n_for_headline": minimum,
         "criteria": [],
         "disagreements": [],
+        "compared": [],
         "prior_record": _prior_record(app, run_row, labels),
     }
     if state != "recorded":
@@ -144,7 +144,10 @@ def validity_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     payload["criteria"] = _labelled(
         administration_figure_views(record, minimum=minimum) if record is not None else [],
         labels)
-    payload["disagreements"] = _disagreements(app, run_row, labels)
+    compared = _compared(app, run_row, labels)
+    payload["compared"] = compared
+    payload["disagreements"] = [entry for entry in compared
+                                if entry["system_band"] != entry["teacher_band"]]
     return payload
 
 

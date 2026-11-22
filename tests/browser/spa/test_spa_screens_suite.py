@@ -28,8 +28,9 @@ named here, and never silently weakened):
   "no mutation request" oracle is: no request URL contains `/api/v1/actions/` (the console's
   action surface, `performAction`'s `POST /api/v1/actions/{slug}`). The authoring *preview*
   (`POST /api/v1/authoring/preview`) is a read-shaped POST and deliberately does not trip this
-  oracle. The blind-sample screen's band select posts immediately **by design** (its documented
-  Phase-1 behaviour); `TC-UI-19` walks the select/toggle surfaces the *redesign* introduced —
+  oracle. The blind-sample screen's level choice posts immediately **by design**: choosing a
+  level saves a draft (`blind-sample draft`, FR-UI-40), and nothing counts until Finish, which
+  confirms first; `TC-UI-19` walks the select/toggle surfaces the *redesign* introduced —
   switchers, results filters, the override band select, job rows, parked actions, settings —
   which is the defect's generalized regression over those surfaces.
 * **Stale read (`TC-UI-13`)** — the plan's "stale read" failure is exercised as the read that
