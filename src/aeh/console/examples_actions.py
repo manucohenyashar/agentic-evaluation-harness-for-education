@@ -476,7 +476,7 @@ def examples_read(console: Any, app: Any, query: Mapping[str, Any]) -> dict[str,
         "checking": _checking(store, cohort_id, run),
         # Who wrote the papers: asked once, at the first upload; the meanings are the console's.
         "consent": {
-            "stored": _stored_consent(store, cohort_id) if held else None,
+            "stored": _stored_consent(store, cohort_id),
             "options": _consent_options(),
         },
         "cost": {
@@ -593,16 +593,23 @@ def differences_read(console: Any, app: Any, query: Mapping[str, Any]) -> dict[s
     calib, version = _read_version(app, query)
     comparison = calib.compare(app._store, version)
     cohort_id = calib.calibration_cohort_id(version)
-    teacher = {(str(row["document_id"]), str(row["criterion_id"])): str(row["band"])
-               for row in calib._catalog(app._store, version).example_marks(version)
-               } if comparison.differences else {}
+    teacher: dict[tuple[str, str], str] = {}
+    labels: dict[str, str] = {}
+    if comparison.differences:
+        catalog = calib._catalog(app._store, version)
+        teacher = {(str(row["document_id"]), str(row["criterion_id"])): str(row["band"])
+                   for row in catalog.example_marks(version)}
+        # The form's own labels, so two rubric lines on one question stay told apart.
+        labels = {part["criterion_id"]: part["question"]
+                  for part in _form_parts(catalog, version)}
     groups: dict[str, list[dict[str, Any]]] = {cause: [] for cause in CAUSES}
     for difference in comparison.differences:
         cause = difference.verdict.category
         item = {
             "example": difference.example.file_name or f"Example {difference.example.number}",
             "document_id": difference.example.document_id,
-            "part": difference.question_id,
+            "criterion_id": difference.criterion_id,
+            "part": labels.get(difference.criterion_id) or difference.question_id,
             "answer": difference.answer,
             "your_mark": difference.teacher_band,
             "system_mark": difference.system_band,

@@ -1188,6 +1188,7 @@ export interface ExamplesDoc {
 export interface ExampleDifference {
   example: string;
   document_id: string;
+  criterion_id: string;
   part: string;
   answer: string;
   your_mark: string;

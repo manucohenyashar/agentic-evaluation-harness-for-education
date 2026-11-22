@@ -125,14 +125,23 @@ export function MarkedExamples({ context }: { context: ContextDoc | null }) {
         <p className="panel">
           Choose a published test first: the examples are checked against a test's rubric as
           it was published.{" "}
-          <a href="#/package" onClick={() => navigate("/package")}>
+          <a
+            href="#/package"
+            onClick={(event) => {
+              event.preventDefault();
+              navigate("/package");
+            }}
+          >
             Go to the test packages
           </a>
         </p>
       </Screen>
     );
   }
-  return <ExamplesStep version={version} name={packageName(entry?.package_id)} />;
+  // Keyed on the version: another test's step starts fresh (no skip or open form carried).
+  return (
+    <ExamplesStep key={version ?? ""} version={version} name={packageName(entry?.package_id)} />
+  );
 }
 
 function ExamplesStep({ version, name }: { version: string | null; name: string }) {
@@ -166,7 +175,10 @@ function ExamplesStep({ version, name }: { version: string | null; name: string 
         return (
           <>
             <p className="hub-state">{INTRO}</p>
-            <p className="examples-test">For {name}.</p>
+            <p className="examples-test">
+              For {name}. {doc.format.replace(/\s*\(at most \d+\)\.?$/, "")}, at most{" "}
+              {doc.limit}.
+            </p>
             <SubSteps doc={doc} />
             {!done && version !== null && (
               <SkipStep
@@ -350,10 +362,17 @@ function UploadExamples({
             ? "Wait for the current step to finish."
             : null;
 
+  const { report } = useOutcome();
   const send = async (): Promise<void> => {
-    const documents = await Promise.all(
-      files.map(async (file) => ({ name: file.name, content_base64: await fileToBase64(file) })),
-    );
+    let documents: { name: string; content_base64: string }[];
+    try {
+      documents = await Promise.all(
+        files.map(async (file) => ({ name: file.name, content_base64: await fileToBase64(file) })),
+      );
+    } catch {
+      report(textOutcome("A chosen file could not be read. Choose the PDF files again.", true));
+      return;
+    }
     const body: Record<string, unknown> = { package_version: version, documents };
     if (needsConsent && consent !== null) body.consent = consent;
     void upload.run("examples upload", body, {
@@ -664,7 +683,7 @@ function Differences({ version }: { version: string }) {
           <p className="examples-sentence">{read.data.sentence}</p>
           {read.data.groups.length === 0 ? (
             <p className="hub-state">
-              The system read every part you marked the way you did. Nothing needs a question.
+              There are no differences to show, so there is nothing to ask about.
             </p>
           ) : (
             [...read.data.groups]
@@ -675,7 +694,7 @@ function Differences({ version }: { version: string }) {
                   <p className="step-note">{group.next}</p>
                   <ul className="examples-differences">
                     {group.differences.map((difference) => (
-                      <li key={`${difference.document_id}-${difference.part}`}>
+                      <li key={`${difference.document_id}-${difference.criterion_id}`}>
                         <DifferenceRow difference={difference} />
                       </li>
                     ))}
