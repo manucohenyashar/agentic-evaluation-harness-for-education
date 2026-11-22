@@ -27,8 +27,9 @@ export interface PendingAction {
   action: string;
   body: Record<string, unknown>;
   /** The success sentence in the teacher's words, when the server's own would carry
-   * internal names (FR-UI-23). */
-  said?: string;
+   * internal names (FR-UI-23) — or built from the result, to keep the server's own teacher
+   * sentences that follow its internal opening. */
+  said?: string | ((result: ActionResult) => string);
 }
 
 /**
@@ -97,7 +98,8 @@ export function useActionState(afterDone?: () => void) {
   const close = useCallback(() => setPending(null), []);
   const finish = useCallback(
     (result: ActionResult) => {
-      const said = outcomeOf(result, pending?.said);
+      const own = pending?.said;
+      const said = outcomeOf(result, typeof own === "function" ? own(result) : own);
       setPending(null);
       setOutcome(outcomeSentence(said));
       report(said);

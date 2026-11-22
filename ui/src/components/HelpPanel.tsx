@@ -23,6 +23,7 @@ const SCREEN_SECTIONS: Array<[route: string, keyword: string]> = [
   ["/class", "make the class"],
   ["/package", "make the test package"],
   ["/package/review", "make the test package"],
+  ["/package/examples", "make the test package"],
   ["/papers", "load the papers and start the run"],
   ["/parked", "parked papers"],
   ["/run", "load the papers and start the run"],

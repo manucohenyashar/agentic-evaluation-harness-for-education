@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   fetchRead,
+  type ActionResult,
   type ContextDoc,
   type Papers as PapersDoc,
   type RunStartState as RunStartDoc,
@@ -39,6 +40,20 @@ function estimateSentence(estimate: string | null): string {
 function profileSentence(banner: string): string {
   const profile = /HARNESS_PROFILE:\s*(\S+)/.exec(banner)?.[1];
   return profile === undefined ? "" : `Settings profile: ${profile}. `;
+}
+
+/** The start's success sentence: the screen's own opening (the server's names the run and a
+ * command), then the server's teacher sentences after it — the coming blind sample
+ * (FR-CONSOLE-82) and, on a test whose clarified rubric is being checked, that this class is
+ * graded with the original rubric (FR-CONSOLE-90). */
+const STARTED = "The grading run has started. It keeps going if you close the browser.";
+const SERVER_OPENING_END = "resumes it after a restart.";
+
+function startedSentence(result: ActionResult): string {
+  const detail = result.detail ?? "";
+  const at = detail.indexOf(SERVER_OPENING_END);
+  const rest = at === -1 ? "" : detail.slice(at + SERVER_OPENING_END.length).trim();
+  return rest === "" ? STARTED : `${STARTED} ${rest}`;
 }
 
 export function RunStart({
@@ -94,7 +109,7 @@ export function RunStart({
         confirm: "Start",
         action: "start run",
         body,
-        said: "The grading run has started. It keeps going if you close the browser.",
+        said: startedSentence,
       });
     } catch (failure: unknown) {
       action.open({
@@ -103,7 +118,7 @@ export function RunStart({
         confirm: "Start",
         action: "start run",
         body,
-        said: "The grading run has started. It keeps going if you close the browser.",
+        said: startedSentence,
       });
     }
   };

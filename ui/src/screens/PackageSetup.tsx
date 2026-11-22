@@ -108,6 +108,34 @@ export function PackageSetup({ context }: { context: ContextDoc | null }) {
               )}
             </section>
           )}
+          {/* FR-UI-44: the marked examples step, per published test (its rubric as published
+              is what the examples are checked against). */}
+          {published.length > 0 && (
+            <section className="panel" aria-label="Your marked examples">
+              <h2>Your marked examples</h2>
+              <p>
+                Mark a few papers yourself so the system can check it reads your rubric the way
+                you do. Recommended, never required: you can skip this step.
+              </p>
+              <ul className="rows-list">
+                {published.map((p) => (
+                  <li key={p.package_id}>
+                    <span className="step-name">{packageName(p.package_id)}</span>
+                    <a
+                      className="button"
+                      href={`#/package/examples?package=${encodeURIComponent(p.package_id)}`}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        navigate("/package/examples", { package: p.package_id });
+                      }}
+                    >
+                      Mark examples
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           {/* FR-UI-43: each published test's record — how well it has been marked so far. */}
           {published.map((p) =>
             p.published_version_id === null ? null : (

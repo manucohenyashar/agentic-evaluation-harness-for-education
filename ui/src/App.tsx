@@ -10,6 +10,7 @@ import { Help } from "./screens/Help";
 import { Issues } from "./screens/Issues";
 import { Jobs } from "./screens/Jobs";
 import { Logs } from "./screens/Logs";
+import { MarkedExamples } from "./screens/MarkedExamples";
 import { Monitor } from "./screens/Monitor";
 import { PackageSetup } from "./screens/PackageSetup";
 import { PackageAuthor } from "./screens/PackageAuthor";
@@ -244,6 +245,8 @@ export function App() {
     screen = <Settings />;
   } else if (address.path === "/package/author") {
     screen = <PackageAuthor packageId={selection.packageId} />;
+  } else if (address.path === "/package/examples") {
+    screen = <MarkedExamples context={context} />;
   } else if (address.path === "/package/review") {
     screen = <ReviewDraft packageId={selection.packageId} />;
   } else if (address.path === "/package/edit") {

@@ -2108,3 +2108,64 @@ textarea:focus-visible {
   color: var(--color-muted);
   font-style: italic;
 }
+
+/* The marked examples step (FR-UI-44/45): the sub-steps line, the skip beside its sentence,
+ * the per-paper form, and each difference side by side. */
+.examples-substeps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs) var(--space-lg);
+  margin: 0 0 var(--space-sm);
+  padding: 0;
+  list-style-position: inside;
+}
+
+.examples-substep-current {
+  font-weight: 700;
+}
+
+.examples-skip {
+  margin: 0 0 var(--space-md);
+}
+
+.examples-form {
+  margin-top: var(--space-md);
+}
+
+.examples-sentence {
+  font-style: italic;
+  margin: 0 0 var(--space-sm);
+}
+
+.examples-cause {
+  margin: 0 0 var(--space-md);
+}
+
+.examples-differences {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.examples-differences > li,
+.examples-question {
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  margin: 0 0 var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.examples-pair {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+}
+
+.examples-side {
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+
+.examples-side p {
+  margin: 0 0 var(--space-xs);
+}
