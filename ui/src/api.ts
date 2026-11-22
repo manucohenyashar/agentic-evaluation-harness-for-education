@@ -1137,3 +1137,98 @@ export interface PackageRecordDoc {
   criteria: ValidityFigure[];
   administrations: RecordAdministration[];
 }
+
+/** One part of a marked example's form (FR-UI-44): a criterion marked by hand, its question,
+ * the answer as read from the paper, the levels with their descriptions, and the teacher's
+ * saved mark. */
+export interface ExamplePart {
+  criterion_id: string;
+  question_id: string;
+  question: string;
+  answer: string;
+  bands: BlindBand[];
+  your_mark: string | null;
+}
+
+/** One marked example: the file the teacher uploaded and whether every part has a mark. */
+export interface MarkedExample {
+  document_id: string;
+  file_name: string;
+  number: number;
+  marked: boolean;
+  parts: ExamplePart[];
+}
+
+/** The marked examples step (`GET /api/v1/calibration/examples`, FR-CONSOLE-87): the step's
+ * state, its limits, each example with its form, the check's clock, the cost, and where the
+ * clarified rubric stands. No count of matching marks and no figure (D5). */
+export interface ExamplesDoc {
+  package_version: string;
+  status:
+    | "not_started"
+    | "uploaded"
+    | "marked"
+    | "checking"
+    | "stopped"
+    | "checked"
+    | "answered"
+    | "skipped"
+    | (string & {});
+  format: string;
+  limit: number;
+  recommended: [number, number];
+  examples: MarkedExample[];
+  checking: { state: string; started_at: string | null; ended_at: string | null } | null;
+  consent: { stored: string | null; options: { value: string; meaning: string }[] };
+  cost: { text: string };
+  clarified_rubric: { state: string; text: string } | null;
+}
+
+/** One difference between the teacher's mark and the system's on an example (FR-UI-45). */
+export interface ExampleDifference {
+  example: string;
+  document_id: string;
+  criterion_id: string;
+  part: string;
+  answer: string;
+  your_mark: string;
+  system_mark: string;
+  system_reason: string;
+  side_by_side_with?: string;
+  /** The other example the system put on the same level that the teacher marked differently. */
+  paired?: { example: string; answer: string; your_mark: string | null };
+}
+
+/** Where the system read the rubric differently (`GET /api/v1/calibration/differences`),
+ * grouped by cause. No count of matching marks and no figure (CT-CALIB-03). */
+export interface DifferencesDoc {
+  package_version: string;
+  checked: boolean;
+  groups: {
+    cause: "rubric_ambiguity" | "model_failure" | "teacher_inconsistency" | (string & {});
+    heading: string;
+    next: string;
+    differences: ExampleDifference[];
+  }[];
+  sentence: string;
+}
+
+/** One question put to the teacher about a level's description, with two examples. */
+export interface ExampleQuestion {
+  question_id: string;
+  heading: string;
+  part: string;
+  level: string;
+  descriptor: string;
+  text: string;
+  options: string[];
+  examples: { example: string; answer: string; your_mark: string; system_mark: string }[];
+}
+
+/** The questions (`GET /api/v1/calibration/questions`) and whether they were dealt with. */
+export interface QuestionsDoc {
+  package_version: string;
+  status: "open" | "answered" | "skipped" | "none" | (string & {});
+  questions: ExampleQuestion[];
+  sentence: string;
+}

@@ -429,8 +429,14 @@ def examples_read(console: Any, app: Any, query: Mapping[str, Any]) -> dict[str,
     calib, version = _read_version(app, query)
     store = app._store
     held = calib.examples_of(store, version)
-    marked = {str(row["document_id"])
-              for row in calib._catalog(store, version).example_marks(version)} if held else set()
+    catalog = calib._catalog(store, version)
+    mark_rows = catalog.example_marks(version) if held else ()
+    marked = {str(row["document_id"]) for row in mark_rows}
+    yours: dict[str, dict[str, str]] = {}
+    for row in mark_rows:
+        yours.setdefault(str(row["document_id"]), {})[str(row["criterion_id"])] = str(row["band"])
+    parts = _form_parts(catalog, version) if held else []
+    cohort_id = calib.calibration_cohort_id(version)
     run = calib.grading_run(store, version)
     comparison = calib.compare(store, version) if run and run[1] == "complete" else None
     cost = calib.examples_cost(store, version)
@@ -453,9 +459,26 @@ def examples_read(console: Any, app: Any, query: Mapping[str, Any]) -> dict[str,
         "recommended": [10, 15],
         "examples": [
             {"document_id": e.document_id, "file_name": e.file_name, "number": e.number,
-             "marked": e.document_id in marked}
+             "marked": e.document_id in marked,
+             # FR-UI-44: the marking form - per part marked by hand, the answer as read, the
+             # levels with their descriptions, and the mark the teacher saved (if any).
+             "parts": [
+                 {**part,
+                  "answer": calib._answer_text(store, cohort_id, e.document_id,
+                                               part["question_id"])
+                  if part["question_id"] else "",
+                  "your_mark": yours.get(e.document_id, {}).get(part["criterion_id"])}
+                 for part in parts
+             ]}
             for e in held
         ],
+        # FR-UI-29: the check's clock, from the grading run's own row (None before a check).
+        "checking": _checking(store, cohort_id, run),
+        # Who wrote the papers: asked once, at the first upload; the meanings are the console's.
+        "consent": {
+            "stored": _stored_consent(store, cohort_id),
+            "options": _consent_options(),
+        },
         "cost": {
             "spent": _money(cost.spent),
             "estimate": _money(cost.estimated),
@@ -466,6 +489,65 @@ def examples_read(console: Any, app: Any, query: Mapping[str, Any]) -> dict[str,
         # FR-CALIB-18: where the clarified rubric stands, in the teacher's words.
         "clarified_rubric": _clarified_rubric(store, version),
     }
+
+
+def _form_parts(catalog: Any, version: str) -> list[dict[str, Any]]:
+    """The marking form's parts (FR-SETUP-20, FR-UI-44): each criterion the teacher marks by
+    hand, labelled by its question, with its levels in order and each level's description."""
+    from aeh.setup import judged_criteria
+
+    judged = judged_criteria(catalog, version)
+    rows = [dict(row) for row in catalog.criteria(version)
+            if str(row["criterion_id"]) in judged]
+    labels = [str(row.get("question_id") or "") for row in rows]
+    parts = []
+    for index, row in enumerate(rows):
+        criterion_id = str(row["criterion_id"])
+        label = labels[index] or f"Part {index + 1}"
+        # Two rubric lines on one question are told apart by their place on it.
+        if labels[index] and labels.count(labels[index]) > 1:
+            label += f" (rubric line {labels[:index + 1].count(labels[index])})"
+        bands = sorted(catalog.bands(criterion_id), key=lambda band: int(band["ordinal"]))
+        parts.append({
+            "criterion_id": criterion_id,
+            "question_id": str(row.get("question_id") or ""),
+            "question": label,
+            "bands": [{"name": str(band["band"]),
+                       "descriptor": str(band["descriptor"] or "") or None}
+                      for band in bands],
+        })
+    return parts
+
+
+def _checking(store: Any, cohort_id: str, run: tuple[str, str] | None) -> dict[str, Any] | None:
+    """The grading run's state and times, for the elapsed clock (FR-UI-29)."""
+    if run is None:
+        return None
+    try:
+        rows = store.cohort(cohort_id).query(
+            "SELECT status, started_at, completed_at FROM run WHERE run_id = :run_id",
+            run_id=run[0])
+    except Exception:  # noqa: BLE001 - the clock is then not shown
+        rows = []
+    row = dict(rows[0]) if rows else {}
+    return {"state": str(row.get("status") or run[1]),
+            "started_at": row.get("started_at"), "ended_at": row.get("completed_at")}
+
+
+#: Whose papers the examples are, as the step asks it: the consent classes in words that
+#: never say "agree" on a screen that must carry no agreement wording (D5).
+EXAMPLES_CONSENT_WORDS: dict[str, str] = {
+    "synthetic": "Made-up practice papers",
+    "consented": "My students' real work, with their (or their guardians') permission",
+    "real": "My students' real work, without that permission",
+}
+
+
+def _consent_options() -> list[dict[str, str]]:
+    from aeh.orch import CONSENT_CLASSES
+
+    return [{"value": value, "meaning": EXAMPLES_CONSENT_WORDS.get(value, value)}
+            for value in CONSENT_CLASSES]
 
 
 #: What the teacher reads while the clarified rubric waits for, or is on, its first class.
@@ -510,13 +592,24 @@ def differences_read(console: Any, app: Any, query: Mapping[str, Any]) -> dict[s
     No count of matching marks, no rate (CT-CALIB-03)."""
     calib, version = _read_version(app, query)
     comparison = calib.compare(app._store, version)
+    cohort_id = calib.calibration_cohort_id(version)
+    teacher: dict[tuple[str, str], str] = {}
+    labels: dict[str, str] = {}
+    if comparison.differences:
+        catalog = calib._catalog(app._store, version)
+        teacher = {(str(row["document_id"]), str(row["criterion_id"])): str(row["band"])
+                   for row in catalog.example_marks(version)}
+        # The form's own labels, so two rubric lines on one question stay told apart.
+        labels = {part["criterion_id"]: part["question"]
+                  for part in _form_parts(catalog, version)}
     groups: dict[str, list[dict[str, Any]]] = {cause: [] for cause in CAUSES}
     for difference in comparison.differences:
         cause = difference.verdict.category
         item = {
             "example": difference.example.file_name or f"Example {difference.example.number}",
             "document_id": difference.example.document_id,
-            "part": difference.question_id,
+            "criterion_id": difference.criterion_id,
+            "part": labels.get(difference.criterion_id) or difference.question_id,
             "answer": difference.answer,
             "your_mark": difference.teacher_band,
             "system_mark": difference.system_band,
@@ -525,6 +618,16 @@ def differences_read(console: Any, app: Any, query: Mapping[str, Any]) -> dict[s
         if difference.paired_with is not None:
             item["side_by_side_with"] = (difference.paired_with.file_name
                                          or f"Example {difference.paired_with.number}")
+            # FR-UI-45: both answers are shown, so the paired one travels with its own mark.
+            item["paired"] = {
+                "example": item["side_by_side_with"],
+                "answer": calib._answer_text(app._store, cohort_id,
+                                             difference.paired_with.document_id,
+                                             difference.question_id)
+                if difference.question_id else "",
+                "your_mark": teacher.get((difference.paired_with.document_id,
+                                          difference.criterion_id)),
+            }
         groups.setdefault(cause, []).append(item)
     return {
         "package_version": version,

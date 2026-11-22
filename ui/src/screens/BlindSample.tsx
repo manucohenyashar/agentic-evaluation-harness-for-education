@@ -6,9 +6,9 @@ import {
   type ValidityDoc,
 } from "../api";
 import { ConfirmDialog, useActionState } from "../components/Confirm";
-import { FormatLine, useFieldIds } from "../components/Field";
 import { BusyButton, isRefused, useReportedAction } from "../components/Outcome";
 import { ReadScreen } from "../components/ReadScreen";
+import { SeatCard } from "../components/Seat";
 import { useNavigate } from "../navigate";
 import { useScreenRead } from "../useScreenRead";
 import { useRunParams } from "../selection";
@@ -114,9 +114,8 @@ function pageHref(runId: string, seatId: string, page: number): string {
 }
 
 /**
- * One seat (FR-UI-40): whose answer and which question, the answer itself with its scan, and
- * the levels as choices with their descriptions. The seat component is shared by the marked
- * examples step (FR-UI-44), hence its `data-component`.
+ * One seat (FR-UI-40): the shared `SeatCard` (also the marked examples step's form, FR-UI-44)
+ * with the scan's links, saving each choice at once as the sample's draft.
  */
 export function BlindSeatCard({
   seat,
@@ -128,7 +127,6 @@ export function BlindSeatCard({
   onSaved: () => void;
 }) {
   const { busy, run } = useReportedAction();
-  const ids = useFieldIds();
   const [chosen, setChosen] = useState<string | null>(seat.draft_band);
   // The read is the truth: a re-read (after a save, or a reload) sets the choice it holds.
   useEffect(() => setChosen(seat.draft_band), [seat.draft_band]);
@@ -147,51 +145,35 @@ export function BlindSeatCard({
   };
 
   return (
-    <article className="blind-seat" data-component="blind-seat">
-      <h2 className="blind-seat-head">
-        {seat.student_name ?? "A student"} — {seat.question}
-      </h2>
-      <blockquote className="blind-answer">
-        {seat.answer_text !== null && seat.answer_text.trim() !== ""
-          ? seat.answer_text
-          : "No answer text could be read for this question; view the page to read it."}
-      </blockquote>
-      {seat.page_refs.length > 0 && (
-        <p className="blind-pages">
-          {seat.page_refs.map((page, index) => (
-            <span key={page}>
-              {index > 0 && " "}
-              <a
-                className="button"
-                href={pageHref(runId, seat.seat_id, page)}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {seat.page_refs.length === 1 ? "View the page" : `View the page (page ${page})`}
-              </a>
-            </span>
-          ))}
-        </p>
-      )}
-      <fieldset className="blind-levels" aria-describedby={ids.formatId} aria-busy={busy || undefined}>
-        <legend>Your level</legend>
-        {seat.bands.map((band) => (
-          <label key={band.name} className="blind-level">
-            <input
-              type="radio"
-              name={`seat-band-${seat.seat_id}`}
-              value={band.name}
-              checked={chosen === band.name}
-              disabled={busy}
-              onChange={() => choose(band.name)}
-            />{" "}
-            <strong>{band.name}</strong>
-            {band.descriptor ? <span className="blind-descriptor"> — {band.descriptor}</span> : null}
-          </label>
-        ))}
-      </fieldset>
-      <FormatLine id={ids.formatId} spec={`${FORMAT_CHOOSE_ONE}. Saved as you choose; you can change it until you finish.`} />
-    </article>
+    <SeatCard
+      heading={`${seat.student_name ?? "A student"} — ${seat.question}`}
+      answer={seat.answer_text}
+      pages={
+        seat.page_refs.length > 0 && (
+          <p className="blind-pages">
+            {seat.page_refs.map((page, index) => (
+              <span key={page}>
+                {index > 0 && " "}
+                <a
+                  className="button"
+                  href={pageHref(runId, seat.seat_id, page)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {seat.page_refs.length === 1 ? "View the page" : `View the page (page ${page})`}
+                </a>
+              </span>
+            ))}
+          </p>
+        )
+      }
+      name={`seat-band-${seat.seat_id}`}
+      bands={seat.bands}
+      chosen={chosen}
+      busy={busy}
+      onChoose={choose}
+      format={`${FORMAT_CHOOSE_ONE}. Saved as you choose; you can change it until you finish.`}
+    />
   );
 }
 
