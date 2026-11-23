@@ -6,8 +6,8 @@ so nothing here needs a terminal.
 
 For each sample test (ENG7-READ-01 and PS9-FORCES-01, `docs/live-tests/sample-materials`) the
 check builds the package, creates a `synthetic` class, reads in the test paper and the answer
-sheets with the operator commands, then serves a console over the data folder and drives it over
-HTTP the way the teacher's browser does: `start run`, wait on the monitor, open the blind sample,
+sheets with the operator commands, then serves a console over the data folder and drives its API
+the way the teacher's browser does: `start run`, wait on the monitor, open the blind sample,
 draft every seat from the sample author's intended band, `finish`, read the validity result and
 the package record, and purge the class. Before the purge it reads what the §8 table measures:
 cells scored per sheet, the verification-refusal rate, the cited share, the confidence
@@ -19,32 +19,35 @@ Three rules shape it:
   already exists, it reads the class's consent and refuses anything but `synthetic` on a remote
   profile before anything is built, read or sent (`ValidityCheckRefused`); a `synthetic` class
   that already exists is refused too, because the check grades only classes it built itself.
-- **The "teacher" is the sample author.** The blind bands are `INTENDED_BANDS`, the bands the
-  sample sheets were written to earn. The output says so (`INTENDED_BANDS_DISCLAIMER`); the
+- **The "teacher" is the sample author.** The blind bands are the sample author's intended bands
+  (`docs/live-tests/sample-materials/intended_bands.py`), the bands the sheets were written to
+  earn. The output says so (`INTENDED_BANDS_DISCLAIMER`); the
   agreement it reports is with the author's intent, not with a teacher.
 - **The provider is the pipeline's.** The check never builds a provider: the operator commands
   and the console resolve it through the pipeline's own seam, so `HARNESS_FIXTURE_DIR` (the
   recorded provider) is the offline override and the configured profile is the live path. No
   retention flag or probe is added here.
+
+The console is spoken to through a `ConsoleRequest` the caller passes in (the command's loopback
+HTTP client, `tools/live_validity_check.py`), so this module holds no HTTP client of its own:
+M-PROV stays the only module with an egress-capable import (CT-PROV-15).
 """
 
 from __future__ import annotations
 
 import contextlib
 import dataclasses
-import http.client
 import importlib.util
 import io
 import json
 import os
-import sqlite3
 import sys
 import time
 import tomllib
 from collections import Counter
 from contextlib import redirect_stdout
 from pathlib import Path
-from typing import Any, Iterator, Mapping, Sequence
+from typing import Any, Callable, Iterator, Mapping, Sequence
 from urllib.parse import urlencode
 
 from aeh.store import Statement
@@ -52,7 +55,7 @@ from aeh.store import Statement
 from .errors import ConformanceError
 
 __all__ = [
-    "INTENDED_BANDS",
+    "ConsoleRequest",
     "INTENDED_BANDS_DISCLAIMER",
     "PROFILES",
     "ValidityCheckRefused",
@@ -79,9 +82,9 @@ RUN_TIMEOUT_ENV = "HARNESS_LIVE_CHECK_RUN_TIMEOUT_S"
 RUN_TIMEOUT_DEFAULT_S = 3600.0
 POLL_INTERVAL_ENV = "HARNESS_LIVE_CHECK_POLL_S"
 POLL_INTERVAL_DEFAULT_S = 2.0
-#: The HTTP timeout for one console request (seconds).
-HTTP_TIMEOUT_ENV = "HARNESS_LIVE_CHECK_HTTP_TIMEOUT_S"
-HTTP_TIMEOUT_DEFAULT_S = 120.0
+#: One request to the console's API: `(port, method, path, json_body_or_None) -> (status,
+#: decoded JSON or text)`. The command passes a loopback HTTP client.
+ConsoleRequest = Callable[[int, str, str, "Mapping[str, Any] | None"], "tuple[int, Any]"]
 
 INTENDED_BANDS_DISCLAIMER = (
     'The "teacher" bands in this check are the sample author\'s intended bands: the band each '
@@ -89,21 +92,25 @@ INTENDED_BANDS_DISCLAIMER = (
     "in this check is agreement with the author's intent, not evidence of accuracy with teachers."
 )
 
-#: The sample author's intended band per (sheet, judged rubric line), read off the sheets in
-#: `build_sample_materials.py` against the package specs' band descriptors. Each sheet's points
-#: (these bands plus its multiple-choice keys) sum to its `reference_points`; `_check_intended`
-#: asserts that at start, so a sample edited without this table fails loudly. Sheets that intake
-#: parks (S9-005 wrong test, S9-006 no name) have no entry: a seat for them is left undrafted.
-INTENDED_BANDS: Mapping[str, Mapping[str, str]] = {
-    "E7-001": {"C1a": "present", "C1b": "present", "C2": "full", "C3": "evidenced"},
-    "E7-002": {"C1a": "present", "C1b": "present", "C2": "adequate", "C3": "change"},
-    "E7-003": {"C1a": "absent", "C1b": "absent", "C2": "limited", "C3": "retell"},
-    "E7-004": {"C1a": "present", "C1b": "absent", "C2": "none", "C3": "none"},
-    "S9-001": {"C4": "full", "C6": "full"},
-    "S9-002": {"C4": "adequate", "C6": "adequate"},
-    "S9-003": {"C4": "limited", "C6": "limited"},
-    "S9-004": {"C4": "none", "C6": "full"},
-}
+def _load_path(name: str, path: Path) -> Any:
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def intended_bands() -> Mapping[str, Mapping[str, str]]:
+    """The sample author's intended band per (sheet, judged rubric line), from the sample
+    materials. Raises `ValidityCheckRefused` when a sheet's intended bands no longer earn its
+    reference points (the samples changed without the table)."""
+    module = _load_path("_aeh_intended_bands", _SAMPLES / "intended_bands.py")
+    problems = module.mismatches()
+    if problems:
+        raise ValidityCheckRefused(
+            "the sample author's intended bands no longer match the samples: "
+            + "; ".join(problems) + ". Correct intended_bands.py before running.")
+    return module.INTENDED_BANDS
 
 
 @dataclasses.dataclass(frozen=True)
@@ -186,8 +193,10 @@ _SELECT_SUBMISSIONS = Statement(
 _SELECT_RUN = Statement(
     "SELECT run_id, status FROM run WHERE cohort_id = :cohort_id ORDER BY started_at")
 _SELECT_RUN_SCORES = Statement(
-    "SELECT submission_id, criterion_id, points, confidence, routing, state "
+    "SELECT submission_id, criterion_id, confidence, routing, state "
     "FROM criterion_score WHERE run_id = :run_id ORDER BY submission_id, criterion_id")
+#: `criterion_score.state` values that mean the line has no score.
+_UNSCORED_STATES = frozenset({"ungradeable_by_panel", "unresolved_selection"})
 _SELECT_RUN_LLM_VERDICTS = Statement(
     "SELECT v.uncited FROM verdict v JOIN work_unit w ON w.work_id = v.work_id "
     "WHERE w.run_id = :run_id AND v.scoring_engine = 'llm'")
@@ -201,86 +210,67 @@ _SELECT_RUN_LABELS = Statement(
 # --- the refusals, before anything is built or sent ---------------------------------------------
 
 
+_SELECT_CONSENT = Statement(
+    "SELECT consent_class FROM cohort WHERE cohort_id = :cohort_id")
+_COUNT_PAPERS = Statement("SELECT COUNT(*) AS n FROM submission")
+
+
+def _read_only_cohort(data_dir: Path, ledger: str, statement: Statement, **params: Any
+                      ) -> list[Any] | None:
+    """Rows of `statement` from a class's ledger opened read-only, or None when it has none."""
+    from aeh.store import open_store
+
+    if not (data_dir / "cohorts" / f"{ledger}.sqlite").exists():
+        return None
+    store = open_store(data_dir, read_only=True)
+    try:
+        return list(store.cohort(ledger).query(statement, **params))
+    finally:
+        store.close()
+
+
 def _existing_consent(data_dir: Path, cohort_id: str) -> str | None:
     """The recorded consent class of a class already in `data_dir`, or None when it has none.
-    Read from the ledger file directly, so the refusal opens no store and writes nothing."""
-    path = data_dir / "cohorts" / f"{cohort_id}.sqlite"
-    if not path.exists():
+    Read through a read-only store, so the refusal writes nothing."""
+    rows = _read_only_cohort(data_dir, cohort_id, _SELECT_CONSENT, cohort_id=cohort_id)
+    if rows is None:
         return None
-    connection = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
-    try:
-        row = connection.execute(
-            "SELECT consent_class FROM cohort WHERE cohort_id = ?", (cohort_id,)).fetchone()
-    except sqlite3.Error:
-        return "unknown"
-    finally:
-        connection.close()
-    return str(row[0]) if row else "unknown"
+    return str(rows[0]["consent_class"]) if rows else "unknown"
 
 
 def _profile_name(config_path: Path) -> str:
-    document = tomllib.loads(config_path.read_text(encoding="utf-8"))
     """The backend profile the run will use: the terminal's `HARNESS_PROFILE` over the file's
     (the order the shipped configs document)."""
+    document = tomllib.loads(config_path.read_text(encoding="utf-8"))
     return str(os.environ.get("HARNESS_PROFILE") or document.get("HARNESS_PROFILE") or "")
 
 
 def _refuse_unsafe_classes(data_dir: Path, tests: Sequence[SampleTest], config_path: Path) -> None:
-    """R31: on a remote profile only `synthetic` work. A class that already exists is refused
-    whatever its consent, real first and loudest; the check grades only classes it built."""
-    from aeh.conf import REMOTE_PROFILES
+    """R31: on a remote profile only synthetic work. The rule is M-CALIB's
+    `refuse_remote_real_work` (stricter than the consent gate: no override lifts it), not a copy
+    of it here (CT-CONFORM-10). A class that already exists is refused whatever its consent,
+    the R31 refusal first; the check grades only classes it built."""
+    from aeh.calib.examples import ExamplesRefused, refuse_remote_real_work
 
     profile = _profile_name(config_path)
-    # Fail closed: a profile the check cannot name is treated as remote.
-    remote = not profile or profile in REMOTE_PROFILES
+    if not profile:
+        raise ValidityCheckRefused(
+            f"{config_path.name} names no profile, so the check cannot tell whether the work "
+            "would leave the machine. Set HARNESS_PROFILE.")
     for test in tests:
         consent = _existing_consent(data_dir, test.cohort_id)
         if consent is None:
             continue
-        if consent != "synthetic" and remote:
+        try:
+            refuse_remote_real_work({"HARNESS_PROFILE": profile}, consent)
+        except ExamplesRefused:
             raise ValidityCheckRefused(
                 f"class {test.cohort_id!r} is recorded as {consent!r} work, and this check sends "
                 "only synthetic sample work to a remote profile (R31). Nothing was built, "
-                "read in or sent.")
+                "read in or sent.") from None
         raise ValidityCheckRefused(
             f"class {test.cohort_id!r} already exists in {data_dir}; the check grades only the "
             "classes it builds itself. Use a fresh data folder or another class name.")
-
-
-def _load_sample_module() -> Any:
-    spec = importlib.util.spec_from_file_location(
-        "_aeh_validity_check_samples", _SAMPLES / "build_sample_materials.py")
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
-    return module
-
-
-def _check_intended(tests: Sequence[SampleTest]) -> None:
-    """Every sheet with intended bands earns its `reference_points` under them: the judged
-    lines' band points from the package spec, plus one key lookup per multiple-choice line."""
-    samples = _load_sample_module()
-    sheets = {sheet["student"]: sheet
-              for sheet in samples.PHYSICS_SHEETS + samples.ENGLISH_SHEETS if sheet["student"]}
-    for test in tests:
-        spec = tomllib.loads(test.spec.read_text(encoding="utf-8"))
-        points = {question["id"]: question.get("points", 0) for question in spec["question"]}
-        band_points = {c["id"]: {b["name"]: b["points"] for b in c["bands"]}
-                       for c in spec["criterion"] if "bands" in c}
-        keys = {c["question"]: c["key"] for c in spec["criterion"] if "key" in c}
-        prefix = test.name[:2].upper()
-        for student, intended in INTENDED_BANDS.items():
-            if not student.startswith(prefix):
-                continue
-            sheet = sheets[student]
-            earned = sum(band_points[criterion][band] for criterion, band in intended.items())
-            earned += sum(points[question] for question, key in keys.items()
-                          if sheet["mcq"].get(question) == [key])
-            expected = sheet["reference_points"]
-            if expected is not None and earned != expected:
-                raise ValidityCheckRefused(
-                    f"the intended bands for {student} earn {earned} points but the sample sheet "
-                    f"is written to earn {expected}; correct INTENDED_BANDS before running.")
 
 
 # --- the operator commands ------------------------------------------------------------------------
@@ -307,7 +297,7 @@ def _build_and_ingest(test: SampleTest, data_dir: Path, config_path: Path) -> st
     return version
 
 
-# --- the console, over HTTP ------------------------------------------------------------------------
+# --- the console, through its API ------------------------------------------------------------------
 
 
 def _env_float(name: str, default: float) -> float:
@@ -319,28 +309,17 @@ def _env_float(name: str, default: float) -> float:
 
 
 class _Console:
-    """A console on a loopback port, spoken to as the browser speaks to it."""
+    """A console on a loopback port, spoken to as the browser speaks to it, through the
+    caller's `ConsoleRequest`."""
 
-    def __init__(self, server: Any) -> None:
+    def __init__(self, server: Any, send: ConsoleRequest) -> None:
         self.server = server
         self.port = int(server.socket.getsockname()[1])
+        self._send = send
 
     def request(self, method: str, path: str, body: Mapping[str, Any] | None = None
                 ) -> tuple[int, Any]:
-        payload = json.dumps(body).encode("utf-8") if body is not None else None
-        connection = http.client.HTTPConnection(
-            "127.0.0.1", self.port, timeout=_env_float(HTTP_TIMEOUT_ENV, HTTP_TIMEOUT_DEFAULT_S))
-        try:
-            headers = {"Content-Type": "application/json"} if payload is not None else {}
-            connection.request(method, path, body=payload, headers=headers)
-            response = connection.getresponse()
-            raw = response.read()
-        finally:
-            connection.close()
-        try:
-            return response.status, json.loads(raw) if raw else None
-        except ValueError:
-            return response.status, raw.decode("utf-8", errors="replace")
+        return self._send(self.port, method, path, body)
 
     def get(self, path: str, **query: Any) -> tuple[int, Any]:
         return self.request("GET", path + ("?" + urlencode(query) if query else ""))
@@ -370,7 +349,7 @@ def _env_held(**values: str | None) -> Iterator[None]:
 
 
 @contextlib.contextmanager
-def _serve(store: Any, config_path: Path) -> Iterator[_Console]:
+def _serve(store: Any, config_path: Path, send: ConsoleRequest) -> Iterator[_Console]:
     from aeh.conf import parse_config_document
     from aeh.console import serve_console
 
@@ -379,7 +358,7 @@ def _serve(store: Any, config_path: Path) -> Iterator[_Console]:
         with redirect_stdout(io.StringIO()):
             server = serve_console(store=store, cfg=cfg, config_path=str(config_path))
     try:
-        yield _Console(server)
+        yield _Console(server, send)
     finally:
         server.terminate()
 
@@ -422,7 +401,9 @@ def _read_run_figures(store: Any, figures: ClassFigures) -> None:
         sheet = names.get(str(row["submission_id"])) or f"unmatched {row['submission_id']}"
         cell = per_sheet.setdefault(sheet, {"scored": 0, "lines": 0})
         cell["lines"] += 1
-        cell["scored"] += row["points"] is not None
+        # A line is scored unless the panel could not grade it or the reader could not resolve
+        # the mark (the two states that leave a line without a score).
+        cell["scored"] += str(row["state"]) not in _UNSCORED_STATES
         if row["confidence"] is not None:
             confidences[f"{float(row['confidence']):.2f}"] += 1
         routing[str(row["routing"])] += 1
@@ -443,7 +424,8 @@ def _read_run_figures(store: Any, figures: ClassFigures) -> None:
                      "share": (cited / landed) if landed else None}
 
 
-def _play_blind(console: _Console, figures: ClassFigures) -> None:
+def _play_blind(console: _Console, figures: ClassFigures,
+                bands: Mapping[str, Mapping[str, str]]) -> None:
     """Open the draw, draft each seat from the intended band, finish. A seat whose student or
     line has no intended band (a parked sheet, an unknown name) is left undrafted and counted;
     no band is invented for it."""
@@ -456,8 +438,8 @@ def _play_blind(console: _Console, figures: ClassFigures) -> None:
     undrafted: list[str] = []
     for seat in read.get("seats", []):
         name = str(seat.get("student_name") or "")
-        student = next((ref for ref in INTENDED_BANDS if ref in name), None)
-        band = INTENDED_BANDS.get(student or "", {}).get(str(seat.get("criterion_id")))
+        student = next((ref for ref in bands if ref in name), None)
+        band = bands.get(student or "", {}).get(str(seat.get("criterion_id")))
         offered = {str(b.get("name")) for b in seat.get("bands", [])}
         if band is None or band not in offered:
             undrafted.append(f"{name or '?'} / {seat.get('criterion_id')}")
@@ -512,18 +494,10 @@ def _purge(console: _Console, data_dir: Path, figures: ClassFigures) -> None:
         "papers_left": _papers_left(data_dir, figures.cohort_id), "detail": detail}
 
 
-def _papers_left(data_dir: Path, cohort_id: str) -> int | None:
-    """Submission rows left in the class's ledger (0 when the file is gone), or None unread."""
-    path = data_dir / "cohorts" / f"{cohort_id}.sqlite"
-    if not path.exists():
-        return 0
-    connection = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
-    try:
-        return int(connection.execute("SELECT COUNT(*) FROM submission").fetchone()[0])
-    except sqlite3.Error:
-        return None
-    finally:
-        connection.close()
+def _papers_left(data_dir: Path, cohort_id: str) -> int:
+    """Submission rows left in the class's ledger (0 when the file is gone), read-only."""
+    rows = _read_only_cohort(data_dir, cohort_id, _COUNT_PAPERS)
+    return 0 if not rows else int(rows[0]["n"])
 
 
 # --- the driver ----------------------------------------------------------------------------------
@@ -536,7 +510,7 @@ def _import_full_chain() -> None:
 
 
 def run_validity_check(
-    profile: str, *, data_dir: Path | str,
+    profile: str, *, data_dir: Path | str, console_request: ConsoleRequest,
     eng7_cohort: str = "class-eng7-check", ps9_cohort: str = "class-ps9-check",
 ) -> ValidityCheckResult:
     """Build, ingest, run, blind-mark, measure and purge ENG7 and PS9 on `profile` (FR-CONFORM-20).
@@ -553,7 +527,7 @@ def run_validity_check(
     data_dir = Path(data_dir)
     tests = _sample_tests(eng7_cohort, ps9_cohort)
     _refuse_unsafe_classes(data_dir, tests, config_path)
-    _check_intended(tests)
+    bands = intended_bands()
     data_dir.mkdir(parents=True, exist_ok=True)
     _import_full_chain()
     result = ValidityCheckResult(profile=profile, data_dir=str(data_dir))
@@ -573,12 +547,12 @@ def run_validity_check(
     # bound to its thread). The check reads through a store of its own (`_one_class`).
     console_store = open_store(data_dir)
     try:
-        with _serve(console_store, config_path) as console:
+        with _serve(console_store, config_path, console_request) as console:
             for test in tests:
                 if test.name not in versions:
                     continue
                 result.classes.append(
-                    _one_class(console, data_dir, test, versions[test.name], result))
+                    _one_class(console, data_dir, test, versions[test.name], bands, result))
     finally:
         with contextlib.suppress(Exception):
             console_store.close()
@@ -586,26 +560,28 @@ def run_validity_check(
 
 
 def _one_class(console: _Console, data_dir: Path, test: SampleTest, version: str,
-               result: ValidityCheckResult) -> ClassFigures:
+               bands: Mapping[str, Mapping[str, str]], result: ValidityCheckResult
+               ) -> ClassFigures:
     """One class through the console, every read taken before the purge. The reader store is
     closed before the purge, so no connection of this thread holds the class's ledger open."""
     from aeh.store import open_store
 
     store = open_store(data_dir)
     try:
-        return _class_steps(console, store, data_dir, test, version, result)
+        return _class_steps(console, store, data_dir, test, version, bands, result)
     finally:
         with contextlib.suppress(Exception):
             store.close()
 
 
 def _class_steps(console: _Console, store: Any, data_dir: Path, test: SampleTest, version: str,
-                 result: ValidityCheckResult) -> ClassFigures:
+                 bands: Mapping[str, Mapping[str, str]], result: ValidityCheckResult
+                 ) -> ClassFigures:
     figures = ClassFigures(test=test.name, cohort_id=test.cohort_id, package_version=version)
     steps = (
         ("run", lambda: _run_step(console, store, test, version, figures)),
         ("pipeline figures", lambda: _read_run_figures(store, figures)),
-        ("blind sample", lambda: _play_blind(console, figures)),
+        ("blind sample", lambda: _play_blind(console, figures, bands)),
         ("labels", lambda: _read_labels(store, figures)),
         ("administration record", lambda: _read_record(console, figures)),
         ("routing verdict", lambda: _read_routing_verdict(data_dir, figures)),
@@ -690,7 +666,7 @@ def format_report(result: ValidityCheckResult) -> str:
     return "\n".join(lines)
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(argv: Sequence[str] | None = None, *, console_request: ConsoleRequest) -> int:
     """`live_validity_check.py --profile smoke|panel [--data-dir DIR] [--eng7-cohort ID]
     [--ps9-cohort ID]`. Exit 0 when every stage ran, 1 when one failed, 2 when refused."""
     import argparse
@@ -710,6 +686,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         tempfile.mkdtemp(prefix="aeh-validity-check-"))
     try:
         result = run_validity_check(args.profile, data_dir=data_dir,
+                                    console_request=console_request,
                                     eng7_cohort=args.eng7_cohort, ps9_cohort=args.ps9_cohort)
     except ValidityCheckRefused as refusal:
         print(f"Refused: {refusal}", file=sys.stderr)
