@@ -76,6 +76,12 @@ class ReviewQueue:
     build_seconds: float
     build_trace: tuple[BuildEvent, ...]
 
+    @property
+    def shown_total(self) -> int:
+        """How many review items the shown entries cover, a group counting each member
+        (CT-REVIEW-04): the header's "shown" figure, `flagged_total - residual_provisional`."""
+        return sum(len(getattr(entry, "members", None) or (entry,)) for entry in self.shown)
+
 
 @dataclass(frozen=True)
 class LabelRecord:

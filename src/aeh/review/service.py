@@ -6,10 +6,13 @@ from datetime import datetime, timezone
 from time import perf_counter
 from typing import Any, Callable, Mapping, Sequence
 
-from .settings import _calibration_knobs, REVIEW_DEFAULT_BANDS, REVIEW_DEFAULT_BUDGET_MINUTES
+from .settings import (
+    _calibration_knobs, often_changed_rate, REVIEW_DEFAULT_BANDS, REVIEW_DEFAULT_BUDGET_MINUTES,
+)
 from .errors import ReviewError, StaleReviewItemError
-from .schema import _queue_id_for, REVIEW_QUEUE_STATEMENTS
+from .schema import _queue_id_for, REVIEW_QUEUE_STATEMENTS, REVIEW_STATEMENTS
 from .records import (
+    DRAW_OPEN,
     BlindSession,
     BuildEvent,
     CounterEmission,
@@ -27,6 +30,7 @@ from .ranking import (
     _EXCLUDED_ORIGINS,
     _expected_value,
     _fill_to_budget,
+    _flag_reasons,
     _group_identical,
     _itemize,
     _items_shown_count,
@@ -36,9 +40,14 @@ from .ranking import (
     _score_id_of,
     _signature_of,
 )
+from .stored_rows import _row_mapping
 from .actions import ActionsMixin
 from .blind import BlindSamplingMixin
 from .observability import ObservabilityMixin
+
+
+def _cell_of(row: Any) -> tuple[str, str]:
+    return (str(getattr(row, "submission_id", "") or ""), str(getattr(row, "criterion_id", "") or ""))
 
 
 # --- the service ------------------------------------------------------------------------------------
@@ -152,8 +161,18 @@ class ReviewService(ActionsMixin, BlindSamplingMixin, ObservabilityMixin):
         knobs = _calibration_knobs()
 
         admitted = self._admitted_rows()
+        # FR-CONSOLE-89/19, FR-REVIEW-07 (#868): a cell drawn for the open blind sample, or
+        # widened by the random arm, is not the teacher's to review, so it is neither counted
+        # as flagged nor ranked, grouped or budgeted.
+        held_out = self.held_out_cells(run_id)
+        if held_out:
+            admitted = [row for row in admitted if _cell_of(row) not in held_out]
         flagged_total = len(admitted)
-        trace.append(BuildEvent("count_flagged", f"{flagged_total} queued judged rows"))
+        trace.append(BuildEvent(
+            "count_flagged",
+            f"{flagged_total} queued judged rows"
+            + (f" ({len(held_out)} drawn or random-arm cells held out)" if held_out else ""),
+        ))
 
         reserve = min(self._blind_reserve, budget_minutes)
         available_seconds = max(budget_minutes - reserve, 0) * 60
@@ -240,6 +259,46 @@ class ReviewService(ActionsMixin, BlindSamplingMixin, ObservabilityMixin):
             else int(self._default_budget or REVIEW_DEFAULT_BUDGET_MINUTES)
         )
         return self.build_queue(run_id, budget).shown
+
+    def flag_reasons(self, item: Any) -> tuple[str, ...]:
+        """Why a queue item (or a stored row) is flagged, as `FLAG_REASONS` codes read from the
+        ranking's own inputs (FR-REVIEW-03, FR-CONSOLE-91). The stored row is read rather than
+        the item, whose boundary distance reads 0.0 where the row knows none."""
+        row = self._rows_by_id.get(str(getattr(item, "score_id", ""))) or item
+        return _flag_reasons(row, _calibration_knobs(), often_changed_rate())
+
+    def is_stale(self, item: ReviewItem) -> bool:
+        """Whether an action on `item`, at the version it carries, would be refused as stale
+        (CT-REVIEW-15): the same check `act` and `act_on_group` make, asked before acting so a
+        group action can name the members it cannot mark and mark the rest."""
+        try:
+            self._check_not_stale(item)
+        except StaleReviewItemError:
+            return True
+        return False
+
+    def held_out_cells(self, run_id: str) -> frozenset[tuple[str, str]]:
+        """The run's cells the queue leaves out: the seats of an OPEN blind draw (read without
+        settling it, so a `record=False` build writes nothing) and, over a store, the cells the
+        random arm widened. Unreadable sources hold nothing out."""
+        cells: set[tuple[str, str]] = set()
+        try:
+            draw = self._load_draw(self._draw_key(run_id))
+        except Exception:  # noqa: BLE001 — no readable draw holds nothing out
+            draw = None
+        if draw is not None and draw.state == DRAW_OPEN:
+            cells.update((str(seat.submission_id), str(seat.criterion_id)) for seat in draw.seats)
+        cohort_id = self._writable_cohort() if self._store is not None else None
+        if cohort_id is not None:
+            try:
+                for row in self._store.cohort(cohort_id).query(
+                        REVIEW_STATEMENTS["select_run_random_arm_cells"],
+                        run_id=str(self._draw_key(run_id))):
+                    mapping = _row_mapping(row)
+                    cells.add((str(mapping["submission_id"]), str(mapping["criterion_id"])))
+            except Exception:  # noqa: BLE001 — a ledger without work units holds nothing out
+                pass
+        return frozenset(cells)
 
     def rank_queue_items(self, run_id: str) -> tuple[ReviewItem, ...]:
         """Every admitted item ranked best first, each with its `expected_value`, before the budget

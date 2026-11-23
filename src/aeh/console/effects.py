@@ -407,6 +407,16 @@ class DomainEffectsMixin:
                 "nothing was written",
                 False,
             )
+        if decision == "skip":
+            # FR-CONSOLE-92 / FR-REVIEW-08 (#868): a skip writes no label; the answer stays
+            # provisional and in the next build of the queue.
+            from .review_reads import student_name
+
+            return (
+                f"Skipped for now: {student_name(self, run_id, submission_id)}'s answer stays "
+                "provisional and in your review queue.",
+                True,
+            )
         return (
             f"review {decision} of {submission_id}/{criterion_id} recorded through "
             f"M-REVIEW as label {label_id}",

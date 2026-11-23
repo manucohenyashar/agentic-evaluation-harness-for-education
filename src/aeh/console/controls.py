@@ -288,6 +288,13 @@ class ControlActionsMixin:
             # rides `refused=True` the way the authoring actions' outcomes carry theirs
             # (PR #794's finding 3 — the shipped shape left it False here).
             return (), detail, dispatched, not dispatched, next_action
+        # The review queue's group action (#868, FR-CONSOLE-92) dispatches exactly when it
+        # marked something, so a refusal rides `refused=True`.
+        if action == "review group action":
+            from .review_actions import review_group_effect
+
+            detail, dispatched = review_group_effect(self, params)
+            return (), detail, dispatched, not dispatched, None
         # The teacher's corrections (FR-CONSOLE-64..68) dispatch exactly when nothing was
         # refused, like the class actions above, so a refusal rides `refused=True`.
         if action in ("rename student", "remove student", "move paper to student",

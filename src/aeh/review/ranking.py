@@ -146,6 +146,60 @@ def _expected_value(row: Any, knobs: Mapping[str, float]) -> float:
     return (_p_error(row, knobs) * _impact_of(row, knobs)) / est
 
 
+# --- why an item is flagged -------------------------------------------------------------------------
+
+#: FR-CONSOLE-91's reasons, as codes the console words (FR-REVIEW-03's four observable inputs:
+#: panel spread, boundary proximity, transcription overlap, the criterion's override history).
+#: Never a confidence figure (§10): each is a yes/no read of a ranking input.
+FLAG_REASONS: tuple[str, ...] = (
+    "panel_disagreement",
+    "near_grade_boundary",
+    "reading_uncertain",
+    "often_changed",
+)
+
+#: M-AGG's not-final reasons that are the panel's disagreement or doubt, and the ones that are
+#: the reading's: the stored routing reason, read when the row's own inputs say nothing.
+_PANEL_STATE_REASONS = frozenset({"graders_disagree", "one_grader_unsure", "graders_refused",
+                                  "more_graders_unavailable", "even_panel_after_quarantine"})
+_READING_STATE_REASONS = frozenset({"evidence_not_found", "quote_not_verified"})
+
+
+def _not_final_reason(row: Any) -> str:
+    """The row's FR-AGG-20 not-final reason, re-derived by M-AGG from its stored columns (most
+    codes are not stored as such). Imported at call time, as `_adverse_signal_count` is: both
+    modules own cohort migrations. A row M-AGG cannot read falls back to its stored reason."""
+    try:
+        from aeh.agg import stored_not_final_reason
+
+        return str(stored_not_final_reason(row) or "")
+    except Exception:  # noqa: BLE001 — an in-memory row without the columns
+        return str(getattr(row, "state_reason", None) or "")
+
+
+def _flag_reasons(row: Any, knobs: Mapping[str, float], often_changed_at: float) -> tuple[str, ...]:
+    """Why a row is in the queue, from the ranking's own inputs, in `FLAG_REASONS` order.
+
+    Each reason is claimed only where its input says so: an unknown boundary distance (no
+    boundary table) is not "near a boundary", and an unmeasured override rate is no data, not
+    "often changed" (CT-STATS-09). The stored not-final reason (M-AGG's `state_reason`) adds
+    the panel's or the reading's doubt that routed the row, so a queued row always says why."""
+    state_reason = _not_final_reason(row)
+    reasons: set[str] = set()
+    if float(getattr(row, "panel_spread", 0.0) or 0.0) > 0 or state_reason in _PANEL_STATE_REASONS:
+        reasons.add("panel_disagreement")
+    delta = getattr(row, "grade_boundary_delta", None)
+    if delta is not None and abs(float(delta)) <= knobs["boundary_half_width"]:
+        reasons.add("near_grade_boundary")
+    if (float(getattr(row, "transcription_overlap", 0.0) or 0.0) > 0
+            or state_reason in _READING_STATE_REASONS):
+        reasons.add("reading_uncertain")
+    rate = getattr(row, "historical_override_rate", None)
+    if rate is not None and float(rate) >= often_changed_at:
+        reasons.add("often_changed")
+    return tuple(reason for reason in FLAG_REASONS if reason in reasons)
+
+
 # --- items and groups -------------------------------------------------------------------------------
 
 

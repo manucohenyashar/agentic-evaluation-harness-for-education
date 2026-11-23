@@ -464,13 +464,19 @@ def _queue_payload(view: Any) -> dict[str, Any]:
 
 
 def review_queue_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
-    """The review screen's document (FR-UI-03f): the teacher's queue, read through
-    `ConsoleApp.review_queue` with `record=False` semantics — a screen render is a read,
-    and answers nothing the S9 page would not."""
+    """The review screen's document (FR-CONSOLE-91, FR-UI-03f): `ReviewService.build_queue(
+    run_id, budget_minutes, record=False)` as the teacher reads it — the header numbers, then
+    `entries` in the service's order, groups first (`review_reads`). A screen render is a read:
+    `record=False` writes no `review_queue.shown_at`. `shown` keeps FR-UI-03f's flat list of the
+    shown items, each with its `kind`, for the screens that list names. A budget outside 1…480
+    is refused with the range named (a 400)."""
+    from .review_reads import budget_minutes_of, built_queue_document
+
     run_id = str(query.get("run_id") or "") or _bound_run_id(console)
     if not run_id:
         raise ValueError("review names no run")
-    view = app.review_queue(run_id)
+    budget = budget_minutes_of(query)
+    view = app.review_queue(run_id, budget_minutes=budget)
     payload = _queue_payload(view)
     payload["run_id"] = run_id
     # FR-UI-22: each flagged answer names its student the way the teacher knows them, and
@@ -490,6 +496,13 @@ def review_queue_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
             item["student_ref"] = ref
             item["full_name"] = names.get(ref) if ref is not None else None
             item["label"] = labels.get(item["criterion_id"], item["criterion_id"])
+    service = app._review_service(run_id)
+    if service is not None:
+        payload.update(built_queue_document(app, run_row, run_id, service, budget))
+    else:
+        # The write-audit double: no run to build over, so no entries — the header above is
+        # the double's standing view.
+        payload.update({"shown_total": len(payload["shown"]), "entries": []})
     return payload
 
 
