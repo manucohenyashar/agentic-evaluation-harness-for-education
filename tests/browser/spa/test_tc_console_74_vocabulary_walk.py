@@ -8,9 +8,9 @@ forbidden-term list maintained as a test constant mirroring §3.3.3's left colum
 zero hits. This is the R0 oracle."*
 
 This is the census, not a sample — the RS-08 failure mode is the teacher meeting jargon
-exactly once, on the one screen a sample missed. The walk covers the shipped truth: twenty
-SPA routes (the plan's sixteen plus the authoring, secondary and status screens the later
-stories added) and the eleven server-rendered screens the design delta's route table names.
+exactly once, on the one screen a sample missed. The walk covers the shipped truth: twenty-one
+SPA routes (the plan's sixteen plus the authoring, secondary and status screens and the marked
+examples step the later stories added) and the eleven server-rendered screens the design delta's route table names.
 `CT-CONSOLE-31` is the clause; the scan families are its text-scannable operationalization,
 living in `tests/support/redesign_vocabulary.py` beside the term list that TC-REQ-138 pins
 to the design delta.
@@ -285,7 +285,7 @@ def test_tc_console_74_every_teacher_screen_scans_clean_against_the_forbidden_te
         # The enumeration mechanism, asserted rather than assumed: every template filled —
         # a route silently left carrying its placeholder would render a not-found screen,
         # which scans clean and proves nothing.
-        assert len(spa_routes) == len(rv.SPA_WALK_ROUTES) == 20, (
+        assert len(spa_routes) == len(rv.SPA_WALK_ROUTES) == 21, (
             f"the SPA walk enumerates {len(spa_routes)} of {len(rv.SPA_WALK_ROUTES)} routes — "
             "a placeholder went unfilled, and the census cannot skip a screen silently")
         assert len(server_routes) == len(rv.SERVER_WALK_SCREENS) == 11, (

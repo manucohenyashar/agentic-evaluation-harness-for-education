@@ -145,9 +145,9 @@ SCAN_FAMILIES: dict[str, tuple[str, ...]] = {
 #
 # `TC-CONSOLE-74` visits every route below and scans its rendered text. The plan says
 # "16 SPA routes + the teacher-reachable server-rendered screens"; the shipped SPA routes
-# twenty (the redesign's later stories added the authoring, secondary and status screens the
-# count predates), and the walk covers the shipped truth — a superset of the plan's sixteen,
-# never a sample of it.
+# twenty-one (the redesign's later stories added the authoring, secondary and status screens,
+# and the validity programme the marked examples step, which the count predates), and the walk
+# covers the shipped truth — a superset of the plan's sixteen, never a sample of it.
 #
 # Placeholders in braces are filled per walk from the seeded world (see `WALK_IDS`); the
 # `{package_version}` stays the pipeline-generated published version id, because the export
@@ -173,6 +173,8 @@ SPA_WALK_ROUTES: tuple[str, ...] = (
     "/help",
     "/status",
     "/review/blind",
+    # The marked examples step (FR-UI-44, S18 #888), added by Validity T13 (#910).
+    "/package/examples",
 )
 
 #: The server-rendered teacher screens, from the design delta's route table (§3.3.2): the
