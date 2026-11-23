@@ -7,8 +7,16 @@
    may continue on a newer build; not covered here). A `~` alias and a `:latest` tag are
    still refused.
 2. "do not worry about zero data retention for Jev models": a `dev-ci` / `cloud-hosted` run
-   whose Jev decision model has no retention confirmation starts, and the run records the model
-   as *exempt*, never as confirmed. An unconfirmed panel judge is still refused.
+   whose Jev decision model has no retention confirmation starts, and the run never records the
+   model as confirmed. An unconfirmed panel judge was still refused under this decision.
+
+Re-based on the owner decision of 2026-11-22 ("All models should not ask for zero retention as
+this policy is managed by my OpenRouter account outside the system";
+`test_retention_managed_by_account.py`): the OpenRouter-routed Jev engine is now recorded under
+`retention_account_managed` with `retention = "managed by the OpenRouter account"` rather than
+`retention_exempt`, and an unconfirmed OpenRouter panel judge is no longer refused. The gate
+still refuses a remote model that is not OpenRouter-routed; that is what the panel case below
+now pins.
 
 Supersedes FR-PROV-21's floating-alias refusal for Jev, and FR-PROV-28/43/48 and CT-PROV-09's
 retention requirement for the decision model. Every case runs under the autouse network guard.
@@ -55,14 +63,18 @@ def test_jev_latest_is_accepted_and_sent_as_the_routers_alias() -> None:
     ModelRef(role="decision", provider="openrouter-jev", build_id=LATEST, quantization=None)
 
 
-def test_the_exemption_is_keyed_on_the_decision_provider_never_the_build_name() -> None:
+def test_the_exemption_is_keyed_on_the_provider_never_the_build_name() -> None:
     from aeh.prov import retention_exempt
 
     assert retention_exempt(ModelRef(role="decision", provider="openrouter-jev", build_id=LATEST,
                                      quantization=None))
-    # A Jev-named build put on the panel through `openrouter` keeps the gate.
-    assert not retention_exempt(ModelRef(role="judge", provider="openrouter", build_id=LATEST,
-                                         quantization=None))
+    # Re-based (2026-11-22): a Jev-named build on the panel through `openrouter` is exempt
+    # because it is OpenRouter-routed, not because of its name — the same build served by a
+    # local server keeps the gate.
+    assert retention_exempt(ModelRef(role="judge", provider="openrouter", build_id=LATEST,
+                                     quantization=None))
+    assert not retention_exempt(ModelRef(role="judge", provider="ollama", build_id=LATEST,
+                                         quantization=None, served_as="jev-latest"))
 
 
 @pytest.mark.parametrize("build", ["~typesafe/jev-latest", "openrouter/typesafe/jev:latest@2026-11-20"])
@@ -102,17 +114,23 @@ def test_an_unconfirmed_jev_engine_does_not_refuse_the_run_and_is_recorded_exemp
             "SELECT provider_config FROM run WHERE run_id = :r", r=run_id)[0]["provider_config"])
     finally:
         store.close()
-    assert recorded["retention_exempt"] == [LATEST]
-    assert LATEST not in recorded["retention_verified"], "an exemption must not read as confirmed"
-    assert recorded["retention_verified"] == sorted(ref.build_id for ref in HOSTED_PANEL_3)
+    # Re-based (2026-11-22): recorded as account-managed with the panel, never as confirmed.
+    assert recorded["retention"] == "managed by the OpenRouter account"
+    assert recorded["retention_account_managed"] == sorted(
+        [LATEST, *(ref.build_id for ref in HOSTED_PANEL_3)])
+    assert "retention_verified" not in recorded, "an exemption must not read as confirmed"
     # The engine's own provider is not armed to refuse either.
     assert not jev.verify_retention((_cfg(profile).decision_engine.model,)).unconfirmed
     network_guard.assert_no_network()
 
 
-def test_an_unconfirmed_panel_judge_is_still_refused_beside_an_exempt_jev_engine(
+def test_an_unconfirmed_non_openrouter_panel_judge_is_still_refused_beside_an_exempt_jev_engine(
         tmp_data_dir, network_guard) -> None:
-    hedged = HOSTED_PANEL_3[1].build_id
+    """Re-based (2026-11-22): an OpenRouter panel judge is no longer asked, so the refusal is
+    pinned on a panel judge whose retention the OpenRouter account does not manage."""
+    hedged = "local/judge-x@2026-06-01"
+    panel = (*HOSTED_PANEL_3[:2], ModelRef(role="judge", provider="ollama", build_id=hedged,
+                                           quantization="q4", served_as="local-judge"))
     jev = _jev(retention_answers=lambda _b: "retention: standard")
     store = open_store(tmp_data_dir)
     try:
@@ -121,7 +139,7 @@ def test_an_unconfirmed_panel_judge_is_still_refused_beside_an_exempt_jev_engine
         with pytest.raises(RetentionPolicyError, match=re.escape(hedged)):
             Orchestrator(store, provider=_panel_provider(frozenset({hedged})),
                          decision_provider=jev).create_run(ORCH_COHORT_ID, version,
-                                                           _cfg("cloud-hosted"))
+                                                           _cfg("cloud-hosted", panel=panel))
         assert store.cohort(ORCH_COHORT_ID).query("SELECT count(*) AS n FROM run")[0]["n"] == 0
     finally:
         store.close()

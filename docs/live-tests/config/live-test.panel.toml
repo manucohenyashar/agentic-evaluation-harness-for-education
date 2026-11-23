@@ -8,9 +8,9 @@
 # extra-grader sample switched on, so every figure the agreement read needs can be produced.
 #
 # Everything else works as in live-test.dev-ci.toml (read its comments first): only cohorts
-# marked "synthetic" or "consented" may be graded, every request to OpenRouter carries zdr=true
-# and data_collection="deny", the retention of every model below except the Jev decision
-# engine is checked before the run starts (Jev is exempt, owner decision 2026-11-20), and
+# marked "synthetic" or "consented" may be graded, no request asks OpenRouter for zero
+# retention and no model below is checked for it (retention is governed by your OpenRouter
+# account's privacy settings, which you must set; owner decision 2026-11-22), and
 # HARNESS_FIXTURE_DIR replays recordings instead of calling OpenRouter.
 #
 # Use it with the checker before anything else:
@@ -86,7 +86,7 @@ build_id = "openrouter/mistralai/mistral-small-3.2-24b-instruct@2026-11-19"
 # Escalation judges: the real models used when the system adds judges to an answer (two when the
 # judges are unsure or disagree, or when the random sample picks it; one more if a judge call is
 # lost). Each is a different model from the panel and from each other, pinned with a date, and
-# answers under zero retention. Two let the random sample run and the third replaces a lost judge
+# is served under your account's privacy settings. Two let the random sample run and the third replaces a lost judge
 # call. A sampled answer that already has five judges and still disagrees would need seven; this
 # file cannot seat that many, so such an answer keeps its score as provisional and goes to
 # teacher review.

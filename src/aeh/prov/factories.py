@@ -11,7 +11,11 @@ from .settings import retention_precheck_on
 from .errors import ProviderUnavailableError
 from .interface import InferenceProvider
 from .live import _LOCAL_SERVER_PROVIDER_NAMES, LocalServerProvider, OpenRouterProvider
-from .decision_base import DecisionProvider, _UNSHIPPED_DECISION_PROVIDERS
+from .decision_base import (
+    DecisionProvider,
+    RETENTION_MANAGED_BY_ACCOUNT,
+    _UNSHIPPED_DECISION_PROVIDERS,
+)
 from .jev_openrouter import JevOpenRouterProvider
 from .openjev_local import OpenJevLocalProvider, OpenJevSmallLocalProvider
 from .fixtures import RecordedFixtureProvider
@@ -62,8 +66,8 @@ def describe_provider(provider: Any) -> str:
     (CT-PROV-15)."""
     inner = getattr(provider, "_inner", provider)
     if isinstance(inner, OpenRouterProvider):
-        zdr = "zero data retention enforced" if inner._routing() else "NO retention routing"
-        return f"OpenRouter at {inner._base_url} ({zdr})"
+        # Owner decision 2026-11-22: retention is the account's policy, not the harness's.
+        return f"OpenRouter at {inner._base_url} (retention {RETENTION_MANAGED_BY_ACCOUNT})"
     if isinstance(inner, LocalServerProvider):
         return f"local model server at {inner._base_url}"
     if isinstance(inner, RecordedFixtureProvider):
@@ -83,10 +87,11 @@ def retention_precheck_skipped(provider: Any) -> bool:
 def retention_probe_cost(provider: Any, model_refs: Sequence[ModelRef]) -> Decimal:
     """What probing `model_refs` for zero retention cost, for the run's record (FR-PROV-48).
 
-    The shipped probes send no billed request: OpenRouter's is answered by its own
-    zero-retention routing or a GET of its retention listing, a decision provider's by its
-    confirmation source, and a recording's or a local server's by the fact that nothing leaves
-    the machine. So the figure is zero unless the provider declares its own
+    The shipped probes send no billed request: an OpenRouter-routed model is never probed (its
+    retention is managed by the OpenRouter account, owner decision 2026-11-22), a decision
+    provider's other models are answered by its confirmation source, and a recording's or a
+    local server's by the fact that nothing leaves the machine. Callers record this only when
+    something was actually probed. So the figure is zero unless the provider declares its own
     `retention_probe_cost(model_refs)` — the seam for a probe that does bill (a one-token
     completion where an API has no listing; the probe's shape per provider is delta §10 Q12)."""
     declared = getattr(getattr(provider, "_inner", provider), "retention_probe_cost", None)

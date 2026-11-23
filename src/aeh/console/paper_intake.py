@@ -213,7 +213,8 @@ def _intake_worker(app: Any, cohort_id: str, job_id: str, config: dict[str, Any]
     read it through `aeh ingest`'s door, reporting each file as it is done.
 
     FR-CONSOLE-97 / FR-PROV-48: the files are read through one `ReadingSession`, built before
-    the first file — it verifies the page reader's retention on a remote profile, and meters
+    the first file — it verifies the page reader's retention on a remote profile unless the
+    OpenRouter account manages it (an OpenRouter page reader, owner decision 2026-11-22), and meters
     what each file cost. Before each next file the job's spend since it started (or resumed)
     is checked against the reading cost limit; at the limit the job pauses with the files still
     queued, and **Resume** (`resume_reading`) continues from the next unread file. `done` and

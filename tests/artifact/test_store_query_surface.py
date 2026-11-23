@@ -261,19 +261,22 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # as before, and the re-pin is line drift only. `run_lifecycle.py` is unchanged on
     # main, so #664's numbers hold; `enumeration.py` is #597's SQL-ready rewrite, whose
     # sites are main's re-pin.
-    "aeh.orch.run_lifecycle:127",
+    # Owner decision 2026-11-22 (retention managed by the OpenRouter account): the rewritten
+    # retention recording and `_verify_retention_at_start` in `run_lifecycle.py` moved every
+    # later line; same statements, line drift only (+15 before the gate, +21 after it).
+    "aeh.orch.run_lifecycle:142",
     "aeh.orch.enumeration:103",
     "aeh.orch.enumeration:112",
-    "aeh.orch.run_lifecycle:332",
-    "aeh.orch.run_lifecycle:327",
-    "aeh.orch.run_lifecycle:321",
     "aeh.orch.run_lifecycle:353",
-    "aeh.orch.run_lifecycle:365",
-    "aeh.orch.run_lifecycle:393",
-    "aeh.orch.run_lifecycle:513",
-    "aeh.orch.run_lifecycle:495",
-    "aeh.orch.run_lifecycle:537",
-    "aeh.orch.run_lifecycle:545",
+    "aeh.orch.run_lifecycle:348",
+    "aeh.orch.run_lifecycle:342",
+    "aeh.orch.run_lifecycle:374",
+    "aeh.orch.run_lifecycle:386",
+    "aeh.orch.run_lifecycle:414",
+    "aeh.orch.run_lifecycle:534",
+    "aeh.orch.run_lifecycle:516",
+    "aeh.orch.run_lifecycle:558",
+    "aeh.orch.run_lifecycle:566",
     "aeh.orch.leasing:234",
     "aeh.orch.leasing:253",
     "aeh.orch.leasing:265",
@@ -318,7 +321,7 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # so a run recovery REFUSED to resume - a profile switch, FR-CONF-15 - would keep a
     # stale reason that answers a different question. Declared statement,
     # keyword-parameterized, in the caller's transaction (FR-STORE-08).
-    "aeh.orch.run_lifecycle:633",
+    "aeh.orch.run_lifecycle:654",
     "aeh.orch.leasing:672",
     "aeh.orch.leasing:674",
     "aeh.orch.dispatch:461",

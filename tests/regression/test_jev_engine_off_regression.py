@@ -115,10 +115,21 @@ def test_tc_reg_09_engine_off_run_rows_are_byte_equal_to_fb12d1e(head_snapshot) 
         # `retention_verified`. Additive and engine-independent: asserted (the shipped
         # probes bill nothing), then projected like the verdict columns in TC-REG-08.
         provider_config = json.loads(row["provider_config"])
+        # Owner decision 2026-11-22 ("All models should not ask for zero retention as this
+        # policy is managed by my OpenRouter account outside the system"): the OpenRouter panel
+        # is no longer probed, so the cloud row records `retention` (the account note) and the
+        # same builds under `retention_account_managed`, with no `retention_verified` and no
+        # probe cost. Asserted, then projected back onto the fb12d1e capture's key so every
+        # other byte of the row is still compared. The edge-local row records none of it.
         if name == "cloud-hosted":
-            assert provider_config.pop("retention_probe_cost") == "0", provider_config
-        else:
             assert "retention_probe_cost" not in provider_config, provider_config
+            assert "retention_verified" not in provider_config, provider_config
+            assert provider_config.pop("retention") == "managed by the OpenRouter account"
+            provider_config["retention_verified"] = provider_config.pop("retention_account_managed")
+        else:
+            for key in ("retention_probe_cost", "retention", "retention_account_managed",
+                        "retention_verified"):
+                assert key not in provider_config, (key, provider_config)
         row["provider_config"] = json.dumps(provider_config, separators=(",", ":"),
                                             sort_keys=True)
         assert row == golden[name]["run_row"], (

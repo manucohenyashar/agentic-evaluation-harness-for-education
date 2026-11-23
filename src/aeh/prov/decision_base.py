@@ -66,18 +66,44 @@ _UNSHIPPED_DECISION_PROVIDERS: dict[str, str] = {}
 JEV_DECISION_PROVIDERS: frozenset[str] = frozenset({"openrouter-jev", "openjev", "openjev-small"})
 
 
-def retention_exempt(model_ref: ModelRef) -> bool:
-    """Whether `model_ref` is exempt from the zero-retention requirement.
+#: Every provider name whose requests go to OpenRouter: the completion provider (panel and
+#: escalation judges, the transcriber / page reader, extraction, synthesis, authoring, the Q&A
+#: model) and the hosted Jev decision provider. A new OpenRouter-routed provider joins here.
+OPENROUTER_ROUTED_PROVIDERS: frozenset[str] = frozenset({"openrouter", "openrouter-jev"})
 
-    Jev decision models are exempt from the zero-retention requirement (owner decision
-    2026-11-20: "do not worry about zero data retention for Jev models"). This supersedes
-    FR-PROV-28/43/48 and CT-PROV-09 for the decision model only. Every other remote model —
-    panel judges, escalation judges, the transcriber and page reader — keeps the gate
-    unchanged. Keyed on the decision provider name, never on the build name, so a Jev-named
-    build put on the panel through `openrouter` is still gated. The one place that says so:
-    every retention site calls this rather than testing the provider itself, and a run records
-    an exempt model as exempt, never as confirmed."""
-    return str(getattr(model_ref, "provider", "") or "") in JEV_DECISION_PROVIDERS
+
+#: What a run records about retention for its OpenRouter-routed models
+#: (`provider_config.retention`). A statement of who governs retention, never a confirmation.
+RETENTION_MANAGED_BY_ACCOUNT = "managed by the OpenRouter account"
+
+
+def retention_managed_by_account(model_ref: ModelRef) -> bool:
+    """Whether `model_ref`'s data retention is governed by the operator's OpenRouter account.
+
+    Owner decision 2026-11-22: "All models should not ask for zero retention as this policy is
+    managed by my OpenRouter account outside the system." So for every OpenRouter-routed model
+    the harness neither asks for zero retention on the request (no `zdr`, no
+    `data_collection`), nor probes for it, nor refuses over it; a run records the model under
+    `RETENTION_MANAGED_BY_ACCOUNT`, never as confirmed. The operator sets the policy in the
+    account's privacy settings. Supersedes FR-PROV-14/28/43/48 and CT-PROV-09/30 for these
+    models. Keyed on the provider name, never on the build name. Local providers are not
+    OpenRouter-routed and are untouched. The consent gate (R31: only synthetic data to remote
+    providers) is a separate rule and is not affected."""
+    return str(getattr(model_ref, "provider", "") or "") in OPENROUTER_ROUTED_PROVIDERS
+
+
+def retention_exempt(model_ref: ModelRef) -> bool:
+    """Whether `model_ref` is left out of the zero-retention gate: every retention site asks this
+    one question rather than testing the provider itself.
+
+    Two reasons, one gate. An OpenRouter-routed model's retention is managed by the operator's
+    account (`retention_managed_by_account`, owner decision 2026-11-22). And a Jev decision
+    model is exempt (owner decision 2026-11-20: "do not worry about zero data retention for Jev
+    models"), which still covers OpenJev on a remote host. A run records an exempt model as
+    such, never as confirmed. Every other model — a local model reached on a remote profile —
+    keeps the fail-closed gate unchanged."""
+    return (retention_managed_by_account(model_ref)
+            or str(getattr(model_ref, "provider", "") or "") in JEV_DECISION_PROVIDERS)
 
 
 #: Every error a live decision provider can raise (FR-PROV-23), so the double can declare each.

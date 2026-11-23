@@ -13,7 +13,7 @@ What it does, per invocation:
    build for these fixtures (`tests.support.console_journeys.JOURNEY_AUTHORING_BUILD`),
    the same TOML the journey tests render, so the assembled requests
    — and therefore the `request_key` hashes — match what the tests replay.
-2. Wraps the live provider (`OpenRouterProvider.enforcing_zero_retention()`, keyed by
+2. Wraps the live provider (`OpenRouterProvider()`, keyed by
    `OPENROUTER_API_KEY`) in a recording boundary: every reply the authoring chain asks
    for is recorded through `RecordedFixtureProvider.record()` — with the cost nulled,
    as `record()` requires (CT-PROV-03: a fixture's cost is null) — and then returned
@@ -81,7 +81,7 @@ def main() -> int:
     _config_toml(config_path)
     cfg = tomllib.loads(config_path.read_text(encoding="utf-8"))
 
-    live = OpenRouterProvider.enforcing_zero_retention()
+    live = OpenRouterProvider()
     recorded = RecordedFixtureProvider(fixture_dir=Path(args.fixture_dir))
 
     class RecordingLive:

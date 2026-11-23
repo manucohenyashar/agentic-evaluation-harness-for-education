@@ -10,7 +10,7 @@ progress on the jobs read.
 
 The world is `TC-PIPE-30`'s: the sample physics package built from its spec, a class made through
 the console's own `import roster file` control, and the pages sent through the real
-`OpenRouterProvider.enforcing_zero_retention()` to a stand-in OpenRouter that answers each page
+`OpenRouterProvider()` to a stand-in OpenRouter that answers each page
 with the sample script's transcript. Only the transport is a stand-in; the console, its HTTP
 routes, the upload, the jobs registry and the intake are the shipped ones.
 
@@ -108,7 +108,7 @@ def console(tmp_data_dir, monkeypatch, capsys, network_guard):
         data = files[f"{sm.PHYSICS_ID}/answer-sheets/{sheet['stem']}.pdf"]
         fake.pages[(blobs.put(data), 1)] = v.sheet_transcript(sheet)
         sheets[sheet["stem"]] = data
-    provider = OpenRouterProvider.enforcing_zero_retention(
+    provider = OpenRouterProvider(
         api_key="sk-or-test", base_url="https://openrouter.test/api/v1", transport=fake)
     monkeypatch.setattr(background, "_provider_for", lambda run_config: provider)
 

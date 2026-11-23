@@ -17,7 +17,7 @@ skips, naming the nightly tier, when `OPENROUTER_API_KEY` is unset, before any g
 any browser, any byte of model spend. The fixture binding is DELETED from the
 environment, not merely never set — with `HARNESS_FIXTURE_DIR` absent,
 `runtime._provider_for`'s declared mapping resolves the production
-`OpenRouterProvider.enforcing_zero_retention()` at every seam, so no boundary can
+`OpenRouterProvider()` at every seam, so no boundary can
 replay and none can record — and the committed recordings corpus is fingerprinted
 (path, size, sha256) before the pass and checked after it, in a `finally`, so even a
 mid-journey failure reports contamination. The corpus's own README documents capture;

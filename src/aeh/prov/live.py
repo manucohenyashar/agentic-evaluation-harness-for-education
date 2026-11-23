@@ -29,7 +29,7 @@ from .errors import (
     RetentionPolicyError,
     TransportError,
 )
-from .decision_base import _safe_excerpt
+from .decision_base import _safe_excerpt, retention_managed_by_account
 from .records import (
     CallPlan,
     Capabilities,
@@ -89,19 +89,6 @@ ROUTING_PROHIBITED_KINDS: frozenset[str] = frozenset({"scoring", "extraction"})
 # the same seam arguments (`transport`, `clock`, `rng`, `counters`, `build_watch`,
 # `governor`, `retention_answers`, `on_dispatch`) defaulting to the real ones, behaviour-
 # neutrally — `FR-PROV-15`.
-
-
-#: OpenRouter's routing preferences that keep student work off any host that retains it:
-#: `zdr` restricts routing to zero-data-retention endpoints and `data_collection: "deny"` to
-#: hosts that do not store or train on requests. OpenRouter refuses a request no such host
-#: can serve, rather than routing it elsewhere. The same preferences the Jev decision provider
-#: sends (`jev_openrouter.py`).
-ZERO_RETENTION_ROUTING: dict[str, Any] = {"zdr": True, "data_collection": "deny"}
-
-
-#: The answer `OpenRouterProvider.enforcing_zero_retention`'s retention seam gives: one of
-#: `RETENTION_CONFIRMED_ANSWERS`, because every request it sends enforces zero retention.
-ZERO_RETENTION_ENFORCED_ANSWER = "zero-retention"
 
 
 #: The one payload field carried as an image rather than text: the page or crop the vision
@@ -571,14 +558,15 @@ class LocalServerProvider(_BaseLiveProvider):
 
 
 class OpenRouterProvider(_BaseLiveProvider):
-    """The hosted router provider, with the retention gate and the ban on price-based routing
-    (FR-PROV-11, FR-PROV-14).
+    """The hosted router provider, with the ban on price-based routing (FR-PROV-11).
 
-    `retention_answers` is `FR-PROV-15`'s seam for the open TBD: the wire shape of a
-    zero-retention confirmation is unknown, so the gate takes a *source of answers*
-    (callable: model key → answer string) and evaluates fail-closed. `on_dispatch` observes
-    every dispatch the moment it happens — the hook a run-start retention gate and an
-    operator's log both read."""
+    Data retention for the models it serves is managed by the operator's OpenRouter account,
+    outside the harness (owner decision 2026-11-22, `retention_managed_by_account`): no request
+    asks for zero retention, and `verify_retention` reports those models as account-managed
+    without asking anything. `retention_answers` (`FR-PROV-15`'s seam) is consulted only for a
+    model that is NOT OpenRouter-routed, which keeps the old fail-closed evaluation.
+    `on_dispatch` observes every dispatch the moment it happens — the hook an operator's log
+    reads."""
 
     #: Cloud-hosted: calls are billed, so `Completion.cost` is a measured or derived
     #: Decimal — never null, never zero-by-default (`CT-PROV-03`).
@@ -589,17 +577,14 @@ class OpenRouterProvider(_BaseLiveProvider):
         base_url: str | None = None, api_key: str | None = None,
         retention_answers: Callable[[str], str] | None = None,
         on_dispatch: Callable[[HttpRequest], None] | None = None,
-        zero_data_retention: bool = True,
         **seams: Any,
     ) -> None:
         super().__init__(**seams)
-        self._zero_data_retention = zero_data_retention
         self._base_url = (
             base_url if base_url is not None
             else os.environ.get(OPENROUTER_BASE_URL_ENV, DEFAULT_OPENROUTER_BASE_URL))
-        # The key is enforced at DISPATCH, not construction: the retention gate makes no
-        # model call, and a run that never leaves the gate (FR-PROV-14 refusal) is not a
-        # configuration error — it is the gate working.
+        # The key is enforced at DISPATCH, not construction: building a provider makes no model
+        # call, and a provider that never dispatches needs no key.
         self._api_key = (
             api_key if api_key is not None
             else os.environ.get(OPENROUTER_API_KEY_ENV))
@@ -613,44 +598,6 @@ class OpenRouterProvider(_BaseLiveProvider):
 
     def _url_for(self, model_ref: ModelRef) -> str:
         return f"{self._base_url}/chat/completions"
-
-    @classmethod
-    def enforcing_zero_retention(cls, **seams: Any) -> "OpenRouterProvider":
-        """An OpenRouter provider whose zero-retention gate is answered by its own routing.
-
-        Every request this provider sends carries `ZERO_RETENTION_ROUTING`, so OpenRouter
-        routes it only to a host that keeps no copy and does not train on it, and refuses the
-        request when no such host serves the model. A refusal is a 404 *"No endpoints found
-        matching your data policy"*, which `_status_error` raises as `ProviderUnavailableError`
-        after one send: the run pauses and nothing reached a host that retains data.
-
-        So zero retention is not an answer this provider has to look up (the open TBD of
-        `FR-PROV-15`, which `verify_retention`'s default `GET /retention/<build>` waits on and
-        OpenRouter does not serve); it is a condition every dispatch enforces. The retention
-        seam therefore answers `zero-retention` for every model, and the answer is true for
-        exactly as long as `zero_data_retention` stays on, which this constructor fixes.
-
-        This is what the `aeh` launcher builds for `dev-ci` and `cloud-hosted`. Checked against
-        the real service on 2026-10-03: `qwen/qwen3-30b-a3b` (served by DeepInfra) and
-        `qwen/qwen3-vl-8b-instruct` (Parasail) both answered under these preferences."""
-        seams.pop("zero_data_retention", None)
-        seams.pop("retention_answers", None)
-        provider = cls(zero_data_retention=True, **seams)
-        provider._retention_answers = provider._answer_from_routing
-        return provider
-
-    def _answer_from_routing(self, build: str) -> str:
-        """The retention answer `enforcing_zero_retention` gives: confirmed while, and only
-        while, this provider's own requests carry `ZERO_RETENTION_ROUTING`.
-
-        It speaks for the models THIS provider dispatches. A decision model is answered by its
-        own provider: the launcher binds that provider before the run is created, so the
-        orchestrator never falls back to this one for it (`_verify_retention_at_start`)."""
-        return ZERO_RETENTION_ENFORCED_ANSWER if self._routing() else "unconfirmed"
-
-    def _routing(self) -> dict[str, Any] | None:
-        """`ZERO_RETENTION_ROUTING` on every request while `zero_data_retention` is on."""
-        return dict(ZERO_RETENTION_ROUTING) if self._zero_data_retention else None
 
     def _wire_model(self, model_ref: ModelRef) -> str:
         """OpenRouter's name for a pinned build: `openrouter/qwen/qwen3-30b-a3b@2026-06-01` is
@@ -667,8 +614,8 @@ class OpenRouterProvider(_BaseLiveProvider):
             # A caller that ignored verify_retention's raise still cannot reach the
             # provider (CT-PROV-13): the gate's refusal outlives the exception.
             raise RetentionPolicyError(
-                "zero-retention routing was not confirmed for this panel at run start; "
-                "the gate refused and no payload has been or will be dispatched."
+                "retention was not confirmed at run start for a model whose retention is not "
+                "managed by the OpenRouter account; no payload has been or will be dispatched."
             )
         if self._api_key is None:
             raise ConfigurationError(
@@ -687,16 +634,24 @@ class OpenRouterProvider(_BaseLiveProvider):
         return self._dispatch(model_ref, prompt, params)
 
     def verify_retention(self, model_refs: Sequence[ModelRef]) -> RetentionReport:
-        """Confirm zero retention for every panel member, refusing when any cannot be confirmed.
+        """Report every OpenRouter-routed model as account-managed (`exempt`), asking nothing.
 
-        The answers come from the injected source (or the provider's endpoint via the
-        transport when no source is given — the same fail-closed evaluation either way).
-        Absent, empty, hedged or otherwise non-explicit answers leave the model
-        unconfirmed: `bool(answer)` reads "unknown" as a yes, and this gate exists because
-        that reads a privacy promise out of a hedge."""
+        Owner decision 2026-11-22 (`retention_managed_by_account`): retention for these models
+        is governed by the operator's OpenRouter account, so nothing is probed, nothing is
+        refused, nothing arms `complete()`'s refusal, and no such model is ever reported as
+        confirmed. Supersedes FR-PROV-14's gate for them.
+
+        A model that is not OpenRouter-routed (none is dispatched here by the shipped
+        launchers) keeps the old fail-closed evaluation: its answer comes from the injected
+        source, or the provider's endpoint via the transport when no source is given, and an
+        absent, empty, hedged or otherwise non-explicit answer leaves it unconfirmed and raises
+        — `bool(answer)` would read "unknown" as a yes."""
+        exempt = tuple(ref for ref in model_refs if retention_managed_by_account(ref))
         confirmed: list[ModelRef] = []
         unconfirmed: list[ModelRef] = []
         for ref in model_refs:
+            if retention_managed_by_account(ref):
+                continue
             key = ref.build_id  # the seam's key: the build the answer speaks about
             if self._retention_answers is not None:
                 source = self._retention_answers
@@ -713,26 +668,20 @@ class OpenRouterProvider(_BaseLiveProvider):
             else:
                 unconfirmed.append(ref)
         if unconfirmed:
-            # The gate is the run-start defense (FR-PROV-14): an unconfirmed panel member
-            # stops the run HERE, naming which models failed — not in a report a caller
-            # might ignore. The flag also arms complete()'s refusal, so a caller that
-            # ignores this error still cannot reach the provider (CT-PROV-13's ordering).
+            # A model outside the account's policy that cannot be confirmed stops the run HERE,
+            # naming it. The flag also arms complete()'s refusal, so a caller that ignores this
+            # error still cannot reach the provider (CT-PROV-13's ordering).
             self._retention_gate_failed = True
             raise RetentionPolicyError(
                 f"zero-retention routing unconfirmed for {len(unconfirmed)} of "
-                f"{len(model_refs)} panel members: "
-                f"{'; '.join(f'{r.provider}:{r.build_id}' for r in unconfirmed)}. "
-                "A cloud-hosted run does not start until every member is confirmed, and "
-                "nothing has been dispatched."
+                f"{len(model_refs)} models whose retention is not managed by the OpenRouter "
+                f"account: {'; '.join(f'{r.provider}:{r.build_id}' for r in unconfirmed)}. "
+                "The run does not start, and nothing has been dispatched."
             )
-        return RetentionReport(
-            confirmed=tuple(confirmed), unconfirmed=(),
-        )
+        return RetentionReport(confirmed=tuple(confirmed), unconfirmed=(), exempt=exempt)
 
     def require_retention(self, model_refs: Sequence[ModelRef]) -> RetentionReport:
-        """The `cloud-hosted` retention gate: raises naming any unconfirmed panel member, and
-        returns the report when the whole panel is confirmed. Same as `verify_retention`; the name
-        makes the caller's intent clear."""
+        """Same as `verify_retention`; the name makes the caller's intent clear."""
         return self.verify_retention(model_refs)
 
     def capabilities(self, model_ref: ModelRef) -> Capabilities:

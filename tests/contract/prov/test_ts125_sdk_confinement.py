@@ -349,4 +349,7 @@ def test_tc_prov_c30_every_byte_passes_the_transport_with_no_sdk_retry(monkeypat
         assert "x-typesafe-retry-count" not in headers
         assert sent.url.endswith("/api/v1/systemone")
         document = json.loads(bytes(sent.body).decode("utf-8"))
-        assert document["provider"]["allow_fallbacks"] is False and document["provider"]["zdr"] is True
+        # Re-based 2026-11-22: the upstream pin stays; no zero retention is requested (the
+        # OpenRouter account manages retention).
+        assert document["provider"] == {"order": document["provider"]["order"],
+                                        "allow_fallbacks": False}

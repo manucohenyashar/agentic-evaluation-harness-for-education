@@ -10,6 +10,8 @@ stand-in, and it answers 400 to any model it was not told about, as OpenRouter d
 
 from __future__ import annotations
 
+from typing import Any
+
 import io
 import json
 import re
@@ -119,10 +121,16 @@ def physics(tmp_data_dir, tmp_path, monkeypatch):
     # Every judge escalation may run: the default budget is a rate, and six papers are few.
     monkeypatch.setenv("HARNESS_ORCH_ESCALATION_BUDGET", "1.0")
     fake = _FakeOpenRouter({TRANSCRIBER, PANEL_JUDGE})
-    real = OpenRouterProvider.enforcing_zero_retention.__func__
-    monkeypatch.setattr(OpenRouterProvider, "enforcing_zero_retention", classmethod(
-        lambda cls, **seams: real(cls, api_key="sk-or-test",
-                                  base_url="https://openrouter.test/api/v1", transport=fake)))
+    # The launcher builds a plain `OpenRouterProvider()` (`runtime._provider_for` imports it
+    # from `aeh.prov` at call time), so a subclass bound to the stand-in takes its place.
+    import aeh.prov
+
+    class _StandIn(OpenRouterProvider):
+        def __init__(self, **seams: Any) -> None:
+            super().__init__(api_key="sk-or-test",
+                             base_url="https://openrouter.test/api/v1", transport=fake)
+
+    monkeypatch.setattr(aeh.prov, "OpenRouterProvider", _StandIn)
 
     files = sm.build_all()
     paper = tmp_path / "01-test-paper.pdf"

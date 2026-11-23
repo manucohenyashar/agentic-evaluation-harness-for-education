@@ -41,7 +41,7 @@ Purpose: the operator and teacher learn the screens with nothing at stake.
 
 All must be true. Each line is a checkable goal, listed in 02.
 
-- [ ] A written privacy decision authorizes the selected synthetic or consented test materials for the configured OpenRouter zero-retention route; this technical setting does not replace school approval.
+- [ ] A written privacy decision authorizes the selected synthetic or consented test materials for the OpenRouter account whose privacy settings govern data retention (the operator sets them; the system does not request zero retention); that account setting does not replace school approval.
 - [ ] A real, throw-away call to OpenRouter succeeds for each configured model, and the exact model names are checked against the service.
 - [ ] The teacher can make a class marked *made-up practice work* on the Classes screen (typed or from `config/eng7-roster.txt`) and sees its students listed.
 - [ ] Parked-paper handling is understood: the SPA shows each reason, gives a nameless paper to its student, releases or closes the others, and records every decision with its note.

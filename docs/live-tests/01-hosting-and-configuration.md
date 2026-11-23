@@ -39,7 +39,7 @@ A **profile** tells the system where its models run. There are three.
 | `dev-ci` | OpenRouter. With `HARNESS_FIXTURE_DIR` set, recorded replays instead (the test tier) | Yes | Yes, consent rule applies | Development, the first live test, and offline rehearsal |
 | `cloud-hosted` | OpenRouter | **No, refused** | Yes, consent rule and a privacy check apply | A hosted service with its own login (not built) |
 
-**For the first live test with OpenRouter and the console, use `dev-ci`.** The shipped launcher calls OpenRouter under `dev-ci` and enforces the zero-retention policy on every request. Setting `HARNESS_FIXTURE_DIR` selects recorded replays instead; that is the deterministic test/rehearsal path. The console refuses `cloud-hosted` because that profile is intended for a separately authenticated hosted service, which this console is not.
+**For the first live test with OpenRouter and the console, use `dev-ci`.** The shipped launcher calls OpenRouter under `dev-ci`; data retention is governed by the privacy settings of your OpenRouter account, which you must set (the system does not request zero retention, owner decision 2026-11-22). Setting `HARNESS_FIXTURE_DIR` selects recorded replays instead; that is the deterministic test/rehearsal path. The console refuses `cloud-hosted` because that profile is intended for a separately authenticated hosted service, which this console is not.
 
 ## 3. The machine
 
@@ -211,7 +211,7 @@ Tick each before the test.
 - [ ] A spending limit is set in OpenRouter's dashboard.
 - [ ] Only `synthetic` cohorts will be graded. `HARNESS_ALLOW_REMOTE_REAL_WORK` is not set.
 - [ ] The cost ceiling is set in the config file.
-- [ ] The privacy owner has documented approval for sending the selected cohort and documents to an eligible zero-retention OpenRouter endpoint. The software requests zero retention on every call and refuses when no matching endpoint exists; this technical gate does not replace the school's approval. The Jev decision engine is exempt from the run-start zero-retention check (owner decision 2026-11-20): the approval should cover sending answers to Jev without a confirmed zero-retention guarantee.
+- [ ] The OpenRouter account's privacy settings (openrouter.ai, Settings > Privacy) are set to the retention policy the privacy owner approved. The software does not request zero retention on any call and does not check it at run start (owner decision 2026-11-22: "All models should not ask for zero retention as this policy is managed by my OpenRouter account outside the system"); every run records `retention: "managed by the OpenRouter account"`. The privacy owner has documented approval for sending the selected cohort and documents to OpenRouter under those account settings, Jev included; the account setting does not replace the school's approval.
 - [ ] A backup of the data folder will be taken after the test, before anything is purged.
 - [ ] Nobody will try to bind the console to a network address.
 
@@ -224,6 +224,6 @@ Tick each before the test.
 | Console under `cloud-hosted` | `ConsoleBindRefused: … refuses to start under the cloud-hosted profile` | Use `dev-ci` or `edge-local` |
 | Run with no profile | `ConfigurationError: HARNESS_PROFILE must be one of ('edge-local', 'cloud-hosted', 'dev-ci'), got None` | Set it |
 | `cloud-hosted` console | `ConsoleBindRefused: … refuses to start under the cloud-hosted profile` | Use `dev-ci` or `edge-local` for this loopback-only, unauthenticated console |
-| `dev-ci` run, no eligible zero-retention endpoint | `HTTP 404 … No endpoints found matching your data policy` | Check the selected model's eligible providers and the zero-retention request policy; do not weaken the privacy controls |
+| `dev-ci` run, no host allowed by the account's privacy settings | `HTTP 404 … No endpoints found matching your data policy` | Check the selected model's eligible providers against the OpenRouter account's privacy settings; do not weaken those settings |
 | `dev-ci` with `HARNESS_FIXTURE_DIR` set | Recorded request/reply fixtures are replayed; OpenRouter is not called | Use this for deterministic offline tests, not as evidence of a live model run |
 | Real cohort on a remote profile | `ConsentGateError: … may not be sent to a 'dev-ci' provider` | Use a synthetic cohort |

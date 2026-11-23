@@ -113,6 +113,12 @@ def test_tc_smoke_06_zero_retention_confirmed_for_every_panel_model():
     """`TC-SMOKE-06` — on `cloud-hosted`, zero-retention routing is confirmed for every
     panel model.
 
+    Re-based on the owner decision of 2026-11-22 ("All models should not ask for zero retention
+    as this policy is managed by my OpenRouter account outside the system"): the OpenRouter
+    panel itself is now reported account-managed (`exempt`), never confirmed and never refused,
+    whatever the source answers. The confirmation and refusal paths below are kept, on the same
+    panel builds named under a provider whose retention the account does not manage.
+
     Oracle: **exact report, then the fail-closed refusal**. On the confirmation path,
     `verify_retention` returns `RetentionReport(confirmed=<all three>, unconfirmed=())` —
     the panel members themselves, in panel order (`FR-PROV-03`: the report is contract, so
@@ -124,13 +130,21 @@ def test_tc_smoke_06_zero_retention_confirmed_for_every_panel_model():
     The retention answers come through the `retention_answers` seam (`FR-PROV-15`), so no
     transport is ever touched — the socket guard stays untripped by construction.
     """
+    import dataclasses
+
+    account_managed = OpenRouterProvider(
+        base_url="http://fixture.invalid", api_key=SENTINEL_CREDENTIAL,
+        retention_answers=lambda build_id: "mostly",
+    ).verify_retention(HOSTED_PANEL_3)
+    assert (account_managed.exempt, account_managed.confirmed) == (HOSTED_PANEL_3, ())
+    panel = tuple(dataclasses.replace(ref, provider="local") for ref in HOSTED_PANEL_3)
     confirmed_provider = OpenRouterProvider(
         base_url="http://fixture.invalid",
         api_key=SENTINEL_CREDENTIAL,
         retention_answers=lambda build_id: "zero-retention",
     )
-    report = confirmed_provider.verify_retention(HOSTED_PANEL_3)
-    assert report.confirmed == HOSTED_PANEL_3, (
+    report = confirmed_provider.verify_retention(panel)
+    assert report.confirmed == panel, (
         f"TC-SMOKE-06: zero-retention confirmed for {report.confirmed} of the panel. "
         "FR-PROV-14: every panel model, in panel order — a report that drops a member "
         "understates what must hold before the first dispatch."
@@ -143,12 +157,12 @@ def test_tc_smoke_06_zero_retention_confirmed_for_every_panel_model():
         retention_answers=lambda build_id: "mostly",
     )
     with pytest.raises(RetentionPolicyError) as raised:
-        gated_provider.verify_retention(HOSTED_PANEL_3)
-    for member in HOSTED_PANEL_3:
+        gated_provider.verify_retention(panel)
+    for member in panel:
         assert member.build_id in str(raised.value), (
             f"TC-SMOKE-06: the refusal does not name {member.build_id}. FR-PROV-14's "
             "refusal names the unconfirmed models — an operator cannot route around a "
             "gate that will not say which member it refused."
         )
     with pytest.raises(RetentionPolicyError):
-        gated_provider.complete(_prompt(), HOSTED_PANEL_3[0], SamplingParams(temperature=0.0))
+        gated_provider.complete(_prompt(), panel[0], SamplingParams(temperature=0.0))

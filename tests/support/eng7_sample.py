@@ -98,10 +98,16 @@ class Eng7World:
 def install_fake_openrouter(monkeypatch: Any) -> FakeOpenRouter:
     """Route the real `OpenRouterProvider` to a `FakeOpenRouter` serving the shipped models."""
     fake = FakeOpenRouter({TRANSCRIBER, PANEL_JUDGE})
-    real = OpenRouterProvider.enforcing_zero_retention.__func__
-    monkeypatch.setattr(OpenRouterProvider, "enforcing_zero_retention", classmethod(
-        lambda cls, **seams: real(cls, api_key="sk-or-test",
-                                  base_url="https://openrouter.test/api/v1", transport=fake)))
+    # The launcher builds a plain `OpenRouterProvider()` (`runtime._provider_for` imports it
+    # from `aeh.prov` at call time), so a subclass bound to the stand-in takes its place.
+    import aeh.prov
+
+    class _StandIn(OpenRouterProvider):
+        def __init__(self, **seams: Any) -> None:
+            super().__init__(api_key="sk-or-test",
+                             base_url="https://openrouter.test/api/v1", transport=fake)
+
+    monkeypatch.setattr(aeh.prov, "OpenRouterProvider", _StandIn)
     return fake
 
 

@@ -110,7 +110,9 @@ def test_tc_prov_55_openrouter_injected_seams_are_behaviour_neutral():
                                   transport=_Transport(_throttled_now(), _completion()),
                                   clock=_CountingClock(), retention_answers=_zero_retention,
                                   on_dispatch=dispatched.append)
-    assert injected.verify_retention([_ref()]).confirmed == (_ref(),)
+    # Re-based 2026-11-22: an OpenRouter model is reported account-managed, never confirmed,
+    # whatever the injected source says.
+    assert injected.verify_retention([_ref()]).exempt == (_ref(),)
     outcomes = [(p.complete(_payload(), _ref(), SamplingParams(temperature=0.0)).text, p.counters)
                 for p in (default, injected)]
     assert outcomes[0] == outcomes[1], (

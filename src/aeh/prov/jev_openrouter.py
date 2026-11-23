@@ -201,9 +201,10 @@ class JevOpenRouterProvider(_BaseDecisionProvider):
     (FR-PROV-21).
 
     Design 1.8 (FR-PROV-38…43, ADR-28): the request is sent through the TypeSafe SDK to
-    OpenRouter's `/api/v1/systemone`, for a pinned Jev build, with the upstream pinned,
-    fallbacks disabled and zero-retention routing requested (requested, not required: Jev
-    decision models are exempt from the zero-retention gate, `retention_exempt`). The SDK stays inside this class:
+    OpenRouter's `/api/v1/systemone`, for a pinned Jev build, with the upstream pinned and
+    fallbacks disabled. Zero retention is not requested: retention is managed by the operator's
+    OpenRouter account (owner decision 2026-11-22, `retention_managed_by_account`). The SDK
+    stays inside this class:
     its HTTP goes through the injected `Transport` (an `httpx2` transport adapter), its retries
     are off so the shared loop owns them, every kept value is read from the raw response body,
     and every SDK error is mapped to a harness error. Separate from the local providers by
@@ -236,8 +237,8 @@ class JevOpenRouterProvider(_BaseDecisionProvider):
         if session_id is not None and (not isinstance(session_id, str) or not 0 < len(session_id) <= 256):
             raise ConfigurationError("session_id must be a non-empty string of at most 256 characters.")
         self._session_id = session_id if session_id is not None else uuid.uuid4().hex
-        # Consulted only for a model that is not exempt; a Jev decision model never is asked
-        # (`retention_exempt`, owner decision 2026-11-20).
+        # Consulted only for a model that is not exempt; an OpenRouter-routed Jev model never is
+        # asked (`retention_exempt`: owner decisions 2026-11-20 and 2026-11-22).
         self._retention_answers = retention_answers
         self._retention_gate_failed = False
 
@@ -260,9 +261,11 @@ class JevOpenRouterProvider(_BaseDecisionProvider):
         if not self._api_key:
             raise ConfigurationError(
                 f"JevOpenRouterProvider needs an API key: pass api_key= or set {OPENROUTER_API_KEY_ENV}.")
+        # The upstream pin (`order`, no fallbacks) fixes which host serves the pinned build.
+        # No `zdr` / `data_collection`: retention is the OpenRouter account's policy (owner
+        # decision 2026-11-22), never asked for on the request.
         extra_body = {
-            "provider": {"order": [self._upstream], "allow_fallbacks": False,
-                         "data_collection": "deny", "zdr": True},
+            "provider": {"order": [self._upstream], "allow_fallbacks": False},
             "session_id": self._session_id,
         }
         call = _SdkCall(self._sdk_client(wire_model), self._sdk, request.state,
@@ -308,8 +311,9 @@ class JevOpenRouterProvider(_BaseDecisionProvider):
 
         FR-PROV-43's refusal of a response served by an upstream outside the pinned order is
         not applied. The design calls it "the per-call half of zero retention" (Jev design
-        delta, FR-PROV-43), so it is a retention check, and Jev decision models are exempt from
-        those (`retention_exempt`, owner decision 2026-11-20). Which build answered is still
+        delta, FR-PROV-43), so it is a retention check, and retention for this provider's models
+        is managed by the OpenRouter account (`retention_exempt`, owner decisions 2026-11-20 and
+        2026-11-22). Which build answered is still
         guarded per run by `BuildWatch` (FR-PROV-24), not by this check, and the request still
         pins the upstream with fallbacks off."""
         if isinstance(document, dict):
@@ -318,11 +322,11 @@ class JevOpenRouterProvider(_BaseDecisionProvider):
         return document
 
     def verify_retention(self, model_refs: Sequence[ModelRef]) -> RetentionReport:
-        """Jev decision models are exempt from the zero-retention requirement (owner decision
-        2026-11-20, `retention_exempt`; supersedes FR-PROV-28 here): such a model is reported as
-        `exempt`, never as confirmed, nothing is asked, and nothing is armed to refuse `decide`.
-        Any other model is asked as before; when unconfirmed it raises and makes `decide` refuse
-        it."""
+        """An OpenRouter-routed (or Jev) decision model is left out of the zero-retention gate
+        (`retention_exempt`: owner decisions 2026-11-20 and 2026-11-22; supersedes FR-PROV-28
+        here): it is reported as `exempt`, never as confirmed, nothing is asked, and nothing is
+        armed to refuse `decide`. Any other model is asked as before; when unconfirmed it raises
+        and makes `decide` refuse it."""
         exempt = tuple(ref for ref in model_refs if retention_exempt(ref))
         confirmed: list[ModelRef] = []
         unconfirmed: list[ModelRef] = []

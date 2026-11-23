@@ -94,8 +94,10 @@ def test_tc_prov_26_the_exact_wire_request(monkeypatch) -> None:
     assert set(document) == {"model", "state", "questions", "provider", "session_id"}
     assert document["model"] == "typesafe/jev-1.13" and document["session_id"] == "R1"
     routing = document["provider"]
-    assert set(routing) == {"order", "allow_fallbacks", "data_collection", "zdr"}
-    assert (routing["allow_fallbacks"], routing["data_collection"], routing["zdr"]) == (False, "deny", True)
+    # Re-based 2026-11-22: no `zdr` / `data_collection`; the OpenRouter account manages
+    # retention. The upstream pin stays.
+    assert set(routing) == {"order", "allow_fallbacks"}
+    assert routing["allow_fallbacks"] is False
     assert isinstance(routing["order"], list) and routing["order"]
     questions = document["questions"]
     assert questions["topic"]["criteria"] == {"friction": "static friction", "normal": None}

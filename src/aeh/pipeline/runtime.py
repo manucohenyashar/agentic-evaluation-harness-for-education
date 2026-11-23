@@ -81,11 +81,11 @@ def _provider_for(config: Mapping[str, Any]) -> Any:
     * `cloud-hosted` -> OpenRouter.
     * `edge-local` -> `LocalServerProvider`.
 
-    OpenRouter is always `OpenRouterProvider.enforcing_zero_retention()`: every request
-    carries `zdr` and `data_collection: "deny"`, so OpenRouter routes student work only to a
-    host that keeps none, or refuses it, and the `cloud-hosted` run-start retention gate is
-    answered by that enforcement (blocker B6). The consent gate (`FR-CONF-08`) still decides,
-    before any of this, whether a cohort's work may leave the machine at all.
+    OpenRouter is a plain `OpenRouterProvider()`: no request asks for zero retention, because
+    retention is managed by the operator's OpenRouter account, outside the harness (owner
+    decision 2026-11-22, `aeh.prov.retention_managed_by_account`); the operator sets it in the
+    account's privacy settings. The consent gate (`FR-CONF-08`, R31) still decides, before any
+    of this, whether a cohort's work may leave the machine at all.
 
     Every provider is wrapped in `_UnitPricedProvider`, so the cost ceiling can price a unit.
     The live providers take their endpoints from their own environment knobs
@@ -103,9 +103,9 @@ def _provider_for(config: Mapping[str, Any]) -> Any:
         fixture_dir = os.environ.get("HARNESS_FIXTURE_DIR")
         if fixture_dir:
             return _UnitPricedProvider(RecordedFixtureProvider(fixture_dir=Path(str(fixture_dir))))
-        return _UnitPricedProvider(OpenRouterProvider.enforcing_zero_retention())
+        return _UnitPricedProvider(OpenRouterProvider())
     if profile == "cloud-hosted":
-        return _UnitPricedProvider(OpenRouterProvider.enforcing_zero_retention())
+        return _UnitPricedProvider(OpenRouterProvider())
     if profile == "edge-local":
         # FR-PROV-47: the server declares the run's hardware profile's concurrency.
         hardware = getattr(config, "hardware_profile", None) or (

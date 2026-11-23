@@ -8,7 +8,7 @@ exactly what is left, so a new session can finish without the old conversation.
 | Blocker | What now works | Tests |
 |---|---|---|
 | B1 | `dev-ci` calls OpenRouter (recordings only when `HARNESS_FIXTURE_DIR` is set); providers bound before `create_run`; unit pricing adapter for the cost ceiling | TC-PIPE-24..26, TC-PROV-64 |
-| B6 | Every OpenRouter request carries `provider: {zdr: true, data_collection: "deny"}` | TC-PROV-64 |
+| B6 | Superseded 2026-11-22: no OpenRouter request asks for zero retention; the account's privacy settings govern it | TC-PROV-64 (re-based) |
 | B3 | `aeh cohort create / add-students / show` | TC-ORCH-59/60 |
 | B5 | `aeh package build --spec <toml>` (sample: `docs/live-tests/config/ps9-forces-01.package.toml`) | TC-PIPE-27..29 |
 | B4 | `aeh ingest`: reads test paper + answer sheets; skips scans already read; parks a read cut off by Ctrl-C; exits 1 when no sheet could be read (key/credit/model) | TC-PIPE-30..32 |
@@ -36,9 +36,10 @@ has ~100 pre-existing failures in these suites.
      add `escalation_judge` tables (one-judge panel: 2 for the random arm, 5 for every seat).
    * Add commented `escalation_judge` examples to `docs/live-tests/config/live-test.dev-ci.toml`.
 3. **Pick real judge models (the user's step).** Each extra judge must be a different model and
-   must answer under zero retention. Check each one before adding it:
+   must be served under the OpenRouter account's privacy settings. Check each one before adding it
+   (with the account's settings in force, a refusal means no allowed host serves it):
    ```powershell
-   curl.exe https://openrouter.ai/api/v1/chat/completions -H "Authorization: Bearer $env:OPENROUTER_API_KEY" -H "Content-Type: application/json" -d '{\"model\":\"<vendor/model>\",\"messages\":[{\"role\":\"user\",\"content\":\"Say ready\"}],\"provider\":{\"zdr\":true,\"data_collection\":\"deny\"}}'
+   curl.exe https://openrouter.ai/api/v1/chat/completions -H "Authorization: Bearer $env:OPENROUTER_API_KEY" -H "Content-Type: application/json" -d '{\"model\":\"<vendor/model>\",\"messages\":[{\"role\":\"user\",\"content\":\"Say ready\"}]}'
    ```
    Already confirmed this way: `qwen/qwen3-30b-a3b` (DeepInfra), `qwen/qwen3-vl-8b-instruct`
    (Parasail).

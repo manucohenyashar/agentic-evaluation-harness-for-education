@@ -10,6 +10,15 @@ build they will dispatch to — panel, escalation judges, decision engine; the t
 reading job — and refuse before the first student byte leaves, naming the model.
 Re-based on the owner decision of 2026-11-20: the Jev decision engine is exempt from zero
 retention, so it is not probed and is recorded as `retention_exempt`.
+
+Re-based again on the owner decision of 2026-11-22 ("All models should not ask for zero
+retention as this policy is managed by my OpenRouter account outside the system"): no
+OpenRouter-routed build — panel, escalation judges, Jev engine, transcriber — is probed or
+refused, on any remote profile; the run records `retention = "managed by the OpenRouter
+account"` with the builds under `retention_account_managed`, and no probe cost (nothing was
+probed). The probe, its once-per-build census and the knob still apply to a remote-profile
+build whose retention the account does not manage, which the knob case pins with a panel named
+under a local provider.
 `HARNESS_RETENTION_PRECHECK=0` turns the probe off for the recorded tier only. The probe's cost
 is recorded on the run.
 
@@ -69,6 +78,11 @@ _BLOCKER = "S30 (#872) has not landed"
 PANEL = tuple(ModelRef(role="judge", provider="openrouter",
                        build_id=f"openrouter/vendor/judge-{i}@2026-01-01", quantization=None)
               for i in range(3))
+#: The same builds under a provider whose retention the OpenRouter account does not manage, so
+#: the run-start probe still applies to them (re-based 2026-11-22).
+UNMANAGED_PANEL = tuple(ModelRef(role="judge", provider="ollama",
+                                 build_id=f"local/vendor/judge-{i}@2026-01-01", quantization=None)
+                        for i in range(3))
 ESCALATION = [{"role": "judge", "provider": "openrouter",
                "build_id": f"openrouter/vendor/escalation-{k}@2026-01-01"} for k in "ab"]
 JEV_BUILD = "openrouter/typesafe/jev-1.13@2026-09-17"
@@ -165,12 +179,13 @@ def _dev_ci_cfg():
                       HARNESS_JEV_BUILD=JEV_BUILD, escalation_judge=ESCALATION)
 
 
-@pytest.mark.parametrize("knob", [None, "0"], ids=["default", "knob-off-still-probes-live"])
-def test_tc_prov_71_run_start_probes_every_distinct_build_once_before_any_request(
+@pytest.mark.parametrize("knob", [None, "0"], ids=["default", "knob-off"])
+def test_tc_prov_71_run_start_probes_no_openrouter_build_and_records_the_account(
         tmp_data_dir, monkeypatch, network_guard, knob):
-    """`HARNESS_RETENTION_PRECHECK=0` is for the recorded tier only: on the live provider the
-    census is the same with it set (a knob that silenced the check on live traffic is the
-    dangerous mutation)."""
+    """Re-based 2026-11-22 (was "run start probes every distinct build once before any
+    request"): an OpenRouter-routed build is never probed, whatever the knob says, and the run
+    records retention as the OpenRouter account's — never as verified, and with no probe
+    cost."""
     if knob is None:
         monkeypatch.delenv("HARNESS_RETENTION_PRECHECK", raising=False)
     else:
@@ -181,64 +196,46 @@ def test_tc_prov_71_run_start_probes_every_distinct_build_once_before_any_reques
     try:
         run_id = _start(store, cohort, version, _dev_ci_cfg(), bound, decision_provider=jev)
 
-        # The Jev decision engine is exempt from the zero-retention requirement (owner decision
-        # 2026-11-20, `aeh.prov.retention_exempt`): it is not probed, and the run records it
-        # under `retention_exempt`, never `retention_verified`. Every other build still is.
         wanted = [ref.build_id for ref in PANEL] + [e["build_id"] for e in ESCALATION]
-        census = Counter(_probed(events))
-        assert all(census[build] == 1 for build in wanted), (
-            f"FR-PROV-48: run start on dev-ci must call verify_retention once per distinct "
-            f"build (panel, escalation judges) ({_BLOCKER}); probed: "
-            f"{dict(census)}")
-        assert census[JEV_BUILD] == 0, f"the exempt Jev build was probed: {dict(census)}"
-        assert max(census.values()) == 1, f"a build was probed twice: {dict(census)}"
-        probes = [i for i, event in enumerate(events) if event[0] == "probe"]
-        posts = [i for i, event in enumerate(events) if event[:2] == ("send", "POST")]
-        assert not posts or max(probes) < min(posts), (
-            "a request reached the model endpoint before every build was verified")
+        assert _probed(events) == [], f"an OpenRouter build was probed: {_probed(events)}"
 
-        # The probe's cost appears on the run.
         handle = store.cohort(cohort)
         # `run_metrics` lives in the durable tier (store migration 1), not the cohort's.
         metrics = {row["metric"]: row["value"] for row in store.durable().query(
             "SELECT metric, value FROM run_metrics WHERE run_id = :r", r=run_id)}
         provider_config = json.loads(handle.query(
             "SELECT provider_config FROM run WHERE run_id = :r", r=run_id)[0]["provider_config"])
-        assert provider_config["retention_exempt"] == [JEV_BUILD]
-        assert JEV_BUILD not in provider_config["retention_verified"]
+        assert provider_config["retention"] == "managed by the OpenRouter account"
+        assert provider_config["retention_account_managed"] == sorted([*wanted, JEV_BUILD])
+        assert "retention_verified" not in provider_config
+        assert "retention_exempt" not in provider_config
+        # Nothing was probed, so no probe cost is recorded anywhere.
         named = re.compile(r"(retention|probe).*cost|cost.*(retention|probe)")
         figures = {k: v for k, v in {**_flat(provider_config), **metrics}.items()
                    if named.search(k)}
-        assert figures, (f"FR-PROV-48: the retention probe's cost is not on the run; "
-                         f"metrics {sorted(metrics)}, provider_config {sorted(provider_config)}")
-        assert all(v is not None and Decimal(str(v)) >= 0 for v in figures.values()), (
-            f"the probe's cost is recorded without a figure: {figures}")
+        assert figures == {}, f"a probe cost was recorded though nothing was probed: {figures}"
     finally:
         store.close()
 
 
-def test_tc_prov_71_a_build_with_no_zero_retention_host_refuses_the_start_naming_it(
+def test_tc_prov_71_an_unconfirmed_openrouter_build_does_not_refuse_the_start(
         tmp_data_dir, monkeypatch, network_guard):
+    """Re-based 2026-11-22 (was "a build with no zero-retention host refuses the start naming
+    it"): the OpenRouter account manages retention, so an escalation judge whose retention
+    source would say "standard" is neither asked nor refused, and the run is created."""
     monkeypatch.delenv("HARNESS_RETENTION_PRECHECK", raising=False)
     store, cohort, version = _world(tmp_data_dir)
     events: list = []
     hedged = ESCALATION[1]["build_id"]
     bound, jev, endpoint = _live_bound(events, unconfirmed=frozenset({hedged}))
     try:
-        try:
-            _start(store, cohort, version, _dev_ci_cfg(), bound, decision_provider=jev)
-        except Exception as error:  # noqa: BLE001 - the refusal's type is the gate's to choose
-            refusal = str(error)
-        else:
-            raise AssertionError(
-                f"FR-PROV-48: a dev-ci start with an escalation judge that has no "
-                f"zero-retention host was not refused ({_BLOCKER})")
-        assert hedged in refusal or "escalation-b" in refusal, (
-            f"the refusal does not name the model: {refusal}")
-        assert store.cohort(cohort).query("SELECT count(*) AS n FROM run")[0]["n"] == 0
-        assert [r for r in endpoint.requests if r.method == "POST"] == []
-        assert not [r for r in endpoint.requests if SENTINEL.encode() in (r.body or b"")], (
-            "a request carrying student text left before the refusal")
+        run_id = _start(store, cohort, version, _dev_ci_cfg(), bound, decision_provider=jev)
+        assert store.cohort(cohort).query(
+            "SELECT count(*) AS n FROM run WHERE run_id = :r", r=run_id)[0]["n"] == 1
+        assert _probed(events) == []
+        provider_config = json.loads(store.cohort(cohort).query(
+            "SELECT provider_config FROM run WHERE run_id = :r", r=run_id)[0]["provider_config"])
+        assert hedged in provider_config["retention_account_managed"]
     finally:
         store.close()
 
@@ -256,13 +253,15 @@ def test_tc_prov_71_the_precheck_knob_turns_the_probe_off_for_the_recorded_tier(
     fixtures = tmp_path / "recordings"
     fixtures.mkdir()
     try:
-        run_id = _start(store, cohort, version, hosted_cfg("dev-ci", panel=PANEL),
+        # Re-based 2026-11-22: the knob only reaches a build the OpenRouter account does not
+        # manage, so the panel is named under a local provider here.
+        run_id = _start(store, cohort, version, hosted_cfg("dev-ci", panel=UNMANAGED_PANEL),
                         _ProbingFixtures(events, fixtures))
         assert store.cohort(cohort).query(
             "SELECT count(*) AS n FROM run WHERE run_id = :r", r=run_id)[0]["n"] == 1
         if probes_expected:
             census = Counter(_probed(events))
-            assert all(census[ref.build_id] == 1 for ref in PANEL), (
+            assert all(census[ref.build_id] == 1 for ref in UNMANAGED_PANEL), (
                 f"FR-PROV-48: the recorded tier on dev-ci probes by default ({_BLOCKER}); "
                 f"probed: {dict(census)}")
             assert max(census.values()) == 1, f"a build was probed twice: {dict(census)}"
@@ -277,7 +276,10 @@ def reading(tmp_data_dir, monkeypatch, capsys, network_guard):
     yield from reading_world(tmp_data_dir, monkeypatch, capsys, network_guard)
 
 
-def test_tc_prov_71_the_reading_job_probes_the_transcriber_before_the_first_page(reading):
+def test_tc_prov_71_the_reading_job_does_not_probe_an_openrouter_transcriber(reading):
+    """Re-based 2026-11-22 (was "the reading job probes the transcriber before the first page"):
+    the OpenRouter page reader's retention is the account's, so it is not probed, and the job
+    still reads the paper."""
     port, version, events = reading["port"], reading["version"], reading["events"]
     make_class(port, reading["roster"])
     status, answer = upload(port, reading["paper"], cohort_id="ps9-class",
@@ -289,9 +291,5 @@ def test_tc_prov_71_the_reading_job_probes_the_transcriber_before_the_first_page
 
     census = Counter(_probed(events))
     transcriber = reading["transcriber_build"]
-    assert census[transcriber] == 1, (
-        f"FR-PROV-48: the reading job on dev-ci must verify the transcriber's retention once "
-        f"before reading ({_BLOCKER}); probed: {dict(census)}")
-    first_probe = next(i for i, e in enumerate(events) if e[0] == "probe" and transcriber in e[1])
-    first_post = next(i for i, e in enumerate(events) if e[:2] == ("send", "POST"))
-    assert first_probe < first_post, "a page left before the transcriber was verified"
+    assert census[transcriber] == 0, f"the OpenRouter page reader was probed: {dict(census)}"
+    assert any(e[:2] == ("send", "POST") for e in events), "no page was read"

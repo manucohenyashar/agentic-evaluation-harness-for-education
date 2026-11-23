@@ -116,6 +116,12 @@ def _int_env(name: str, default: int) -> int:
 #: sends nothing anywhere, so a test box may skip it; a live provider is probed whatever the
 #: knob says, because a knob that silenced the check on live traffic would read as a kept
 #: privacy promise.
+#:
+#: Since the owner decision of 2026-11-22 an OpenRouter-routed model is never probed
+#: (`retention_managed_by_account`), whatever this knob says, so on the shipped launchers the
+#: knob only reaches a remote-profile model that is not OpenRouter-routed — in practice the
+#: recorded `fixture` decision model under the test tier. Kept for that; it changes nothing
+#: for OpenRouter.
 RETENTION_PRECHECK_ENV = "HARNESS_RETENTION_PRECHECK"
 
 
