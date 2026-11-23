@@ -7,7 +7,7 @@ M-GRADE).
 | TC-ORCH-50 | The start estimate adds one decision call per seat (10 × 1500 × 0.042e-6 = 0.00063) to the unchanged LLM estimate; a ceiling between the two refuses the start and changes nothing |
 | TC-ORCH-51 | The `run_metrics` flush writes the five `decision_*` names with TC-PROV-34's values, and `actual_cost` is the sum of both surfaces (CT-PROV-24; the fix ships here) |
 | TC-ORCH-52 | Escalation additions: (A) 1→3 adds arms 2 and 3; (A,B,C) 3→5 adds arms 4 and 5; A never reappears; a random arm shares A's work id |
-| TC-ORCH-53 | Engine-on cloud start records the engine in `provider_config`; *(re-based, owner decisions 2026-11-20 and 2026-11-22)* the Jev build is recorded under `retention_exempt`, never `retention_verified`, and an unconfirmed Jev decision model no longer refuses the run |
+| TC-ORCH-53 | Engine-on cloud start records the engine in `provider_config`; *(re-based, owner decisions 2026-11-20 and 2026-11-22)* the Jev build is recorded under `retention_account_managed`, never `retention_verified`, and an unconfirmed Jev decision model no longer refuses the run |
 | TC-AGG-25 | Two decision verdicts in one panel raise `PanelCorrelationError` (not retryable); every other engine mix aggregates |
 | TC-AGG-26 | Metamorphic: relabelling the first verdict `decision` changes neither `CriterionScore` nor `should_escalate`, over 12 fixtures |
 | TC-GRADE-26 | Grades from an engine-on run equal an engine-off run's over identical scores; `grade.py` never reads the engine |

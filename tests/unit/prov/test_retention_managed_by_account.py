@@ -225,6 +225,36 @@ def test_a_cloud_hosted_run_needs_no_retention_seam_when_every_model_is_account_
     assert recorded["retention"] == ACCOUNT_MANAGED
 
 
+@pytest.mark.parametrize("profile", ["dev-ci", "cloud-hosted"])
+def test_a_non_openrouter_decision_model_with_no_seam_to_ask_keeps_the_old_outcome(
+        tmp_data_dir, tmp_path, profile) -> None:
+    """The `fixture` decision model is not OpenRouter-routed, so it keeps the gate. With no seam
+    able to ask: `dev-ci` has nothing to ask and starts; `cloud-hosted` refuses naming it (never
+    an `AttributeError`). Found in review of this change."""
+    from aeh.prov import RetentionPolicyError
+
+    class _PricingOnly:
+        pass
+
+    fixtures = tmp_path / "fx"
+    fixtures.mkdir()
+    cfg = resolve_run_config(hosted_cfg(
+        profile, panel=HOSTED_PANEL_3, HARNESS_DECISION_ENGINE="jev",
+        HARNESS_DECISION_PROVIDER="fixture", HARNESS_JEV_BUILD="fixture/typesafe/jev-1.13@2026-09-01",
+        HARNESS_JEV_QUANTIZATION="bf16", HARNESS_FIXTURE_DIR=str(fixtures)), _SYNTHETIC)
+    store = open_store(tmp_data_dir)
+    try:
+        if profile == "dev-ci":
+            recorded = _created(store, _PricingOnly(), cfg)
+            assert recorded["retention"] == ACCOUNT_MANAGED
+            assert "retention_verified" not in recorded
+        else:
+            with pytest.raises(RetentionPolicyError, match="fixture"):
+                _created(store, _PricingOnly(), cfg)
+    finally:
+        store.close()
+
+
 def test_the_page_reader_is_not_probed_or_refused_on_a_remote_profile() -> None:
     from aeh.pipeline.background import ReadingSession
 

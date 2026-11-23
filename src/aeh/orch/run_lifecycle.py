@@ -258,7 +258,17 @@ class RunLifecycleMixin:
             engine_provider = (self._decision_provider
                                if getattr(self._decision_provider, "verify_retention", None)
                                else self._provider)
-            if not retention_precheck_skipped(engine_provider):
+            if getattr(engine_provider, "verify_retention", None) is None:
+                # No seam able to ask: `dev-ci` has nothing to ask (as for the panel above);
+                # `cloud-hosted` refuses, naming the model.
+                if profile == "cloud-hosted":
+                    raise RetentionPolicyError(
+                        f"a {profile} run cannot start: no provider is able to verify "
+                        f"zero-retention routing for the decision model "
+                        f"{engine.model.provider}:{engine.model.build_id} (FR-PROV-28), and "
+                        f"nothing was created."
+                    )
+            elif not retention_precheck_skipped(engine_provider):
                 engine_report = engine_provider.verify_retention((engine.model,))
                 engine_confirmed = {
                     ref.build_id for ref in getattr(engine_report, "confirmed", ())}

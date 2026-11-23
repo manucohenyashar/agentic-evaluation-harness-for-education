@@ -14,8 +14,8 @@
 # to OpenRouter, so it is gated by the same consent rule: only cohorts marked "synthetic" or
 # "consented" may be graded (the sample answer sheets are synthetic).
 #
-# Every request to OpenRouter carries zdr=true and data_collection="deny": OpenRouter sends the
-# work only to a host that keeps no copy, or refuses it and the run pauses. Set
+# No request asks OpenRouter for zero retention (owner decision 2026-11-22): retention is
+# governed by the OpenRouter account's privacy settings, which the operator sets. Set
 # HARNESS_FIXTURE_DIR and dev-ci replays recordings from that folder instead (the test tier);
 # leave it unset for a real run. `aeh run` prints a "provider:" line saying which one answers.
 #
@@ -86,8 +86,8 @@ build_id = "openrouter/qwen/qwen3-30b-a3b@2026-06-01"
 
 # Escalation judges: the real models used when the system adds judges to an answer (two when
 # the judges are unsure or disagree, one more if a judge call is lost). Each must be a different
-# model from the panel and from each other, pinned with a date, and answer under zero retention
-# (check it first; see the deployment tutorial 7.6). Without them, such answers keep their score
+# model from the panel and from each other, pinned with a date, and served under the account's
+# privacy settings (check it first; see the deployment tutorial 7.6). Without them, such answers keep their score
 # as provisional and go to teacher review, and HARNESS_ORCH_RANDOM_ARM_RATE must be set to 0.
 # For a one-judge panel: two let the random sample stay on; five cover every seat a run can
 # ever need (a sampled answer has three judges, can widen to five, plus one replacement).
