@@ -220,7 +220,9 @@ def _existing_consent(data_dir: Path, cohort_id: str) -> str | None:
 
 def _profile_name(config_path: Path) -> str:
     document = tomllib.loads(config_path.read_text(encoding="utf-8"))
-    return str(os.environ.get("HARNESS_PROFILE") or document.get("profile") or "")
+    """The backend profile the run will use: the terminal's `HARNESS_PROFILE` over the file's
+    (the order the shipped configs document)."""
+    return str(os.environ.get("HARNESS_PROFILE") or document.get("HARNESS_PROFILE") or "")
 
 
 def _refuse_unsafe_classes(data_dir: Path, tests: Sequence[SampleTest], config_path: Path) -> None:
@@ -228,7 +230,9 @@ def _refuse_unsafe_classes(data_dir: Path, tests: Sequence[SampleTest], config_p
     whatever its consent, real first and loudest; the check grades only classes it built."""
     from aeh.conf import REMOTE_PROFILES
 
-    remote = _profile_name(config_path) in REMOTE_PROFILES
+    profile = _profile_name(config_path)
+    # Fail closed: a profile the check cannot name is treated as remote.
+    remote = not profile or profile in REMOTE_PROFILES
     for test in tests:
         consent = _existing_consent(data_dir, test.cohort_id)
         if consent is None:
@@ -236,8 +240,8 @@ def _refuse_unsafe_classes(data_dir: Path, tests: Sequence[SampleTest], config_p
         if consent != "synthetic" and remote:
             raise ValidityCheckRefused(
                 f"class {test.cohort_id!r} is recorded as {consent!r} work, and this check sends "
-                "only synthetic sample work to a remote profile (R31). Nothing was built, read or "
-                "sent.")
+                "only synthetic sample work to a remote profile (R31). Nothing was built, "
+                "read in or sent.")
         raise ValidityCheckRefused(
             f"class {test.cohort_id!r} already exists in {data_dir}; the check grades only the "
             "classes it builds itself. Use a fresh data folder or another class name.")
@@ -499,12 +503,27 @@ def _read_routing_verdict(data_dir: Path, figures: ClassFigures) -> None:
 
 
 def _purge(console: _Console, data_dir: Path, figures: ClassFigures) -> None:
+    """The console's `purge cohort`. FR-STORE-07 keeps the class's ledger file, emptied and
+    still migrated, so success is the dispatch plus no paper left in it (read independently)."""
     status, outcome = console.action("purge cohort", cohort_id=figures.cohort_id)
-    ledger_gone = not (data_dir / "cohorts" / f"{figures.cohort_id}.sqlite").exists()
     detail = outcome.get("detail") if isinstance(outcome, dict) else outcome
     figures.purge = {"status": status, "dispatched": bool(
         isinstance(outcome, dict) and outcome.get("dispatched")),
-        "ledger_removed": ledger_gone, "detail": detail}
+        "papers_left": _papers_left(data_dir, figures.cohort_id), "detail": detail}
+
+
+def _papers_left(data_dir: Path, cohort_id: str) -> int | None:
+    """Submission rows left in the class's ledger (0 when the file is gone), or None unread."""
+    path = data_dir / "cohorts" / f"{cohort_id}.sqlite"
+    if not path.exists():
+        return 0
+    connection = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+    try:
+        return int(connection.execute("SELECT COUNT(*) FROM submission").fetchone()[0])
+    except sqlite3.Error:
+        return None
+    finally:
+        connection.close()
 
 
 # --- the driver ----------------------------------------------------------------------------------
@@ -604,7 +623,7 @@ def _class_steps(console: _Console, store: Any, data_dir: Path, test: SampleTest
         if name == "run" and figures.run_status != "complete":
             status = "failed"
         if name == "purge" and not (figures.purge.get("dispatched")
-                                    and figures.purge.get("ledger_removed")):
+                                    and figures.purge.get("papers_left") == 0):
             status = "failed"
         if name == "blind sample" and figures.blind.get("state") != "finished":
             status = "failed"
@@ -646,7 +665,8 @@ def format_report(result: ValidityCheckResult) -> str:
         refusal = figures.refusal
         lines.append(f"Verification-refusal rate: {refusal.get('refused', 0)} of "
                      f"{refusal.get('replies', 0)} judge replies refused "
-                     f"({_pct(refusal.get('rate'))})")
+                     f"({_pct(refusal.get('rate'))}; every response-contract refusal, a "
+                     "citation that fails verification among them)")
         cited = figures.cited
         lines.append(f"Cited share: {cited.get('cited', 0)} of {cited.get('verdicts', 0)} "
                      f"surviving verdicts cited ({_pct(cited.get('share'))})")

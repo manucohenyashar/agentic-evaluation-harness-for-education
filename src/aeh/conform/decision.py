@@ -110,8 +110,12 @@ def _decide_cell(cell: DecisionCell, provider: Any, engine: Any) -> dict[str, An
 
 def _criterion_of(cell: DecisionCell) -> tuple[str, int]:
     """The cell's criterion id and its declared band count."""
+    # `ScoringRequest` normalises the criterion to a `CriterionView`; a mapping is accepted too,
+    # for cells a caller built by hand.
     criterion = cell.request.criterion
-    return str(criterion["criterion_id"]), len(criterion["bands"])
+    if isinstance(criterion, Mapping):
+        return str(criterion["criterion_id"]), len(criterion["bands"])
+    return str(criterion.criterion_id), len(criterion.bands)
 
 
 def _share(numerator: int, denominator: int) -> float | None:
