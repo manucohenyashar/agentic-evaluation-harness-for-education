@@ -38,6 +38,7 @@ from aeh.conf import HOSTED_JEV_PROFILES
 from aeh.prov import OPENROUTER_API_KEY_ENV
 from aeh.store import Statement
 
+from .agreement import CHANCE_CORRECTED_KEYS, chance_corrected_agreement
 from .errors import LiveAcceptanceRefused
 from .reports import LiveAcceptanceReport
 
@@ -401,6 +402,19 @@ def _drive_live_pipeline(
 # --- the per-criterion figures (FR-CONFORM-18) ----------------------------------------------------
 
 
+#: How many cells kappa and alpha were computed over (whole-band panel medians only).
+CHANCE_CORRECTED_N = "decision_band_chance_corrected_n"
+
+#: A criterion with no comparable cell: every agreement figure None, never a missing key.
+UNMEASURED_AGREEMENT: Mapping[str, Any] = {
+    "decision_band_exact_agreement": None,
+    "decision_band_adjacent_agreement": None,
+    "decision_llm_median_divergence": None,
+    **{key: None for key in CHANCE_CORRECTED_KEYS},
+    CHANCE_CORRECTED_N: 0,
+}
+
+
 def _band_agreement(store: Any, cohort_id: str, run_id: str) -> dict[str, Mapping[str, Any]]:
     """Per criterion, the Jev band against the LLM panel's median band, on the same cells.
 
@@ -414,15 +428,25 @@ def _band_agreement(store: Any, cohort_id: str, run_id: str) -> dict[str, Mappin
 
     An even panel's median can fall between two ordinals; a distance within one band still
     counts as adjacent, which is what `decision_band_adjacent_agreement` claims.
+
+    Beside them (FR-CONFORM-19, CT-CONFORM-18): Cohen's kappa (`decision_band_kappa`) and ordinal
+    alpha (`decision_band_ordinal_alpha`) on the criterion's band count (the length of the
+    engine's probability list), through `aeh.conform.agreement`. Both treat a band as a
+    category, so they are computed over the cells whose panel median IS a band (a whole
+    ordinal); a half-band median is not a band either grader gave, and is never made into a
+    category of its own. `decision_band_chance_corrected_n` says how many cells that was.
     """
     handle = store.cohort(cohort_id)
     engine_cells: dict[tuple[str, str], int | None] = {}
+    band_counts: dict[str, int] = {}
     for row in handle.query(SELECT_RUN_PRESCREEN_BANDS, run_id=run_id):
         probabilities = json.loads(row["band_probabilities"]) if row["band_probabilities"] else ()
         top = max(probabilities) if probabilities else None
         banded = top is not None and probabilities.count(top) == 1
         engine_cells[(str(row["submission_id"]), str(row["criterion_id"]))] = (
             probabilities.index(top) if banded else None)
+        if probabilities:
+            band_counts[str(row["criterion_id"])] = len(probabilities)
     llm_ordinals: dict[tuple[str, str], list[int]] = {}
     for row in handle.query(SELECT_RUN_LLM_BAND_ORDINALS, run_id=run_id):
         llm_ordinals.setdefault(
@@ -431,26 +455,29 @@ def _band_agreement(store: Any, cohort_id: str, run_id: str) -> dict[str, Mappin
 
     def figures_for(criterion: str) -> Mapping[str, Any]:
         deltas: list[float] = []
+        whole_band_pairs: list[tuple[int, int]] = []
         for (submission_id, cell_criterion), medians in llm_ordinals.items():
             if cell_criterion != criterion:
                 continue
             engine_ord = engine_cells.get((submission_id, cell_criterion))
             if engine_ord is None:
                 continue
-            deltas.append(abs(engine_ord - statistics.median(medians)))
+            median = statistics.median(medians)
+            deltas.append(abs(engine_ord - median))
+            if float(median).is_integer():
+                whole_band_pairs.append((engine_ord, int(median)))
         comparable = len(deltas)
         if not comparable:
-            return {
-                "decision_band_exact_agreement": None,
-                "decision_band_adjacent_agreement": None,
-                "decision_llm_median_divergence": None,
-            }
+            return dict(UNMEASURED_AGREEMENT)
         exact = sum(1 for d in deltas if d == 0) / comparable
         adjacent = sum(1 for d in deltas if d <= 1) / comparable
+        corrected = chance_corrected_agreement(whole_band_pairs, band_counts.get(criterion, 0))
         return {
             "decision_band_exact_agreement": exact,
             "decision_band_adjacent_agreement": adjacent,
             "decision_llm_median_divergence": 1.0 - exact,
+            **{key: corrected[key] for key in CHANCE_CORRECTED_KEYS},
+            CHANCE_CORRECTED_N: corrected["pairs"],
         }
 
     criteria = {cell for (_, cell) in engine_cells} | {cell for (_, cell) in llm_ordinals}
@@ -504,9 +531,7 @@ def run_live_acceptance(
                 # The key set is the contract (CT-CONFORM-C17): a criterion with no comparable
                 # cell carries None rather than a missing key — *unmeasured* and *absent* are
                 # different facts, and only the first is a measurement.
-                "decision_band_exact_agreement": None,
-                "decision_band_adjacent_agreement": None,
-                "decision_llm_median_divergence": None,
+                **UNMEASURED_AGREEMENT,
             }
             entry.update(agreement.get(criterion, {}))
             per_criterion[criterion] = entry

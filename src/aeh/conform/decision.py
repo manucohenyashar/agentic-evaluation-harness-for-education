@@ -9,6 +9,7 @@ from typing import Any, Mapping, Sequence
 
 from harness.corpora.manifest import CORPUS_ROOT, read_manifest
 
+from .agreement import GRADER_CONSISTENCY_NOTE, chance_corrected_agreement
 from .reports import ValidationRecord
 
 
@@ -48,6 +49,8 @@ class DecisionConformanceReport:
     validation_records: tuple[ValidationRecord, ...]
     cells: int
     fixture_set_version: str
+    #: FR-CONFORM-19: the two graders compared are machines, so their agreement is consistency.
+    agreement_note: str = GRADER_CONSISTENCY_NOTE
 
 
 def load_f_jev_cells(corpus_root: Path | None = None) -> tuple[DecisionCell, ...]:
@@ -105,6 +108,12 @@ def _decide_cell(cell: DecisionCell, provider: Any, engine: Any) -> dict[str, An
             "gate": None if gated.gate is None else float(gated.gate)}
 
 
+def _criterion_of(cell: DecisionCell) -> tuple[str, int]:
+    """The cell's criterion id and its declared band count."""
+    criterion = cell.request.criterion
+    return str(criterion["criterion_id"]), len(criterion["bands"])
+
+
 def _share(numerator: int, denominator: int) -> float | None:
     return None if denominator == 0 else numerator / denominator
 
@@ -135,6 +144,13 @@ def run_decision_conformance(
       argmax, gate passed or not) differs from the recorded LLM-panel median (FR-CONFORM-11;
       a diagnostic only). Cells with no engine band (ineligible, rejected, malformed, or a
       tied top) are outside the denominator.
+    - `decision_band_agreement_by_criterion` (FR-CONFORM-19, CT-CONFORM-18): per criterion,
+      over the same cross-backend pairs, `pairs`, the exact and adjacent agreement, and beside
+      them Cohen's kappa (`decision_band_kappa`) and ordinal alpha
+      (`decision_band_ordinal_alpha`) on the criterion's declared band count
+      (`aeh.conform.agreement`). Per criterion because the fixture set mixes band counts, and
+      an ordinal alpha pooled over two scales measures neither. `agreement_note` carries the
+      sentence that this agreement is consistency between graders, not accuracy.
     - `decision_gate_histogram`: gate confidence in `DECISION_GATE_BIN` bins over every cell
       the gate saw. `decision_ineligible_reasons`: counts by reason.
 
@@ -155,6 +171,7 @@ def run_decision_conformance(
         for name, (provider, engine, _profile) in backends.items()
     }
     medians = {cell.cell_id: cell.llm_panel_median_ordinal for cell in cell_list}
+    criterion_of = {cell.cell_id: _criterion_of(cell) for cell in cell_list}
     bins = int(round(1 / DECISION_GATE_BIN))
     per_backend: dict[str, dict[str, Any]] = {}
     records: list[ValidationRecord] = []
@@ -163,10 +180,19 @@ def run_decision_conformance(
         accepted = {cid: o["band_ordinal"] for cid, o in mine.items() if o["outcome"] == "accepted"}
         banded = {cid: o["argmax_ordinal"] for cid, o in mine.items()
                   if o.get("argmax_ordinal") is not None}
-        pairs = [(band, outcomes[other][cid]["band_ordinal"])
-                 for other in backends if other != name
-                 for cid, band in accepted.items()
-                 if outcomes[other][cid]["outcome"] == "accepted"]
+        keyed_pairs = [(cid, band, outcomes[other][cid]["band_ordinal"])
+                       for other in backends if other != name
+                       for cid, band in accepted.items()
+                       if outcomes[other][cid]["outcome"] == "accepted"]
+        pairs = [(a, b) for _cid, a, b in keyed_pairs]
+        by_criterion: dict[str, list[tuple[int, int]]] = {}
+        for cid, a, b in keyed_pairs:
+            by_criterion.setdefault(criterion_of[cid][0], []).append((a, b))
+        band_counts = dict(criterion_of.values())
+        chance_corrected = {
+            criterion: dict(chance_corrected_agreement(crit_pairs, band_counts[criterion]))
+            for criterion, crit_pairs in sorted(by_criterion.items())
+        }
         histogram: dict[str, int] = {}
         reasons: dict[str, int] = {}
         for outcome in mine.values():
@@ -182,6 +208,8 @@ def run_decision_conformance(
             "decision_band_adjacent_agreement": _share(sum(1 for a, b in pairs if abs(a - b) <= 1), len(pairs)),
             "decision_llm_median_divergence": _share(
                 sum(1 for cid, band in banded.items() if band != medians[cid]), len(banded)),
+            "decision_band_agreement_by_criterion": chance_corrected,
+            "agreement_note": GRADER_CONSISTENCY_NOTE,
             "decision_gate_histogram": dict(sorted(histogram.items())),
             "decision_ineligible_reasons": dict(sorted(reasons.items())),
             "decision_outcomes": {k: sum(1 for o in mine.values() if o["outcome"] == k)
