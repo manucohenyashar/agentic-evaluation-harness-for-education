@@ -44,14 +44,15 @@ def test_tc_ui_45_b_question_averages_reveal_no_drawn_points(tmp_path, monkeypat
             if all(cell in drawn for cell in cells if world.questions[cell[1]] == question)})
         assert fully_drawn == ["Q1", "Q2"], f"fixture: fully drawn questions {fully_drawn}"
         world.open(page, "/results")
-        overview = page.locator(".results-overview")
-        overview.wait_for()
-        text = overview.inner_text()
+        stats = page.locator("li.question-stat")
+        stats.first.wait_for()
         problems = []
-        for question in fully_drawn:
-            line = re.search(rf"^{question} — .*$(\n.*)?", text, re.M)
-            if line and re.search(r"average \d|full marks: \d|no marks: \d", line.group(0)):
-                problems.append(f"{question}: {line.group(0)!r}")
+        for index in range(stats.count()):
+            text = stats.nth(index).inner_text()
+            question = text.split(" — ", 1)[0].strip()
+            if question in fully_drawn and re.search(
+                    r"average \d|full marks: \d|no marks: \d", text):
+                problems.append(f"{question}: {text!r}")
         assert not problems, (
             "Results' class averages reveal wholly drawn questions' points while the draw is "
             "open (CT-CONSOLE-56 r2):\n  " + "\n  ".join(problems))

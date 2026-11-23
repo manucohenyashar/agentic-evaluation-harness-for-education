@@ -2364,16 +2364,20 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # census found: Results' `question_stats` (the "Average by question" bars) is worked out
     # before `held_back.hold_back` blanks the drawn lines and names no submission, so a wholly
     # drawn question's average and full/no-marks counts give its drawn points away
-    # (CT-CONSOLE-56 r2). The probe resolves once the hold-back or the stats builder knows
-    # about the draw (`question_stats` in `held_back.py`, or `hidden_until_blind` in
-    # `question_results.py`), wherever the fix routes it; the case's own oracle then decides.
+    # (CT-CONSOLE-56 r2). The probe resolves once the stats stop being worked out from the
+    # unheld students — `screen_reads.py` no longer calls `question_stats(questions, students)`
+    # as it does today — or the hold-back / stats builder names the draw (`question_stats` in
+    # `held_back.py`; `hidden_until_blind` or `HIDDEN_KEY` in `question_results.py`). The
+    # case's own oracle then decides.
     "#909 defect — Results question averages reveal drawn points": (
         "command",
         "python -c \"import pathlib, sys; "
         "c = pathlib.Path('src/aeh/console'); "
-        "sys.exit(0 if 'question_stats' in (c / 'held_back.py').read_text(encoding='utf-8') "
-        "or 'hidden_until_blind' in (c / 'question_results.py').read_text(encoding='utf-8') "
-        "else 1)\"",
+        "r = lambda n: (c / n).read_text(encoding='utf-8'); "
+        "q = r('question_results.py'); "
+        "sys.exit(0 if 'question_stats(questions, students)' not in r('screen_reads.py') "
+        "or 'question_stats' in r('held_back.py') "
+        "or 'hidden_until_blind' in q or 'HIDDEN_KEY' in q else 1)\"",
         ("tests/browser/spa/test_tc_ui_45_b_class_averages.py",),
     ),
 }

@@ -317,8 +317,10 @@ def test_tc_ui_40_drawn_lines_hidden_on_results_and_the_student_page(tmp_path, m
                     line = lines.nth(line_index).inner_text()
                     band = cells[(submission, criterion)]["band"]
                     if (submission, criterion) in drawn:
-                        assert HELD_BACK in line and lines.nth(line_index).locator(
-                            ".band-value").count() == 0, (submission, criterion, line)
+                        # Exactly the line's label and the sentence: no level beside it.
+                        label = lines.nth(line_index).locator(".step-note").inner_text()
+                        assert line.split() == f"{label} {HELD_BACK}".split() and                             lines.nth(line_index).locator(".band-value").count() == 0, (
+                                submission, criterion, line)
                     else:
                         assert lines.nth(line_index).locator(".band-value").inner_text() == \
                             band, (submission, criterion, line)
@@ -345,8 +347,9 @@ def test_tc_ui_40_drawn_lines_hidden_on_results_and_the_student_page(tmp_path, m
                 card = cards.nth(card_index)
                 text = card.inner_text()
                 if (submission, criterion) in drawn:
-                    assert HELD_BACK in text and card.get_by_role(
-                        "link", name="Mark the sample").count() == 1, (criterion, text)
+                    label = card.locator("strong").first.inner_text()
+                    assert text.split() == f"{label} {HELD_BACK} Mark the sample".split()                         and card.get_by_role("link", name="Mark the sample").count() == 1, (
+                            criterion, text)
                     assert card.locator(".band-value").count() == 0, (criterion, text)
                 else:
                     assert card.locator(".band-value").inner_text() == \

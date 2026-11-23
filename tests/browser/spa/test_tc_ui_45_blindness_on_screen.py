@@ -23,6 +23,11 @@ choices — package data, not a decision). So:
   reason (the positive control);
 - AI calls opened from a drawn question list no call for it; from the kept question they do.
 The help screen is outside the band-word census (manual prose).
+"none" (the drawn C3 cells' level) is not in the page-wide band census — it is an ordinary
+word in fixed screen text; the drawn lines' exact held-back text on Results and the student
+page (TC-UI-40) is what rules a "none" out there. A drawn line's *reason* is checked through
+the student page's reason element only: the stand-in's reason is the same generic sentence
+for every cell (the undrawn one included), so there is no distinctive string to census.
 
 **Not covered here, written ahead as a defect:** the Results "Average by question" bars
 reveal a wholly drawn question's points ("Q2 — average 3.0 / 3", "full marks: 4 of 4") —
@@ -108,6 +113,9 @@ def test_tc_ui_45_no_drawn_line_band_reason_or_quote_on_any_screen(tmp_path, mon
         problems: list[str] = []
         for route in visits:
             target = route + (f"?package={package}" if route.startswith("/package") else "")
+            # A full load per route (never a hash-only hop), so the text read is this screen's
+            # and not the previous one's still on the page.
+            page.goto("about:blank")
             page.goto(world.route(target))
             try:
                 spa.wait_for_screen(page)
@@ -157,7 +165,9 @@ def test_tc_ui_45_no_drawn_line_band_reason_or_quote_on_any_screen(tmp_path, mon
             group.get_by_role("link", name="How was this graded?").click()
             page.wait_for_function("() => location.hash.startsWith('#/logs')")
             spa.wait_for_screen(page)
-            page.wait_for_timeout(500)
+            # The AI-calls view has answered: its page line, "N call(s) on this page of M."
+            page.locator(".logs-pages").first.wait_for()
+            assert "tab=ai-calls" in page.url and f"question={question}" in page.url, page.url
             text = page.evaluate(TEXT_WITHOUT_SCALES)
             call = re.compile(rf"AI judge\s+{re.escape(names[submission])} — {question}")
             if expect_calls:

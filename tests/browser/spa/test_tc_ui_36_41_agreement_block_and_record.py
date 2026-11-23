@@ -163,7 +163,7 @@ def test_tc_ui_36_b_skipped_not_offered_and_in_progress_states(tmp_path, monkeyp
         skipped = world.administer("class-skip", vs.VALIDITY_SYSTEM)
         world.draw(skipped, 24)
         world.skip(skipped)
-        world.promote(skipped, "skip")
+        assert world.promote(skipped, "skip") is not None
         waiting = world.administer("class-wait", vs.VALIDITY_SYSTEM)
         open_draw = world.administer("class-open", vs.VALIDITY_SYSTEM)
         world.draw(open_draw, 24)
