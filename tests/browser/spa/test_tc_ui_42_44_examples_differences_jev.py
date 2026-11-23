@@ -26,7 +26,7 @@ excludes it). Isolation: rung 4 in the browser over real loopback consoles.
   marks every line at its lowest level; the teacher marks C1a, C1b and C2 higher on all four
   papers (three rubric-ambiguity questions, each with four examples, two shown); C3 is marked
   `retell` on E7-001 against `none` on E7-004, both at the system's `none` (a teacher
-  inconsistency, shown side by side); and on E7-003 the extractor offers no evidence for Q3
+  inconsistency, paired with E7-003 by the shipped rule); and on E7-003 the extractor offers no evidence for Q3
   (`evidence_rule`), which the teacher marked `evidenced` (a model failure).
 * TC-UI-44: `tests/support/validity_seed.py` — 12 submissions, both open lines drawn whole,
   marked, Finish, then M-PIPE's `promote_administration`. Which engine scored a cell is read by
@@ -276,16 +276,14 @@ def test_tc_ui_43_differences_by_cause_three_questions_fixed_sentence_and_no_rat
             paired = causes.nth(2).locator("ul.examples-differences > li").first
             sides = paired.locator(".examples-side")
             assert sides.count() == 2, "the teacher inconsistency does not show both answers"
-            # Both answers the system put at one level, with the teacher's two different marks.
-            yours = [re.search(r"^You: (.+)$", sides.nth(i).inner_text(), re.M) for i in (0, 1)]
-            systems = [re.search(r"^The system: (.+)$", sides.nth(i).inner_text(), re.M)
-                       for i in (0, 1)]
-            assert all(yours) and all(systems), paired.inner_text()
-            assert yours[0].group(1) == "retell" and yours[1].group(1) != "retell", (
-                f"the two similar answers do not carry both of the teacher's marks:\n"
-                f"{paired.inner_text()}")
-            assert systems[0].group(1) == systems[1].group(1), (
-                f"the paired answers are not at one system level:\n{paired.inner_text()}")
+            # Both answers the system put at `none`, with the teacher's two different marks: the
+            # shipped triage pairs E7-001 (retell) with the first other paper at the same system
+            # level and a different mark, E7-003 (evidenced).
+            first, second = sides.nth(0).inner_text(), sides.nth(1).inner_text()
+            assert "E7-001-strong.pdf" in first and re.search(r"^You: retell$", first, re.M), (
+                f"the first side is not E7-001 marked retell:\n{first}")
+            assert "E7-003-weak.pdf" in second and re.search(r"^You: evidenced$", second, re.M), (
+                f"the paired side is not E7-003 with the teacher's own mark:\n{second}")
 
             # The questions: "Question N of 3", options, two examples each.
             for number in range(3):
@@ -404,6 +402,7 @@ def test_tc_ui_44_a_the_jev_block_counts_the_evidence_toward_sixty(
     from tests.support.validity_seed import ATOMIC, HOLISTIC
 
     monkeypatch.delenv("HARNESS_STATS_ENGINE_MIN_LABELS", raising=False)
+    monkeypatch.delenv("HARNESS_JEV_FINAL_ON_ACCEPT", raising=False)  # the default: on
     cells = [(index, line) for index in range(12) for line in (ATOMIC, HOLISTIC)]
     with _status_world(tmp_path / "w", monkeypatch, network_guard, cells) as origin, \
             spa.spa_page(origin) as (page, log):
