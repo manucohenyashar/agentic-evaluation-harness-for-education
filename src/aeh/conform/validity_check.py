@@ -526,10 +526,12 @@ def run_validity_check(
     config_path = PROFILES[profile]
     data_dir = Path(data_dir)
     tests = _sample_tests(eng7_cohort, ps9_cohort)
+    # Before the refusal: it reads an existing class's consent through the store, and a store
+    # open needs the full migration chain (CLAUDE.md).
+    _import_full_chain()
     _refuse_unsafe_classes(data_dir, tests, config_path)
     bands = intended_bands()
     data_dir.mkdir(parents=True, exist_ok=True)
-    _import_full_chain()
     result = ValidityCheckResult(profile=profile, data_dir=str(data_dir))
 
     versions: dict[str, str] = {}
