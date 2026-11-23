@@ -198,9 +198,10 @@ class RetentionReport:
 
     confirmed: tuple[ModelRef, ...]
     unconfirmed: tuple[ModelRef, ...]
-    #: Models not asked about because they are exempt (`retention_exempt`: Jev decision
-    #: models, owner decision 2026-11-20). Kept apart from `confirmed`, so an exemption never
-    #: reads as a confirmation.
+    #: Models not asked about because they are exempt (`retention_exempt`: OpenRouter-routed
+    #: models, whose retention the OpenRouter account manages, owner decision 2026-11-22; and Jev
+    #: decision models, 2026-11-20). Kept apart from `confirmed`, so an exemption never reads as
+    #: a confirmation.
     exempt: tuple[ModelRef, ...] = ()
 
     @property

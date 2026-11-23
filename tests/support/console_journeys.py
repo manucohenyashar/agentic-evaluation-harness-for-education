@@ -14,7 +14,7 @@ The corpus's existing recordings (AF-01..13) were captured on the qwen builds
 `console_redesign_world.RECORDED_TRANSCRIBER` / `RECORDED_JUDGE` pin. Those builds can
 no longer serve this account: OpenRouter's zero-retention routing removes every Qwen
 endpoint with "Model bloc" (verified 2026-10-14 by dispatching the pinned build and the
-unpinned slug through `OpenRouterProvider.enforcing_zero_retention()`; the same probe
+unpinned slug through `OpenRouterProvider()`; the same probe
 removed gpt-oss and llama endpoints for the same reason). The operator's own live-test
 configuration made the same move (`docs/live-tests/config/live-test.dev-ci.toml` pins
 `openai/gpt-6-luna@2026-06-01`, and the live runs of 2026-10-09/10 rode it).
@@ -1995,7 +1995,7 @@ def run_live_journey(spec: JourneySpec, tmp_path_factory: pytest.TempPathFactory
     The recorded journeys bind `HARNESS_FIXTURE_DIR` and patch every `_provider_for`
     seam to the replay; this journey binds NO fixture dir and patches NO seam, so
     every boundary — the browser's draft job, the papers' transcription, the judging
-    run — resolves the production `OpenRouterProvider.enforcing_zero_retention()`
+    run — resolves the production `OpenRouterProvider()`
     through `runtime._provider_for`'s own declared mapping, under the key the
     environment carries (checked first; a box with no key skips, spends nothing).
 

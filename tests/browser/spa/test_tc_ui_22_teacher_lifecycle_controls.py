@@ -81,7 +81,7 @@ def test_tc_ui_22_class_papers_parked_and_run_start_from_the_browser(
         sheets.append(str(path))
     # Wrapped the way the shipped factory wraps every provider, so the run's cost ceiling can
     # price a unit (`runtime._UnitPricedProvider`).
-    provider = _UnitPricedProvider(OpenRouterProvider.enforcing_zero_retention(
+    provider = _UnitPricedProvider(OpenRouterProvider(
         api_key="sk-or-test", base_url="https://openrouter.test/api/v1", transport=fake))
     monkeypatch.setattr(background, "_provider_for", lambda run_config: provider)
 

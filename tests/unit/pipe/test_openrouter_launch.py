@@ -11,9 +11,11 @@ command could grade through OpenRouter.
 - TC-PIPE-26 (B1): `aeh run` built the orchestrator with no provider, so a `cloud-hosted`
   run's retention gate refused every run ("given no provider able to verify ...").
 - TC-PROV-64 (B6): the retention gate asked `GET <base>/retention/<model>`, which OpenRouter
-  does not serve. The launcher's provider now sends `zdr: true` and `data_collection: "deny"`
-  on every request, so OpenRouter routes student work only to a host that keeps none or
-  refuses it, and the gate is answered by that enforcement.
+  does not serve. Re-based on the owner decision of 2026-11-22 ("All models should not ask for
+  zero retention as this policy is managed by my OpenRouter account outside the system"): the
+  launcher's provider sends no `zdr` / `data_collection`, and the gate does not ask OpenRouter
+  anything — every OpenRouter model is reported as account-managed. A data-policy refusal
+  OpenRouter returns under the account's own settings still pauses the run after one send.
 
 Every case runs under the autouse network guard: nothing here may reach a network.
 """
@@ -38,7 +40,6 @@ from aeh.prov import (
     RetryPolicy,
     SamplingParams,
 )
-from aeh.prov.live import ZERO_RETENTION_ROUTING
 from aeh.store import open_store
 from tests.support.conf_builders import HOSTED_PANEL_3, edge_cfg, hosted_cfg
 from tests.support.orch_run import ORCH_COHORT_ID, seed_cohort, seed_package
@@ -71,14 +72,14 @@ class _NoNetwork:
 # --- TC-PIPE-24 -------------------------------------------------------------------------------
 
 
-def test_tc_pipe_24_dev_ci_grades_through_openrouter_enforcing_zero_retention(monkeypatch):
+def test_tc_pipe_24_dev_ci_grades_through_openrouter_with_the_accounts_retention(monkeypatch):
     monkeypatch.delenv("HARNESS_FIXTURE_DIR", raising=False)
     provider = _provider_for(_resolved("dev-ci"))
     inner = provider._inner
     assert isinstance(inner, OpenRouterProvider), type(inner)
-    assert inner._routing() == ZERO_RETENTION_ROUTING
+    assert inner._routing() is None, "no retention routing is requested (2026-11-22)"
     assert _describe_provider(provider).startswith("OpenRouter at ")
-    assert "zero data retention enforced" in _describe_provider(provider)
+    assert "retention managed by the OpenRouter account" in _describe_provider(provider)
 
 
 def test_tc_pipe_24_dev_ci_replays_only_when_the_fixture_dir_is_set(monkeypatch, tmp_path):
@@ -95,7 +96,7 @@ def test_tc_pipe_24_the_other_profiles_keep_their_providers(profile, kind, monke
     provider = _provider_for(_resolved(profile))
     assert isinstance(provider._inner, kind)
     if kind is OpenRouterProvider:
-        assert provider._inner._routing() == ZERO_RETENTION_ROUTING
+        assert provider._inner._routing() is None
 
 
 # --- TC-PIPE-25 -------------------------------------------------------------------------------
@@ -181,7 +182,10 @@ def test_tc_pipe_26_a_cloud_hosted_run_passes_the_retention_gate_with_the_launch
     finally:
         store.close()
     recorded = json.loads(row["provider_config"])
-    assert recorded["retention_verified"] == sorted(ref.build_id for ref in HOSTED_PANEL_3)
+    # Re-based (2026-11-22): recorded as the account's policy, never as verified.
+    assert recorded["retention"] == "managed by the OpenRouter account"
+    assert recorded["retention_account_managed"] == sorted(ref.build_id for ref in HOSTED_PANEL_3)
+    assert "retention_verified" not in recorded and "retention_probe_cost" not in recorded
     network_guard.assert_no_network()
 
 
@@ -224,8 +228,9 @@ def test_tc_pipe_26_a_decision_model_is_answered_by_its_own_provider(tmp_data_di
 
     Re-based on the owner decision of 2026-11-20 ("do not worry about zero data retention for
     Jev models"): the Jev decision model is exempt, so this start — whose decision provider has
-    no confirmation source — is no longer refused. The run is created and the engine is
-    recorded as `retention_exempt`, never among `retention_verified`. The drive is stubbed."""
+    no confirmation source — is no longer refused. Re-based again on 2026-11-22: the engine
+    (OpenRouter-routed) is recorded under `retention_account_managed`, never as verified. The
+    drive is stubbed."""
     pytest.importorskip("typesafe_sdk")
     from aeh.pipeline import cli
 
@@ -263,8 +268,9 @@ def test_tc_pipe_26_a_decision_model_is_answered_by_its_own_provider(tmp_data_di
             r=driven["run_id"])[0]["provider_config"])
     finally:
         store.close()
-    assert recorded["retention_exempt"] == [jev_build]
-    assert jev_build not in recorded["retention_verified"]
+    assert recorded["retention"] == "managed by the OpenRouter account"
+    assert jev_build in recorded["retention_account_managed"]
+    assert "retention_verified" not in recorded and "retention_exempt" not in recorded
 
 
 def test_tc_pipe_26_the_console_start_binds_the_launchers_provider(tmp_data_dir, monkeypatch):
@@ -287,7 +293,7 @@ def test_tc_pipe_26_the_console_start_binds_the_launchers_provider(tmp_data_dir,
     finally:
         store.close()
     assert isinstance(driven["provider"]._inner, OpenRouterProvider)
-    assert driven["provider"]._inner._routing() == ZERO_RETENTION_ROUTING
+    assert driven["provider"]._inner._routing() is None
     assert "decision_provider" in driven
 
 
@@ -337,41 +343,49 @@ _REF = __import__("aeh.conf", fromlist=["ModelRef"]).ModelRef(
 _PAYLOAD = PromptPayload(fields=(("instruction", "Reply with the word ready"),))
 
 
-def test_tc_prov_64_every_request_carries_the_zero_retention_routing():
+def test_tc_prov_64_no_request_carries_retention_routing():
+    """Re-based (2026-11-22): was "every request carries the zero-retention routing"."""
     transport = _Recording(_ok())
-    OpenRouterProvider.enforcing_zero_retention(
+    OpenRouterProvider(
         api_key="k", base_url="https://or.test/api/v1", transport=transport,
         clock=CountingClock()).complete(_PAYLOAD, _REF, SamplingParams(temperature=0.0))
     (request,) = transport.requests
     body = json.loads(request.body)
-    assert body["provider"] == {"zdr": True, "data_collection": "deny"}
+    assert "provider" not in body, body
 
 
-def test_tc_prov_64_the_gate_is_answered_by_the_enforcement_without_a_request():
+def test_tc_prov_64_the_gate_reports_the_account_without_a_request():
+    """Re-based (2026-11-22): the model is reported account-managed (`exempt`), never
+    confirmed, and nothing is asked."""
     transport = _NoNetwork()
-    provider = OpenRouterProvider.enforcing_zero_retention(
-        api_key="k", base_url="https://or.test/api/v1", transport=transport)
+    provider = OpenRouterProvider(api_key="k", base_url="https://or.test/api/v1",
+                                  transport=transport)
     report = provider.verify_retention((_REF,))
-    assert report.confirmed == (_REF,) and report.unconfirmed == ()
+    assert report.confirmed == () and report.unconfirmed == () and report.exempt == (_REF,)
     assert transport.requests == []
 
 
-def test_tc_prov_64_a_provider_built_without_the_routing_does_not_claim_it():
+def test_tc_prov_64_an_unconfirming_source_neither_refuses_nor_blocks_dispatch():
+    """Re-based (2026-11-22): was "a provider built without the routing does not claim it".
+    A retention source that confirms nothing no longer refuses an OpenRouter model, and the
+    provider still dispatches."""
     transport = _Recording(_ok())
     provider = OpenRouterProvider(api_key="k", base_url="https://or.test/api/v1",
                                   transport=transport, clock=CountingClock(),
-                                  zero_data_retention=False)
+                                  retention_answers=lambda _b: "retention: standard")
+    assert provider.verify_retention((_REF,)).exempt == (_REF,)
     provider.complete(_PAYLOAD, _REF, SamplingParams(temperature=0.0))
-    assert "provider" not in json.loads(transport.requests[0].body)
+    assert len(transport.requests) == 1
 
 
 def test_tc_prov_64_no_zero_retention_host_pauses_the_run_naming_the_policy():
-    """What OpenRouter answers when no host serving the model keeps zero retention."""
+    """What OpenRouter answers when the account's own privacy settings leave no host for the
+    model (re-based 2026-11-22: the harness no longer asks for the policy, the account sets it)."""
     refusal = HttpResponse(404, {}, json.dumps({"error": {
         "message": "No endpoints found matching your data policy (Zero data retention).",
         "code": 404}}).encode("utf-8"))
     transport = _Recording(refusal)
-    provider = OpenRouterProvider.enforcing_zero_retention(
+    provider = OpenRouterProvider(
         api_key="k", base_url="https://or.test/api/v1", transport=transport,
         clock=CountingClock(), policy=RetryPolicy(3, 1, 120.0))
     with pytest.raises(ProviderUnavailableError) as caught:

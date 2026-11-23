@@ -7,7 +7,8 @@ the conformance suite. This is the operator's path: the test paper and a folder 
 the five intake checks (V0-V4), and every paper that fails one waits in quarantine.
 
 The model is the one the resolved profile names, built by the same `_provider_for` a run uses,
-so under `dev-ci` the pages go to OpenRouter with zero data retention enforced on every request,
+so under `dev-ci` the pages go to OpenRouter, whose data retention the operator's OpenRouter
+account governs (owner decision 2026-11-22; no zero retention is requested on the request),
 and the consent gate (`FR-CONF-08`) has already decided, in `resolve_run_config`, whether this
 cohort's work may leave the machine at all. These calls are not counted against a run's cost
 ceiling: no run exists yet.

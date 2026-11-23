@@ -42,7 +42,8 @@ def _decision_run_start_checks(run_config: Any, decision_provider: Any, *,
                                retention_checked: bool = False) -> None:
     """Before the first lease, confirm the cloud decision model's retention setting, or probe a
     local engine's served build (FR-PIPE-12). A failure raises out of `run_to_completion` before
-    anything is dispatched.
+    anything is dispatched. An OpenRouter-routed decision model is not asked about retention:
+    the OpenRouter account manages it (owner decision 2026-11-22).
 
     `retention_checked` is the caller saying this same start already verified the decision
     model's retention in `create_run`'s gate, so it is not probed a second time (FR-PROV-48:
@@ -52,8 +53,9 @@ def _decision_run_start_checks(run_config: Any, decision_provider: Any, *,
         return
     from aeh.prov import retention_exempt
 
-    # A Jev decision model is exempt from the zero-retention requirement (owner decision
-    # 2026-11-20, `retention_exempt`), so it is not asked here; any other decision model is.
+    # An OpenRouter-routed decision model's retention is managed by the OpenRouter account
+    # (owner decision 2026-11-22), and a Jev decision model is exempt (2026-11-20): neither is
+    # asked here (`retention_exempt`); any other decision model is.
     if (getattr(run_config, "backend_profile", None) == "cloud-hosted" and not retention_checked
             and not retention_exempt(engine.model)):
         report = decision_provider.verify_retention((engine.model,))

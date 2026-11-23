@@ -127,7 +127,10 @@ from .decision_base import (
     DEFAULT_JEV_TIMEOUT_S,
     JEV_DECISION_PROVIDERS,
     JEV_TIMEOUT_S_ENV,
+    OPENROUTER_ROUTED_PROVIDERS,
+    RETENTION_MANAGED_BY_ACCOUNT,
     retention_exempt,
+    retention_managed_by_account,
 )
 from .jev_openrouter import (
     DEFAULT_JEV_COST_PER_MTOK_IN,
@@ -246,6 +249,9 @@ __all__ = [
     "MeteredProvider",
     "RETENTION_PRECHECK_ENV",
     "retention_exempt",
+    "retention_managed_by_account",
+    "OPENROUTER_ROUTED_PROVIDERS",
+    "RETENTION_MANAGED_BY_ACCOUNT",
     "retention_precheck_skipped",
     "retention_probe_cost",
     "SamplingParams",

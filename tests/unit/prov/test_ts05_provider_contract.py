@@ -481,6 +481,16 @@ def test_tc_prov_15_price_based_routing_is_refused_for_judgment_calls(kind, perm
 
 
 # --- TC-PROV-16/-17: the retention gate, fail-closed (P0) ------------------------------------------
+#
+# Re-based on the owner decision of 2026-11-22 ("All models should not ask for zero retention as
+# this policy is managed by my OpenRouter account outside the system"): an OpenRouter-routed
+# model is reported account-managed and never refused, so these cases now pin the gate on refs
+# whose retention the account does not manage (`_unmanaged_ref`). The assertions are unchanged.
+
+
+def _unmanaged_ref(build: str) -> ModelRef:
+    return ModelRef(role="judge", provider="local", build_id=build, quantization="q8",
+                    served_as="served-model")
 
 
 def test_tc_prov_16_two_of_three_confirmed_names_the_one_that_failed():
@@ -492,7 +502,7 @@ def test_tc_prov_16_two_of_three_confirmed_names_the_one_that_failed():
         api_key="k", retention_answers=lambda build: (
             "yes" if "judge-1" in build else
             ("yes" if "judge-2" in build else "unknown")))
-    panel = [_ref(build=f"judge-{i}") for i in (1, 2, 3)]
+    panel = [_unmanaged_ref(build=f"judge-{i}") for i in (1, 2, 3)]
     with pytest.raises(RetentionPolicyError) as raised:
         openrouter.verify_retention(panel)
     assert "judge-3" in str(raised.value) and "judge-1" not in str(raised.value), (
@@ -512,4 +522,4 @@ def test_tc_prov_17_an_ambiguous_answer_is_unconfirmed_fail_closed(answer):
     openrouter = OpenRouterProvider(
         api_key="k", retention_answers=lambda build: answer)
     with pytest.raises(RetentionPolicyError):
-        openrouter.verify_retention([_ref(build="judge-1")])
+        openrouter.verify_retention([_unmanaged_ref(build="judge-1")])

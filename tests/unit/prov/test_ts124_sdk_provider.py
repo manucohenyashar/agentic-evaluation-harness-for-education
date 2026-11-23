@@ -119,8 +119,8 @@ def test_tc_prov_48_the_wire_through_the_sdk(monkeypatch) -> None:
     document = _body(sent)
     assert set(document) == {"model", "state", "questions", "provider", "session_id"}
     assert document["model"] == "typesafe/jev-1.13" and document["session_id"] == "R1"
-    assert document["provider"] == {"order": ["typesafe"], "allow_fallbacks": False,
-                                    "data_collection": "deny", "zdr": True}
+    # Re-based 2026-11-22: no `zdr` / `data_collection` (retention is the OpenRouter account's).
+    assert document["provider"] == {"order": ["typesafe"], "allow_fallbacks": False}
     questions = document["questions"]
     assert questions["topic"]["criteria"] == {"friction": "static friction", "normal": None}
     assert questions["band"]["criteria"] == ["B", "D", "P", "E"]

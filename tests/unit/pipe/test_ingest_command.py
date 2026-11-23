@@ -96,7 +96,7 @@ def physics(tmp_data_dir, tmp_path, monkeypatch, capsys):
     assert cli.main(["package", "build", "--data-dir", str(tmp_data_dir),
                      "--spec", str(SAMPLE_SPEC)]) == 0
     built = json.loads(capsys.readouterr().out)
-    provider = OpenRouterProvider.enforcing_zero_retention(
+    provider = OpenRouterProvider(
         api_key="sk-or-test", base_url="https://openrouter.test/api/v1", transport=fake)
     monkeypatch.setattr(cli, "_provider_for", lambda run_config: provider)
     yield {"version": built["package_version"], "paper": paper, "sheets": sheets_dir,
@@ -131,14 +131,15 @@ def test_tc_pipe_30_aeh_ingest_reads_every_sheet_through_the_real_checks(tmp_dat
     assert statuses == {stem: physics["expected"][stem] for stem in statuses}, statuses
     assert (result["read"], result["quarantined"], result["skipped"]) == (6, 3, 0)
     assert result["assessment"] == "read from 01-test-paper.pdf"
-    # Every page went over the real wire format: an image part, zero-retention routing.
+    # Every page went over the real wire format: an image part, and no retention routing (the
+    # OpenRouter account manages retention, owner decision 2026-11-22).
     pages = [json.loads(r.body) for r in physics["fake"].requests
              if any(m.get("name") == IMAGE_FIELD for m in json.loads(r.body)["messages"])]
     assert len(pages) == 7  # the test paper and six answer sheets, one page each
     for body in pages:
         image = next(m for m in body["messages"] if m["name"] == IMAGE_FIELD)
         assert image["content"][0]["image_url"]["url"].startswith("data:image/png;base64,")
-        assert body["provider"] == {"zdr": True, "data_collection": "deny"}
+        assert "provider" not in body, "no zdr / data_collection is requested"
         assert body["model"] == TRANSCRIBER  # whatever OpenRouter model the config names
 
 

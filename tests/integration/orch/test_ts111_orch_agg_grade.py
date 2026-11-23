@@ -7,7 +7,7 @@ M-GRADE).
 | TC-ORCH-50 | The start estimate adds one decision call per seat (10 × 1500 × 0.042e-6 = 0.00063) to the unchanged LLM estimate; a ceiling between the two refuses the start and changes nothing |
 | TC-ORCH-51 | The `run_metrics` flush writes the five `decision_*` names with TC-PROV-34's values, and `actual_cost` is the sum of both surfaces (CT-PROV-24; the fix ships here) |
 | TC-ORCH-52 | Escalation additions: (A) 1→3 adds arms 2 and 3; (A,B,C) 3→5 adds arms 4 and 5; A never reappears; a random arm shares A's work id |
-| TC-ORCH-53 | Engine-on cloud start records the engine in `provider_config`; *(re-based, owner decision 2026-11-20)* the Jev build is recorded under `retention_exempt`, never `retention_verified`, and an unconfirmed Jev decision model no longer refuses the run |
+| TC-ORCH-53 | Engine-on cloud start records the engine in `provider_config`; *(re-based, owner decisions 2026-11-20 and 2026-11-22)* the Jev build is recorded under `retention_account_managed`, never `retention_verified`, and an unconfirmed Jev decision model no longer refuses the run |
 | TC-AGG-25 | Two decision verdicts in one panel raise `PanelCorrelationError` (not retryable); every other engine mix aggregates |
 | TC-AGG-26 | Metamorphic: relabelling the first verdict `decision` changes neither `CriterionScore` nor `should_escalate`, over 12 fixtures |
 | TC-GRADE-26 | Grades from an engine-on run equal an engine-off run's over identical scores; `grade.py` never reads the engine |
@@ -249,10 +249,14 @@ def test_tc_orch_53_engine_on_start_records_and_verifies_the_decision_model(tmp_
         assert (engine["threshold"], engine["cite_threshold"], engine["max_citation_questions"],
                 engine["token_bytes_ratio"]) == ("0.8", "0.5", 16, 3)
         # Owner decision 2026-11-20: a Jev decision model is exempt from the zero-retention
-        # requirement. It is recorded as exempt, never as verified, and a hedged answer from its
-        # provider no longer refuses the start (the panel keeps the gate).
-        assert provider_config["retention_exempt"] == [JEV_BUILD]
-        assert JEV_BUILD not in provider_config["retention_verified"]
+        # requirement, and a hedged answer from its provider no longer refuses the start.
+        # Re-based on 2026-11-22 ("All models should not ask for zero retention as this policy is
+        # managed by my OpenRouter account outside the system"): the OpenRouter-routed engine is
+        # recorded as account-managed, never as verified.
+        assert provider_config["retention"] == "managed by the OpenRouter account"
+        assert JEV_BUILD in provider_config["retention_account_managed"]
+        assert JEV_BUILD not in provider_config.get("retention_verified", [])
+        assert "retention_exempt" not in provider_config
     finally:
         store.close()
     hedged = JevOpenRouterProvider(api_key="k", retention_answers=lambda b: "retention: standard")
@@ -261,7 +265,7 @@ def test_tc_orch_53_engine_on_start_records_and_verifies_the_decision_model(tmp_
         run_id = orch.create_run(cohort, version, config)
         provider_config = json.loads(store.cohort(cohort).query(
             "SELECT provider_config FROM run WHERE run_id = :r", r=run_id)[0]["provider_config"])
-        assert provider_config["retention_exempt"] == [JEV_BUILD]
+        assert JEV_BUILD in provider_config["retention_account_managed"]
     finally:
         store.close()
 

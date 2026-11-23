@@ -416,10 +416,12 @@ class ReadingSession:
     """One reading job's page reader, between its start (or a Resume) and its end or pause.
 
     Built on the worker before the first file: it resolves the configuration as the read does,
-    builds the reader once and, on a remote profile, verifies zero retention for the
-    transcriber before a page leaves (FR-PROV-48) — a reader with no zero-retention host refuses
-    the job naming the model, and nothing was sent. `HARNESS_RETENTION_PRECHECK=0` skips that
-    probe for the recorded tier only.
+    and builds the reader once. An OpenRouter-routed page reader is not asked about retention:
+    the operator's OpenRouter account manages it (owner decision 2026-11-22,
+    `retention_exempt`), so nothing is probed and `probe_cost` is None. Any other page reader on
+    a remote profile is verified for zero retention before a page leaves (FR-PROV-48) — one with
+    no zero-retention host refuses the job naming the model, and nothing was sent.
+    `HARNESS_RETENTION_PRECHECK=0` skips that probe for the recorded tier only.
 
     Every file of the job is read through M-PROV's `MeteredProvider` over that reader, which
     adds up each completion's reported cost: `spent` is the job's whole spend (carried across a
@@ -451,13 +453,20 @@ class ReadingSession:
 
     def _verify_retention(self) -> Any:
         from aeh.orch import REMOTE_PROFILES
-        from aeh.prov import RetentionPolicyError, retention_precheck_skipped, retention_probe_cost
+        from aeh.prov import (
+            RetentionPolicyError, retention_exempt, retention_precheck_skipped,
+            retention_probe_cost,
+        )
 
         if self.run_config.backend_profile not in REMOTE_PROFILES:
             return None
+        transcriber = self.run_config.transcriber
+        if retention_exempt(transcriber):
+            # Owner decision 2026-11-22: retention is the OpenRouter account's policy. Not
+            # probed, so no probe cost (None, never 0).
+            return None
         if retention_precheck_skipped(self._reader):
             return None
-        transcriber = self.run_config.transcriber
         refusal = (f"the page reader {_model_name(transcriber)} could not be confirmed to keep "
                    f"no copy of students' work, so no page was sent. Choose a page reader "
                    f"that is served with zero data retention in the settings, then press "

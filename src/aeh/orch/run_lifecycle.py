@@ -57,9 +57,12 @@ class RunLifecycleMixin:
         row is byte-identical to its pre-feature shape.
 
         `escalation_refs` (FR-PROV-48) are the real models the run's escalation seats past the
-        panel dispatch to; the retention gate probes them with the panel, before the run row
-        exists. When a probe ran, its cost is recorded in `provider_config` as
-        `retention_probe_cost` beside `retention_verified`.
+        panel dispatch to; the retention gate considers them with the panel, before the run row
+        exists. An OpenRouter-routed model is never probed (owner decision 2026-11-22): the run
+        records `retention = "managed by the OpenRouter account"` and the builds under
+        `retention_account_managed`. When a probe did run (a non-OpenRouter remote model), its
+        cost is recorded in `provider_config` as `retention_probe_cost` beside
+        `retention_verified`.
         """
         package_id = self._package_id_for(package_version)
         # FR-ORCH-31: the version's own declarations must hang together before the run row
@@ -76,23 +79,35 @@ class RunLifecycleMixin:
         decision_engine = getattr(cfg, "decision_engine", None)
         panel_config = panel_config_json(cfg.panel, decision_engine=decision_engine)
         # A remote run starts only once zero-retention routing is confirmed for every build it
-        # dispatches to (`FR-PROV-14`, `FR-PROV-48`, `NFR-SYS-03`, `SEC-03`): verified here,
-        # before the run row exists, so a refusal leaves nothing behind.
+        # dispatches to whose retention is not managed by the OpenRouter account (`FR-PROV-14`,
+        # `FR-PROV-48`, `NFR-SYS-03`, `SEC-03`; owner decision 2026-11-22): verified here, before
+        # the run row exists, so a refusal leaves nothing behind.
         retention, probe_cost = self._verify_retention_at_start(cfg, tuple(escalation_refs))
         provider_fields: dict[str, Any] = {}
         if retention is not None and probe_cost is not None:
             # "Recorded per run": the confirmed build ids, in the run's frozen snapshot, and
-            # what the probe cost (FR-PROV-48).
+            # what the probe cost (FR-PROV-48) — only when something was actually probed.
             provider_fields["retention_verified"] = sorted(
                 ref.build_id for ref in retention.confirmed
             )
             provider_fields["retention_probe_cost"] = str(probe_cost)
         if retention is not None and retention.exempt:
-            # Owner decision 2026-11-20: the Jev decision model was not confirmed, it was
-            # exempt — recorded apart from `retention_verified` so it never reads as kept.
-            provider_fields["retention_exempt"] = sorted(
-                ref.build_id for ref in retention.exempt
-            )
+            from aeh.prov import RETENTION_MANAGED_BY_ACCOUNT, retention_managed_by_account
+
+            # Owner decision 2026-11-22: the OpenRouter-routed models were not confirmed and not
+            # asked; their retention is the OpenRouter account's policy. Recorded as exactly
+            # that, apart from `retention_verified`, so it never reads as a kept promise.
+            managed = sorted(ref.build_id for ref in retention.exempt
+                             if retention_managed_by_account(ref))
+            if managed:
+                provider_fields["retention"] = RETENTION_MANAGED_BY_ACCOUNT
+                provider_fields["retention_account_managed"] = managed
+            # Owner decision 2026-11-20: any other exempt model (a Jev decision model that is
+            # not OpenRouter-routed) keeps its own record.
+            other = sorted(ref.build_id for ref in retention.exempt
+                           if not retention_managed_by_account(ref))
+            if other:
+                provider_fields["retention_exempt"] = other
         provider_fields.update(_pin_records(model_pins))
         if orch_knobs is not None:
             provider_fields.update(orch_knobs.to_record())
@@ -165,26 +180,30 @@ class RunLifecycleMixin:
     def _verify_retention_at_start(
         self, cfg: Any, escalation_refs: "tuple[Any, ...]" = (),
     ) -> "tuple[Any, Any]":
-        """Check zero retention for every build the run will dispatch to, at run start, and
-        refuse if any cannot be confirmed (FR-PROV-14, widened by FR-PROV-48).
+        """Check zero retention, at run start, for every build the run will dispatch to whose
+        retention is not managed by the OpenRouter account, and refuse if any cannot be
+        confirmed (FR-PROV-14, widened by FR-PROV-48).
+
+        Owner decision 2026-11-22 ("All models should not ask for zero retention as this policy
+        is managed by my OpenRouter account outside the system"): an OpenRouter-routed model —
+        panel judge, escalation judge, Jev decision model — is never probed or refused here
+        (`aeh.prov.retention_exempt`). It is returned in the report's `exempt`, never
+        `confirmed`, and `probe_cost` is None when nothing else was probed. A Jev decision
+        model on another provider stays exempt (owner decision 2026-11-20).
 
         Answers `(report, probe_cost)`. `(None, None)` for a profile that sends nothing off the
-        machine, and when no probe ran (below). On a remote profile (`cloud-hosted`, `dev-ci`)
-        every distinct build is probed once, before the run row exists: the panel and the
-        escalation judges through the provider seam, the decision model through its own
-        provider. A seam without `verify_retention`, or a report that leaves any build
-        unconfirmed, raises `RetentionPolicyError` naming the model — the gate is never skipped
-        on live traffic, because a skipped check reads as a kept privacy promise.
-
-        One exemption: a Jev decision model (`aeh.prov.retention_exempt`, owner decision
-        2026-11-20) is not probed and is returned in the report's `exempt`, never `confirmed`;
-        `probe_cost` is then None when nothing else was probed.
+        machine. On a remote profile (`cloud-hosted`, `dev-ci`) every distinct non-exempt build
+        is probed once, before the run row exists: the panel and the escalation judges through
+        the provider seam, the decision model through its own provider. A seam without
+        `verify_retention`, or a report that leaves any such build unconfirmed, raises
+        `RetentionPolicyError` naming the model.
 
         Two declared skips. `HARNESS_RETENTION_PRECHECK=0` skips the probe for a provider that
         is the recorded tier (M-PROV decides which, `retention_precheck_skipped`). And a
         `dev-ci` orchestrator bound to no `InferenceProvider` — no seam, or only a pricing
         seam with no `verify_retention`, as a headless or test caller binds — has nothing to
-        ask; every shipped provider has it. `cloud-hosted` still refuses that.
+        ask; every shipped provider has it. `cloud-hosted` still refuses that when a
+        non-exempt build is to be asked.
         """
         profile = cfg.backend_profile
         if profile not in REMOTE_PROFILES:
@@ -194,23 +213,25 @@ class RunLifecycleMixin:
             retention_probe_cost,
         )
 
-        verify = getattr(self._provider, "verify_retention", None)
-        if verify is None and profile != "cloud-hosted":
-            return None, None
-        if verify is None:
-            raise RetentionPolicyError(
-                f"a {profile} run cannot start: the orchestrator was given no provider "
-                "able to verify zero-retention routing (FR-PROV-14), so retention for the "
-                f"{len(cfg.panel)} panel members is unconfirmed and nothing was created."
-            )
         # Once per distinct build: a build named twice is asked about once.
         judges: dict[str, Any] = {}
         for ref in (*cfg.panel, *escalation_refs):
             judges.setdefault(ref.build_id, ref)
+        # Exempt builds are set aside first, so a run whose every model is OpenRouter-routed
+        # never reaches the seam checks below.
+        exempt: list[Any] = [ref for ref in judges.values() if retention_exempt(ref)]
+        asked = tuple(ref for ref in judges.values() if not retention_exempt(ref))
         confirmed: list[Any] = []
         cost = None
-        if not retention_precheck_skipped(self._provider):
-            asked = tuple(judges.values())
+        verify = getattr(self._provider, "verify_retention", None)
+        if asked and verify is None and profile == "cloud-hosted":
+            raise RetentionPolicyError(
+                f"a {profile} run cannot start: the orchestrator was given no provider "
+                "able to verify zero-retention routing (FR-PROV-14), so retention for "
+                f"{len(asked)} model(s) whose retention the provider account does not "
+                "manage is unconfirmed and nothing was created."
+            )
+        if asked and verify is not None and not retention_precheck_skipped(self._provider):
             report = verify(asked)
             confirmed_ids = {ref.build_id for ref in getattr(report, "confirmed", ())}
             unconfirmed = [ref for ref in asked if ref.build_id not in confirmed_ids]
@@ -224,21 +245,30 @@ class RunLifecycleMixin:
             confirmed.extend(getattr(report, "confirmed", ()))
             cost = retention_probe_cost(self._provider, asked)
         engine = getattr(cfg, "decision_engine", None)
-        exempt: tuple[Any, ...] = ()
         if (engine is not None and engine.model.build_id not in judges
                 and retention_exempt(engine.model)):
-            # Jev decision models are exempt from the zero-retention requirement (owner
-            # decision 2026-11-20; `retention_exempt`): not probed, no probe cost, and recorded
-            # as exempt beside the confirmed builds — never among them.
-            exempt = (engine.model,)
+            # Not probed, no probe cost, and recorded as exempt beside the confirmed builds —
+            # never among them (owner decisions 2026-11-20 and 2026-11-22).
+            exempt.append(engine.model)
         elif engine is not None and engine.model.build_id not in judges:
-            # FR-ORCH-40 / FR-PROV-28: the decision model sends student work off the machine
-            # too, so it passes the same fail-closed gate before anything is created. Its own
-            # provider answers when one is bound; otherwise the provider seam speaks for it.
+            # FR-ORCH-40 / FR-PROV-28: a decision model whose retention is not the OpenRouter
+            # account's sends student work off the machine too, so it passes the same
+            # fail-closed gate before anything is created. Its own provider answers when one is
+            # bound; otherwise the provider seam speaks for it.
             engine_provider = (self._decision_provider
                                if getattr(self._decision_provider, "verify_retention", None)
                                else self._provider)
-            if not retention_precheck_skipped(engine_provider):
+            if getattr(engine_provider, "verify_retention", None) is None:
+                # No seam able to ask: `dev-ci` has nothing to ask (as for the panel above);
+                # `cloud-hosted` refuses, naming the model.
+                if profile == "cloud-hosted":
+                    raise RetentionPolicyError(
+                        f"a {profile} run cannot start: no provider is able to verify "
+                        f"zero-retention routing for the decision model "
+                        f"{engine.model.provider}:{engine.model.build_id} (FR-PROV-28), and "
+                        f"nothing was created."
+                    )
+            elif not retention_precheck_skipped(engine_provider):
                 engine_report = engine_provider.verify_retention((engine.model,))
                 engine_confirmed = {
                     ref.build_id for ref in getattr(engine_report, "confirmed", ())}
@@ -254,8 +284,9 @@ class RunLifecycleMixin:
                 cost = (cost or 0) + retention_probe_cost(engine_provider, (engine.model,))
         if cost is None and not exempt:
             return None, None
-        # `cost` stays None when no probe ran and only an exemption is to be recorded.
-        return RetentionReport(confirmed=tuple(confirmed), unconfirmed=(), exempt=exempt), cost
+        # `cost` stays None when no probe ran and only exempt models are to be recorded.
+        return (RetentionReport(confirmed=tuple(confirmed), unconfirmed=(), exempt=tuple(exempt)),
+                cost)
 
     # -- resume (FR-ORCH-02) --------------------------------------------------------------------
 

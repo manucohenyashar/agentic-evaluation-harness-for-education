@@ -117,7 +117,12 @@ def test_tc_prov_20_the_gate_holds_before_anything_dispatches():
     """TC-PROV-20, run-start half: zero-retention is confirmed for the panel member before
     the first dispatch, or the run does not start. On an unconfigured nightly this is the
     failure that fires — the gate refusing is the defense working, and the nightly stays
-    red until an operator declares the confirmation."""
+    red until an operator declares the confirmation.
+
+    Re-based on the owner decision of 2026-11-22 ("All models should not ask for zero retention
+    as this policy is managed by my OpenRouter account outside the system"): an OpenRouter model
+    is reported account-managed (`exempt`), never confirmed and never refused, whatever
+    `HARNESS_LIVE_RETENTION_CONFIRMED` declares, and nothing is asked of the live service."""
     provider = _live_provider()
     ref = _live_model_ref()
     try:
@@ -129,6 +134,7 @@ def test_tc_prov_20_the_gate_holds_before_anything_dispatches():
             "Nothing was dispatched; a cloud-hosted run does not start unconfirmed."
         )
     assert report.all_confirmed
+    assert report.exempt == (ref,) and report.confirmed == ()
 
 
 def test_tc_prov_20_the_clause_caller_runs_unchanged_against_live_openrouter():

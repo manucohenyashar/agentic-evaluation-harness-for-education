@@ -39,7 +39,7 @@ A **profile** tells the system where its models run. There are three.
 | `dev-ci` | OpenRouter. With `HARNESS_FIXTURE_DIR` set, recorded replays instead (the test tier) | Yes | Yes, consent rule applies | Development, the first live test, and offline rehearsal |
 | `cloud-hosted` | OpenRouter | **No, refused** | Yes, consent rule and a privacy check apply | A hosted service with its own login (not built) |
 
-**For the first live test with OpenRouter and the console, use `dev-ci`.** The shipped launcher calls OpenRouter under `dev-ci` and enforces the zero-retention policy on every request. Setting `HARNESS_FIXTURE_DIR` selects recorded replays instead; that is the deterministic test/rehearsal path. The console refuses `cloud-hosted` because that profile is intended for a separately authenticated hosted service, which this console is not.
+**For the first live test with OpenRouter and the console, use `dev-ci`.** The shipped launcher calls OpenRouter under `dev-ci`; data retention is governed by the privacy settings of your OpenRouter account, which you must set (the system does not request zero retention, owner decision 2026-11-22). Setting `HARNESS_FIXTURE_DIR` selects recorded replays instead; that is the deterministic test/rehearsal path. The console refuses `cloud-hosted` because that profile is intended for a separately authenticated hosted service, which this console is not.
 
 ## 3. The machine
 
@@ -129,7 +129,7 @@ The ready-made file is [`config/live-test.dev-ci.toml`](config/live-test.dev-ci.
 |---|---|---|
 | `[profiles.dev-ci]` | The profile this section configures | `dev-ci` |
 | `HARNESS_COST_CEILING`, `HARNESS_COST_CURRENCY` | Spend guard for one run. Required for `dev-ci` and `cloud-hosted`. Currency is a three-letter code such as `USD`. | `5`, `USD` |
-| `HARNESS_JEV_BUILD` | The Jev decision engine, which pre-screens every rubric cell before the judge panel sees it. Written with an `@<date>` like the other model names. It is OpenRouter's alias `typesafe/jev-latest` (owner decision 2026-11-20), which serves `typesafe/jev-1.14` on 2026-11-20, so a run's recorded build is expected to read `jev-1.14-<date>`. Two runs may be graded by different Jev versions. While one process drives a run it stays on one (an answer from a different build stops the run); a run resumed in a new process may continue on a newer build, which then shows in its recorded builds. Jev is exempt from the run-start zero-retention check (owner decision 2026-11-20) and is recorded as `retention_exempt`, not as confirmed. | `openrouter/typesafe/jev-latest@2026-11-20` |
+| `HARNESS_JEV_BUILD` | The Jev decision engine, which pre-screens every rubric cell before the judge panel sees it. Written with an `@<date>` like the other model names. It is OpenRouter's alias `typesafe/jev-latest` (owner decision 2026-11-20), which serves `typesafe/jev-1.14` on 2026-11-20, so a run's recorded build is expected to read `jev-1.14-<date>`. Two runs may be graded by different Jev versions. While one process drives a run it stays on one (an answer from a different build stops the run); a run resumed in a new process may continue on a newer build, which then shows in its recorded builds. Like every OpenRouter model, Jev is not checked for zero retention (owner decisions 2026-11-20 and 2026-11-22) and is recorded under `retention_account_managed`, not as confirmed. | `openrouter/typesafe/jev-latest@2026-11-20` |
 | `HARNESS_PROFILE` (top of the file) | Which profile this file selects when the terminal does not say. The terminal wins if both are set. | `dev-ci` |
 | `[profiles.dev-ci.transcriber]` | The model that reads page images | the repository's example model, **unconfirmed** |
 | `[[profiles.dev-ci.panel]]` | The judges. **Must be 1, 3 or 5** (an even panel cannot break a tie). | one judge, **unconfirmed** |
@@ -211,7 +211,7 @@ Tick each before the test.
 - [ ] A spending limit is set in OpenRouter's dashboard.
 - [ ] Only `synthetic` cohorts will be graded. `HARNESS_ALLOW_REMOTE_REAL_WORK` is not set.
 - [ ] The cost ceiling is set in the config file.
-- [ ] The privacy owner has documented approval for sending the selected cohort and documents to an eligible zero-retention OpenRouter endpoint. The software requests zero retention on every call and refuses when no matching endpoint exists; this technical gate does not replace the school's approval. The Jev decision engine is exempt from the run-start zero-retention check (owner decision 2026-11-20): the approval should cover sending answers to Jev without a confirmed zero-retention guarantee.
+- [ ] The OpenRouter account's privacy settings (openrouter.ai, Settings > Privacy) are set to the retention policy the privacy owner approved. The software does not request zero retention on any call and does not check it at run start (owner decision 2026-11-22: "All models should not ask for zero retention as this policy is managed by my OpenRouter account outside the system"); every run records `retention: "managed by the OpenRouter account"`. The privacy owner has documented approval for sending the selected cohort and documents to OpenRouter under those account settings, Jev included; the account setting does not replace the school's approval.
 - [ ] A backup of the data folder will be taken after the test, before anything is purged.
 - [ ] Nobody will try to bind the console to a network address.
 
@@ -224,6 +224,6 @@ Tick each before the test.
 | Console under `cloud-hosted` | `ConsoleBindRefused: … refuses to start under the cloud-hosted profile` | Use `dev-ci` or `edge-local` |
 | Run with no profile | `ConfigurationError: HARNESS_PROFILE must be one of ('edge-local', 'cloud-hosted', 'dev-ci'), got None` | Set it |
 | `cloud-hosted` console | `ConsoleBindRefused: … refuses to start under the cloud-hosted profile` | Use `dev-ci` or `edge-local` for this loopback-only, unauthenticated console |
-| `dev-ci` run, no eligible zero-retention endpoint | `HTTP 404 … No endpoints found matching your data policy` | Check the selected model's eligible providers and the zero-retention request policy; do not weaken the privacy controls |
+| `dev-ci` run, no host allowed by the account's privacy settings | `HTTP 404 … No endpoints found matching your data policy` | Check the selected model's eligible providers against the OpenRouter account's privacy settings; do not weaken those settings |
 | `dev-ci` with `HARNESS_FIXTURE_DIR` set | Recorded request/reply fixtures are replayed; OpenRouter is not called | Use this for deterministic offline tests, not as evidence of a live model run |
 | Real cohort on a remote profile | `ConsentGateError: … may not be sent to a 'dev-ci' provider` | Use a synthetic cohort |

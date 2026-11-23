@@ -57,6 +57,16 @@ Interface expectations this test places on #21
 | `RetentionReport.all_confirmed` / `.confirmed` / `.unconfirmed` | **not specified** — the design names the type and never its fields. `TC-PROV-16` is "two of three", so the report must say *which*, not just whether |
 | `OpenRouterProvider(retention_answers=...)` | **not in the design** — the seam by which a test programs the provider API's answers. §4.2 offers no double for a retention response |
 | `OpenRouterProvider(on_dispatch=...)` | **not in the design** — the recorder the call-order assertion reads. `CT-PROV-13`'s "before the first dispatch" is unassertable without one |
+
+Re-based on the owner decision of 2026-11-22
+--------------------------------------------
+"All models should not ask for zero retention as this policy is managed by my OpenRouter
+account outside the system." An OpenRouter-routed model (`provider` `openrouter` /
+`openrouter-jev`) is no longer probed or refused: `verify_retention` reports it as
+account-managed (`exempt`), never confirmed (`test_retention_managed_by_account.py`). The
+fail-closed gate this file guards still exists for every model whose retention the account does
+not manage, so the panel here is now named under a non-OpenRouter provider (`local`), and every
+assertion below is unchanged. Superseded for OpenRouter models: FR-PROV-14, CT-PROV-13's gate.
 """
 
 from __future__ import annotations
@@ -72,11 +82,13 @@ ISSUE = "#21"
 
 
 def _panel(model_ref_cls, size: int = 3):
-    """A `cloud-hosted` panel of provider-pinned judge builds (design §3.1: pinned slug)."""
+    """A panel of provider-pinned judge builds (design §3.1: pinned slug), under a provider
+    whose retention the OpenRouter account does not manage, so the gate still applies
+    (re-based 2026-11-22)."""
     return tuple(
         model_ref_cls(
             role="judge",
-            provider="openrouter",
+            provider="local",
             build_id=f"openrouter/judge-{index}@2024-12-06",
             quantization=None,
         )

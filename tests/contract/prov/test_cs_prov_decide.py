@@ -322,8 +322,9 @@ def test_tc_prov_c24_the_counter_names() -> None:
 # --- TC-PROV-C25 (safety property) -------------------------------------------------------------
 
 def test_tc_prov_c25_the_decision_model_is_under_the_retention_gate() -> None:
-    """Rung 1 here. At rung 2, TC-ORCH-53 (TS-111) records the Jev decision model as
-    `retention_exempt` at a cloud start, never among `retention_verified`."""
+    """Rung 1 here. At rung 2, TC-ORCH-53 (TS-111) records the Jev decision model as account-
+    managed (`retention_account_managed`, owner decision 2026-11-22; before it, `retention_exempt`)
+    at a cloud start, never among `retention_verified`."""
     # Re-based on the owner decision of 2026-11-20 ("do not worry about zero data retention for
     # Jev models"): the Jev decision model is exempt — reported apart from `confirmed` so the
     # exemption never reads as a kept promise — and a model that is not exempt keeps the gate.
