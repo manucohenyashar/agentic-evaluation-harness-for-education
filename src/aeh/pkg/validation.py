@@ -79,6 +79,7 @@ def record_promotion(
     recorded_at: str | None = None,
     absence_reason: str | None = None,
     unmarked_count: int = 0,
+    compression: str | None = None,
 ) -> None:
     """Write the validation record's durable row (FR-STATS-10): one `package_validation` row per
     (package version, cohort) in Tier D. M-STATS's `promote` is the only intended caller; the write
@@ -90,7 +91,9 @@ def record_promotion(
     record's transport, not its second author. ``recorded_at`` defaults to
     now, in UTC, as the durable column requires. ``absence_reason`` (`skipped`,
     `none_marked` or None) and ``unmarked_count`` are migration P2's columns
-    (FR-STATS-33); the column's CHECK is the one authority on the reason's domain."""
+    (FR-STATS-33); the column's CHECK is the one authority on the reason's domain.
+    ``compression`` is the administration's compression check (FR-STATS-06, R44) as JSON,
+    migration 15's column (#889)."""
     if recorded_at is None:
         recorded_at = datetime.now(timezone.utc).isoformat()
     database_path = Path(data_dir) / "durable.sqlite"
@@ -101,11 +104,11 @@ def record_promotion(
             "(package_version_id, cohort_id, recorded_at, cohorts_used, "
             "operational_count, blind_count, n, agreement_kappa, "
             "weakest_per_population, surface_proxy_flags, message, absence_reason, "
-            "unmarked_count) VALUES "
+            "unmarked_count, compression) VALUES "
             "(:package_version_id, :cohort_id, :recorded_at, :cohorts_used, "
             ":operational_count, :blind_count, :n, :agreement_kappa, "
             ":weakest_per_population, :surface_proxy_flags, :message, :absence_reason, "
-            ":unmarked_count)",
+            ":unmarked_count, :compression)",
             {
                 "package_version_id": package_version_id,
                 "cohort_id": cohort_id,
@@ -120,6 +123,7 @@ def record_promotion(
                 "message": message,
                 "absence_reason": absence_reason,
                 "unmarked_count": int(unmarked_count),
+                "compression": compression,
             },
         )
         connection.commit()
@@ -367,3 +371,75 @@ def record_validation_baseline(
         finally:
             connection.close()
     return BaselineWrite(False, BASELINE_NO_SUCH_VERSION)
+
+
+# --- the graders measured (FR-STATS-36, FR-CALIB-19, #889) -----------------------------------------
+
+#: The two kinds of measurement of the graders themselves `graders_record` holds.
+GRADERS_KINDS: tuple[str, ...] = ("mvvp", "reference_set")
+
+#: Whether a scheduled measurement ran or was refused (the run cost ceiling).
+GRADERS_OUTCOMES: tuple[str, ...] = ("ran", "refused")
+
+
+def record_graders_event(
+    data_dir: Path | str,
+    *,
+    package_version_id: str,
+    kind: str,
+    trigger: str,
+    configuration: Mapping[str, Any],
+    outcome: str,
+    detail: Mapping[str, Any],
+    recorded_at: str | None = None,
+) -> str:
+    """Append one measurement of the graders to Tier D's `graders_record` (migration 15): an MVVP
+    scheduled by M-STATS (FR-STATS-36) or a re-grade of a test's marked examples by M-CALIB
+    (FR-CALIB-19), ran or refused. The write lives here because the table is this tier's schema,
+    as `record_promotion`'s does; this function shapes nothing. Returns the record id."""
+    import uuid
+
+    if kind not in GRADERS_KINDS:
+        raise ValueError(f"record_graders_event got kind={kind!r}; one of {GRADERS_KINDS}")
+    if outcome not in GRADERS_OUTCOMES:
+        raise ValueError(
+            f"record_graders_event got outcome={outcome!r}; one of {GRADERS_OUTCOMES}")
+    record_id = f"{kind}-{uuid.uuid4().hex[:16]}"
+    connection = sqlite3.connect(str(Path(data_dir) / "durable.sqlite"))
+    try:
+        connection.execute(PKG_STATEMENTS["insert_graders_record"], {
+            "record_id": record_id,
+            "package_version_id": package_version_id,
+            "kind": kind,
+            "trigger": trigger,
+            "configuration": json.dumps(dict(configuration), sort_keys=True, default=str),
+            "outcome": outcome,
+            "detail": json.dumps(dict(detail), sort_keys=True, default=str),
+            "recorded_at": recorded_at or datetime.now(timezone.utc).isoformat(),
+        })
+        connection.commit()
+    finally:
+        connection.close()
+    return record_id
+
+
+def graders_records(store: Any, *, kind: str,
+                    package_version_id: str | None = None) -> list[dict[str, Any]]:
+    """The `graders_record` rows of one kind, newest first, for one package version or for every
+    version, with `configuration` and `detail` decoded. Read-only."""
+    if package_version_id is None:
+        rows = store.durable().query(PKG_STATEMENTS["select_graders_records_all"], kind=kind)
+    else:
+        rows = store.durable().query(PKG_STATEMENTS["select_graders_records"], kind=kind,
+                                     package_version_id=package_version_id)
+    records = []
+    for row in rows:
+        record = dict(row)
+        for key in ("configuration", "detail"):
+            try:
+                value = json.loads(record.get(key) or "{}")
+            except (TypeError, ValueError):
+                value = {}
+            record[key] = value if isinstance(value, dict) else {}
+        records.append(record)
+    return records

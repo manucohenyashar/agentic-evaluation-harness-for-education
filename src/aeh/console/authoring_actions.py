@@ -721,6 +721,17 @@ def _approve_draft_package(app: Any, params: Mapping[str, Any]) -> ControlOutcom
         approved = with_approval_marker(
             text, built.package_id, built.package_version, content_digest(text))
         commit_artifacts(path.parent, [(path, approved)])
+        # FR-STATS-36 (#889): a published test's MVVP, on its own thread; a second press of
+        # an unchanged draft returned above and schedules nothing.
+        try:
+            from .graders import on_package_approved
+
+            on_package_approved(app, built.package_version)
+        except Exception:  # noqa: BLE001 - the measurement never fails the approval
+            import logging
+
+            logging.getLogger("aeh.console.graders").exception(
+                "the MVVP for %s could not be scheduled", built.package_version)
         return _published_outcome(label, built.package_id, approved_by=built.approved_by)
 
     return _with_draft_lock(app, path, data_dir, "approve", run)

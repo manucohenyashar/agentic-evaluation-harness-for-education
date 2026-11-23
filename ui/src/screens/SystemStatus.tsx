@@ -1,4 +1,5 @@
 import { fetchRead, type SystemStatus as StatusDoc } from "../api";
+import { GradersBlock } from "../components/GradersBlock";
 import { ReadScreen } from "../components/ReadScreen";
 import { entityStateLabel, versionName } from "../wizard/vocabulary";
 import { useScreenRead } from "../useScreenRead";
@@ -36,6 +37,7 @@ export function SystemStatus() {
               </li>
             </ul>
           </section>
+          {data.graders && <GradersBlock graders={data.graders} />}
         </>
       )}
     </ReadScreen>

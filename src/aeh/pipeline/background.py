@@ -63,10 +63,12 @@ def _prepare_run(
     provider: Any,
     allow_running: bool,
     drive_keywords: dict[str, Any],
+    fresh: bool = False,
 ) -> tuple[str, Any, Any]:
     """Resolve the configuration exactly as `aeh run` does, then create the run, or reuse a
     `pending` run for the same cohort and package version (or the one `run_id` names). A run
-    that already left `pending` raises `RunAlreadyStartedError` and nothing is written. Fills
+    that already left `pending` raises `RunAlreadyStartedError` and nothing is written —
+    unless `fresh`, which always creates a new run beside the earlier ones. Fills
     `drive_keywords` with what `run_to_completion` needs and returns `(run_id, run_config,
     provider)`. Shared by the worker-thread start and the in-process drive."""
     from aeh.conf import resolve_orch_knobs, resolve_run_config
@@ -86,7 +88,7 @@ def _prepare_run(
     orchestrator = Orchestrator(store, provider=bound,
                                 decision_provider=drive_keywords["decision_provider"])
     if run_id is None:
-        existing = [
+        existing = [] if fresh else [
             handle for handle in orchestrator.runs()
             if handle.cohort_id == cohort_id and handle.package_version_id == package_version_id
         ]
@@ -205,6 +207,7 @@ def drive_run(
     package_version_id: str,
     config: Mapping[str, Any],
     provider: Any = None,
+    fresh: bool = False,
     **drive_keywords: Any,
 ) -> Any:
     """Make (or reuse a `pending`) run for the cohort and package version and drive it to the
@@ -215,10 +218,13 @@ def drive_run(
     resolves it, so the consent gate, the retention check and the run cost ceiling all apply —
     for a caller that wants the result rather than a worker: M-CALIB grading a test's marked
     examples (FR-CALIB-17, CT-PIPE-01). A run that already left `pending` raises
-    `RunAlreadyStartedError` and nothing is written."""
+    `RunAlreadyStartedError` and nothing is written. `fresh=True` makes a new run beside the
+    cohort's completed ones instead: M-CALIB re-grading the marked examples after a model
+    change (FR-CALIB-19)."""
     run_id, run_config, bound = _prepare_run(
         store, cohort_id=cohort_id, package_version_id=package_version_id, config=config,
-        run_id=None, provider=provider, allow_running=False, drive_keywords=drive_keywords)
+        run_id=None, provider=provider, allow_running=False, drive_keywords=drive_keywords,
+        fresh=fresh)
     orchestrator = Orchestrator(store, provider=bound,
                                 decision_provider=drive_keywords["decision_provider"])
     if orchestrator.run_handle(run_id).status == "pending":

@@ -194,4 +194,26 @@ STATS_STATEMENTS: dict[str, Statement] = {
     "select_run_cache_hit_rate": Statement(
         "SELECT value FROM run_metrics WHERE run_id = :run_id AND metric = 'cache_hit_rate'"
     ),
+    # FR-STATS-07 / FR-STATS-36 (#889): the surface-proxy channel promotion measures — each
+    # final judged cell's band beside its paper's transcribed length (characters of the
+    # submission's documents), so the correlation of the level with length is computed inside
+    # promotion rather than arriving empty. The band is placed on the declared scale by its
+    # ordinal (`criterion_scales`), never through its points (CT-PKG-05).
+    "select_run_bands_and_length": Statement(
+        "SELECT s.criterion_id, s.band, "
+        "(SELECT coalesce(sum(length(coalesce(d.markdown, ''))), 0) FROM document d "
+        "WHERE d.submission_id = s.submission_id) AS response_length "
+        "FROM criterion_score s WHERE s.run_id = :run_id AND s.judge_count > 0 "
+        "AND s.state = 'final' ORDER BY s.criterion_id, s.submission_id"
+    ),
+    # FR-CONSOLE-88 (#889): the latest administration recorded, for one version or any.
+    "select_latest_promotion_for_version": Statement(
+        "SELECT package_version_id, cohort_id, recorded_at FROM package_validation "
+        "WHERE package_version_id = :package_version_id "
+        "ORDER BY recorded_at DESC, cohort_id DESC LIMIT 1"
+    ),
+    "select_latest_promotion": Statement(
+        "SELECT package_version_id, cohort_id, recorded_at FROM package_validation "
+        "ORDER BY recorded_at DESC, cohort_id DESC LIMIT 1"
+    ),
 }

@@ -433,6 +433,73 @@ export interface StudentDetail extends HeldBack {
   amendments: AmendmentEntry[];
 }
 
+/** One engine partition's stored agreement (FR-CONSOLE-88); no figure below the minimum. */
+export interface EngineFigure {
+  n: number;
+  ordinal_alpha: number | null;
+  status: "measured" | "insufficient_data";
+}
+
+export interface GateBin {
+  low: number;
+  high: number;
+  n: number;
+  exact_agreement: number | null;
+  adjacent_agreement: number | null;
+  status: "measured" | "insufficient_data";
+}
+
+export interface GradersCriterion {
+  criterion_id: string;
+  label: string;
+  per_engine: Record<"decision" | "llm_fallback" | "llm_engine_off", EngineFigure>;
+  gate_bins: GateBin[];
+  gate_threshold: number | null;
+  noninferiority: "true" | "false" | "insufficient_data";
+}
+
+/** FR-CALIB-19's consistency report: per question, how many examples' level moved. */
+export interface ConsistencyReport {
+  label: string;
+  sentence: string;
+  recorded_at: string;
+  trigger: string;
+  outcome: "ran" | "refused";
+  criteria: Record<string, { moved: number; examples: number }>;
+  refusal: string | null;
+}
+
+export interface MvvpRecord {
+  recorded_at: string;
+  trigger: string;
+  outcome: "ran" | "refused";
+  refusal: string | null;
+  /** The six protocol steps, each its own outcome (FR-STATS-05), keyed "1".."6". */
+  steps: Record<string, { requirement: string; outcome: unknown }>;
+}
+
+/** The compression check promotion ran (R44, FR-STATS-06). */
+export interface CompressionCheck {
+  n: number;
+  panel_narrower: boolean | null;
+}
+
+/** System status's graders block (FR-CONSOLE-88). */
+export interface Graders {
+  package_version_id: string | null;
+  recorded_at: string | null;
+  min_per_engine: number;
+  min_per_bin: number;
+  criteria: GradersCriterion[];
+  decision_answers: number;
+  noninferiority: "true" | "false" | "insufficient_data";
+  noninferiority_failing: string[];
+  compression: CompressionCheck | null;
+  jev_final_on: boolean;
+  consistency_report: ConsistencyReport | null;
+  mvvp: MvvpRecord | null;
+}
+
 export interface SystemStatus {
   run_id: string | null;
   run_status: string | null;
@@ -440,6 +507,7 @@ export interface SystemStatus {
   engine: string;
   cohorts: number;
   packages: number;
+  graders?: Graders;
 }
 
 export interface HelpDoc {

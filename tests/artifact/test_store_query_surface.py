@@ -520,21 +520,22 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.pkg.versions:52",
     "aeh.pkg.versions:56",
     "aeh.pkg.versions:99",
-    "aeh.pkg.validation:228",
-    "aeh.pkg.validation:245",
-    "aeh.pkg.validation:292",
-    "aeh.pkg.validation:307",
-    "aeh.pkg.validation:339",
+    "aeh.pkg.validation:232",
+    "aeh.pkg.validation:410",
+    "aeh.pkg.validation:249",
+    "aeh.pkg.validation:296",
+    "aeh.pkg.validation:311",
+    "aeh.pkg.validation:347",
     "aeh.pkg.validation:343",
     "aeh.pkg.validation:42",
     "aeh.pkg.validation:50",
     "aeh.pkg.validation:58",
-    "aeh.pkg.validation:99",
+    "aeh.pkg.validation:102",
     # #525's re-pin: the docstring extension over `record_validation_baseline`
     # (decision (a), the published append-only exception) moved the module's
     # seven sites; the statements are the same seven. Re-read from the walker,
     # never hand-unioned.
-    "aeh.pkg.validation:242",
+    "aeh.pkg.validation:246",
     "aeh.pkg.validation_reads:35",
     "aeh.pkg.validation_reads:27",
     "aeh.pkg.criteria:246",
@@ -636,14 +637,14 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # (#881's re-pin: one import line moved every site down one, and the figures write
     # gained the earlier-administrations read beside it — `select_earlier_criterion_stats`,
     # a declared statement with keyword parameters, the cumulative figure's input.)
-    "aeh.stats.promotion:223",
-    "aeh.stats.promotion:234",
-    "aeh.stats.promotion:240",
-    "aeh.stats.promotion:251",
-    "aeh.stats.promotion:260",
-    "aeh.stats.promotion:256",
-    "aeh.stats.promotion:324",
-    "aeh.stats.promotion:332",
+    "aeh.stats.promotion:226",
+    "aeh.stats.promotion:237",
+    "aeh.stats.promotion:243",
+    "aeh.stats.promotion:254",
+    "aeh.stats.promotion:263",
+    "aeh.stats.promotion:259",
+    "aeh.stats.promotion:327",
+    "aeh.stats.promotion:335",
     "aeh.stats.revisions:41",
     # The synth site is #97's line number: the single narrative INSERT, declared in
     # SYNTH_STATEMENTS with keyword parameters — the write the ADR-8 primary key
@@ -859,7 +860,7 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # statement. #882 re-pin: the blind effect moved to `blind_actions`, moving it up
     # again; same statement. #887 re-pin: the start-run effect's clarified-rubric check moved
     # it down; same statement.)
-    "aeh.console.effects:808",
+    "aeh.console.effects:819",
     "aeh.console.key_correction:140",
     "aeh.console.driver:120",
     "aeh.console.driver:159",

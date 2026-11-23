@@ -5,8 +5,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import json
+import math
 import sqlite3
 import time
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
@@ -16,6 +18,7 @@ from .agreement import _band_ordinals, _corrected_statistics
 from .schema import STATS_STATEMENTS
 from .engines import agreement_by_engine, decision_engine_noninferior, engine_partition
 from .records import ValidationAggregate, ValidationUpdate
+from .mvvp import _compression_outcome
 from .comparisons import _paired_sides, _refuse_foreign_cohort, _require_str_or_none
 from .administration import (
     NO_ENGINE_CONTEXT,
@@ -295,8 +298,8 @@ def promote(
     # This administration's runs: the one named, or the runs its labels were written for.
     administration_runs = ({run_id} if run_id is not None else
                            {run for run in map(_label_run, population) if run})
-    context, final_bands, context_close = _administration_context(
-        data_dir, administration_key, administration_runs)
+    context, final_bands, context_close, measured_correlations = _administration_context(
+        data_dir, administration_key, administration_runs, band_names)
     try:
         figures = criterion_figures(admissible, band_counts=band_counts,
                                     band_names=band_names, scoring_models=scoring_models,
@@ -351,7 +354,14 @@ def promote(
     finally:
         connection.close()
 
+    # FR-STATS-36 (#889): the surface proxies run inside promotion over the channel promotion
+    # itself measured (score against the paper's length), unless the caller supplied one.
+    if not self._surface_correlations and measured_correlations:
+        self._surface_correlations = measured_correlations
     flags = tuple(self.surface_proxies().surface_proxy_flags)
+    # FR-STATS-36 (#889): the compression check (R44, FR-STATS-06) runs inside promotion over
+    # the administration's admissible labels, and rides the record.
+    compression = _compression_record(self, admissible)
     message = NO_NEW_VALIDATION_EVIDENCE if blind_count == 0 else ""
     # The counter is the honest measurement of the recomputation this record
     # just did — scope, sourcing, per-criterion figures, weakest entries,
@@ -419,6 +429,7 @@ def promote(
         message=message,
         absence_reason=absence_reason,
         unmarked_count=unmarked_count,
+        compression=json.dumps(compression, sort_keys=True),
     )
     return ValidationUpdate(
         cohort_id=administration_key,
@@ -436,7 +447,53 @@ def promote(
         criterion_figures=figures,
         absence_reason=absence_reason,
         unmarked_count=unmarked_count,
+        compression=compression,
     )
+
+
+def _compression_record(stats: "ValidationStats", admissible: Sequence[Any]) -> dict[str, Any]:
+    """The compression check (FR-STATS-06) over an administration's admissible labels, as the
+    plain mapping the record stores; its stated limitation travels inside it (CT-STATS-10)."""
+    return asdict(_compression_outcome(stats, list(admissible)))
+
+
+def _pearson(pairs: Sequence[tuple[float, float]]) -> float | None:
+    """Pearson's r over `(x, y)` pairs, or None below three pairs or with no spread."""
+    if len(pairs) < 3:
+        return None
+    n = len(pairs)
+    mean_x = sum(x for x, _ in pairs) / n
+    mean_y = sum(y for _, y in pairs) / n
+    sxx = sum((x - mean_x) ** 2 for x, _ in pairs)
+    syy = sum((y - mean_y) ** 2 for _, y in pairs)
+    if sxx <= 0 or syy <= 0:
+        return None
+    sxy = sum((x - mean_x) * (y - mean_y) for x, y in pairs)
+    return sxy / math.sqrt(sxx * syy)
+
+
+def _length_correlations(handle: Any, runs: set[str],
+                         band_names: Mapping[str, Sequence[str]]) -> dict[str, dict[str, float]]:
+    """Per judged criterion, the correlation of a final cell's level (its band's ordinal on the
+    declared scale) with its paper's length (FR-STATS-07's `response_length_tokens` feature).
+    The length is the transcription's characters, a linear stand-in for tokens; a band outside
+    the declared scale is skipped, and a criterion with fewer than three cells or no spread has
+    no entry, so an unmeasured feature is absent rather than measured at zero."""
+    pairs: dict[str, list[tuple[float, float]]] = {}
+    for run in sorted(runs):
+        for row in handle.query(STATS_STATEMENTS["select_run_bands_and_length"], run_id=run):
+            criterion = str(row["criterion_id"])
+            scale = [str(name) for name in band_names.get(criterion, ())]
+            if str(row["band"]) not in scale:
+                continue
+            pairs.setdefault(criterion, []).append(
+                (float(row["response_length"] or 0), float(scale.index(str(row["band"])))))
+    correlations: dict[str, dict[str, float]] = {}
+    for criterion, measured in sorted(pairs.items()):
+        r = _pearson(measured)
+        if r is not None:
+            correlations[criterion] = {"response_length_tokens": r}
+    return correlations
 
 
 def administration_record(store: Any, *, package_version_id: str,
@@ -462,17 +519,20 @@ def _pkg_scales(data_dir: Any, package_version_id: str) -> dict[str, dict[str, A
 
 def _administration_context(
     data_dir: Any, cohort_id: str, runs: set[str],
-) -> tuple[EngineContext, dict[str, dict[str, int]], Callable[[], None]]:
+    band_names: Mapping[str, Sequence[str]] | None = None,
+) -> tuple[EngineContext, dict[str, dict[str, int]], Callable[[], None],
+           dict[str, dict[str, float]]]:
     """The cohort reads one administration's promote needs, from one store open: each labelled
     cell's engine partition and accepted gate confidence (FR-STATS-26/27), and the runs' final
     band histograms per judged criterion (FR-STATS-34). Returns the context, the histograms and
-    the closer for the store the context reads through. No cohort file → no context and no
-    histograms."""
+    the closer for the store the context reads through, and the surface-proxy correlations the
+    runs' final scores give (FR-STATS-07, #889). No cohort file → no context, no histograms and
+    no correlations."""
     from aeh.store import is_calibration_cohort, open_store
 
     if (not cohort_id or is_calibration_cohort(cohort_id)
             or not Path(data_dir, "cohorts", f"{cohort_id}.sqlite").exists()):
-        return NO_ENGINE_CONTEXT, {}, lambda: None
+        return NO_ENGINE_CONTEXT, {}, lambda: None, {}
     store = open_store(data_dir)
     try:
         handle = store.cohort(cohort_id)
@@ -484,6 +544,7 @@ def _administration_context(
                     continue
                 counts = histograms.setdefault(str(row["criterion_id"]), {})
                 counts[str(band)] = counts.get(str(band), 0) + 1
+        correlations = _length_correlations(handle, runs, band_names or {})
     except Exception:
         store.close()
         raise
@@ -516,7 +577,7 @@ def _administration_context(
         return float(rows[0]["band_confidence"]), float(
             threshold if threshold is not None else 0.80)
 
-    return EngineContext(partition_of, confidence_of), histograms, store.close
+    return EngineContext(partition_of, confidence_of), histograms, store.close, correlations
 
 
 def _criterion_of_label(label: Any) -> str:
@@ -550,6 +611,8 @@ def _stored_update(record: Mapping[str, Any],
         except (TypeError, ValueError):
             return default
 
+    compression = _json(record.get("compression"), None)
+
     return ValidationUpdate(
         cohort_id=str(record["cohort_id"]),
         package_version_id=str(record["package_version_id"]),
@@ -565,6 +628,7 @@ def _stored_update(record: Mapping[str, Any],
         absence_reason=record.get("absence_reason"),
         unmarked_count=int(record.get("unmarked_count") or 0),
         already_recorded=True,
+        compression=compression if isinstance(compression, dict) else None,
     )
 
 
@@ -766,6 +830,7 @@ def _record_in_memory(
     operational_count = len(population) - blind_count
     figures = criterion_figures(admissible, band_counts=self._band_counts, band_names={},
                                 scoring_models=self._scoring_models)
+    compression = _compression_record(self, admissible)
     per_criterion = {criterion: figure["kappa"] for criterion, figure in figures.items()}
     agreement_kappa = (
         next(iter(per_criterion.values())) if len(per_criterion) == 1 else None
@@ -790,4 +855,5 @@ def _record_in_memory(
         criterion_figures=figures,
         absence_reason=absence_reason,
         unmarked_count=unmarked_count,
+        compression=compression,
     )

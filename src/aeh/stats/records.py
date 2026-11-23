@@ -223,6 +223,11 @@ class ValidationUpdate:
     #: FR-STATS-33: True when this administration's record already existed, so this call
     #: claimed nothing and wrote nothing, and the values are the stored record's.
     already_recorded: bool = False
+    #: FR-STATS-36 (#889): the compression check (FR-STATS-06, R44) promotion ran over the
+    #: administration's admissible labels — the panel's and the teacher's band entropy and
+    #: interior rate, whether the panel's is narrower, and the check's stated limitation.
+    #: None on a record written before the check ran inside promotion.
+    compression: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True)

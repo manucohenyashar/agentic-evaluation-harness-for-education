@@ -704,6 +704,24 @@ PKG_STATEMENTS.update({
         "SELECT package_version_id FROM package_version WHERE package_id = :p AND locked = 1 "
         "ORDER BY revision DESC LIMIT 1"
     ),
+    # Durable migration 15 (FR-STATS-36, FR-CALIB-19, #889): the graders measured, newest
+    # first (`rowid` breaks a tie between two records written in one instant).
+    "insert_graders_record": Statement(
+        "INSERT INTO graders_record (record_id, package_version_id, kind, trigger, "
+        "configuration, outcome, detail, recorded_at) VALUES (:record_id, "
+        ":package_version_id, :kind, :trigger, :configuration, :outcome, :detail, "
+        ":recorded_at)"
+    ),
+    "select_graders_records": Statement(
+        "SELECT record_id, package_version_id, kind, trigger, configuration, outcome, detail, "
+        "recorded_at FROM graders_record WHERE kind = :kind "
+        "AND package_version_id = :package_version_id ORDER BY recorded_at DESC, rowid DESC"
+    ),
+    "select_graders_records_all": Statement(
+        "SELECT record_id, package_version_id, kind, trigger, configuration, outcome, detail, "
+        "recorded_at FROM graders_record WHERE kind = :kind "
+        "ORDER BY recorded_at DESC, rowid DESC"
+    ),
 })
 
 
