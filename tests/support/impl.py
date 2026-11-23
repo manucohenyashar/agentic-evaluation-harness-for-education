@@ -2360,6 +2360,22 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "sys.exit(1 if 'stored_not_used' in text else 0)\"",
         ("tests/integration/setup/test_tc_setup_28_b_not_used_retired.py",),
     ),
+    # Validity T12 (#909): TC-UI-45 (b). Not a missing story but a defect the blindness
+    # census found: Results' `question_stats` (the "Average by question" bars) is worked out
+    # before `held_back.hold_back` blanks the drawn lines and names no submission, so a wholly
+    # drawn question's average and full/no-marks counts give its drawn points away
+    # (CT-CONSOLE-56 r2). The probe resolves once the hold-back or the stats builder knows
+    # about the draw (`question_stats` in `held_back.py`, or `hidden_until_blind` in
+    # `question_results.py`), wherever the fix routes it; the case's own oracle then decides.
+    "#909 defect — Results question averages reveal drawn points": (
+        "command",
+        "python -c \"import pathlib, sys; "
+        "c = pathlib.Path('src/aeh/console'); "
+        "sys.exit(0 if 'question_stats' in (c / 'held_back.py').read_text(encoding='utf-8') "
+        "or 'hidden_until_blind' in (c / 'question_results.py').read_text(encoding='utf-8') "
+        "else 1)\"",
+        ("tests/browser/spa/test_tc_ui_45_b_class_averages.py",),
+    ),
 }
 
 def blocker_is_resolved(kind: str, target: str, repo_root: Any) -> bool:

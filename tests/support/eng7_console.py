@@ -143,7 +143,8 @@ def eng7_console(root: Path, work: Path, monkeypatch: Any,
         _judge_top_band_on(world.fake, TOP_BAND_CRITERION)
         cfg = parse_config_document(DEV_CI_CONFIG.read_text(encoding="utf-8"), "toml")
         store = open_store(root)
-        network_guard.uninstall()
+        if network_guard is not None:  # None under `browser` (the guard stands down)
+            network_guard.uninstall()
         with redirect_stdout(io.StringIO()):
             server = serve_console(store=store, cfg=cfg, config_path=str(DEV_CI_CONFIG))
         ids = _RunIds(cohort_id=world.cohort_id)
@@ -166,7 +167,8 @@ def eng7_console(root: Path, work: Path, monkeypatch: Any,
             if server is not None:
                 server.terminate()
         finally:
-            network_guard.install()
+            if network_guard is not None:
+                network_guard.install()
             forget_sample_modules()
             if store is not None:
                 try:
