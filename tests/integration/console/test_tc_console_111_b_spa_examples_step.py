@@ -17,10 +17,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
-pytestmark = [pytest.mark.writtenahead]
-
 REPO = Path(__file__).resolve().parents[3]
 
 #: What the legacy copy offers, as the SPA would have to call it.

@@ -2360,16 +2360,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "sys.exit(1 if 'stored_not_used' in text else 0)\"",
         ("tests/integration/setup/test_tc_setup_28_b_not_used_retired.py",),
     ),
-    # TC-CONSOLE-111's "the legacy upload copy claims nothing the SPA lacks": the SPA examples
-    # step is S18 (#888). Resolves when the SPA source calls the examples read.
-    "#888 SPA examples step — TC-CONSOLE-111's SPA arm": (
-        "command",
-        "python -c \"import pathlib, sys; "
-        "text = ''.join(p.read_text(encoding='utf-8') "
-        "for p in pathlib.Path('ui/src').rglob('*.ts*')); "
-        "sys.exit(0 if '/api/v1/calibration/examples' in text else 1)\"",
-        ("tests/integration/console/test_tc_console_111_b_spa_examples_step.py",),
-    ),
 }
 
 def blocker_is_resolved(kind: str, target: str, repo_root: Any) -> bool:
