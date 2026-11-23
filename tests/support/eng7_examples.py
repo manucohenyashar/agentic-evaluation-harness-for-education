@@ -83,6 +83,8 @@ CRITERIA: dict[str, tuple[str, ...]] = {
 JOIN_TIMEOUT_ENV = "AEH_TEST_ENG7_RUN_TIMEOUT_S"
 
 JudgeRule = Callable[[str, str, tuple[str, ...], str], "str | None"]
+#: (paper, the question's prompt text) -> whether the extractor offers the answer span.
+EvidenceRule = Callable[[str, str], bool]
 
 
 def _join_timeout() -> float:
@@ -127,10 +129,13 @@ def _answer_span(document: str, prompt_text: str) -> dict | None:
     return None
 
 
-def install_examples_transport(fake: Any, rule: Callable[[], "JudgeRule | None"]) -> None:
+def install_examples_transport(fake: Any, rule: Callable[[], "JudgeRule | None"],
+                               evidence: Callable[[], "EvidenceRule | None"] = lambda: None,
+                               ) -> None:
     """Wrap the stand-in transport: every panel model answers, the extractor offers the answer
-    span, and the judge answers what `rule()` names (read at call time, so a case can change it
-    between steps)."""
+    span — unless `evidence()` names a rule that answers False for the paper and question, when
+    it offers none — and the judge answers what `rule()` names (both read at call time, so a
+    case can change them between steps)."""
     from aeh.prov.live import _fields_from_wire
 
     panel = tomllib.loads(PANEL_CONFIG.read_text(encoding="utf-8"))["profiles"]["dev-ci"]
@@ -144,7 +149,11 @@ def install_examples_transport(fake: Any, rule: Callable[[], "JudgeRule | None"]
         if "dependency_evidence" in fields:
             document = _document_of(fields.get("submission", ""))
             prompt = re.search(r"prompt_text: (.*)", fields.get("question", ""))
-            span = _answer_span(document, prompt.group(1) if prompt else "")
+            prompt_text = prompt.group(1) if prompt else ""
+            span = _answer_span(document, prompt_text)
+            offered = evidence()
+            if offered is not None and not offered(paper_of(document) or "", prompt_text):
+                span = None
             text = json.dumps({"spans": [span] if span else []})
         elif "evidence_rules" in fields:
             criterion = re.search(r"criterion_id: (\S+)", fields.get("criterion", ""))
@@ -190,6 +199,7 @@ class Eng7Examples(ServedRun):
     test_paper: bytes = b""
     config: Any = None
     judge_rule: "JudgeRule | None" = None
+    evidence_rule: "EvidenceRule | None" = None
 
     # -- the store, read-only ----------------------------------------------------------------
 
@@ -403,7 +413,8 @@ def eng7_examples(root: Path, work: Path, monkeypatch: Any, network_guard: Any,
         served = Eng7Examples(world=_Ids(cohort_id=ENG7_COHORT), server=None, port=0,
                               root=root, package_version=world.package_version,
                               fake=world.fake, config=cfg, judge_rule=judge_rule)
-        install_examples_transport(world.fake, lambda: served.judge_rule)
+        install_examples_transport(world.fake, lambda: served.judge_rule,
+                                   lambda: served.evidence_rule)
         served.sheets = {stem: (work / "answer-sheets" / f"{stem}.pdf").read_bytes()
                          for stem in SHEETS}
         served.test_paper = (work / "01-test-paper.pdf").read_bytes()
