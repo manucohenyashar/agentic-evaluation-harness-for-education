@@ -6,7 +6,8 @@ import uuid
 from datetime import datetime, timezone
 
 from .vocabulary import (
-    DEFAULT_SCORE_METHOD, default_evaluation_mode, LOGGER, PackageVersionId)
+    DECLARED_SOURCE, DEFAULT_SCORE_METHOD, default_evaluation_mode, LOGGER,
+    PackageVersionId)
 from .records import PackageDraft, _REVISION_COPY_KEYS
 from .statements import PKG_STATEMENTS
 
@@ -59,7 +60,9 @@ class VersionsMixin:
                        construct_tag="", band_count=None, evidence_type=None,
                        # A draft placeholder is `kind="open"`, so: judged.
                        evaluation_mode=default_evaluation_mode("open"),
-                       score_method=DEFAULT_SCORE_METHOD, component_of=None)
+                       score_method=DEFAULT_SCORE_METHOD, component_of=None,
+                       scoring_model_source=DECLARED_SOURCE,
+                       scoring_model_confirmed_at=None)
         if parent is not None:
             copied = ", ".join(
                 f"{row['surface']}={row['n']}" for row in self._handle.query(
@@ -95,6 +98,9 @@ class VersionsMixin:
         # FR-PKG-24/26, CT-PKG-21: the method vocabulary, the composite shape and the
         # `general` derivation gate — also before the lock flips.
         self._validate_score_methods(v)
+        # CT-PKG-25: every judged band says what earns it — M-PKG's own refusal, whatever
+        # gate the build passed through first.
+        self._validate_band_descriptors(v)
         with self._handle.transaction() as tx:
             tx.execute(PKG_STATEMENTS["publish"], by=approved_by, v=v)
             LOGGER.info("published package version %s by %s at %s",

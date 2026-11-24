@@ -96,7 +96,8 @@ def package_world(tmp_data_dir):
             band_count=len(BANDS),
         )
         for ordinal, band, points in BANDS:
-            catalog.add_band(version, CRITERION, ordinal, band, points)
+            catalog.add_band(version, CRITERION, ordinal, band, points,
+                             descriptor=f"what earns {band}")
     finally:
         store.close()
     return tmp_data_dir, version

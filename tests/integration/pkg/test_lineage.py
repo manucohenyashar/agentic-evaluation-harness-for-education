@@ -41,8 +41,8 @@ def _seed_published(catalog: PackageCatalog, handle, package_id: str = "pkg-26")
             "INSERT INTO criterion (package_version_id, criterion_id, question_id, kind) "
             "VALUES (:v, 'CRIT-1', 'Q-1', 'open')", issue=ISSUE), v=v1)
         tx.execute(statement(
-            "INSERT INTO band (package_version_id, criterion_id, ordinal, band, points) "
-            "VALUES (:v, 'CRIT-1', 0, 'b0', 0.0)", issue=ISSUE), v=v1)
+            "INSERT INTO band (package_version_id, criterion_id, ordinal, band, points, "
+            "descriptor) VALUES (:v, 'CRIT-1', 0, 'b0', 0.0, 'names the claim')", issue=ISSUE), v=v1)
     catalog.publish(v1, "approver")
     return v1
 

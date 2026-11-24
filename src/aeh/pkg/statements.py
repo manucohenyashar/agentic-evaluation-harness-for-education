@@ -54,10 +54,11 @@ PKG_STATEMENTS.update({
         "INSERT INTO criterion (package_version_id, criterion_id, question_id, kind, "
         "max_points, scoring_model, construct_tag, band_count, answer_key, "
         "evidence_type, band_justification, evaluation_mode, score_method, "
-        "component_of) "
+        "component_of, scoring_model_source, scoring_model_confirmed_at) "
         "SELECT :new, criterion_id, question_id, kind, max_points, scoring_model, "
         "construct_tag, band_count, answer_key, evidence_type, band_justification, "
-        "evaluation_mode, score_method, component_of FROM criterion "
+        "evaluation_mode, score_method, component_of, scoring_model_source, "
+        "scoring_model_confirmed_at FROM criterion "
         "WHERE package_version_id = :old"
     ),
     "pkg_revision_copy_band": Statement(
@@ -113,10 +114,12 @@ PKG_STATEMENTS.update({
     "insert_criterion": Statement(
         "INSERT INTO criterion (package_version_id, criterion_id, question_id, kind, "
         "max_points, scoring_model, construct_tag, band_count, evidence_type, "
-        "evaluation_mode, score_method, component_of) VALUES "
+        "evaluation_mode, score_method, component_of, scoring_model_source, "
+        "scoring_model_confirmed_at) VALUES "
         "(:v, :criterion_id, :question_id, :kind, :max_points, :scoring_model, "
         ":construct_tag, :band_count, :evidence_type, :evaluation_mode, "
-        ":score_method, :component_of)"
+        ":score_method, :component_of, :scoring_model_source, "
+        ":scoring_model_confirmed_at)"
     ),
     "insert_dependency": Statement(
         "INSERT INTO criterion_dependency (package_version_id, criterion_id, "
@@ -134,7 +137,8 @@ PKG_STATEMENTS.update({
     "select_criteria": Statement(
         "SELECT criterion_id, question_id, kind, max_points, scoring_model, "
         "construct_tag, band_count, answer_key, evidence_type, band_justification, "
-        "evaluation_mode, score_method, component_of FROM criterion "
+        "evaluation_mode, score_method, component_of, scoring_model_source, "
+        "scoring_model_confirmed_at FROM criterion "
         "WHERE package_version_id = :v ORDER BY criterion_id"
     ),
     "select_bands": Statement(

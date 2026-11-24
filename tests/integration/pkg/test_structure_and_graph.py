@@ -209,8 +209,8 @@ def test_tc_pkg_08_publish_counts_this_versions_bands_only(tmp_data_dir):
     v1 = catalog.create_version(None, PackageDraft(title="complete, unpublished"))
     catalog.add_criterion(v1, "CRIT-X", question_id="Q", kind="open", max_points=4.0,
                           band_count=2)
-    catalog.add_band(v1, "CRIT-X", 0, "b0", 0.0)
-    catalog.add_band(v1, "CRIT-X", 1, "b1", 4.0)
+    catalog.add_band(v1, "CRIT-X", 0, "b0", 0.0, descriptor="no claim made")
+    catalog.add_band(v1, "CRIT-X", 1, "b1", 4.0, descriptor="claim made and supported")
     # A revision off the STILL-DRAFT parent: the copy doubles the band rows this file
     # carries under CRIT-X, before either version is published.
     v2 = catalog.create_version(v1, PackageDraft(title="revision before publish"))

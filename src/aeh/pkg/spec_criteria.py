@@ -13,6 +13,9 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Iterable, Mapping
 
+from .errors import PackageError
+from .vocabulary import DECLARED_SOURCE, DEFAULT_SOURCE, TEACHER_SOURCE
+
 #: The scoring model a multiple-choice line is stored with (a key lookup is one atomic check).
 MCQ_SCORING = "atomic"
 #: FR-PKG-29's two outcomes for a judged line that declares no model: a presence check by
@@ -20,6 +23,8 @@ MCQ_SCORING = "atomic"
 #: line is an overall judgement.
 ATOMIC_SCORING = "atomic"
 JUDGED_SCORING = "holistic"
+#: The two models the review screen's Change control offers a defaulted line (FR-UI-54).
+TEACHER_SCORING_CHOICES: tuple[str, ...] = (ATOMIC_SCORING, JUDGED_SCORING)
 
 #: A keyed line declares a two-band set (incorrect / correct), as an aspect criterion does.
 ASPECT_BAND_COUNT = 2
@@ -82,7 +87,8 @@ def defaulted_scoring(step_record: Mapping[str, Any] | None) -> dict[str, str]:
 
 
 def write_spec_criteria(catalog: Any, version: str, criteria: Iterable[Mapping[str, Any]],
-                        approved_by: str) -> None:
+                        approved_by: str,
+                        teacher_scoring: Mapping[str, str] | None = None) -> None:
     """Write each planned rubric line to the draft `version` through `catalog`'s own API.
 
     A multiple-choice line (`kind == "mcq"`) becomes a two-band criterion (incorrect /
@@ -96,7 +102,17 @@ def write_spec_criteria(catalog: Any, version: str, criteria: Iterable[Mapping[s
     one write both build paths (`aeh package build` and the console's authoring build) pass
     through, so the same spec yields the same model on either (CT-PKG-24) — and the lines that
     took it (possibly none) are recorded in a `SCORING_DEFAULT_STEP` setup-step row
-    (FR-SETUP-14)."""
+    (FR-SETUP-14).
+
+    `teacher_scoring` (criterion id -> model) is the teacher's confirmation or change of a
+    defaulted line on the review screen (FR-UI-54): such a line takes the teacher's model and
+    records `scoring_model_source = 'teacher'` with the confirmation time; every other line
+    records `declared` (the spec named its model) or `default` (FR-PKG-29 took it)
+    (FR-PKG-30). A choice for a line that names its own model, is not a judged line, or is
+    outside the two models is refused before anything is written."""
+    criteria = list(criteria)
+    choices = _checked_teacher_scoring(criteria, teacher_scoring or {})
+    confirmed_at = datetime.now(timezone.utc).isoformat() if choices else None
     defaulted: dict[str, str] = {}
     judged = False
     for c in criteria:
@@ -111,20 +127,21 @@ def write_spec_criteria(catalog: Any, version: str, criteria: Iterable[Mapping[s
             catalog.set_answer_key(version, c["id"], c["key"])
             continue
         method = c.get("score_method") or "bands"
+        scoring = _scoring_for(c, defaulted, choices, confirmed_at)
         if method == "evidence_sum":
             catalog.add_criterion(
                 version, c["id"], question_id=c["question"], kind="open",
-                max_points=c["max_points"], scoring_model=_scoring_for(c, defaulted),
-                dependencies=c["depends_on"], band_count=None,
-                score_method=method)
+                max_points=c["max_points"], dependencies=c["depends_on"], band_count=None,
+                score_method=method, **scoring)
             continue
         catalog.add_criterion(
             version, c["id"], question_id=c["question"], kind="open",
-            max_points=c["max_points"], scoring_model=_scoring_for(c, defaulted),
+            max_points=c["max_points"],
             dependencies=c["depends_on"], band_count=len(c["bands"]),
             evidence_type=c["evidence_type"], component_of=c["component_of"],
             score_method=None if method == "bands" else method,
-            evaluation_mode=c["evaluation_mode"], construct_tag=c["construct_tag"])
+            evaluation_mode=c["evaluation_mode"], construct_tag=c["construct_tag"],
+            **scoring)
         for ordinal, name, points, descriptor in c["bands"]:
             catalog.add_band(version, c["id"], ordinal, name, points, descriptor)
         if c["band_justification"]:
@@ -134,32 +151,63 @@ def write_spec_criteria(catalog: Any, version: str, criteria: Iterable[Mapping[s
             _record_confirmed_derivation(catalog, version, c["id"],
                                          c["derivation_description"], approved_by)
     if judged:
-        _record_scoring_default(catalog, version, defaulted)
+        _record_scoring_default(catalog, version, defaulted, choices)
 
 
-def _scoring_for(c: Mapping[str, Any], defaulted: dict[str, str]) -> str:
-    """The judged line's declared model, or FR-PKG-29's default — noted in `defaulted` when
-    taken."""
+def _scoring_for(c: Mapping[str, Any], defaulted: dict[str, str],
+                 choices: Mapping[str, str], confirmed_at: str | None) -> dict[str, Any]:
+    """The judged line's model and who chose it (FR-PKG-30), as `add_criterion` keywords:
+    the declared model (`declared`); else the teacher's choice on the review screen
+    (`teacher`, with the confirmation time); else FR-PKG-29's default (`default`) — noted in
+    `defaulted` when taken."""
     declared = c.get("scoring")
     if declared:
-        return declared
+        return {"scoring_model": declared, "scoring_model_source": DECLARED_SOURCE}
+    if c["id"] in choices:
+        return {"scoring_model": choices[c["id"]], "scoring_model_source": TEACHER_SOURCE,
+                "scoring_model_confirmed_at": confirmed_at}
     method = c.get("score_method") or "bands"
     model = default_scoring_model(
         score_method=method,
         band_count=None if method == "evidence_sum" else len(c["bands"]),
         component_of=c.get("component_of"))
     defaulted[c["id"]] = model
-    return model
+    return {"scoring_model": model, "scoring_model_source": DEFAULT_SOURCE}
 
 
-def _record_scoring_default(catalog: Any, version: str, defaulted: Mapping[str, str]) -> None:
+def _checked_teacher_scoring(criteria: list[Mapping[str, Any]],
+                             teacher_scoring: Mapping[str, str]) -> dict[str, str]:
+    """The teacher's choices, each refused unless it names a line FR-PKG-29 would default —
+    the only lines the review screen offers to confirm (FR-UI-54) — and one of the two
+    models the screen offers."""
+    offered = {str(c["id"]) for c in criteria
+               if draft_line_scoring(c) is not None and not c.get("scoring")}
+    for criterion_id, model in teacher_scoring.items():
+        if criterion_id not in offered:
+            raise PackageError(
+                f"the teacher's scoring-model choice names {criterion_id!r}, which is not a "
+                "judged line whose model was chosen automatically (FR-UI-54).")
+        if model not in TEACHER_SCORING_CHOICES:
+            raise PackageError(
+                f"the teacher's scoring-model choice for {criterion_id!r} is {model!r}, not "
+                f"one of {', '.join(TEACHER_SCORING_CHOICES)} (FR-UI-54).")
+    return {str(k): str(v) for k, v in teacher_scoring.items()}
+
+
+def _record_scoring_default(catalog: Any, version: str, defaulted: Mapping[str, str],
+                            confirmed: Mapping[str, str]) -> None:
     """Record which judged lines took FR-PKG-29's default (FR-SETUP-14). The row is written
     even when none did, so its presence tells a version built under the rule — every line not
-    listed declared its model — from one that predates it."""
+    listed declared its model — from one that predates it. A line the teacher confirmed is
+    not a default taken: it is listed under `teacher` instead (FR-PKG-30), so the spec export
+    writes its model and a rebuild keeps the teacher's choice."""
+    payload: dict[str, Any] = {"defaulted": dict(defaulted)}
+    if confirmed:
+        payload["teacher"] = dict(confirmed)
     catalog.record_step(
         version, step_id=SCORING_DEFAULT_STEP,
         status=SCORING_DEFAULT_STATUS if defaulted else SCORING_DECLARED_STATUS,
-        payload=json.dumps({"defaulted": dict(defaulted)}, sort_keys=True),
+        payload=json.dumps(payload, sort_keys=True),
         recorded_at=datetime.now(timezone.utc).isoformat())
 
 

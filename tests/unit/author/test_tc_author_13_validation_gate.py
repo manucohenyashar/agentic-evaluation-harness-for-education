@@ -183,16 +183,16 @@ MALFORMED_CORPUS = (
 #: the sample's own four C4 bands; otherwise the list replaces them whole.
 VALID_VARIANTS = (
     ("the sample spec as authored", None, "C"),
-    ("a two-band C4", (("none", 0, ""), ("full", 3, "")), "C"),
+    ("a two-band C4", (("none", 0, "Names no force."), ("full", 3, "Names both forces.")), "C"),
     (
         "a six-band C4",
         (
-            ("none", 0, ""),
-            ("base", 0, ""),
-            ("low", 1, ""),
-            ("mid", 1, ""),
-            ("high", 2, ""),
-            ("full", 3, ""),
+            ("none", 0, "Names no force."),
+            ("base", 0, "Names a force that does not act."),
+            ("low", 1, "Names one force."),
+            ("mid", 1, "Names one force and its direction."),
+            ("high", 2, "Names both forces."),
+            ("full", 3, "Names both forces and says they balance."),
         ),
         "C",
     ),

@@ -9,7 +9,14 @@ import {
 } from "../api";
 import { scoringModelLabel } from "../components/Agreement";
 import { ConfirmDialog, useActionState } from "../components/Confirm";
-import { describedBy, errorIdFor, FieldError, FormatLine, formatIdFor } from "../components/Field";
+import {
+  describedBy,
+  errorIdFor,
+  FieldError,
+  FormatLine,
+  formatIdFor,
+  useFieldIds,
+} from "../components/Field";
 import { BusyButton, DisabledReason, useOutcome } from "../components/Outcome";
 import { ReadScreen } from "../components/ReadScreen";
 import { useScreenRead } from "../useScreenRead";
@@ -61,9 +68,121 @@ function PlaceholderMark({
   );
 }
 
+type DraftCriterion = NonNullable<AuthoringDraftDoc["draft"]>["criteria"][number];
+
+/** FR-UI-54's two choices, in teacher words, one sentence each. */
+const SCORING_CHOICES: { model: string; text: string }[] = [
+  {
+    model: "atomic",
+    text: "A simple check: present or not; one grader decides unless graders disagree.",
+  },
+  {
+    model: "holistic",
+    text: "An overall judgement: three graders from the start; harder to accept without you.",
+  },
+];
+
+const SCORING_CHOICE_FORMAT: FieldSpec = {
+  kind: "choice",
+  format: "Choose one. Approving keeps your choice; a line you leave stays as shown",
+};
+
+/** A judged line's model (FR-UI-37) and, beside a model chosen automatically, the
+ * **Change** control (FR-UI-54): the two choices with their sentences. Picking either one
+ * — even the one already shown — makes the line the teacher's when the draft is approved.
+ * A line beyond the confirmation cap (`confirm === "list"`) is shown, not asked. */
+function ScoringModelLine({
+  criterion,
+  choice,
+  onChoose,
+}: {
+  criterion: DraftCriterion;
+  choice: string | null;
+  onChoose: (criterionId: string, model: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ids = useFieldIds();
+  const shown = choice ?? criterion.scoring;
+  const label = scoringModelLabel(shown);
+  if (label === null) {
+    return null;
+  }
+  const automatic = criterion.chosen_automatically === true;
+  const asked = automatic && criterion.confirm === "ask";
+  return (
+    <>
+      <p className="outline-meta scoring-model">
+        {label}
+        {choice !== null ? " (your choice)" : automatic ? " (chosen automatically)" : ""}
+      </p>
+      {asked && (
+        <div className="scoring-change">
+          <button
+            type="button"
+            className="button"
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+          >
+            Change
+          </button>
+          {open && (
+            <div className="settings-row" role="radiogroup" aria-labelledby={ids.id}>
+              <span id={ids.id} className="step-name">How this line is marked</span>
+              <div className="choice-list">
+                {SCORING_CHOICES.map((option) => (
+                  <label key={option.model} className="choice">
+                    <input
+                      type="radio"
+                      name={`scoring-${criterion.id}`}
+                      value={option.model}
+                      checked={choice === option.model}
+                      aria-describedby={ids.formatId}
+                      onChange={() => onChoose(criterion.id, option.model)}
+                    />{" "}
+                    {option.text}
+                  </label>
+                ))}
+              </div>
+              <FormatLine id={ids.formatId} spec={SCORING_CHOICE_FORMAT} />
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+/** The lines beyond the confirmation cap (NFR-SETUP-01): listed, not asked (FR-UI-54). */
+function ListedScoringLines({ draft }: { draft: NonNullable<AuthoringDraftDoc["draft"]> }) {
+  const listed = draft.criteria.filter(
+    (criterion) => criterion.chosen_automatically === true && criterion.confirm === "list",
+  );
+  if (listed.length === 0) {
+    return null;
+  }
+  return (
+    <p className="scoring-listed">
+      {listed.length === 1 ? "One more grading point's" : `${listed.length} more grading points'`}{" "}
+      marking was chosen automatically and stays as shown:{" "}
+      {listed
+        .map((criterion) => `${criterionLabel(criterion.id)} (${(scoringModelLabel(criterion.scoring) ?? "").toLowerCase()})`)
+        .join(", ")}
+      .
+    </p>
+  );
+}
+
 /** The draft outline: the questions and grading points in order, each with its own
  * missing pieces highlighted inline, and the grade table's pieces under it. */
-function DraftOutline({ draft }: { draft: NonNullable<AuthoringDraftDoc["draft"]> }) {
+function DraftOutline({
+  draft,
+  scoringChoices,
+  onChooseScoring,
+}: {
+  draft: NonNullable<AuthoringDraftDoc["draft"]>;
+  scoringChoices: Record<string, string>;
+  onChooseScoring: (criterionId: string, model: string) => void;
+}) {
   return (
     <div className="outline">
       <h2>The draft</h2>
@@ -110,12 +229,11 @@ function DraftOutline({ draft }: { draft: NonNullable<AuthoringDraftDoc["draft"]
             Grades {criterion.question === "" ? "no question yet" : questionLabel(criterion.question)}
             {criterion.points !== null ? `, ${criterion.points} point(s)` : ""}
           </p>
-          {scoringModelLabel(criterion.scoring) !== null && (
-            <p className="outline-meta scoring-model">
-              {scoringModelLabel(criterion.scoring)}
-              {criterion.chosen_automatically === true ? " (chosen automatically)" : ""}
-            </p>
-          )}
+          <ScoringModelLine
+            criterion={criterion}
+            choice={scoringChoices[criterion.id] ?? null}
+            onChoose={onChooseScoring}
+          />
           {criterion.key !== undefined && criterion.key !== null && (
             <p className="outline-meta">
               Answer key: {Array.isArray(criterion.key) ? criterion.key.join(", ") : criterion.key}
@@ -418,7 +536,22 @@ export function ReviewDraft({ packageId }: { packageId: string | null }) {
     3000,
   );
 
-  const approve = (draftPackageId: string): void => {
+  // FR-UI-54: the teacher's Change choices, kept outside the read's render so a re-poll
+  // never drops them; approving sends the ones for lines still asked in the draft.
+  const [scoringChoices, setScoringChoices] = useState<Record<string, string>>({});
+  const chooseScoring = (criterionId: string, model: string): void => {
+    setScoringChoices((current) => ({ ...current, [criterionId]: model }));
+  };
+
+  const approve = (draft: NonNullable<AuthoringDraftDoc["draft"]>): void => {
+    const asked = new Set(
+      draft.criteria
+        .filter((criterion) => criterion.chosen_automatically === true && criterion.confirm === "ask")
+        .map((criterion) => criterion.id),
+    );
+    const scoring = Object.fromEntries(
+      Object.entries(scoringChoices).filter(([criterionId]) => asked.has(criterionId)),
+    );
     action.open({
       title: "Approve and build the package",
       description:
@@ -426,7 +559,7 @@ export function ReviewDraft({ packageId }: { packageId: string | null }) {
         "approval. A built package never changes afterwards.",
       confirm: "Approve the package",
       action: "approve draft package",
-      body: { package_id: draftPackageId },
+      body: { package_id: draft.package_id, scoring },
     });
   };
 
@@ -462,7 +595,12 @@ export function ReviewDraft({ packageId }: { packageId: string | null }) {
                 </p>
               </div>
             )}
-            <DraftOutline draft={draft} />
+            <DraftOutline
+              draft={draft}
+              scoringChoices={scoringChoices}
+              onChooseScoring={chooseScoring}
+            />
+            <ListedScoringLines draft={draft} />
             <section aria-label="Questions to answer" className="gaps-section">
               <h2>A few questions before you approve</h2>
               {current === null && gaps.length === 0 ? (
@@ -523,7 +661,7 @@ export function ReviewDraft({ packageId }: { packageId: string | null }) {
                 <button
                   type="button"
                   className="button button-primary"
-                  onClick={() => approve(draft.package_id)}
+                  onClick={() => approve(draft)}
                 >
                   Approve the package
                 </button>

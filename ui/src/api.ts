@@ -1098,6 +1098,10 @@ export interface DraftCriterion {
    * aspects, each a line of its own). */
   scoring?: string;
   chosen_automatically?: boolean;
+  /** FR-UI-54: on a line whose model was chosen automatically, whether the review screen
+   * asks the teacher to confirm or change it (`ask`, at most NFR-SETUP-01's cap) or only
+   * lists it (`list`, the lines beyond the cap). */
+  confirm?: "ask" | "list";
 }
 
 /** One validation issue the draft already carries, as the read projects it. */

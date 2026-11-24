@@ -17,19 +17,20 @@ from typing import Any, Mapping, Sequence
 
 from .errors import PackageError
 from .spec_criteria import (
-    JUDGED_SCORING,
     SCORING_DEFAULT_STEP,
-    default_scoring_model,
     defaulted_scoring,
 )
 from .statements import PKG_STATEMENTS
-from .vocabulary import SCORE_METHODS, PackageVersionId
+from .vocabulary import DEFAULT_SOURCE, SCORE_METHODS, PackageVersionId
 
 #: The one method that composes others, and the methods that stand alone.
 COMPOSITE_METHOD = "evidence_sum"
 GENERAL_METHOD = "general"
 #: An aspect is binary: absent / present (`FR-PKG-24`).
 ASPECT_BAND_COUNT = 2
+#: The aspect band that needs no descriptor of its own: the `present` band's, negated
+#: (CT-PKG-25's exemption, the same as the authoring gate's).
+ASPECT_ABSENT_BAND = "absent"
 
 _CLOSED_SET = "{" + ", ".join(SCORE_METHODS) + "}"
 
@@ -71,6 +72,13 @@ def _band_tuple(band: Mapping[str, Any]) -> tuple[int, str, float, str]:
 
 def _has_key(answer_key: Any) -> bool:
     return answer_key not in (None, "", "[]")
+
+
+def _is_judged(row: Mapping[str, Any]) -> bool:
+    """Whether a criterion's bands are applied by judgement: not an `mcq` line, not keyed,
+    not a composite (CT-PKG-25)."""
+    return (row["kind"] != "mcq" and not _has_key(row["answer_key"])
+            and row["score_method"] != COMPOSITE_METHOD)
 
 
 class RubricMethodsMixin:
@@ -141,6 +149,24 @@ class RubricMethodsMixin:
                 return _row_field(row, "scoring_model")
         return None
 
+    def scoring_model_source(self, v: PackageVersionId, criterion_id: str) -> str | None:
+        """Who chose the criterion's scoring model (`FR-PKG-30`, migration P3): `declared`,
+        `default` or `teacher` — None when the version has no such criterion. A row written
+        before P3 reads `declared`, which is what it was."""
+        row = self._criterion_row(v, criterion_id)
+        return None if row is None else _row_field(row, "scoring_model_source")
+
+    def scoring_model_confirmed_at(self, v: PackageVersionId,
+                                   criterion_id: str) -> str | None:
+        """When the teacher confirmed the criterion's scoring model on the review screen
+        (`FR-PKG-30`, `FR-UI-54`), or None for a declared or defaulted model."""
+        row = self._criterion_row(v, criterion_id)
+        return None if row is None else _row_field(row, "scoring_model_confirmed_at")
+
+    def _criterion_row(self, v: PackageVersionId, criterion_id: str) -> Any:
+        return next((r for r in self.criteria(v)
+                     if _row_field(r, "criterion_id") == criterion_id), None)
+
     def scoring_model_defaulted(self, v: PackageVersionId, criterion_id: str) -> bool:
         """Whether the criterion's scoring model is FR-PKG-29's default rather than a declared
         one — the per-line flag the package records when the default was taken (FR-SETUP-14).
@@ -152,27 +178,20 @@ class RubricMethodsMixin:
         it undeclared — chosen so the rebuild reproduces both the model and whether it was
         declared or FR-PKG-29's default (FR-SETUP-14).
 
-        A line that took the default stays undeclared, so the rebuild takes it again. Where the
-        version carries the record (every spec-built version with a judged line does), every
-        other line was declared and is written. A version with no record predates the default
-        or was not built from a spec: its lines are written as they always were (any model but
-        `holistic`), plus any line the default would now give a different model — a two-band
-        line stored `holistic` — so the rebuild keeps it."""
+        A line that took the default stays undeclared, so the rebuild takes it again: one the
+        version's record lists, or one whose `scoring_model_source` is `default` (FR-PKG-30).
+        Every other line is written — a declared line, a line the teacher confirmed (the spec
+        has no field for the confirmation, so the rebuild records it `declared`, the model
+        intact), and every line of a version that predates the record (its rows read
+        `declared`, migration P3), so the rebuild keeps both the model and its source."""
         record = self.step_record(v, SCORING_DEFAULT_STEP)
         if criterion_id in defaulted_scoring(record):
             return None
-        row = next((r for r in self.criteria(v)
-                    if _row_field(r, "criterion_id") == criterion_id), None)
+        row = self._criterion_row(v, criterion_id)
         stored = None if row is None else _row_field(row, "scoring_model")
-        if not stored:
+        if not stored or _row_field(row, "scoring_model_source") == DEFAULT_SOURCE:
             return None
-        if record is not None or stored != JUDGED_SCORING:
-            return stored
-        structural = default_scoring_model(
-            score_method=_row_field(row, "score_method"),
-            band_count=_row_field(row, "band_count"),
-            component_of=_row_field(row, "component_of"))
-        return stored if stored != structural else None
+        return stored
 
     def _derivations(self, v: PackageVersionId) -> dict[str, dict]:
         found: dict[str, dict] = {}
@@ -237,6 +256,35 @@ class RubricMethodsMixin:
             raise PackageError(
                 f"package version {v!r} is not publishable: its rubric methods break the "
                 "declared shape (FR-PKG-24, FR-PKG-26, CT-PKG-21): " + "; ".join(problems)
+            )
+
+    def _validate_band_descriptors(self, v: PackageVersionId) -> None:
+        """Refuse a version with a judged band that says nothing about what earns it
+        (CT-PKG-25, FR-AUTHOR-33) — M-PKG's own check, independent of the authoring gate, so
+        no build path can publish a judge choosing among bare band names (R40).
+
+        Judged: every band of a criterion that is neither keyed (an `mcq` line, or any line
+        carrying an answer key: its `correct`/`incorrect` bands are deterministic) nor a
+        composite (which carries no bands). Exempt, exactly as on the authoring side
+        (`aeh.author.descriptors`): an evidence-checklist aspect's `absent` band, whose
+        meaning is its `present` band's descriptor negated."""
+        criteria = {row["criterion_id"]: dict(row) for row in self._handle.query(
+            PKG_STATEMENTS["select_criteria"], v=v)}
+        empty: list[str] = []
+        for row in self._handle.query(PKG_STATEMENTS["select_bands"], v=v):
+            criterion = criteria.get(row["criterion_id"])
+            if criterion is None or not _is_judged(criterion):
+                continue
+            if criterion["component_of"] is not None and \
+                    str(row["band"] or "").strip().lower() == ASPECT_ABSENT_BAND:
+                continue
+            if not str(row["descriptor"] or "").strip():
+                empty.append(f"criterion {row['criterion_id']!r} band {row['band']!r}")
+        if empty:
+            raise PackageError(
+                f"package version {v!r} is not publishable: every judged band carries a "
+                "descriptor saying what earns it (CT-PKG-25, FR-AUTHOR-33); empty: "
+                + "; ".join(empty)
             )
 
     def _criterion_shape_problems(

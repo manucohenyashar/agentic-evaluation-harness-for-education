@@ -501,7 +501,8 @@ def plan_package(spec: Mapping[str, Any], packages_dir: Path) -> PackagePlan:
         review_window_hours=window)
 
 
-def build_package(store: Any, spec: Mapping[str, Any]) -> BuiltPackage:
+def build_package(store: Any, spec: Mapping[str, Any],
+                  teacher_scoring: Mapping[str, str] | None = None) -> BuiltPackage:
     """Build the version the spec describes through `PackageCatalog`, and publish it.
 
     Everything checkable is checked first by `plan_package`, which writes nothing. A rule `M-PKG`
@@ -509,6 +510,10 @@ def build_package(store: Any, spec: Mapping[str, Any]) -> BuiltPackage:
     after the package file exists; the half-built file is then removed, so a corrected spec
     builds under the same id. That cleanup closes the whole `store` (a tier handle cannot be
     closed alone), which is right for `aeh package build`, the one-shot command that owns it.
+
+    `teacher_scoring` (criterion id -> model) carries the teacher's confirmation or change of
+    the defaulted lines from the review screen's approve action (FR-UI-54); those lines record
+    the teacher's choice, with the confirmation time (FR-PKG-30).
     """
     from aeh.pkg import PackageCatalog
     from aeh.pkg.spec_criteria import write_spec_criteria
@@ -537,7 +542,8 @@ def build_package(store: Any, spec: Mapping[str, Any]) -> BuiltPackage:
             if q["model_answer"]:
                 catalog.update_question_field(version, q["question_id"], "reference_solution",
                                               q["model_answer"])
-        write_spec_criteria(catalog, version, plan.criteria, plan.approved_by)
+        write_spec_criteria(catalog, version, plan.criteria, plan.approved_by,
+                            teacher_scoring)
         if plan.grades:
             catalog.set_boundaries(version, list(plan.grades))
         if plan.review_window_hours is not None:
