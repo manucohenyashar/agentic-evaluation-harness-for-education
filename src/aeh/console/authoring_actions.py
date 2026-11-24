@@ -90,7 +90,7 @@ from aeh.pkg import TEACHER_SCORING_CHOICES, draft_line_scoring
 
 from .html import _now
 from .authoring_reads import _load_draft, _walk_placeholders, find_draft_for
-from .authoring_reads import owner_qid
+from .authoring_reads import _with_scoring_confirmations, owner_qid
 from .records import ControlOutcome
 from .version_labels import (
     PackageVersionLabel,
@@ -764,11 +764,12 @@ def _teacher_scoring_choices(package_id: str, text: str,
         spec = tomllib.loads(text)
     except tomllib.TOMLDecodeError:
         return refused
-    offered = {
-        str(line.get("id")) for line in (spec.get("criterion") or ())
-        if isinstance(line, Mapping)
-        and (draft_line_scoring(line) or {}).get("chosen_automatically") is True
-    }
+    # The lines the screen asks about: chosen automatically and within NFR-SETUP-01's cap —
+    # the draft read's own rule, so a listed line (beyond the cap) is not the teacher's.
+    marked = _with_scoring_confirmations([
+        {"id": str(line.get("id")), **(draft_line_scoring(line) or {})}
+        for line in (spec.get("criterion") or ()) if isinstance(line, Mapping)])
+    offered = {line["id"] for line in marked if line.get("confirm") == "ask"}
     choices = {str(k): v for k, v in raw.items()}
     if any(cid not in offered or model not in TEACHER_SCORING_CHOICES
            for cid, model in choices.items()):

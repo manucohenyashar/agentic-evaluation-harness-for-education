@@ -267,7 +267,8 @@ def _with_scoring_confirmations(projected: list[dict[str, Any]]) -> list[dict[st
     """Mark each line whose model was chosen automatically as `"confirm": "ask"` (the review
     screen offers Change beside it) or `"list"` (named, not asked): FR-UI-54 asks at most
     NFR-SETUP-01's cap of confirmations, in draft order, and lists the rest. Decided here,
-    on the server, so the screen carries no copy of the cap (an env-gated knob)."""
+    on the server, so the screen carries no copy of the cap (an env-gated knob); the approve
+    action applies the same rule to the choices it accepts."""
     from aeh.setup import SETUP_MAX_CONFIRMATIONS  # deferred, as the console's other uses
 
     asked = 0
