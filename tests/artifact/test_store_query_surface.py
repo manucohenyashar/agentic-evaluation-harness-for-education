@@ -790,17 +790,17 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # into another cohort's administration. Pinned from the walker.
     "aeh.review.labels:206",
     # (#875 re-pin: the system-band join moved down; same statement.)
-    "aeh.review.blind:1139",
+    "aeh.review.blind:1147",
     # #869: the whole-grade answer's one audit row (`record_whole_grade_check`), a declared
     # statement with keyword parameters; the review.blind and ingest.documents pins moved with it.
-    "aeh.review.blind:392",
-    "aeh.review.blind:540",
-    "aeh.review.blind:546",
-    "aeh.review.blind:565",
-    "aeh.review.blind:577",
-    "aeh.review.blind:598",
-    "aeh.review.blind:604",
-    "aeh.review.blind:625",
+    "aeh.review.blind:405",
+    "aeh.review.blind:548",
+    "aeh.review.blind:554",
+    "aeh.review.blind:573",
+    "aeh.review.blind:585",
+    "aeh.review.blind:606",
+    "aeh.review.blind:612",
+    "aeh.review.blind:633",
     # #875 (FR-REVIEW-26/30, cohort migration 37): the stored blind draw. Each a
     # `BLIND_DRAW_STATEMENTS` entry with keyword parameters — the draw and its seats opened in
     # one transaction (484, 490), a skip without a draw (509), a draft upsert (521), the

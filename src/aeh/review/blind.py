@@ -379,7 +379,8 @@ class BlindSamplingMixin:
         (*these look like grades I would have given*) or `skipped`, as exactly one append-only
         `audit_record` row naming the run, the decision and the drawn submissions. No label is
         written: the sample checks the system end to end and is never validation evidence
-        (FR-REVIEW-14). Returns the audit record id. Refused for any other decision, and on a
+        (FR-REVIEW-14). The same answer to the same draw, posted again, returns the row already
+        recorded and writes nothing (FR-CONSOLE-02). Returns the audit record id. Refused for any other decision, and on a
         storeless service (there is nowhere to record it)."""
         if decision not in WHOLE_GRADE_DECISIONS:
             raise ReviewError(
@@ -387,6 +388,18 @@ class BlindSamplingMixin:
                 f"not {decision!r}")
         if self._store is None:
             raise ReviewError("a storeless review service cannot record the whole-grade answer")
+        event = json.dumps({
+            "event": "whole_grade_check",
+            "run_id": run_id,
+            "decision": decision,
+            "submissions": sorted(str(s) for s in submission_ids),
+        }, sort_keys=True)
+        # The same answer to the same draw is one record (FR-CONSOLE-02): a repeat finds it.
+        recorded = self._store.durable().query(
+            REVIEW_STATEMENTS["select_whole_grade_audit_record"],
+            run_id=run_id, profile_summary=event)
+        if recorded:
+            return str(_row_mapping(recorded[0])["audit_record_id"])
         audit_record_id = uuid.uuid4().hex
         with self._store.durable().transaction() as tx:
             tx.execute(
@@ -394,12 +407,7 @@ class BlindSamplingMixin:
                 audit_record_id=audit_record_id,
                 run_id=run_id,
                 recorded_at=self._clock(),
-                profile_summary=json.dumps({
-                    "event": "whole_grade_check",
-                    "run_id": run_id,
-                    "decision": decision,
-                    "submissions": sorted(str(s) for s in submission_ids),
-                }, sort_keys=True),
+                profile_summary=event,
                 decided_by=self._actor_name,
                 evaluation_mode="judged",
             )

@@ -136,6 +136,12 @@ REVIEW_STATEMENTS: dict[str, Statement] = {
         "profile_summary, decided_by, evaluation_mode) VALUES (:audit_record_id, :run_id, "
         ":recorded_at, :profile_summary, :decided_by, :evaluation_mode)"
     ),
+    # The same answer already recorded (FR-CONSOLE-02): a repeated post — a double-click, a
+    # back-navigation — finds its row by the event's canonical JSON and writes no second one.
+    "select_whole_grade_audit_record": Statement(
+        "SELECT audit_record_id FROM audit_record WHERE run_id = :run_id "
+        "AND profile_summary = :profile_summary LIMIT 1"
+    ),
     # #111's whole-grade read: the auto-accepted population the sample draws
     # from. The service's own fetch admits only the teacher's routings
     # (`queued`/`provisional`), so the sample reads its population through this
