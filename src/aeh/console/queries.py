@@ -164,6 +164,18 @@ _SELECT_SUBMISSION_CROPS = (
 )
 
 
+#: FR-CONSOLE-96 (#869): the stored crops of a parked paper's unsettled marks (a doubled or
+#: unclear tick — M-INGEST keeps a crop of each, `keeps_crop`), on its current document.
+_SELECT_SUBMISSION_MARK_CROPS = (
+    "SELECT r.crop_ref AS crop_ref, r.element_kind AS question_id FROM document_region r "
+    "JOIN document d ON d.document_id = r.document_id "
+    "WHERE d.submission_id = :submission_id AND r.crop_ref IS NOT NULL "
+    "AND r.region_kind = 'selection_mark' "
+    "AND d.document_id NOT IN (SELECT parent_doc_id FROM document "
+    "WHERE parent_doc_id IS NOT NULL) ORDER BY r.region_id"
+)
+
+
 #: The crop route's allow-list: a content address is served only when some region's stored
 #: crop names it, so `/blobs/<ref>` is never a read of an arbitrary stored file (#530 review).
 _SELECT_CROP_REF_KNOWN = (

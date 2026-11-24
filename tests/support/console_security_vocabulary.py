@@ -175,6 +175,9 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
         "label.label_type",
         "label.band",
     ),
+    # #869 (FR-CONSOLE-93): one audit row each through M-REVIEW, never a label.
+    "whole-grade confirm": ("audit_record.profile_summary",),
+    "whole-grade skip": ("audit_record.profile_summary",),
     # #882 (FR-CONSOLE-83, FR-REVIEW-26): a seat's band is a draft until the sample closes;
     # Finish writes the labels and closes the draw, Skip closes it with none, and each close
     # is followed by M-PIPE's promotion (FR-PIPE-21).

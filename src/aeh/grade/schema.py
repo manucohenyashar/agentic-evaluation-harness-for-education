@@ -237,6 +237,14 @@ GRADE_STATEMENTS: dict[str, Statement] = {
         "FROM submission_grade g WHERE g.run_id = :run_id AND g.is_current = 1 "
         "ORDER BY g.submission_id"
     ),
+    # FR-CONSOLE-94 (#869): the current revision's boundary risk (FR-GRADE-05) as stored —
+    # beside, not inside, the records above, whose key set `aeh results show` and the export
+    # carry unchanged.
+    "select_run_current_grade_boundaries": Statement(
+        "SELECT g.submission_id, g.boundary_at_risk, g.score_low, g.score_high "
+        "FROM submission_grade g WHERE g.run_id = :run_id AND g.is_current = 1 "
+        "ORDER BY g.submission_id"
+    ),
 }
 
 

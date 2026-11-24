@@ -32,6 +32,24 @@ def run_grade_records(store: Any, run_id: str) -> list[dict[str, Any]]:
     ]
 
 
+def run_grade_boundaries(store: Any, run_id: str) -> dict[str, dict[str, Any]]:
+    """The run's per-student boundary risk as M-GRADE stored it (FR-GRADE-05), by submission:
+    `boundary_at_risk` (0/1), `score_low` and `score_high` — the current revision's row, read
+    and never recomputed (FR-CONSOLE-94). M-GRADE withholds the range (NULL) whenever the
+    student is not at risk. Raises `GradeError` for a run no cohort ledger of this store holds."""
+    cohort, _row = GradingService(store)._find_run(run_id)
+    return {
+        str(row["submission_id"]): {
+            "boundary_at_risk": row["boundary_at_risk"],
+            "score_low": row["score_low"],
+            "score_high": row["score_high"],
+        }
+        for row in cohort.query(
+            GRADE_STATEMENTS["select_run_current_grade_boundaries"], run_id=run_id
+        )
+    }
+
+
 def run_class_view(store: Any, run_id: str) -> dict[str, Any]:
     """The class view: the run's rollup (`ClassRollup` — M-GRADE's version-split
     segments) as JSON-ready plain data. Raises `GradeError` for a missing run."""

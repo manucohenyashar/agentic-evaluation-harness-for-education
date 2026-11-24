@@ -117,6 +117,7 @@ from .vocabulary import (
     SYSTEM_STATUS_READ,
     WORKBOOK_EXPORT_READ,
     VALIDITY_READ,
+    WHOLE_GRADE_READ,
 )
 
 JSON_TYPE = "application/json; charset=utf-8"
@@ -232,6 +233,7 @@ _READS = {
     SYSTEM_STATUS_READ: lambda _console, app, _params, query: system_status_read(_console, app, query),
     # #881 (FR-CONSOLE-80/84): the agreement shown, from figures M-STATS stored.
     VALIDITY_READ: lambda console, app, _params, query: validity_read(console, app, query),
+    WHOLE_GRADE_READ: lambda console, app, _params, query: _whole_grade_read(console, app, query),
     PACKAGE_RECORD_READ: lambda console, app, _params, query: package_record_read(
         console, app, query),
     # #755 (FR-CONSOLE-47…52, FR-CONSOLE-60): the redesign SPA's read surface. Each takes
@@ -263,6 +265,12 @@ _READS = {
 
 
 
+def _whole_grade_read(console: Any, app: Any, query: Any) -> Any:
+    from .whole_grade import whole_grade_read
+
+    return whole_grade_read(console, app, query)
+
+
 def _examples_read(name: str, console: Any, app: Any, query: Any) -> Any:
     from . import examples_actions
 
@@ -284,6 +292,9 @@ HELD_BACK_READS: dict[str, bool] = {
     ISSUES_READ: False,
     REVIEW_QUEUE_READ: True,
     AI_CALLS_READ: True,
+    # #869: the whole-grade sample shows totals and grades; it draws only papers with no
+    # teacher-routed line, so nothing drawn is in it — the pass is the guarantee, not the hope.
+    WHOLE_GRADE_READ: False,
 }
 
 

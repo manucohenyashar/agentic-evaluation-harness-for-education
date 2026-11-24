@@ -113,6 +113,7 @@ def review_service_over(
     clock: Callable[[], str] | None = None,
     catalog: Any = None,
     config: Any = None,
+    seed: Any = None,
 ) -> ReviewService:
     """Build a review service over a store that is already open (FR-CONSOLE-35).
 
@@ -120,7 +121,11 @@ def review_service_over(
     asks it for a cohort keyed by the run id, which creates that cohort's file. A caller that
     already has a store — the console, whose screens are reads — must not do either, because
     rendering a screen would then leave a ledger behind (`FR-CONSOLE-01`). Same service, same
-    admission, no new file."""
+    admission, no new file.
+
+    `seed` fixes the service's draws (CT-REVIEW-11): a caller that rebuilds the service on
+    every request — the console — passes one per run, so the whole-grade sample the teacher
+    confirms is the one they were shown (#869)."""
     return _service_from_store(
         store,
         cohort_ids=cohort_ids,
@@ -129,6 +134,7 @@ def review_service_over(
         clock=clock,
         catalog=catalog,
         config=config,
+        seed=seed,
     )
 
 

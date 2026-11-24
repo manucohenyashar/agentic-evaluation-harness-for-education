@@ -26,6 +26,7 @@ from aeh.grade import GRADE_STATEMENTS, run_grade_records
 from aeh.pkg import PKG_STATEMENTS, is_composite, points_for_band
 from aeh.setup import setup_service_for_store
 
+from .grade_ranges import boundary_fields, boundary_risk_count
 from .question_results import (
     cell_not_final_reason,
     not_final_count,
@@ -398,10 +399,12 @@ def run_start_state_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
 
 def monitor_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     """The monitor's document (FR-UI-03e): the run's status and pause reason beside
-    M-ORCH's own `progress` report — the counts the server-rendered monitor shows."""
+    M-ORCH's own `progress` report — the counts the server-rendered monitor shows — and the
+    run's position (`stage`, `criterion_position`, `judge_position`; FR-CONSOLE-95)."""
     run_row = _run_row_of(console, app, query)
     if run_row is None:
-        return {"run_id": None, "status": None, "pause_reason": None, "progress": None}
+        return {"run_id": None, "status": None, "pause_reason": None, "progress": None,
+                **_NO_POSITION}
     run_id = str(run_row["run_id"])
     try:
         report = app.progress(run_id)
@@ -414,18 +417,66 @@ def monitor_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
         "pause_reason": str(run_row.get("pause_reason") or "") or None,
         "progress": progress_payload,
     }
+    payload.update(_run_position(app, run_row))
     if payload["status"] == "complete":
         payload.update(_completion_outcome(app, run_id))
     return payload
 
 
+#: The monitor's position keys when M-ORCH has no report for the run (no ledger yet, or the
+#: write-audit double): present, and null, so the screen states the absence.
+_NO_POSITION: dict[str, Any] = {"stage": None, "criterion_position": None,
+                                "judge_position": None}
+
+
+def _run_position(app: Any, run_row: Any) -> dict[str, Any]:
+    """FR-CONSOLE-95: where the run is, as M-ORCH's progress report exposes it (FR-ORCH-23) —
+    the stage in progress, the criterion's and the grader's 1-based positions and totals, and
+    the criterion's label. Read through the report-only orchestrator (no executor, no
+    transport), which claims and dispatches nothing. Only the five position figures are taken;
+    the report carries no per-student figure, and neither does this (FR-CONSOLE-08)."""
+    if getattr(app._store, "data_dir", None) is None:
+        return dict(_NO_POSITION)
+    try:
+        from aeh.orch import Orchestrator
+
+        report = Orchestrator(app._store).progress(str(run_row["run_id"]))
+        # M-ORCH's criterion axis: the sorted criteria its ledger groups hold.
+        axis = sorted({str(criterion) for _stage, criterion, _judge in report.by_unit
+                       if criterion is not None})
+    except Exception:  # noqa: BLE001 — a run with no ledger yet has no position to show
+        return dict(_NO_POSITION)
+    index = int(report.criterion_index)
+    criterion_id = axis[index - 1] if 0 < index <= len(axis) else None
+    label = None
+    if criterion_id is not None:
+        try:
+            label = _grading_point_labels(app, run_row).get(criterion_id, criterion_id)
+        except Exception:  # noqa: BLE001 — an unreadable package names no label
+            label = None
+    return {
+        "stage": str(report.stage),
+        "criterion_position": {"index": index, "total": int(report.criterion_total),
+                               "label": label},
+        "judge_position": {"index": int(report.judge_index),
+                           "total": int(report.judge_total)},
+    }
+
+
 def _completion_outcome(app: Any, run_id: str) -> dict[str, Any]:
-    """FR-CONSOLE-82 (#882): a run that finished offers its blind sample first and its results
-    second. The draw opens here, the first time the teacher is shown the run finished, so the
-    lines it draws are held back from Results from the first look (ADR-58). `blind_sample` is
-    the draw's state; a run with nothing to draw, or whose sample is closed, offers the
-    results alone."""
-    from .blind_actions import DRAW_OPEN, RESULTS_NEXT, completion_next, settle_draw
+    """FR-CONSOLE-82 (#882): a run that finished offers its blind sample first, then the
+    whole-grade sample (FR-CONSOLE-93, #869), then its results. The draw opens here, the first
+    time the teacher is shown the run finished, so the lines it draws are held back from
+    Results from the first look (ADR-58). `blind_sample` is the draw's state; a run with
+    nothing to draw, or whose sample is closed, offers the whole-grade sample and the
+    results."""
+    from .blind_actions import (
+        DRAW_OPEN,
+        RESULTS_NEXT,
+        WHOLE_GRADE_NEXT,
+        completion_next,
+        settle_draw,
+    )
     from .settings import blind_reserve_minutes
 
     service = None
@@ -441,7 +492,9 @@ def _completion_outcome(app: Any, run_id: str) -> dict[str, Any]:
             count = None
         return {"blind_sample": state, "blind_count": count,
                 "blind_minutes": blind_reserve_minutes(), "next": completion_next()}
-    return {"blind_sample": state, "next": [dict(RESULTS_NEXT)]}
+    # FR-CONSOLE-93: with no sample to mark, the whole-grade sample still comes before the
+    # results.
+    return {"blind_sample": state, "next": [dict(WHOLE_GRADE_NEXT), dict(RESULTS_NEXT)]}
 
 
 def _queue_payload(view: Any) -> dict[str, Any]:
@@ -922,6 +975,7 @@ def results_screen_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     if run_row is None:
         return {"run_id": None, "cohort_id": None, "score_levels": [], "scales": [],
                 "students": [], "question_stats": [], "not_final_questions": 0,
+                "boundary_risk_count": 0,
                 "stage_timings": [], "run": None, "review_window_ends": None}
     run_id = str(run_row["run_id"])
     cohort_id = str(run_row["cohort_id"])
@@ -1011,6 +1065,11 @@ def results_screen_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
             questions, line_question, roll_cells.get(submission_id, {}),
             grade_final=student["state"] == "final")
         student["total_points"], student["total_max"] = totals(student["questions"])
+    # FR-CONSOLE-94: M-GRADE's stored boundary risk per student, and the grade letters at the
+    # range's ends when the test declares a boundary table (`grade_ranges`).
+    boundaries = boundary_fields(app, run_row)
+    for submission_id, student in by_submission.items():
+        student.update(boundaries.get(submission_id, {}))
     students = list(by_submission.values())
     # FR-UI-29: the run's clock, and FR-UI-33: the date an open review window defers
     # finality to — both additive; the students and the stats above are unchanged.
@@ -1034,6 +1093,8 @@ def results_screen_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
         "question_stats": question_stats(questions, students),
         # FR-UI-33: the answers still not final — the number the Results banner names.
         "not_final_questions": not_final_count(students),
+        # FR-CONSOLE-94: the students whose unreviewed lines could move their grade.
+        "boundary_risk_count": boundary_risk_count(app, run_id, boundaries),
         # FR-CONSOLE-75: how long each long step of this run took, in run order.
         "stage_timings": _stage_timings(app, run_id),
         "run": clock,
@@ -1199,6 +1260,8 @@ def student_detail_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
         "total": None if record is None else record["total"],
         "state": grade_state,
         "grade": None if record is None else record.get("grade"),
+        # FR-CONSOLE-94: the stored boundary risk, as on the results read.
+        **boundary_fields(app, run_row).get(submission_id, {}),
         "questions": detail_questions,
         "total_points": detail_points,
         "total_max": detail_max,
