@@ -471,9 +471,14 @@ class DomainEffectsMixin:
                     config = compose_restart_config(self, run_id)
                 else:
                     config = compose_run_start_config(self, params)
+            from .graders import examples_regrade_after_run
+
+            # FR-STATS-36 / FR-CALIB-19 (#889): the worker measures the graders after the
+            # drive, as `aeh run` does, and re-grades the marked examples when they are due.
             started, thread = start_run_in_background(
                 self._store, cohort_id=cohort_id, package_version_id=package_version,
-                config=config, run_id=run_id)
+                config=config, run_id=run_id,
+                measure_examples=examples_regrade_after_run(config))
         except Exception as exc:  # noqa: BLE001 — a refusal is the honest outcome
             return f"M-ORCH refused to start the run: {exc} — nothing was started", False
         self._run_threads[started] = thread
@@ -497,10 +502,6 @@ class DomainEffectsMixin:
                 waits_on = thread if plan.run_id == started else None
                 self._run_threads[f"{plan.run_id}:clarified-rubric"] = watch_first_class(
                     self, plan, waits_on, config, approved_by=actor)
-        # FR-STATS-36 / FR-CALIB-19 (#889): the graders' change check is not made here. The
-        # start writes exactly the rows `aeh run` writes (TC-CONSOLE-56); the check runs on
-        # the worker after the drive, through the one function `aeh run` calls too
-        # (`aeh.pipeline.graders.measure_graders_after_run`).
         # FR-CONSOLE-82 (#882): the run-start outcome states the coming blind sample.
         return (
             f"run {started} started on a server-owned worker thread; it continues if the "

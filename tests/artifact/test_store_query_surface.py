@@ -312,7 +312,9 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # read goes through `handle.query`, which is not an execute method — so the site is the
     # same statement, re-read from the walker rather than hand-shifted. The costs sites
     # follow #667's edits on main (240/241).
-    "aeh.orch.composition:49",
+    # #889 regression-fix re-pin: the run_records import above grew by three lines (49 -> 52);
+    # same statement.
+    "aeh.orch.composition:52",
     "aeh.orch.costs:240",
     "aeh.orch.costs:241",
 
@@ -329,7 +331,9 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # keyword parameters) lands above `record_run_metrics`, which moves 369 -> 389.
     "aeh.orch.reporting:381",
     "aeh.orch.reporting:402",
-    "aeh.orch.run_records:241",
+    # #889 regression-fix re-pin: `_persisted_config_of` lands above it (241 -> 252); same
+    # statement.
+    "aeh.orch.run_records:252",
     # #612 (live OpenRouter enablement): cohort creation and roster widening write the
     # roster through ORCH_STATEMENTS, and ingest marks interrupted submissions
     # not_reached through INGEST_STATEMENTS - declared statements, keyword parameters,
@@ -865,8 +869,9 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # (#875 re-pin: the blind effect's draft wording moved the quarantine site; same
     # statement. #882 re-pin: the blind effect moved to `blind_actions`, moving it up
     # again; same statement. #887 re-pin: the start-run effect's clarified-rubric check moved
-    # it down; same statement.)
-    "aeh.console.effects:829",
+    # it down; same statement. #889 regression-fix re-pin: the graders check left the
+    # start-run effect for the worker, moving it up; same statement.)
+    "aeh.console.effects:823",
     "aeh.console.key_correction:140",
     "aeh.console.driver:120",
     "aeh.console.driver:159",

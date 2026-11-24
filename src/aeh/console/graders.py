@@ -1,6 +1,6 @@
 """The graders measured, from the console (FR-CONSOLE-88, FR-STATS-36, FR-CALIB-19, #889).
 
-Three pieces, each a thin composition over M-STATS, M-CALIB and the composition root:
+Four pieces, each a thin composition over M-STATS, M-CALIB and the composition root:
 
 - `graders_status` is the System status read's `graders` block: the engine measurements from
   the latest promotion record, whether Jev-final is on, the latest consistency report of the
@@ -8,15 +8,17 @@ Three pieces, each a thin composition over M-STATS, M-CALIB and the composition 
   no Tier D file it opens none.
 - `on_package_approved` schedules the MVVP when a test is published (FR-STATS-36), on a
   server-owned thread with its own store; it never stops the approval.
-- `on_run_started` checks a run's frozen grader configuration (the run row's `run_config`)
-  against the last measured one and, when it changed, measures on a server-owned thread:
-  `aeh.pipeline.graders`' check, made for a run the console names.
+- `examples_regrade_after_run` is the marked examples' re-grade check (FR-CALIB-19) the
+  console's worker hands `aeh.pipeline.measure_graders_after_run` as its `after`: M-PIPE runs
+  the MVVP half itself and cannot import M-CALIB (CT-CALIB-01).
+- `on_run_started` makes the same comparison for a run the console names — its row's frozen
+  `run_config` against the last measured graders — and measures on a server-owned thread.
 
-The console's `start run` does not call `on_run_started` itself: the start must write exactly
-the rows `aeh run` writes (TC-CONSOLE-56), so both paths make the run-side check after the
-drive, through `aeh.pipeline.graders.measure_graders_after_run`. The one-measurement-per-version
-claim is that module's, shared by all three triggers. Nothing here changes an engine or the
-Jev-final setting (ADR-50, CT-CONF-14).
+The console's `start run` does not measure at the start: the start must write exactly the rows
+`aeh run` writes (TC-CONSOLE-56), so both paths make the run-side check after the drive,
+through `aeh.pipeline.measure_graders_after_run`. The one-measurement-per-version claim is that
+module's, shared by every trigger. Nothing here changes an engine or the Jev-final setting
+(ADR-50, CT-CONF-14).
 """
 
 from __future__ import annotations
@@ -27,9 +29,10 @@ import threading
 from decimal import Decimal, InvalidOperation
 from typing import Any, Mapping
 
-# `_IN_FLIGHT` is the composition root's one set of versions under measurement (the same
-# object), bound here too because this module's claim lived here first.
-from aeh.pipeline.graders import _IN_FLIGHT, claim_measurement, release_measurement  # noqa: F401
+from aeh.pipeline import claim_measurement, release_measurement
+# The composition root's one set of versions under measurement (the same object), bound here
+# too because this module's claim lived here first.
+from aeh.pipeline import MEASUREMENTS_IN_FLIGHT as _IN_FLIGHT  # noqa: F401
 
 LOGGER = logging.getLogger("aeh.console.graders")
 
@@ -223,27 +226,78 @@ def run_grader_configuration(store: Any, cohort_id: str,
     return grader_configuration(persisted), ceiling
 
 
+def _examples_due(store: Any, package_version_id: str,
+                  configuration: Mapping[str, Any]) -> tuple[str, ...]:
+    reference = _calib_reference()
+    if reference is None or not configuration:
+        return ()
+    return tuple(reference.reference_set_due(store, package_version_id, configuration))
+
+
+def _regrade_examples(store: Any, package_version_id: str, configuration: Mapping[str, Any],
+                      changes: tuple[str, ...], config: Mapping[str, Any]) -> Any:
+    return _calib_reference().regrade_reference_set(
+        store, package_version_id, config=dict(config), trigger=",".join(changes),
+        configuration=configuration)
+
+
+def examples_regrade_after_run(config: Any) -> Any:
+    """The `after` the console's worker hands `aeh.pipeline.measure_graders_after_run`
+    (FR-CALIB-19): given the run's frozen grader configuration, re-grade the test's marked
+    examples when a model dimension changed since they were last graded. None when M-CALIB is
+    absent or the run has no configuration mapping to re-grade under."""
+    if _calib_reference() is None or not isinstance(config, Mapping):
+        return None
+    run_config = dict(config)
+
+    def after(store: Any, package_version_id: str, configuration: Mapping[str, Any]) -> Any:
+        changes = _examples_due(store, package_version_id, configuration)
+        if changes:
+            return _regrade_examples(store, package_version_id, configuration, changes,
+                                     run_config)
+        return None
+
+    return after
+
+
 def on_run_started(app: Any, *, run_id: str, cohort_id: str, package_version_id: str,
                    config: Any) -> threading.Thread | None:
-    """FR-STATS-36 / FR-CALIB-19 for a run the console names: when its frozen graders differ
-    from the ones last measured for its test, run the MVVP (trigger: the changed dimensions)
-    and, given the run's `config`, re-grade the test's marked examples, on a server-owned
-    thread. Returns the measuring thread, or None when nothing is due or a measurement of the
-    version is already under way."""
-    from aeh.pipeline.graders import due_measurements, perform_measurements
+    """FR-STATS-36 / FR-CALIB-19 for a run the console names: when its frozen graders (the row's
+    `run_config`) differ from the ones last measured for its test, run the MVVP (trigger: the
+    changed dimensions) and, given the run's `config`, re-grade the test's marked examples, on
+    a server-owned thread. Returns the measuring thread, or None when nothing is due or a
+    measurement of the version is already under way. The same comparison the worker makes
+    after a drive (`aeh.pipeline.measure_graders_after_run` with `examples_regrade_after_run`)."""
+    from aeh.stats import mvvp_due, schedule_mvvp
 
-    configuration, ceiling = run_grader_configuration(app._store, cohort_id, run_id)
-    due = due_measurements(app._store, package_version_id, configuration,
-                           cost_ceiling=ceiling, regrade_examples=isinstance(config, Mapping))
-    if not due or not claim_measurement(package_version_id):
+    store = app._store
+    configuration, ceiling = run_grader_configuration(store, cohort_id, run_id)
+    if not configuration:
         return None
-    run_config = dict(config) if isinstance(config, Mapping) else None
-    return _on_thread(app, package_version_id, f"run-{run_id}",
-                      lambda store: perform_measurements(store, due, run_config))
+    mvvp_changes = tuple(mvvp_due(store, package_version_id, configuration))
+    examples_changes = (_examples_due(store, package_version_id, configuration)
+                        if isinstance(config, Mapping) else ())
+    if not mvvp_changes and not examples_changes:
+        return None
+    if not claim_measurement(package_version_id):
+        return None
+    run_config = dict(config) if isinstance(config, Mapping) else {}
+
+    def work(worker_store: Any) -> None:
+        if mvvp_changes:
+            schedule_mvvp(worker_store, package_version_id=package_version_id,
+                          trigger=",".join(mvvp_changes), configuration=configuration,
+                          cost_ceiling=ceiling)
+        if examples_changes:
+            _regrade_examples(worker_store, package_version_id, configuration,
+                              examples_changes, run_config)
+
+    return _on_thread(app, package_version_id, f"run-{run_id}", work)
 
 
 __all__ = [
     "approval_configuration",
+    "examples_regrade_after_run",
     "graders_status",
     "jev_final_on",
     "on_package_approved",

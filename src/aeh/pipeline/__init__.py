@@ -18,6 +18,7 @@ Files:
     finishing.py        narrative synthesis and grading once a submission is fully scored
     driver.py           `run_to_completion` and `recover`
     validity.py         `promote_administration` on draw close, and the trace's `validity` stage
+    graders.py          the run-side MVVP trigger both run paths call after the drive
     runtime.py          opening the store and choosing a run's provider
     background.py       the console's doors: start or resume runs on worker threads, uploads
     cli.py              the `aeh` command line (`main`)
@@ -79,5 +80,11 @@ from .background import (
     RunAlreadyStartedError,
     start_run_in_background,
     uploaded_parts,
+)
+from .graders import (
+    MEASUREMENTS_IN_FLIGHT,
+    claim_measurement,
+    measure_graders_after_run,
+    release_measurement,
 )
 from .cli import EXIT_ERROR, EXIT_OK, EXIT_PAUSED, main

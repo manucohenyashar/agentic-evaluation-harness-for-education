@@ -259,6 +259,10 @@ class RunHandle:
     #: resumed run aggregates with the values it started with, whatever the environment says
     #: now. `None` when the row carries none (written before FR-AGG-21): M-AGG's constants apply.
     agg_knobs: Any = None
+    #: The run's whole frozen `RunConfig` as `to_persisted_dict()` wrote it to the row's
+    #: `run_config` column, decoded: what a composition layer compares a run's graders by
+    #: (FR-STATS-36), never today's environment. `None` when the row records none.
+    persisted_config: Any = None
 
 
 class PackageCatalogProtocol(Protocol):

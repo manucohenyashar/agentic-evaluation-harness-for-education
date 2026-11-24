@@ -137,10 +137,16 @@ def start_run_in_background(
     thread_name: str = "aeh-run",
     provider: Any = None,
     allow_running: bool = False,
+    measure_examples: Any = None,
     **drive_keywords: Any,
 ) -> tuple[str, Any]:
     """Start a run on a worker thread: the console's "start run" action (FR-CONSOLE-34,
     NFR-CONSOLE-08).
+
+    Once the run is stored `complete`, the worker makes the run-side graders check `aeh run`
+    makes (`measure_graders_after_run`, FR-STATS-36); `measure_examples`, when given, is
+    passed to it as `after` — the console's re-grade of the test's marked examples
+    (FR-CALIB-19), which M-PIPE cannot import (CT-CALIB-01).
 
     Synchronously, on the caller's store: resolve the run configuration exactly as
     `aeh run` does, then create the run, or reuse a `pending` run for the same cohort and
@@ -183,12 +189,12 @@ def start_run_in_background(
                     worker_store, started,
                     provider=bound,
                     run_config=run_config, **drive_keywords)
-                # FR-STATS-36 / FR-CALIB-19 (#889): the same run-side graders check `aeh run`
-                # makes after its drive, on a run stored `complete`; it never fails the run.
+                # FR-STATS-36 (#889): the same run-side graders check `aeh run` makes after
+                # its drive, on a run stored `complete`, then the caller's `measure_examples`
+                # (FR-CALIB-19); it never fails the run.
                 measure_graders_after_run(
                     worker_store, run_id=started, cohort_id=cohort_id,
-                    package_version_id=package_version_id, run_config=run_config,
-                    config=config)
+                    package_version_id=package_version_id, after=measure_examples)
             except Exception as error:  # noqa: BLE001 - recorded on the run, not swallowed
                 # Pause naming the cause; a run `pause` will not move (still pending, say)
                 # gets the cause recorded on its row instead, so the operator reads why.

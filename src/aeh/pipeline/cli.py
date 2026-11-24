@@ -792,11 +792,10 @@ def _run_command(
         decision_provider=decision_provider, judge_refs=judge_refs,
         extractor=applied.get("extractor"), synthesizer=applied.get("synthesizer"),
         retention_checked=retention_checked)
-    # FR-STATS-36 / FR-CALIB-19 (#889): the same run-side graders check the console's worker
-    # makes after its drive, on a run stored `complete`; it never fails the run.
+    # FR-STATS-36 (#889): the same run-side graders check the console's worker makes after its
+    # drive, on a run stored `complete`; it never fails the run.
     measure_graders_after_run(
-        store, run_id=run_id, cohort_id=args.cohort, package_version_id=args.package_version,
-        run_config=run_config, config=config)
+        store, run_id=run_id, cohort_id=args.cohort, package_version_id=args.package_version)
     return result
 
 
