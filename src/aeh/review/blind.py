@@ -374,13 +374,14 @@ class BlindSamplingMixin:
 
     def record_whole_grade_check(
         self, run_id: str, decision: str, submission_ids: tuple[str, ...] = ()
-    ) -> str:
+    ) -> tuple[str, bool]:
         """Record the teacher's answer to the whole-grade sample (FR-CONSOLE-93): `confirmed`
         (*these look like grades I would have given*) or `skipped`, as exactly one append-only
         `audit_record` row naming the run, the decision and the drawn submissions. No label is
         written: the sample checks the system end to end and is never validation evidence
         (FR-REVIEW-14). The same answer to the same draw, posted again, returns the row already
-        recorded and writes nothing (FR-CONSOLE-02). Returns the audit record id. Refused for any other decision, and on a
+        recorded and writes nothing (FR-CONSOLE-02). Returns the audit record id and whether
+        this call wrote it. Refused for any other decision, and on a
         storeless service (there is nowhere to record it)."""
         if decision not in WHOLE_GRADE_DECISIONS:
             raise ReviewError(
@@ -399,7 +400,7 @@ class BlindSamplingMixin:
             REVIEW_STATEMENTS["select_whole_grade_audit_record"],
             run_id=run_id, profile_summary=event)
         if recorded:
-            return str(_row_mapping(recorded[0])["audit_record_id"])
+            return str(_row_mapping(recorded[0])["audit_record_id"]), False
         audit_record_id = uuid.uuid4().hex
         with self._store.durable().transaction() as tx:
             tx.execute(
@@ -411,7 +412,7 @@ class BlindSamplingMixin:
                 decided_by=self._actor_name,
                 evaluation_mode="judged",
             )
-        return audit_record_id
+        return audit_record_id, True
 
     def skip_blind_sample(self, run_id: str = "run-1") -> BlindSampleSkipReport:
         """Record that this administration skips the blind sample (FR-REVIEW-13). The only

@@ -152,8 +152,11 @@ def whole_grade_effect(app: Any, action: str, params: dict[str, Any]
         return ((), "There is no whole-grade sample for this test, so nothing was recorded.",
                 False, True)
     try:
-        audit_record_id = service.record_whole_grade_check(run_id, decision, drawn)
+        audit_record_id, wrote = service.record_whole_grade_check(run_id, decision, drawn)
     except Exception:  # noqa: BLE001 — a refusal is the honest outcome
         return (), "Your answer could not be recorded; nothing was written.", False, True
+    if not wrote:
+        # A repeat (double-click, back-navigation): the answer stands as first recorded.
+        return (), "Your answer was already recorded; nothing changed.", False, False
     reply = CONFIRMED_REPLY if decision == "confirmed" else SKIPPED_REPLY
     return (audit_record_id,), reply, True, False

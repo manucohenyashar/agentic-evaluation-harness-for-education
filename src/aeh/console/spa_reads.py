@@ -912,7 +912,7 @@ def _parked_crops(app: Any, cohort_id: str, submission_id: str) -> list[dict[str
             Q._SELECT_SUBMISSION_MARK_CROPS, submission_id=submission_id)
     except Exception:  # noqa: BLE001 — an unreadable ledger keeps no crop to show
         return []
-    return [{"url": f"/blobs/{row['crop_ref']}", "caption": "The mark as scanned",
+    return [{"url": f"/blobs/{row['crop_ref']}", "caption": "The page with the mark, as scanned",
              "question_id": str(row["question_id"] or "") or None}
             for row in rows]
 
