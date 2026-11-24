@@ -5,7 +5,9 @@ from __future__ import annotations
 from typing import Any, Sequence
 
 from .vocabulary import (
+    DECLARED_SOURCE,
     declared_score_method,
+    declared_scoring_model_source,
     default_evaluation_mode,
     EVALUATION_MODES,
     PackageVersionId,
@@ -77,6 +79,8 @@ class CriterionEditsMixin:
         band_count: int | None = None, evidence_type: str | None = None,
         evaluation_mode: str | None = None, score_method: str | None = None,
         component_of: str | None = None,
+        scoring_model_source: str = DECLARED_SOURCE,
+        scoring_model_confirmed_at: str | None = None,
     ) -> None:
         """Add a criterion with its dependency edges, refusing a cycle (FR-PKG-05). Published
         versions refuse the add; drafts accept it. The content arguments have defaults, so a
@@ -96,8 +100,15 @@ class CriterionEditsMixin:
 
         `score_method` (`FR-PKG-24`) is refused here when outside the closed set; omitted,
         it is `bands`. `component_of` names an aspect's composite. The composite shape is
-        whole-version, so it is checked at publish (`RubricMethodsMixin`)."""
+        whole-version, so it is checked at publish (`RubricMethodsMixin`).
+
+        `scoring_model_source` records who chose `scoring_model` (`FR-PKG-30`): `declared`
+        (the default — the caller states the model), `default` (FR-PKG-29's rule took it) or
+        `teacher` (confirmed on the review screen), which alone carries
+        `scoring_model_confirmed_at`."""
         method = declared_score_method(score_method, criterion_id)
+        source = declared_scoring_model_source(
+            scoring_model_source, scoring_model_confirmed_at, criterion_id)
         if band_count is not None and (band_count < 2 or band_count > 6
                                        or band_count % 2 != 0):
             raise BandSetError(
@@ -126,7 +137,9 @@ class CriterionEditsMixin:
                        kind=kind, max_points=max_points, scoring_model=scoring_model,
                        construct_tag=construct_tag, band_count=band_count,
                        evidence_type=evidence_type, evaluation_mode=mode,
-                       score_method=method, component_of=component_of)
+                       score_method=method, component_of=component_of,
+                       scoring_model_source=source,
+                       scoring_model_confirmed_at=scoring_model_confirmed_at)
             for depends_on in dependencies:
                 if depends_on == criterion_id:
                     # Same self-edge refusal as set_dependencies: the graph error the

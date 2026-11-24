@@ -81,6 +81,34 @@ PROVENANCE_VOCABULARY: tuple[str, ...] = ("synthetic", "paraphrased", "real_verb
 #: they are `evidence_sum` and `bands` respectively, and the set stays closed.
 SCORE_METHODS: tuple[str, ...] = ("bands", "evidence_sum", "general")
 
+#: Who chose a criterion's scoring model (`FR-PKG-30`, migration P3): the spec named it
+#: (`declared`), FR-PKG-29's structural rule took it (`default`), or the teacher confirmed or
+#: changed it on the review screen (`teacher`, the one source with a confirmation time). The
+#: column's CHECK is the database backstop; this tuple is what refusals name.
+SCORING_MODEL_SOURCES: tuple[str, ...] = ("declared", "default", "teacher")
+DECLARED_SOURCE = "declared"
+DEFAULT_SOURCE = "default"
+TEACHER_SOURCE = "teacher"
+
+
+def declared_scoring_model_source(source: str, confirmed_at: str | None,
+                                  criterion_id: str) -> str:
+    """The source a criterion write records, refused by name when outside the closed set or
+    when its confirmation time disagrees with it: a `teacher` source carries the time the
+    teacher confirmed it, and no other source has one (FR-PKG-30)."""
+    if source not in SCORING_MODEL_SOURCES:
+        raise PackageError(
+            f"criterion {criterion_id!r} records scoring_model_source {source!r}, which is "
+            f"not one of the closed set {{{', '.join(SCORING_MODEL_SOURCES)}}} (FR-PKG-30)."
+        )
+    if (source == TEACHER_SOURCE) != bool(confirmed_at):
+        raise PackageError(
+            f"criterion {criterion_id!r}: scoring_model_confirmed_at is recorded exactly when "
+            "the teacher confirmed the model (scoring_model_source 'teacher') (FR-PKG-30)."
+        )
+    return source
+
+
 #: A criterion that declares no method is a `bands` criterion — the column default, and
 #: the only method every package before migration 15 could express.
 DEFAULT_SCORE_METHOD = "bands"

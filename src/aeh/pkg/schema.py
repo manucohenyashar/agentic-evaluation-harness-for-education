@@ -992,6 +992,27 @@ _PKG_CALIBRATION_REVISION = Migration(
 )
 
 
+# Package v19 — migration P3 (FR-PKG-30, SV-31, R49): who chose each criterion's scoring
+# model. `declared` when the spec named it, `default` when FR-PKG-29's structural rule took
+# it, `teacher` when the teacher confirmed or changed it on the review screen (FR-UI-54) —
+# the one source that carries `scoring_model_confirmed_at`. Pre-P3 rows read `declared`,
+# which is what they were (the legacy setup path's classification is the declaration). No
+# new trigger: `criterion_immutable` already refuses any update to a published version's
+# row, so changing the model after publication is a new version (§6.2).
+_PKG_CRITERION_SCORING_MODEL_SOURCE = Migration(
+    version=19,
+    name="pkg_criterion_scoring_model_source",
+    statements=(
+        Statement(
+            "ALTER TABLE criterion ADD COLUMN scoring_model_source TEXT NOT NULL "
+            "DEFAULT 'declared' "
+            "CHECK (scoring_model_source IN ('declared', 'default', 'teacher'))"
+        ),
+        Statement("ALTER TABLE criterion ADD COLUMN scoring_model_confirmed_at TEXT"),
+    ),
+)
+
+
 TIER_MIGRATIONS[Tier.PACKAGE] = (
     TIER_MIGRATIONS[Tier.PACKAGE]
     + (_PKG_VERSION_LINEAGE,)
@@ -1010,6 +1031,7 @@ TIER_MIGRATIONS[Tier.PACKAGE] = (
     + (_PKG_PUBLISHED_BASELINE_EVIDENCE,)
     + (_PKG_CALIBRATION_EXAMPLE_MARK,)
     + (_PKG_CALIBRATION_REVISION,)
+    + (_PKG_CRITERION_SCORING_MODEL_SOURCE,)
 )
 
 

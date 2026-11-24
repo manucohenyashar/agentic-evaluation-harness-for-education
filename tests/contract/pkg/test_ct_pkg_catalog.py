@@ -84,8 +84,8 @@ def _version_with_content(catalog, *, with_mcq: bool = True):
     catalog.add_band(v, "CRIT-1", 1, "b1", 4.0, descriptor="complete")
     catalog.add_criterion(v, "CRIT-2", question_id="Q-1", kind="open", max_points=4.0,
                           band_count=2, dependencies=("CRIT-1",))
-    catalog.add_band(v, "CRIT-2", 0, "b0", 0.0)
-    catalog.add_band(v, "CRIT-2", 1, "b1", 4.0)
+    catalog.add_band(v, "CRIT-2", 0, "b0", 0.0, descriptor="no step shown")
+    catalog.add_band(v, "CRIT-2", 1, "b1", 4.0, descriptor="every step shown")
     if with_mcq:
         catalog.add_criterion(v, "MCQ-1", question_id="Q-2", kind="mcq")
         catalog.set_mcq_options(v, "MCQ-1", [("A", "alpha"), ("B", "beta")])

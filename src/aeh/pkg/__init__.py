@@ -46,6 +46,7 @@ from .vocabulary import (
     PROVENANCE_VOCABULARY,
     QUESTION_TYPES,
     SCORE_METHODS,
+    SCORING_MODEL_SOURCES,
 )
 from .errors import (
     BandSetError,
@@ -117,7 +118,7 @@ from .setup_records import SetupRecordsMixin
 from .setup_checks import SetupChecksMixin
 from .catalog import PackageCatalog
 from .rubric_methods import COMPOSITE_METHOD, composite_aspects, is_composite
-from .spec_criteria import draft_line_scoring
+from .spec_criteria import TEACHER_SCORING_CHOICES, draft_line_scoring
 from .in_memory import (
     export_package,
     ExportSummary,
@@ -182,4 +183,6 @@ __all__ = [
     "composite_aspects",
     "is_composite",
     "draft_line_scoring",
+    "SCORING_MODEL_SOURCES",
+    "TEACHER_SCORING_CHOICES",
 ]

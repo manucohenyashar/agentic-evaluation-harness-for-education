@@ -68,14 +68,14 @@ def _rich_package(tmp_data_dir):
     parent = catalog.create_version(None, PackageDraft(title="parent"))
     catalog.add_criterion(parent, "CRIT-0", question_id="Q-0", kind="open",
                           max_points=4.0, band_count=2)
-    catalog.add_band(parent, "CRIT-0", 0, "b0", 0.0)
-    catalog.add_band(parent, "CRIT-0", 1, "b1", 4.0)
+    catalog.add_band(parent, "CRIT-0", 0, "b0", 0.0, descriptor="no claim made")
+    catalog.add_band(parent, "CRIT-0", 1, "b1", 4.0, descriptor="claim made and supported")
     catalog.publish(parent, "teacher")
     v = catalog.create_version(parent)
     catalog.add_criterion(v, "CRIT-1", question_id="Q-1", kind="open", max_points=4.0,
                           band_count=2, dependencies=("CRIT-0",))
-    catalog.add_band(v, "CRIT-1", 0, "b0", 0.0)
-    catalog.add_band(v, "CRIT-1", 1, "b1", 4.0)
+    catalog.add_band(v, "CRIT-1", 0, "b0", 0.0, descriptor="no claim made")
+    catalog.add_band(v, "CRIT-1", 1, "b1", 4.0, descriptor="claim made and supported")
     catalog.add_criterion(v, "MCQ-1", question_id="Q-2", kind="mcq")
     catalog.set_mcq_options(v, "MCQ-1", [("A", "alpha"), ("B", "beta")])
     catalog.set_answer_key(v, "MCQ-1", ["A"])

@@ -86,10 +86,11 @@ from aeh.pipeline.packages import (
     read_package_spec,
 )
 from aeh.pipeline.runtime import _open_store, _provider_for
+from aeh.pkg import TEACHER_SCORING_CHOICES, draft_line_scoring
 
 from .html import _now
 from .authoring_reads import _load_draft, _walk_placeholders, find_draft_for
-from .authoring_reads import owner_qid
+from .authoring_reads import _with_scoring_confirmations, owner_qid
 from .records import ControlOutcome
 from .version_labels import (
     PackageVersionLabel,
@@ -662,12 +663,15 @@ def _approve_draft_package(app: Any, params: Mapping[str, Any]) -> ControlOutcom
         undescribed = _undescribed_bands_refusal(package_id, text)
         if undescribed is not None:
             return undescribed
+        choices = _teacher_scoring_choices(package_id, text, params.get("scoring"))
+        if isinstance(choices, ControlOutcome):
+            return choices
         store = None
         label: PackageVersionLabel | None = None
         try:
             store = _open_store(data_dir)
             spec = read_package_spec(path)
-            built = build_package(store, spec)
+            built = build_package(store, spec, teacher_scoring=choices)
             # The new version's teacher label, read while the store is open
             # (FR-CONSOLE-74): its number and the approval record's date.
             try:
@@ -735,6 +739,42 @@ def _approve_draft_package(app: Any, params: Mapping[str, Any]) -> ControlOutcom
         return _published_outcome(label, built.package_id, approved_by=built.approved_by)
 
     return _with_draft_lock(app, path, data_dir, "approve", run)
+
+
+def _teacher_scoring_choices(package_id: str, text: str,
+                             raw: Any) -> dict[str, str] | ControlOutcome:
+    """The teacher's Change choices carried by the approve action (FR-UI-54): line id ->
+    `atomic` | `holistic`, each for a line whose model was chosen automatically — the only
+    lines the review screen offers. Approval records those lines
+    as the teacher's choice and every other defaulted line as the default
+    (FR-PKG-30). A choice the screen could not have offered is refused in the teacher's
+    words before anything is built; an absent or empty choice set is no choice."""
+    if raw is None or raw == {}:
+        return {}
+    what = f"{package_id} was not published."
+    why = ("A choice of how a line is marked did not match the draft as it stands "
+           "now, so nothing was built.")
+    refused = ControlOutcome(
+        rows_written=(), refused=True, dispatched=False, detail=f"{what} {why}",
+        what=what, why=why,
+        next_action="Reload the review screen, choose again, then press Approve again.")
+    if not isinstance(raw, Mapping):
+        return refused
+    try:
+        spec = tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        return refused
+    # The lines the screen asks about: chosen automatically and within NFR-SETUP-01's cap —
+    # the draft read's own rule, so a listed line (beyond the cap) is not the teacher's.
+    marked = _with_scoring_confirmations([
+        {"id": str(line.get("id")), **(draft_line_scoring(line) or {})}
+        for line in (spec.get("criterion") or ()) if isinstance(line, Mapping)])
+    offered = {line["id"] for line in marked if line.get("confirm") == "ask"}
+    choices = {str(k): v for k, v in raw.items()}
+    if any(cid not in offered or model not in TEACHER_SCORING_CHOICES
+           for cid, model in choices.items()):
+        return refused
+    return choices
 
 
 def _undescribed_bands_refusal(package_id: str, text: str) -> ControlOutcome | None:

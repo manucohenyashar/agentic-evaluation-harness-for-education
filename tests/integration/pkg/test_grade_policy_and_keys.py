@@ -51,8 +51,8 @@ def _catalog(tmp_data_dir, *, with_mcq: bool = True):
     v = catalog.create_version(None, PackageDraft(title="grade policy target"))
     catalog.add_criterion(v, "CRIT-1", question_id="Q-1", kind="open", max_points=4.0,
                           band_count=2)
-    catalog.add_band(v, "CRIT-1", 0, "b0", 0.0)
-    catalog.add_band(v, "CRIT-1", 1, "b1", 1.0)
+    catalog.add_band(v, "CRIT-1", 0, "b0", 0.0, descriptor="no claim made")
+    catalog.add_band(v, "CRIT-1", 1, "b1", 1.0, descriptor="claim made and supported")
     if with_mcq:
         catalog.add_criterion(v, "MCQ-1", question_id="Q-2", kind="mcq")
         catalog.set_mcq_options(v, "MCQ-1", [("A", "alpha"), ("B", "beta"),

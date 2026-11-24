@@ -263,6 +263,23 @@ def _project_criterion(criterion: dict[str, Any]) -> dict[str, Any]:
     return projected
 
 
+def _with_scoring_confirmations(projected: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Mark each line whose model was chosen automatically as `"confirm": "ask"` (the review
+    screen offers Change beside it) or `"list"` (named, not asked): FR-UI-54 asks at most
+    NFR-SETUP-01's cap of confirmations, in draft order, and lists the rest. Decided here,
+    on the server, so the screen carries no copy of the cap (an env-gated knob); the approve
+    action applies the same rule to the choices it accepts."""
+    from aeh.setup import SETUP_MAX_CONFIRMATIONS  # deferred, as the console's other uses
+
+    asked = 0
+    for line in projected:
+        if line.get("chosen_automatically") is not True:
+            continue
+        line["confirm"] = "ask" if asked < SETUP_MAX_CONFIRMATIONS else "list"
+        asked += 1
+    return projected
+
+
 def authoring_draft_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     """The current draft as structure (FR-CONSOLE-50): the items, the grading points, the
     grades table, and every missing piece with its location, reason and what to supply —
@@ -340,7 +357,8 @@ def authoring_draft_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
             "package": spec.get("package"),
             "approved_by": spec.get("approved_by"),
             "items": [_project_question(question) for question in questions],
-            "criteria": [_project_criterion(criterion) for criterion in criteria],
+            "criteria": _with_scoring_confirmations(
+                [_project_criterion(criterion) for criterion in criteria]),
             "grades": spec.get("grades"),
             "placeholders": placeholders,
             "points_questions": points_questions,
