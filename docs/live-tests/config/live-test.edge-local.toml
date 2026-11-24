@@ -1,0 +1,64 @@
+# Configuration for the local smoke: the "edge-local" profile, grading with models served on this
+# machine by a local OpenAI-compatible server (llama.cpp's llama-server, or another server with
+# the same chat-completions API).
+#
+# Used by tools/live_local_check.py, which grades the four sample English answer sheets
+# (ENG7-READ-01) and prints what happened. It is a SMOKE of the wire path and the pipeline on a
+# developer box, not the hardware acceptance test: that needs the target hardware.
+#
+# Nothing leaves the machine on this profile, and no API key is used. The server address comes
+# from the terminal, never from this file:
+#     export LOCAL_INFERENCE_BASE_URL="http://127.0.0.1:8080/v1"     (macOS / Linux)
+#     $env:LOCAL_INFERENCE_BASE_URL = "http://127.0.0.1:8080/v1"     (Windows PowerShell)
+# The address must end where the server's /chat/completions path begins (usually ".../v1").
+#
+# Fill in the two model blocks below before running. Each needs:
+#   build_id    the weights file's path and its sha256, "<path>@sha256:<64 hex digits>". This is
+#               the model's identity: it is recorded with every grade. The path must end in a
+#               weights extension (.gguf, .safetensors, ...). Compute the hash with
+#               `sha256sum <file>` (macOS / Linux) or `Get-FileHash <file>` (PowerShell). A
+#               server that keeps its weights as unnamed blobs names each blob by its sha256:
+#               use that hash, and the model's name with .gguf as the path.
+#   quantization  the weights' quantization as the file names it, for example "q4_K_M".
+#   served_as   the name the server answers to for that model: the "model" a request names.
+#               For llama-server it is the --alias you started it with; other servers list
+#               their names at <base URL>/models.
+# The tool refuses a block that still holds a <...> placeholder or an all-zero hash.
+#
+# Suggested size for a developer box: an instruct model of at most 4B parameters for the judge
+# and a small vision model for reading the pages (the vision model also does the evidence
+# extraction and the feedback), so the four sheets finish in about 30 minutes or less.
+
+HARNESS_PROFILE = "edge-local"
+
+prompt_template_v = "judge-prompt/4"
+
+[profiles.edge-local]
+# The memory class of the machine. It sets how many requests the system keeps in flight at once
+# (unified-large 4, unified-small 2, discrete-gpu 3). If your server serves fewer at a time,
+# lower it in the terminal: HARNESS_LOCAL_MAX_CONCURRENCY=1.
+HARNESS_HARDWARE_PROFILE = "unified-large"
+
+# The decision engine stays off for the smoke: every score comes from the local judge.
+HARNESS_DECISION_ENGINE = "off"
+
+# One judge and no escalation: a disagreement or an unsure answer keeps its score as provisional
+# instead of asking for more judges, which this one-model setup does not have.
+orch_escalation_budget = 0
+orch_random_arm_rate = 0
+
+# The model that reads the page images and turns them into text (a vision model).
+[profiles.edge-local.transcriber]
+role = "transcriber"
+provider = "local"
+build_id = "<path to the vision model's weights file>@sha256:<64 hex digits>"
+quantization = "<the quantization, for example q4_K_M>"
+served_as = "<the name your server serves the vision model under>"
+
+# The judge (an instruct model). One judge is enough for the smoke.
+[[profiles.edge-local.panel]]
+role = "judge"
+provider = "local"
+build_id = "<path to the instruct model's weights file>@sha256:<64 hex digits>"
+quantization = "<the quantization, for example q4_K_M>"
+served_as = "<the name your server serves the instruct model under>"

@@ -14,6 +14,7 @@ from aeh.conf import ConfigurationError, HARDWARE_PROFILES, LOCAL_SERVER_PROVIDE
 
 from .settings import (
     DEFAULT_LOCAL_INFERENCE_BASE_URL,
+    call_timeout_s,
     DEFAULT_LOCAL_MAX_CONCURRENCY,
     DEFAULT_OPENROUTER_BASE_URL,
     HARDWARE_PROFILE_ENV,
@@ -343,7 +344,8 @@ class _BaseLiveProvider:
         governor: ConcurrencyGovernor | None = None,
         policy: RetryPolicy | None = None,
     ) -> None:
-        self._transport = transport if transport is not None else _DefaultTransport()
+        self._transport = (transport if transport is not None
+                           else _DefaultTransport(timeout_s=call_timeout_s()))
         self._clock = clock if clock is not None else SystemClock()
         self._rng = rng if rng is not None else random.Random()
         self._counters = counters if counters is not None else RunCountersTracker()

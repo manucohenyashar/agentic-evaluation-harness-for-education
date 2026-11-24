@@ -30,6 +30,7 @@ To change a corpus, change its generator under `harness/corpora/` and rebuild.
 | `F-JEV-SYNTH/recordings/` | **Captured, not generated.** F-SYNTH's first 8 submissions, engine on, base panel of 1 (TC-E2E-05) |
 | `F-JEV-DECISIONS/recordings/` | **Captured, not generated.** F-DEV-PIPE with the fixture decision engine on; `python -m tests.support.pipe_world` re-captures it |
 | `baselines/` | The §6.9 golden-baseline registry: which artifact, whose signature, on what grounds |
+| `F-LOCAL/` | **Captured, not generated, on the developer box.** ENG7's four sheets on `edge-local` against a local model server, decision engine off: the server's replies under `recordings/`, the configuration they ran under and `capture.json`. `python tools/live_local_check.py --record` writes it (FR-CONFORM-21); the air-gapped journey replays it (FR-PIPE-22) |
 | `F-AUTHOR/` | **Generated in-tree, not here.** The 13 authoring fixtures (AF-01..AF-13) for the package-authoring capability — documents + `expected.toml` per fixture, emitted by `fixtures/F-AUTHOR/build_authoring_fixtures.py` (§5.1 of the authoring design delta). Pinned by TC-AUTHOR-28's census, not by this module's `--check`; its `recordings/` half is captured, not generated |
 
 `F-ADV-PDF/` holds no `.pdf` files, deliberately: §4.7 says the corpus is *"generated, not

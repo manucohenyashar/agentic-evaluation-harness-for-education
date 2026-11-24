@@ -80,6 +80,31 @@ DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_LOCAL_INFERENCE_BASE_URL = "http://127.0.0.1:8080/v1"
 
 
+#: Seam 3. How long one HTTP attempt to a live completion endpoint may take before it counts as
+#: a timeout (seconds). The default suits a hosted model; a small local model on a developer
+#: box can take longer than that to write one judge reply, so the box raises it rather than
+#: every reply timing out. Read when a live provider is built.
+CALL_TIMEOUT_ENV = "HARNESS_PROV_CALL_TIMEOUT_S"
+
+
+DEFAULT_CALL_TIMEOUT_S = 120.0
+
+
+def call_timeout_s() -> float:
+    """`HARNESS_PROV_CALL_TIMEOUT_S`, or `DEFAULT_CALL_TIMEOUT_S` when unset. A value that is not
+    a positive number is refused rather than read as the default."""
+    raw = os.environ.get(CALL_TIMEOUT_ENV)
+    if raw is None or not raw.strip():
+        return DEFAULT_CALL_TIMEOUT_S
+    try:
+        value = float(raw)
+    except ValueError as error:
+        raise ConfigurationError(f"{CALL_TIMEOUT_ENV}={raw!r} is not a number") from error
+    if not value > 0 or value == float("inf"):
+        raise ConfigurationError(f"{CALL_TIMEOUT_ENV}={raw!r} must be a positive number of seconds")
+    return value
+
+
 #: The hardware profile whose concurrency `LocalServerProvider.capabilities` declares
 #: (FR-PROV-47, FR-CONF-06). The same key `M-CONF` resolves an `edge-local` run from; read once
 #: at construction when the caller does not pass `hardware_profile=`.
