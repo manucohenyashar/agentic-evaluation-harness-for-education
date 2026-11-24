@@ -106,6 +106,13 @@ REVIEW_STATEMENTS: dict[str, Statement] = {
         "AND submission_id = :submission_id AND criterion_id = :criterion_id "
         "AND stage = 'score'"
     ),
+    # FR-REVIEW-07 / FR-CONSOLE-19 (#868): the cells the random arm widened, for the run. The
+    # arm spends compute, never teacher minutes, and `criterion_score` carries no origin, so
+    # the queue reads the arm's cells from their scoring work units and leaves them out.
+    "select_run_random_arm_cells": Statement(
+        "SELECT DISTINCT submission_id, criterion_id FROM work_unit WHERE run_id = :run_id "
+        "AND stage = 'score' AND origin = 'random_arm'"
+    ),
     "insert_label": Statement(
         "INSERT INTO label (label_id, run_id, student_ref, criterion_id, "
         "label_type, band, evaluation_mode, saw_system_output, routing, origin, "

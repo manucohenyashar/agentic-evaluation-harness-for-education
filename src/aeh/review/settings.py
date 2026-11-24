@@ -122,6 +122,20 @@ SCORING_MODEL_EST_SECONDS: "Mapping[str, tuple[str, float]]" = MappingProxyType(
 REVIEW_OVERRIDE_MIN_N: int = 5
 
 
+#: The measured override rate at or above which an item is flagged "this line is often
+#: changed" (FR-CONSOLE-91's `why_flagged`, FR-REVIEW-03's fourth input). Only a MEASURED
+#: rate can say so: an unmeasured one (`None`) is no data, never "often changed". A knob
+#: (`HARNESS_REVIEW_OFTEN_CHANGED_RATE`) because it is a presentation threshold over a
+#: figure whose scale the first real class may move.
+REVIEW_OFTEN_CHANGED_RATE: float = 0.25
+
+
+def often_changed_rate() -> float:
+    """The "often changed" threshold for one read, from the environment at call time."""
+    return _env_float(_knob_name("OFTEN_CHANGED_RATE"), REVIEW_OFTEN_CHANGED_RATE,
+                      low=0.0, high=1.0)
+
+
 _WEIGHT_LOW, _WEIGHT_HIGH = 0.0, 10.0
 
 

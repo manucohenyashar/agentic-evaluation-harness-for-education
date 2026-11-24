@@ -228,6 +228,12 @@ class _StoredScoreRow:
         self.origin = mapping.get("origin")
         self.evaluation_mode = mapping.get("evaluation_mode", "judged")
         self.state = mapping.get("state")
+        # M-AGG's not-final reason code: why the row was routed to a teacher, which the
+        # queue words as "why flagged" when the ranking inputs alone do not say (FR-CONSOLE-91).
+        self.state_reason = mapping.get("state_reason")
+        # The two further columns M-AGG re-derives a not-final reason from (FR-AGG-20).
+        self.judge_count = mapping.get("judge_count")
+        self.caps_fired = mapping.get("caps_fired")
         self.proposed_band = mapping.get("band")
         # `FR-REVIEW-18`: every one of these is READ FROM THE ROW or from the run's
         # package, under the name the store actually uses. They were previously fetched

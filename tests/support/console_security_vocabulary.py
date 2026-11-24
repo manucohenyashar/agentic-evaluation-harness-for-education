@@ -167,6 +167,14 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
         "label.label_type",
         "label.band",
     ),
+    # #868 (FR-CONSOLE-92): the same writes as `review action`, once per group member.
+    "review group action": (
+        "review_queue.action",
+        "review_queue.new_band",
+        "review_queue.acted_at",
+        "label.label_type",
+        "label.band",
+    ),
     # #882 (FR-CONSOLE-83, FR-REVIEW-26): a seat's band is a draft until the sample closes;
     # Finish writes the labels and closes the draw, Skip closes it with none, and each close
     # is followed by M-PIPE's promotion (FR-PIPE-21).

@@ -778,9 +778,9 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # these the row said only that a cell had been flagged.
     # (#867 re-pin: the run scope and the draw-time routing bookkeeping moved these.)
     # (#875 re-pin: the stored draw's bookkeeping in `__init__` moved them again.)
-    "aeh.review.service:305",
-    "aeh.review.service:311",
-    "aeh.review.service:336",
+    "aeh.review.service:364",
+    "aeh.review.service:370",
+    "aeh.review.service:395",
     "aeh.review.actions:408",
     # #115's collection route: the second durable write this module owns —
     # `_write_collected_label`'s single `tx.execute` in its transaction body,
@@ -863,7 +863,7 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # statement. #882 re-pin: the blind effect moved to `blind_actions`, moving it up
     # again; same statement. #887 re-pin: the start-run effect's clarified-rubric check moved
     # it down; same statement.)
-    "aeh.console.effects:819",
+    "aeh.console.effects:829",
     "aeh.console.key_correction:140",
     "aeh.console.driver:120",
     "aeh.console.driver:159",

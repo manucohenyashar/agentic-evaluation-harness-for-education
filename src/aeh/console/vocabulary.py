@@ -107,6 +107,10 @@ CONTROL_SURFACE_ACTIONS: tuple[str, ...] = (
     "examples grade",                # FR-CONSOLE-87, FR-CALIB-17
     "examples answer",               # FR-CONSOLE-87, FR-CALIB-16
     "examples skip",                 # FR-CONSOLE-87, FR-CALIB-13
+    # The statistical-validity delta r2's review queue (#868, FR-CONSOLE-92): one level applied
+    # to a group the queue showed, through M-REVIEW's `act_on_group` — one label per member
+    # (CT-REVIEW-13). Its own row beside `review action`, which acts on one answer.
+    "review group action",           # FR-CONSOLE-92
 )
 
 
@@ -252,6 +256,14 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
         "quarantine_decision.decided_at",
     ),
     "review action": (
+        "review_queue.action",
+        "review_queue.new_band",
+        "review_queue.acted_at",
+        "label.label_type",
+        "label.band",
+    ),
+    # #868 (FR-CONSOLE-92): the same writes as `review action`, once per group member.
+    "review group action": (
         "review_queue.action",
         "review_queue.new_band",
         "review_queue.acted_at",
