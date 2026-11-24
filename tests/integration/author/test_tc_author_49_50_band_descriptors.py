@@ -166,9 +166,24 @@ def test_tc_author_49_one_question_per_judged_band_and_approval_waits_on_them(
     assert published["C_Q2"] == ANSWERS, published["C_Q2"]
     # The exempt bands published as the documents gave them: the key line's deterministic
     # pair with no descriptor, and each aspect's `absent` band likewise.
-    assert set(published["C_Q4_key"]) == {"incorrect", "correct"}, published["C_Q4_key"]
+    assert published["C_Q4_key"] == {"incorrect": "", "correct": ""}, published["C_Q4_key"]
     assert published["C_Q1_aspect1"]["absent"] == ""
     assert published["C_Q1_aspect2"]["absent"] == ""
+
+
+def test_tc_author_49_a_keyed_line_carrying_its_bands_raises_no_question() -> None:
+    """The drafter never writes bands on a key line, so the served case above cannot tell the
+    key exemption from the no-bands skip. Here the key line carries its deterministic pair
+    explicitly, undescribed: still no question, while the same bands on an unkeyed line ask."""
+    from aeh.author import open_descriptors
+
+    pair = [{"name": "incorrect", "points": 0}, {"name": "correct", "points": 1}]
+    keyed = {"criterion": [{"id": "C_Q4_key", "question": "Q4", "key": "A",
+                            "bands": [dict(b) for b in pair]}]}
+    assert open_descriptors(keyed) == []
+    unkeyed = {"criterion": [{"id": "C_Q4", "question": "Q4",
+                              "bands": [dict(b) for b in pair]}]}
+    assert open_descriptors(unkeyed) == [("Q4", "incorrect"), ("Q4", "correct")]
 
 
 # --- TC-AUTHOR-50 (served) ------------------------------------------------------------------
