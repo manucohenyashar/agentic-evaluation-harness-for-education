@@ -49,6 +49,11 @@ BLIND_SAMPLE_RANGE = (15, 25)
 WHOLE_GRADE_SAMPLE_RANGE = (10, 15)
 
 
+#: The teacher's two answers to the whole-grade sample (FR-CONSOLE-93): each is one audit row,
+#: never a label (FR-REVIEW-14).
+WHOLE_GRADE_DECISIONS = ("confirmed", "skipped")
+
+
 # --- the calibration constants (Phase 1; FR-REVIEW-16's calibration is Phase 2) ---------------------
 #
 # §3.15 names the formula's factors and no numbers. These are the Phase 1

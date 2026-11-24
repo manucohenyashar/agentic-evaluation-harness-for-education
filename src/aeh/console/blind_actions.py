@@ -40,6 +40,9 @@ SKIPPED_REPLY = (
 #: the second, equally available choice.
 BLIND_SAMPLE_NEXT = {"label": "Mark the sample", "route": "/review/blind"}
 RESULTS_NEXT = {"label": "See the results", "route": "/results"}
+#: FR-CONSOLE-93 (#869): the whole-grade sample, offered after the blind sample and before the
+#: results — a few complete grades read end to end, as the students will receive them.
+WHOLE_GRADE_NEXT = {"label": "Check a few whole grades", "route": "/results/whole-grade"}
 
 
 def run_start_sample_sentence(n: int | None = None, minutes: int | None = None) -> str:
@@ -56,8 +59,9 @@ def run_start_sample_sentence(n: int | None = None, minutes: int | None = None) 
 
 
 def completion_next() -> list[dict[str, str]]:
-    """The completion outcome's `next`: the blind sample, then the results."""
-    return [dict(BLIND_SAMPLE_NEXT), dict(RESULTS_NEXT)]
+    """The completion outcome's `next`: the blind sample, then the whole-grade sample
+    (FR-CONSOLE-93), then the results."""
+    return [dict(BLIND_SAMPLE_NEXT), dict(WHOLE_GRADE_NEXT), dict(RESULTS_NEXT)]
 
 
 # --- the draw -------------------------------------------------------------------------------

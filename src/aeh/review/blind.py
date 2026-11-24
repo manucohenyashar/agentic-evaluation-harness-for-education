@@ -11,13 +11,20 @@ settlement is. Batch finalization and run completion never touch it.
 
 from __future__ import annotations
 
+import json
 import random
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any, Mapping
 
-from .settings import BLIND_SAMPLE_RANGE, REVIEW_DEFAULT_BANDS, WHOLE_GRADE_SAMPLE_RANGE
+from .settings import (
+    BLIND_SAMPLE_RANGE,
+    REVIEW_DEFAULT_BANDS,
+    WHOLE_GRADE_DECISIONS,
+    WHOLE_GRADE_SAMPLE_RANGE,
+)
 from .errors import LabelProvenanceError, ReviewError
 from .schema import BLIND_DRAW_STATEMENTS, REVIEW_STATEMENTS
 from .records import (
@@ -364,6 +371,39 @@ class BlindSamplingMixin:
             )
             for submission_id in picked
         )
+
+    def record_whole_grade_check(
+        self, run_id: str, decision: str, submission_ids: tuple[str, ...] = ()
+    ) -> str:
+        """Record the teacher's answer to the whole-grade sample (FR-CONSOLE-93): `confirmed`
+        (*these look like grades I would have given*) or `skipped`, as exactly one append-only
+        `audit_record` row naming the run, the decision and the drawn submissions. No label is
+        written: the sample checks the system end to end and is never validation evidence
+        (FR-REVIEW-14). Returns the audit record id. Refused for any other decision, and on a
+        storeless service (there is nowhere to record it)."""
+        if decision not in WHOLE_GRADE_DECISIONS:
+            raise ReviewError(
+                f"the whole-grade sample is answered {' or '.join(WHOLE_GRADE_DECISIONS)}, "
+                f"not {decision!r}")
+        if self._store is None:
+            raise ReviewError("a storeless review service cannot record the whole-grade answer")
+        audit_record_id = uuid.uuid4().hex
+        with self._store.durable().transaction() as tx:
+            tx.execute(
+                REVIEW_STATEMENTS["insert_whole_grade_audit_record"],
+                audit_record_id=audit_record_id,
+                run_id=run_id,
+                recorded_at=self._clock(),
+                profile_summary=json.dumps({
+                    "event": "whole_grade_check",
+                    "run_id": run_id,
+                    "decision": decision,
+                    "submissions": sorted(str(s) for s in submission_ids),
+                }, sort_keys=True),
+                decided_by=self._actor_name,
+                evaluation_mode="judged",
+            )
+        return audit_record_id
 
     def skip_blind_sample(self, run_id: str = "run-1") -> BlindSampleSkipReport:
         """Record that this administration skips the blind sample (FR-REVIEW-13). The only
@@ -946,11 +986,17 @@ class BlindSamplingMixin:
         was auto-accepted, as `(submission_id, criterion_id, band)` triples. A submission with any
         other routing is left out, because the grade shown must be complete and wholly the
         system's. With a store, this uses the declared `select_auto_grades` statement; in memory,
-        the rows are filtered the same way."""
+        the rows are filtered the same way.
+
+        A service built for one run (`review_service_over(..., run_id=...)`, the console's) reads
+        that run's population only, in whichever cohort holds it (#869): without the scope every
+        cohort's newest run was pooled, so the console's sample for one class mixed in another
+        class's papers, and an older run's sample was the newest run's."""
         if self._store is not None:
             triples: list[tuple[str, str, str]] = []
+            scope = getattr(self, "_scope_run_id", None)
             for cohort_id in self._cohort_ids:
-                run_id = _newest_run_id(self._store, cohort_id)
+                run_id = scope if scope is not None else _newest_run_id(self._store, cohort_id)
                 if run_id is None:
                     continue
                 for row in self._store.cohort(cohort_id).query(

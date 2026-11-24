@@ -414,9 +414,9 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # (#144's re-pin: `select_document_head` gained its `markdown` column, one
     # statement line grown to two above every site; the statements are the same
     # fifteen. Re-read from the walker, never hand-unioned.)
-    "aeh.ingest.documents:437",
-    "aeh.ingest.documents:426",
-    "aeh.ingest.documents:460",
+    "aeh.ingest.documents:452",
+    "aeh.ingest.documents:441",
+    "aeh.ingest.documents:475",
     "aeh.ingest.revision:254",
     "aeh.ingest.revision:277",
     "aeh.ingest.revision:304",
@@ -790,14 +790,17 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # into another cohort's administration. Pinned from the walker.
     "aeh.review.labels:206",
     # (#875 re-pin: the system-band join moved down; same statement.)
-    "aeh.review.blind:1093",
-    "aeh.review.blind:500",
-    "aeh.review.blind:506",
-    "aeh.review.blind:525",
-    "aeh.review.blind:537",
-    "aeh.review.blind:558",
-    "aeh.review.blind:564",
-    "aeh.review.blind:585",
+    "aeh.review.blind:1139",
+    # #869: the whole-grade answer's one audit row (`record_whole_grade_check`), a declared
+    # statement with keyword parameters; the review.blind and ingest.documents pins moved with it.
+    "aeh.review.blind:392",
+    "aeh.review.blind:540",
+    "aeh.review.blind:546",
+    "aeh.review.blind:565",
+    "aeh.review.blind:577",
+    "aeh.review.blind:598",
+    "aeh.review.blind:604",
+    "aeh.review.blind:625",
     # #875 (FR-REVIEW-26/30, cohort migration 37): the stored blind draw. Each a
     # `BLIND_DRAW_STATEMENTS` entry with keyword parameters — the draw and its seats opened in
     # one transaction (484, 490), a skip without a draw (509), a draft upsert (521), the

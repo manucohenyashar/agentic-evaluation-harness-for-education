@@ -127,6 +127,15 @@ REVIEW_STATEMENTS: dict[str, Statement] = {
         ":package_version_id, :assignment_type, :band_distance, :system_points, :teacher_points, :agreed, :panel_config, :recorded_at, "
         ":backend_profile)"
     ),
+    # FR-CONSOLE-93 (#869): the teacher's answer to the whole-grade sample — confirmed or
+    # skipped — as one append-only audit row. No label: the sample is a check on the system,
+    # never validation evidence (FR-REVIEW-14). The event rides `profile_summary` as JSON,
+    # the shape M-GRADE's amendment audit uses.
+    "insert_whole_grade_audit_record": Statement(
+        "INSERT INTO audit_record (audit_record_id, run_id, recorded_at, "
+        "profile_summary, decided_by, evaluation_mode) VALUES (:audit_record_id, :run_id, "
+        ":recorded_at, :profile_summary, :decided_by, :evaluation_mode)"
+    ),
     # #111's whole-grade read: the auto-accepted population the sample draws
     # from. The service's own fetch admits only the teacher's routings
     # (`queued`/`provisional`), so the sample reads its population through this

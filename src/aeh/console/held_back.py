@@ -44,6 +44,8 @@ LINE_KEYS: frozenset[str] = frozenset({
 TOTAL_KEYS: frozenset[str] = frozenset({
     "total", "grade", "grade_letter", "total_points", "range", "total_range", "grade_range",
     "plausible_range", "boundary_risk",
+    # FR-CONSOLE-94 (#869): M-GRADE's stored range and the grade letters at its ends.
+    "boundary_at_risk", "score_low", "score_high", "grade_low", "grade_high",
 })
 
 #: A question's points (and its feedback), hidden for a student when the question holds a

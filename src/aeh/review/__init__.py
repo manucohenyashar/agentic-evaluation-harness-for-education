@@ -51,6 +51,7 @@ from .settings import (
     REVIEW_TRANSCRIPTION_OVERLAP_WEIGHT,
     REVIEW_WHOLE_GRADE_N,
     SCORING_MODEL_EST_SECONDS,
+    WHOLE_GRADE_DECISIONS,
     WHOLE_GRADE_SAMPLE_RANGE,
 )
 from .errors import LabelProvenanceError, ReviewError, StaleReviewItemError, UnknownRunError
@@ -100,6 +101,7 @@ __all__ = [
     "REVIEW_BUDGET_EXHAUSTION_ALERT",
     "BLIND_SAMPLE_RANGE",
     "WHOLE_GRADE_SAMPLE_RANGE",
+    "WHOLE_GRADE_DECISIONS",
     "ReviewError",
     "UnknownRunError",
     "StaleReviewItemError",

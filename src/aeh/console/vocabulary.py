@@ -111,6 +111,10 @@ CONTROL_SURFACE_ACTIONS: tuple[str, ...] = (
     # to a group the queue showed, through M-REVIEW's `act_on_group` — one label per member
     # (CT-REVIEW-13). Its own row beside `review action`, which acts on one answer.
     "review group action",           # FR-CONSOLE-92
+    # #869 (FR-CONSOLE-93): the teacher's answer to the whole-grade sample — each one audit row
+    # through M-REVIEW, never a label (FR-REVIEW-14).
+    "whole-grade confirm",           # FR-CONSOLE-93
+    "whole-grade skip",              # FR-CONSOLE-93
 )
 
 
@@ -167,6 +171,9 @@ SYSTEM_STATUS_READ = "system status"
 #: cumulative record. Reads of figures M-STATS stored; the validity read settles a
 #: window-closed draw first, as every results read does.
 VALIDITY_READ = "results validity"
+#: FR-CONSOLE-93 (#869): the whole-grade sample — a few complete grades, drawn from the papers
+#: the system graded wholly on its own, served as the students will receive them.
+WHOLE_GRADE_READ = "whole-grade sample"
 PACKAGE_RECORD_READ = "package record"
 
 
@@ -270,6 +277,9 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
         "label.label_type",
         "label.band",
     ),
+    # #869 (FR-CONSOLE-93): one audit row each, no label.
+    "whole-grade confirm": ("audit_record.profile_summary",),
+    "whole-grade skip": ("audit_record.profile_summary",),
     "correct an answer key after a run": ("criterion.answer_key",),
     "finalize batch": ("submission_grade.finalized_at", "audit_record.actor"),
     "amend a finalized grade": (

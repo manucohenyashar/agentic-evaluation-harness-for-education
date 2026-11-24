@@ -290,6 +290,13 @@ class ControlActionsMixin:
             return (), detail, dispatched, not dispatched, next_action
         # The review queue's group action (#868, FR-CONSOLE-92) dispatches exactly when it
         # marked something, so a refusal rides `refused=True`.
+        # The whole-grade sample's two answers (#869, FR-CONSOLE-93): one audit row through
+        # M-REVIEW, reported as the row written; a refusal rides `refused=True`.
+        if action in ("whole-grade confirm", "whole-grade skip"):
+            from .whole_grade import whole_grade_effect
+
+            written, detail, dispatched, refused = whole_grade_effect(self, action, params)
+            return written, detail, dispatched, refused, None
         if action == "review group action":
             from .review_actions import review_group_effect
 

@@ -62,17 +62,20 @@ def _teacher_band(seat: dict) -> str:
 def test_tc_console_106_blind_first_at_start_and_completion_and_the_export_stays_final(
         tmp_path, monkeypatch, network_guard):
     """TC-CONSOLE-106. Start: the outcome ends in the sentence with n = the draw's size and
-    m = the reserve the review queue holds back. Completion: `next[0]` is the blind sample and
-    `next[1]` the results, `blind_count` the draw's size. With the draw open, the CSV and XLSX
+    m = the reserve the review queue holds back. Completion: `next[0]` is the blind sample, then
+    the whole-grade sample (#869, FR-CONSOLE-93), and the results last, `blind_count` the draw's size. With the draw open, the CSV and XLSX
     exports answer 200 with every student's mark, state final (R60)."""
     with eng7_console(tmp_path / "w", tmp_path / "work", monkeypatch, network_guard) as served:
         status, monitor = served.get("/api/v1/monitor", run_id=served.run_id)
         assert status == 200, monitor
         assert monitor["blind_sample"] == "open", monitor
+        # #869 re-base (FR-CONSOLE-93): the whole-grade sample sits between the blind sample
+        # and the results.
         assert [entry["label"] for entry in monitor["next"]] == [
-            "Mark the sample", "See the results"], monitor["next"]
+            "Mark the sample", "Check a few whole grades", "See the results"], monitor["next"]
         assert monitor["next"][0]["route"] == "/review/blind", monitor["next"]
-        assert monitor["next"][1]["route"] == "/results", monitor["next"]
+        assert monitor["next"][1]["route"] == "/results/whole-grade", monitor["next"]
+        assert monitor["next"][2]["route"] == "/results", monitor["next"]
 
         drawn = served.drawn_cells()
         status, queue = served.get("/api/v1/review-queue", run_id=served.run_id)

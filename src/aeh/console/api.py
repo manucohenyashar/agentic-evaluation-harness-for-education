@@ -56,6 +56,7 @@ from .vocabulary import (
     SYSTEM_STATUS_READ,
     PACKAGE_RECORD_READ,
     VALIDITY_READ,
+    WHOLE_GRADE_READ,
     WORKBOOK_EXPORT_READ,
 )
 
@@ -195,6 +196,9 @@ def _build_routes() -> tuple[ApiRoute, ...]:
         # window-closed draw first, as every results read does).
         ApiRoute("GET", f"{API_PREFIX}/results/validity", None, VALIDITY_READ),
         ApiRoute("GET", f"{API_PREFIX}/packages/record", None, PACKAGE_RECORD_READ),
+        # #869 (FR-CONSOLE-93): the whole-grade sample. A read: M-REVIEW draws over a seeded
+        # service and nothing is recorded until the teacher answers (the two actions below).
+        ApiRoute("GET", f"{API_PREFIX}/results/whole-grade-sample", None, WHOLE_GRADE_READ),
         # #755 (FR-CONSOLE-47…52, FR-CONSOLE-60): the redesign SPA's read surface. Each is
         # a pure store/service projection — the context header's feed, the secondary pages'
         # documents, the configuration projection and the authoring library's reads. The

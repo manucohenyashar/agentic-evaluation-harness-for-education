@@ -230,6 +230,9 @@ VALIDITY_CONTROL_ACTIONS: dict[str, str] = {
     "examples skip": "FR-CONSOLE-87",
     # #868 (§3.7.1): one level applied to a group the review queue showed.
     "review group action": "FR-CONSOLE-92",
+    # #869 (§3.7.2): the teacher's answer to the whole-grade sample.
+    "whole-grade confirm": "FR-CONSOLE-93",
+    "whole-grade skip": "FR-CONSOLE-93",
 }
 
 #: HLD §11.8 actions a later delta retired from the runtime surface, each with the requirement

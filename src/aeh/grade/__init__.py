@@ -86,7 +86,7 @@ from .reporting import ReportingMixin
 from .service import GradingService, open_grade
 from .exports import export_grade_artifacts
 from .workbook import WorkbookExport, export_grade_workbook, grade_workbook_bytes
-from .results import run_class_view, run_grade_records, run_results
+from .results import run_class_view, run_grade_boundaries, run_grade_records, run_results
 from .signals import evaluate_grade_alerts, GradeAlert, record_grade_signals
 
 
@@ -136,6 +136,7 @@ __all__ = [
     "rollup_findings",
     "run_class_view",
     "run_grade_records",
+    "run_grade_boundaries",
     "run_results",
     "separated_rollup",
 ]

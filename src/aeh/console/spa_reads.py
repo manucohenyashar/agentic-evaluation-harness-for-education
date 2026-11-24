@@ -899,10 +899,30 @@ def _earlier_paper(app: Any, cohort_id: str, student_ref: str,
     return facts
 
 
+#: FR-CONSOLE-96: what a parked paper with no stored crop says in place of one.
+NO_CROP_NOTE = "No scan of a mark is kept for this paper."
+
+
+def _parked_crops(app: Any, cohort_id: str, submission_id: str) -> list[dict[str, Any]]:
+    """The parked paper's stored mark crops (FR-CONSOLE-96, FR-INGEST-13), each as a same-origin
+    image URL under the console's own `/blobs/` route (FR-CONSOLE-18), which serves a content
+    address only when a stored region names it. None are invented: no stored crop, no entry."""
+    try:
+        rows = app._store.cohort(cohort_id).query(
+            Q._SELECT_SUBMISSION_MARK_CROPS, submission_id=submission_id)
+    except Exception:  # noqa: BLE001 — an unreadable ledger keeps no crop to show
+        return []
+    return [{"url": f"/blobs/{row['crop_ref']}", "caption": "The mark as scanned",
+             "question_id": str(row["question_id"] or "") or None}
+            for row in rows]
+
+
 def parked_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
     """The park, under its teacher name (FR-CONSOLE-47): every parked paper with its
     reason, the student it matched (or why it could not), and the resolutions available —
-    mirrored exactly from the quarantine rows the ledgers hold, counted as they hold them."""
+    mirrored exactly from the quarantine rows the ledgers hold, counted as they hold them.
+    A paper parked on a doubled or unclear tick carries the mark as scanned (`crop`, FR-CONSOLE-96);
+    one with no stored crop carries `crop: null` and says so (`crop_note`)."""
     del console, query
     before = _skipped_before(app)
     rows = app._read_cohort_files(Q._SELECT_PARKED_PAPERS, [])
@@ -941,6 +961,7 @@ def parked_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
             classes[cohort_id] = _parked_class_facts(app, cohort_id)
         facts = classes[cohort_id]
         submission_id = str(row["submission_id"])
+        crops = _parked_crops(app, cohort_id, submission_id)
         parked.append({
             "submission_id": submission_id,
             "cohort_id": cohort_id,
@@ -951,6 +972,10 @@ def parked_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
             "matched_student": student_ref,
             "matched_name": (_name_of(app, cohort_id, student_ref) if student_ref else None),
             "match_note": match_note,
+            # FR-CONSOLE-96: the mark as scanned, when ingest kept one; else null and said.
+            "crop": crops[0]["url"] if crops else None,
+            "crops": crops,
+            "crop_note": None if crops else NO_CROP_NOTE,
             "resolutions": list(_DUPLICATE_RESOLUTIONS if duplicate_of is not None
                                 else _PARKED_RESOLUTIONS.get(
                                     status, ("Open the parked page to resolve this paper.",))),

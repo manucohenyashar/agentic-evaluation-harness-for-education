@@ -39,6 +39,20 @@ from .assembly import _natural_key, _parse_fiducial, _parse_page_number
 from .regions import _evaluative_offences, _mark_untrusted_content, _parse_regions
 
 
+#: FR-CONSOLE-96 (#869): a selection mark the reader could not settle to one option. Its crop is
+#: kept like a described graphic's, so whoever resolves the parked paper sees the mark as scanned
+#: instead of writing which tick they read in a note.
+UNSETTLED_MARK_STATES: frozenset[str] = frozenset({"ambiguous", "multiple_marks"})
+
+
+def keeps_crop(region: dict) -> bool:
+    """Whether ingest keeps an image crop of this region (FR-INGEST-13): every described graphic,
+    and every selection mark left ambiguous or doubled (FR-CONSOLE-96)."""
+    kind = region.get("region_kind")
+    return kind == "described_graphic" or (
+        kind == "selection_mark" and region.get("selection_state") in UNSETTLED_MARK_STATES)
+
+
 class DocumentIngestionMixin:
     """Ingests one logical document and stores its canonical Markdown."""
 
@@ -369,9 +383,10 @@ class DocumentIngestionMixin:
         # the page raster through the rasterizer seam, or the whole page raster when
         # the model emitted no box. Never the description text. The crop reads the
         # SANITIZED source bytes (#42: a retained crop must no more re-render the
-        # unsanitized original than the page raster does).
+        # unsanitized original than the page raster does). A doubled or unclear tick keeps
+        # its crop too (`keeps_crop`, FR-CONSOLE-96): the parked read shows it.
         for region in all_regions:
-            if region["region_kind"] == "described_graphic":
+            if keeps_crop(region):
                 # The region's OWN page record — matching the page index, not
                 # the blob's first page: a boxless described_graphic crops the
                 # whole page IT sits on, and on a multi-page source the pages
@@ -619,11 +634,12 @@ class DocumentIngestionMixin:
     def _retain_crops(self, regions: list[dict],
                       sanitized_of: dict[str, bytes],
                       page: PageImage) -> list[dict]:
-        """Keep an image crop of each described graphic in the blob store (FR-INGEST-13), cut from
+        """Keep an image crop of each described graphic, and of each unsettled selection mark
+        (`keeps_crop`, FR-CONSOLE-96), in the blob store (FR-INGEST-13), cut from
         the page raster through the rasterizer. The crop is taken from the sanitized source, never
         the original. A region with no box gets the whole page."""
         for region in regions:
-            if region["region_kind"] != "described_graphic":
+            if not keeps_crop(region):
                 continue
             box = region.get("crop_box")
             crop_png = self._rasterizer.crop(sanitized_of[region["source_hash"]],
