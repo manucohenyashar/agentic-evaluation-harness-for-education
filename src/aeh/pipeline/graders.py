@@ -106,16 +106,23 @@ def measure_graders_after_run(
         return None
     scheduled = None
     try:
+        # The two measurements are independent: a failed MVVP does not cost the examples
+        # their re-grade, and the reverse.
         if changes:
-            from aeh.stats import schedule_mvvp
+            try:
+                from aeh.stats import schedule_mvvp
 
-            scheduled = schedule_mvvp(
-                store, package_version_id=package_version_id, trigger=",".join(changes),
-                configuration=configuration, cost_ceiling=ceiling)
+                scheduled = schedule_mvvp(
+                    store, package_version_id=package_version_id, trigger=",".join(changes),
+                    configuration=configuration, cost_ceiling=ceiling)
+            except Exception:  # noqa: BLE001 - a measurement never fails its run
+                LOGGER.exception("the MVVP of %s did not finish", package_version_id)
         if after is not None:
-            after(store, package_version_id, configuration)
-    except Exception:  # noqa: BLE001 - a measurement never fails its run
-        LOGGER.exception("the graders' measurement of %s did not finish", package_version_id)
+            try:
+                after(store, package_version_id, configuration)
+            except Exception:  # noqa: BLE001 - a measurement never fails its run
+                LOGGER.exception("the after-run measurement of %s did not finish",
+                                 package_version_id)
     finally:
         release_measurement(package_version_id)
     return scheduled

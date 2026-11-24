@@ -598,6 +598,7 @@ def _dispatch_command(args: Any) -> int:
 
         if args.command == "console":
             from aeh.console import serve_console
+            from aeh.console.graders import examples_regrade_after_run
 
             config = effective_config(_load_config_file(args.config))
             store = _open_store(args.data_dir)
@@ -605,8 +606,10 @@ def _dispatch_command(args: Any) -> int:
             # reclaimed rather than sitting held while an operator watches a stalled queue.
             recover(store)
             # NFR-CONSOLE-08: a run the killed server was driving continues here, on a
-            # worker this server owns, once `recover` has reclaimed its leases.
-            resume_runs_in_background(store, config=config)
+            # worker this server owns, once `recover` has reclaimed its leases. Like a run
+            # the console starts, it re-grades the marked examples when due (FR-CALIB-19).
+            resume_runs_in_background(store, config=config,
+                                      measure_examples=examples_regrade_after_run(config))
             server = serve_console(store, cfg=config, config_path=args.config)
             if config.get("HARNESS_PROFILE"):
                 # Which backend a run started from this console will call (seam 4): the same

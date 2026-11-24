@@ -65,6 +65,15 @@ def headless_batch_size() -> int:
 #: The logs read's page size (FR-CONSOLE-51, #755): how many store-held stage records one
 #: answer carries before it says more remain. Env-gated (seam 3) and read at call time,
 #: like every knob here — a slower box shrinks it without a code change.
+def approval_mvvp_wait_seconds() -> int:
+    """How long `approve draft package` waits for the published test's MVVP (FR-STATS-36, #889)
+    before answering, so the approval's writes have landed when the teacher (or the next read)
+    sees it published. The MVVP as scheduled reads stored labels and makes no model call, so the
+    production wait is short in practice; the knob (seam 3) lets a slower box wait longer, and 0
+    answers at once and leaves the measurement running."""
+    return max(0, _env_int("HARNESS_CONSOLE_APPROVAL_MVVP_WAIT_S", 60))
+
+
 def logs_page_size() -> int:
     """How many log records one logs-read answer carries (the setting is read each time)."""
     return max(1, _env_int("HARNESS_CONSOLE_LOG_PAGE", 200))
