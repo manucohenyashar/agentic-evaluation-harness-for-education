@@ -21,9 +21,13 @@ import { useRunParams } from "../selection";
  * "Change a final grade", band selection plus a required reason — rides the console's
  * existing amend action, and the ledger's amendment history is rendered back as the one
  * sentence RS-09 spells.
+ *
+ * FR-UI-48 (inv. 10): the words come before the mark — the whole-paper feedback above the
+ * per-line cards, each question's feedback sentence above its lines, and in each card the
+ * justification and quotes before the level, which sits inside its control (CT-UI-12).
  */
-/** One grading point's card: its band, its justification in plain language, its override,
- * and the engineering trail behind an expander that starts the logs read only when the
+/** One grading point's card: its justification in plain language, the quotes, then its band
+ * inside the level control with its override, and the engineering trail behind an expander that starts the logs read only when the
  * teacher opens it (`ADR-47`'s no-eager-read rule for the trail). */
 function CriterionCard({ criterion, doc, setShowDetails, logs, afterOverride }: {
   criterion: CriterionDetail;
@@ -48,12 +52,6 @@ function CriterionCard({ criterion, doc, setShowDetails, logs, afterOverride }: 
     <li key={criterion.criterion_id} className="criterion-card">
       <div className="criterion-head">
         <strong>{criterion.label}</strong>
-        <span className="band-value">{criterion.criterion_band}</span>
-        {criterion.stored_band !== criterion.criterion_band && (
-          <span className="band-note">
-            (amended from {criterion.stored_band})
-          </span>
-        )}
         {criterion.flag !== null && (
           <span className={`badge badge-${flagTone(criterion.flag)}`}>
             <TriangleAlert aria-hidden="true" size={14} />
@@ -81,20 +79,31 @@ function CriterionCard({ criterion, doc, setShowDetails, logs, afterOverride }: 
           </ul>
         </div>
       )}
-      <OverrideForm
-        criteria={[{
-          criterion_id: criterion.criterion_id,
-          label: criterion.label,
-          criterion_band: criterion.criterion_band,
-          levels: criterion.levels.length > 0
-            ? criterion.levels
-            : [criterion.criterion_band],
-        }]}
-        final={doc.state === "final"}
-        submissionId={doc.submission_id}
-        runId={doc.run_id}
-        onDone={afterOverride}
-      />
+      {/* FR-UI-48 / CT-UI-12: the band shows after the words, inside its level control —
+          the level beside the form that changes it, never a bare mark. */}
+      <div className="band-control" data-band-control="">
+        <span>Level: </span>
+        <span className="band-value">{criterion.criterion_band}</span>
+        {criterion.stored_band !== criterion.criterion_band && (
+          <span className="band-note">
+            {" "}(amended from {criterion.stored_band})
+          </span>
+        )}
+        <OverrideForm
+          criteria={[{
+            criterion_id: criterion.criterion_id,
+            label: criterion.label,
+            criterion_band: criterion.criterion_band,
+            levels: criterion.levels.length > 0
+              ? criterion.levels
+              : [criterion.criterion_band],
+          }]}
+          final={doc.state === "final"}
+          submissionId={doc.submission_id}
+          runId={doc.run_id}
+          onDone={afterOverride}
+        />
+      </div>
       {/* The expander starts the logs read: the trail is read only once a
           teacher opens an expander, never eagerly behind a closed panel. The
           flag latches: every criterion card carries its own expander over the
@@ -201,7 +210,15 @@ export function StudentDetail({ submissionId }: { submissionId: string }) {
 
   return (
     <ReadScreen title="Student" read={read}>
-      {(doc) => (
+      {(doc) => {
+        // FR-UI-48: each question's sentence sits above its own lines; the whole-paper
+        // narrative, and any question sentence the paper's questions do not place, above all.
+        const questionIds = new Set((doc.questions ?? []).map((question) => question.question_id));
+        const questionNarrative = (questionId: string) => doc.narrative.filter(
+          (row) => row.level === "l1_question" && row.question_id === questionId);
+        const topNarrative = doc.narrative.filter(
+          (row) => row.level !== "l1_question" || !questionIds.has(row.question_id));
+        return (
         <>
           {doc.hidden_until_blind === true ? (
             <p className="hub-state">
@@ -222,6 +239,27 @@ export function StudentDetail({ submissionId }: { submissionId: string }) {
               {doc.grade ? ` — ${doc.grade}` : ""}.
             </p>
           )}
+          {/* FR-UI-48 (inv. 10): the feedback first — the whole-paper narrative above the
+              per-line cards, each question's own sentence above its lines. */}
+          <section className="narrative">
+            <h2>Feedback</h2>
+            {topNarrative.length === 0 ? (
+              <p className="panel">The run holds no narrative for this student.</p>
+            ) : (
+              <ul className="rows-list">
+                {topNarrative.map((row) => (
+                  <li key={`${row.level}-${row.question_id}`}>
+                    {row.level !== "l2_test" && (
+                      <span className="step-note">{row.question_id}</span>
+                    )}
+                    <p className="narrative-text">
+                      {row.hidden_until_blind === true ? <HeldBack link={false} /> : row.text}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
           <section className="drilldown">
             <h2>Grades and justifications</h2>
             {doc.criteria.length === 0 ? (
@@ -270,6 +308,14 @@ export function StudentDetail({ submissionId }: { submissionId: string }) {
                         How was this graded?
                       </a>
                     </h3>
+                    {questionNarrative(question.question_id).map((row) => (
+                      <p
+                        key={`${row.level}-${row.question_id}`}
+                        className="narrative-text question-feedback"
+                      >
+                        {row.hidden_until_blind === true ? <HeldBack link={false} /> : row.text}
+                      </p>
+                    ))}
                     <ul className="criterion-cards">
                       {doc.criteria
                         .filter((criterion) => criterion.question_id === question.question_id)
@@ -305,23 +351,6 @@ export function StudentDetail({ submissionId }: { submissionId: string }) {
               </div>
             )}
           </section>
-          <section className="narrative">
-            <h2>Feedback</h2>
-            {doc.narrative.length === 0 ? (
-              <p className="panel">The run holds no narrative for this student.</p>
-            ) : (
-              <ul className="rows-list">
-                {doc.narrative.map((row) => (
-                  <li key={`${row.level}-${row.question_id}`}>
-                    <span className="step-note">{row.question_id}</span>
-                    <p className="narrative-text">
-                      {row.hidden_until_blind === true ? <HeldBack link={false} /> : row.text}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
           {doc.amendments.length > 0 && (
             <section className="amendment-history">
               <h2>Grade history</h2>
@@ -338,7 +367,8 @@ export function StudentDetail({ submissionId }: { submissionId: string }) {
             </section>
           )}
         </>
-      )}
+        );
+      }}
     </ReadScreen>
   );
 }

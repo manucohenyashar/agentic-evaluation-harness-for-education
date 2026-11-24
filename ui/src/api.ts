@@ -170,6 +170,58 @@ export interface ReviewItem {
   label?: string;
 }
 
+/** One grader's level for a queued answer, by the grader's teacher name (FR-CONSOLE-91). */
+export interface PanelChoice {
+  grader: string;
+  band: string;
+}
+
+/** One answer of the built queue (FR-CONSOLE-91): what the teacher decides it with. */
+export interface QueueItem {
+  kind: "item";
+  submission_id: string;
+  criterion_id: string;
+  student_ref: string | null;
+  full_name: string | null;
+  question_label: string;
+  /** The rubric line's own name in the package (e.g. "C1a"). */
+  criterion_label: string;
+  proposed_band: string;
+  panel: PanelChoice[];
+  /** FR-REVIEW-03's ranking inputs, in the teacher's words. */
+  why_flagged: string[];
+  /** The line's feedback sentence (M-SYNTH), or null when none is shown. */
+  narrative: string | null;
+  quotes: string[];
+  est_seconds: number;
+  levels: string[];
+  /** The score's revision as shown — the stale check's token (CT-REVIEW-15). */
+  revision: number;
+  rank_score: number;
+}
+
+/** A group of answers the queue shows as one decision (FR-CONSOLE-91/92). */
+export interface QueueGroup {
+  kind: "group";
+  /** Opaque: the token `review group action` posts back. */
+  group_signature: string;
+  size: number;
+  criterion_id: string;
+  question_label: string;
+  criterion_label: string;
+  proposed_band: string;
+  pattern: string;
+  /** Three members shown side by side. */
+  sample: QueueItem[];
+  members: { submission_id: string; criterion_id: string; full_name: string | null; revision: number }[];
+  why_flagged: string[];
+  est_seconds: number;
+  levels: string[];
+  rank_score: number;
+}
+
+export type QueueEntry = QueueItem | QueueGroup;
+
 export interface ReviewQueue {
   route: string;
   flagged_total: number;
@@ -179,6 +231,11 @@ export interface ReviewQueue {
   residual_provisional: number;
   queries: string[];
   run_id: string;
+  /** FR-CONSOLE-91's built queue (absent when M-REVIEW could not be opened). */
+  shown_total?: number;
+  default_budget_minutes?: number;
+  budget_range?: [number, number];
+  entries?: QueueEntry[];
 }
 
 /** One level a blind seat offers: its name and the rubric's description of it (R40). */
@@ -529,6 +586,8 @@ export type ActionResult = {
   /** A refusal's first two sentences (FR-UI-25): what happened, and why. */
   what?: string;
   why?: string;
+  /** The answer the screen acted on changed since it was read (§3.19's stale refusal). */
+  refresh_required?: boolean;
 };
 
 /**
