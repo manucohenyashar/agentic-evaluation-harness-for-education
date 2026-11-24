@@ -26,6 +26,13 @@ build, no quantization, no template, engine `off`): after a version's first meas
 FR-STATS-19 change ever triggers the MVVP. Arm (b) fails at the first change. Arms (a), (c) and
 (e) do not depend on change detection.
 
+**"Results go to System status" (FR-STATS-36), as read here.** System status serves the latest
+scheduled MVVP (arms a, c) and the latest record's compression check (arm d); arm (d) asserts both.
+The surface-proxy result is stored with the record (`package_validation.surface_proxy_flags`) but
+System status's `graders` block does not serve it, so no assertion here can check it there. That
+is a reported gap for the owner to rule on (does FR-STATS-36's sentence cover the surface
+proxies?), not a weaker oracle chosen quietly.
+
 **Written ahead: no** (#889 merged).
 """
 

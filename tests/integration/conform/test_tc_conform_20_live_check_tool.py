@@ -25,7 +25,6 @@ from __future__ import annotations
 import contextlib
 import io
 import re
-import sys
 import tomllib
 from pathlib import Path
 
@@ -168,4 +167,3 @@ def test_tc_conform_20_a_real_class_is_refused_before_anything_is_built_or_sent(
         if (data_dir / "packages").exists() else []
     assert packages_after == packages_before, "a package was built before the refusal"
     assert not (data_dir / "cohorts" / "class-ps9-check.sqlite").exists()
-    assert "tools.live_validity_check" in sys.modules

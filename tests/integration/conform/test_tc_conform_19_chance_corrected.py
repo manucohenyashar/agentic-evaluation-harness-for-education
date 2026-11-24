@@ -4,7 +4,7 @@ conformance. Statistical-validity test plan §3.13.
 | Arm | What is asserted |
 |---|---|
 | decision report | `run_decision_conformance` over 10 F-JEV J4 cells whose two backends' accepted bands are the 10-pair fixture below: per backend, `decision_band_agreement_by_criterion["J4"]` carries `pairs` 10, exact 0.6, adjacent 0.9, kappa 17/37 and ordinal alpha 0.7; `agreement_note` (row and report) is FR-CONFORM-19's sentence verbatim |
-| live-acceptance report | `_band_agreement` (the per-criterion figures `run_live_acceptance` folds into `per_criterion`) over a cohort holding the same 10 pairs as pre-screen probabilities and single-judge LLM verdicts, plus an 11th cell where the engine answers 1 and two judges answer 1 and 2 (median 1.5, adjacent, not exact): exact 6/11 and adjacent 10/11 count it, kappa and alpha do not (`decision_band_chance_corrected_n` 10) and equal the same literals; `LiveAcceptanceReport.agreement_note` is the sentence |
+| live-acceptance report | `run_live_acceptance`'s report, its live edges stood down (gates, counting transports, the drive returns a seeded run), over a cohort holding the same 10 pairs as pre-screen probabilities and single-judge LLM verdicts, plus an 11th cell where the engine answers 1 and two judges answer 1 and 2 (median 1.5, adjacent, not exact): exact 6/11 and adjacent 10/11 count it, kappa and alpha do not (`decision_band_chance_corrected_n` 10) and equal the same literals; `LiveAcceptanceReport.agreement_note` is the sentence |
 
 **The 10-pair fixture** (0-based band ordinals, K = 4 bands, side a / side b):
 
@@ -133,11 +133,11 @@ def test_tc_conform_19_decision_report_carries_kappa_and_alpha_beside_exact_and_
 
 
 def test_tc_conform_19_live_acceptance_figures_carry_kappa_and_alpha_on_whole_band_cells(
-        tmp_data_dir, make_fixture_provider) -> None:
+        tmp_data_dir, make_fixture_provider, monkeypatch) -> None:
     import json
+    from types import SimpleNamespace
 
-    from aeh.conform.live_acceptance import _band_agreement
-    from aeh.conform.reports import LiveAcceptanceReport
+    import aeh.conform.live_acceptance as live
     from tests.integration.judge.test_ts110_decision_dispatch import _world
     from tests.support.orch_run import ORCH_COHORT_ID
 
@@ -172,9 +172,20 @@ def test_tc_conform_19_live_acceptance_figures_carry_kappa_and_alpha_on_whole_ba
                         "(:v, :w, :j, :band, :o, 0.9, '[]', 1, 0, 'x', 100, 'llm', 'b')",
                         v=work, w=work, j=f"J{j}", band=str(ordinal), o=ordinal)
 
-        figures = _band_agreement(store, ORCH_COHORT_ID, world["run_id"])[criterion]
     finally:
         store.close()
+
+    # The report is assembled by `run_live_acceptance` itself; only its live edges are stood
+    # down — the precondition gates, the counting transports (the seam its docstring names for
+    # an offline driver) and the drive, which returns the seeded run instead of grading one.
+    monkeypatch.setattr(live, "_refusal_gates", lambda run_config: None)
+    monkeypatch.setattr(live, "_counting_providers", lambda run_config: (
+        None, None, {leg: live._LegTally() for leg in live.LIVE_LEGS}))
+    monkeypatch.setattr(live, "_drive_live_pipeline", lambda *a, **k: world["run_id"])
+    run_config = SimpleNamespace(decision_engine=SimpleNamespace(confidence_threshold=Decimal("0.80")))
+    report = live.run_live_acceptance(run_config, cohort=SimpleNamespace(cohort_id=ORCH_COHORT_ID),
+                                      data_dir=tmp_data_dir)
+    figures = report.per_criterion[criterion]
 
     # Exact and adjacent count every comparable cell, the half-band one too.
     assert figures["decision_band_exact_agreement"] == pytest.approx(6 / 11)
@@ -183,6 +194,4 @@ def test_tc_conform_19_live_acceptance_figures_carry_kappa_and_alpha_on_whole_ba
     assert figures["decision_band_chance_corrected_n"] == 10, figures
     assert figures["decision_band_kappa"] == pytest.approx(KAPPA, abs=1e-12), figures
     assert figures["decision_band_ordinal_alpha"] == pytest.approx(ALPHA, abs=1e-12), figures
-    note = {field.name: field.default
-            for field in __import__("dataclasses").fields(LiveAcceptanceReport)}["agreement_note"]
-    assert note == SENTENCE
+    assert report.agreement_note == SENTENCE
