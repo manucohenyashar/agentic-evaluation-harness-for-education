@@ -7,6 +7,7 @@ from typing import Any, Mapping
 from aeh.orch import Orchestrator
 
 from .driver import run_to_completion
+from .graders import measure_graders_after_run
 from .runtime import _escalation_judge_refs, _open_store, _provider_for
 from .decision_engine import _decision_provider_for_run
 
@@ -182,6 +183,12 @@ def start_run_in_background(
                     worker_store, started,
                     provider=bound,
                     run_config=run_config, **drive_keywords)
+                # FR-STATS-36 / FR-CALIB-19 (#889): the same run-side graders check `aeh run`
+                # makes after its drive, on a run stored `complete`; it never fails the run.
+                measure_graders_after_run(
+                    worker_store, run_id=started, cohort_id=cohort_id,
+                    package_version_id=package_version_id, run_config=run_config,
+                    config=config)
             except Exception as error:  # noqa: BLE001 - recorded on the run, not swallowed
                 # Pause naming the cause; a run `pause` will not move (still pending, say)
                 # gets the cause recorded on its row instead, so the operator reads why.

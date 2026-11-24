@@ -497,17 +497,10 @@ class DomainEffectsMixin:
                 waits_on = thread if plan.run_id == started else None
                 self._run_threads[f"{plan.run_id}:clarified-rubric"] = watch_first_class(
                     self, plan, waits_on, config, approved_by=actor)
-        # FR-STATS-36 / FR-CALIB-19 (#889): graders changed since they were last measured for
-        # this test → the MVVP runs and the marked examples are re-graded, beside the run.
-        try:
-            from .graders import on_run_started
-
-            measuring = on_run_started(self, run_id=started, cohort_id=cohort_id,
-                                       package_version_id=package_version, config=config)
-            if measuring is not None:
-                self._run_threads[f"{started}:graders"] = measuring
-        except Exception:  # noqa: BLE001 - the class's own run is never put at risk
-            pass
+        # FR-STATS-36 / FR-CALIB-19 (#889): the graders' change check is not made here. The
+        # start writes exactly the rows `aeh run` writes (TC-CONSOLE-56); the check runs on
+        # the worker after the drive, through the one function `aeh run` calls too
+        # (`aeh.pipeline.graders.measure_graders_after_run`).
         # FR-CONSOLE-82 (#882): the run-start outcome states the coming blind sample.
         return (
             f"run {started} started on a server-owned worker thread; it continues if the "

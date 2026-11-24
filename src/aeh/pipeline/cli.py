@@ -24,6 +24,7 @@ from .runtime import (
 )
 from .decision_engine import _decision_provider_for_run
 from .background import resume_runs_in_background
+from .graders import measure_graders_after_run
 
 
 EXIT_OK = 0
@@ -786,11 +787,17 @@ def _run_command(
     if callable(summary):
         print(summary())
     print(f"provider: {_describe_provider(provider)}")
-    return run_to_completion(
+    result = run_to_completion(
         store, run_id, provider=provider, run_config=run_config,
         decision_provider=decision_provider, judge_refs=judge_refs,
         extractor=applied.get("extractor"), synthesizer=applied.get("synthesizer"),
         retention_checked=retention_checked)
+    # FR-STATS-36 / FR-CALIB-19 (#889): the same run-side graders check the console's worker
+    # makes after its drive, on a run stored `complete`; it never fails the run.
+    measure_graders_after_run(
+        store, run_id=run_id, cohort_id=args.cohort, package_version_id=args.package_version,
+        run_config=run_config, config=config)
+    return result
 
 
 def _recorded_orch_knobs(run_row: Any) -> dict[str, Any]:

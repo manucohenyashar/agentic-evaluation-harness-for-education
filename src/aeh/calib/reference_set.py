@@ -53,13 +53,19 @@ def _rows(store: Any, cohort_id: str, name: str, **params: Any) -> list[dict[str
 
 def run_configuration(store: Any, cohort_id: str, run_id: str) -> dict[str, Any]:
     """The grader configuration (`aeh.stats.grader_configuration`) a calibration run was frozen
-    to, from its run row."""
+    to, from its run row's `run_config` (the persisted `RunConfig`); `{}` when it has none."""
     from aeh.stats import grader_configuration
 
     rows = _rows(store, cohort_id, "select_run_frozen_config", run_id=run_id)
     if not rows:
         return {}
-    return grader_configuration(rows[0])
+    try:
+        persisted = json.loads(rows[0].get("run_config") or "{}")
+    except (TypeError, ValueError):
+        return {}
+    if not isinstance(persisted, dict) or not persisted:
+        return {}
+    return grader_configuration(persisted)
 
 
 def _complete_runs(store: Any, package_version_id: str) -> list[str]:

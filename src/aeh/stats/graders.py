@@ -66,8 +66,10 @@ def _model_key(ref: Any) -> str:
 def grader_configuration(persisted: Mapping[str, Any]) -> dict[str, Any]:
     """The grader configuration a run was frozen to, as the five trigger dimensions.
 
-    `persisted` is `RunConfig.to_persisted_dict()`'s shape — the `panel_config` and
-    `provider_config` a run row stores (JSON strings or mappings both read). `panel_member`
+    `persisted` is `RunConfig.to_persisted_dict()`'s shape — what a run row's `run_config`
+    column stores, decoded; its `panel_config` and `provider_config` keys may be JSON strings
+    or mappings. (The row's own `panel_config` / `provider_config` columns are M-ORCH's
+    work-identity shapes, not these keys.) `panel_member`
     is the sorted judges; `model_build` every build that grades (judges, transcriber,
     off-panel checker, decision engine); `quantization` their distinct labels;
     `prompt_template_version` the panel's template; `decision_engine` the engine's build or
@@ -272,6 +274,13 @@ def _noninferiority_view(stored: Any, by_engine: Mapping[str, Mapping[str, Any]]
     return str(stored) if stored in ("true", "false") else INSUFFICIENT_DATA
 
 
+def _durable_file_exists(store: Any) -> bool:
+    """Whether the store's Tier D file is on disk (a store with no data directory, such as a
+    test double, is taken to have one)."""
+    data_dir = getattr(store, "data_dir", None)
+    return data_dir is None or os.path.exists(os.path.join(str(data_dir), "durable.sqlite"))
+
+
 def graders_figures(store: Any, package_version_id: str | None = None) -> dict[str, Any]:
     """The engine measurements from the latest promotion record (FR-CONSOLE-88): of the named
     version, else of any version. Each judged criterion's per-engine agreement (every partition
@@ -284,18 +293,22 @@ def graders_figures(store: Any, package_version_id: str | None = None) -> dict[s
 
     engine_minimum = _env_int(ENGINE_MIN_LABELS_ENV, ENGINE_MIN_LABELS)
     bin_minimum = _env_int(CALIBRATION_MIN_LABELS_ENV, CALIBRATION_MIN_LABELS)
-    handle = store.durable()
-    if package_version_id:
-        rows = handle.query(STATS_STATEMENTS["select_latest_promotion_for_version"],
-                            package_version_id=package_version_id)
-    else:
-        rows = handle.query(STATS_STATEMENTS["select_latest_promotion"])
     empty: dict[str, Any] = {
         "package_version_id": package_version_id or None, "cohort_id": None,
         "recorded_at": None, "min_per_engine": engine_minimum, "min_per_bin": bin_minimum,
         "criteria": [], "decision_answers": 0, "noninferiority": INSUFFICIENT_DATA,
         "compression": None,
     }
+    if not _durable_file_exists(store):
+        # No Tier D file means no promotion record; opening the tier here would create and
+        # migrate the file, and a read writes nothing.
+        return empty
+    handle = store.durable()
+    if package_version_id:
+        rows = handle.query(STATS_STATEMENTS["select_latest_promotion_for_version"],
+                            package_version_id=package_version_id)
+    else:
+        rows = handle.query(STATS_STATEMENTS["select_latest_promotion"])
     if not rows:
         return empty
     latest = dict(rows[0])
