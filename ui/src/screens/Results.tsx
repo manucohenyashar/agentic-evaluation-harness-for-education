@@ -70,6 +70,42 @@ function matchesFilters(student: ResultStudent, search: string, level: string, f
 
 /** One bar in a stat chart, as the served stats name it: a filled share of the row, the
  * label beside it. A chart that is a table with bars, not a pooled histogram. */
+/** The element holding one student's change form on this screen. */
+function overrideAnchor(submissionId: string): string {
+  return `override-${submissionId}`;
+}
+
+/**
+ * One line's band, inside its level control (CT-UI-12, FR-CONSOLE-20 invariant 16): the band
+ * beside **Change**, which opens this student's change form at that line — the one write path
+ * (`OverrideForm`), reached from the band itself.
+ */
+function LineBand({ band, submissionId, criterionId }: {
+  band: string;
+  submissionId: string;
+  criterionId: string;
+}) {
+  const open = (): void => {
+    const form = document.getElementById(overrideAnchor(submissionId))
+      ?.querySelector<HTMLDetailsElement>("details.override");
+    if (form == null) {
+      return;
+    }
+    form.open = true;
+    const select = form.querySelector<HTMLSelectElement>(
+      `select[name="criterion-band-${CSS.escape(criterionId)}"]`);
+    select?.focus();
+  };
+  return (
+    <span className="band-control" data-band-control="">
+      <span className="band-value">{band}</span>{" "}
+      <button type="button" className="button button-small" onClick={open}>
+        Change
+      </button>
+    </span>
+  );
+}
+
 function StatBar({ caption, share, label }: { caption: string; share: number; label: string }) {
   const width = `${Math.round(Math.max(0, Math.min(1, share)) * 100)}%`;
   return (
@@ -398,9 +434,11 @@ export function Results() {
                                       {criterion.hidden_until_blind === true ? (
                                         <HeldBack link={false} />
                                       ) : (
-                                        <span className="band-value">
-                                          {criterion.criterion_band}
-                                        </span>
+                                        <LineBand
+                                          band={criterion.criterion_band}
+                                          submissionId={student.submission_id}
+                                          criterionId={criterion.criterion_id}
+                                        />
                                       )}
                                       {criterion.stored_band !== criterion.criterion_band && (
                                         <span className="band-note">
@@ -438,7 +476,11 @@ export function Results() {
                               {criterion.hidden_until_blind === true ? (
                                 <HeldBack />
                               ) : (
-                                <span className="band-value">{criterion.criterion_band}</span>
+                                <LineBand
+                                  band={criterion.criterion_band}
+                                  submissionId={student.submission_id}
+                                  criterionId={criterion.criterion_id}
+                                />
                               )}
                               {criterion.stored_band !== criterion.criterion_band && (
                                 <span className="band-note">
@@ -455,6 +497,7 @@ export function Results() {
                           ))}
                         </ul>
                       )}
+                      <div id={overrideAnchor(student.submission_id)}>
                       <OverrideForm
                         criteria={student.criteria
                           // A held-back line has no level to change until the sample closes.
@@ -472,6 +515,7 @@ export function Results() {
                         runId={doc.run_id}
                         onDone={afterOverride}
                       />
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -582,7 +626,6 @@ function Downloads({ doc }: { doc: ResultsDoc }) {
             id="export-revision"
             aria-describedby={describedBy("export-revision", revisionError)}
             aria-invalid={revisionError !== null || undefined}
-            inputMode="numeric"
             placeholder="e.g. 1"
             value={revision}
             onChange={(event) => setRevision(event.target.value)}
@@ -791,7 +834,6 @@ function ReviewWindow({ runId, onDone }: { runId: string; onDone: () => void }) 
             id="review-hours"
             aria-describedby={describedBy("review-hours", hoursError)}
             aria-invalid={hoursError !== null || undefined}
-            inputMode="numeric"
             placeholder="e.g. 24"
             value={hours}
             onChange={(event) => setHours(event.target.value)}

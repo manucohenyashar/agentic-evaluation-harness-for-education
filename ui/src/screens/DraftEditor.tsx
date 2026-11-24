@@ -234,7 +234,6 @@ function QuestionCard({
       <input
         id={`q-points-${index}`} aria-describedby={describedBy(`q-points-${index}`, pointsError)}
         type="text"
-        inputMode="numeric"
         placeholder="e.g. 6"
         aria-invalid={pointsError !== null || undefined}
         value={points}
@@ -468,7 +467,6 @@ function CriterionCard({
         <input
           id={`c-points-${index}`} aria-describedby={describedBy(`c-points-${index}`, pointsError)}
           type="text"
-          inputMode="numeric"
           placeholder="e.g. 6"
           aria-invalid={pointsError !== null || undefined}
           value={points}
@@ -665,7 +663,6 @@ function AddQuestionForm({
       <input
         id="add-q-points" aria-describedby={describedBy("add-q-points", pointsError)}
         type="text"
-        inputMode="numeric"
         placeholder="e.g. 6"
         aria-invalid={pointsError !== null || undefined}
         value={points}
@@ -828,7 +825,6 @@ function AddCriterionForm({
           <input
             id="add-c-points" aria-describedby={describedBy("add-c-points", pointsError)}
             type="text"
-            inputMode="numeric"
             placeholder="e.g. 6"
             aria-invalid={pointsError !== null || undefined}
             value={points}

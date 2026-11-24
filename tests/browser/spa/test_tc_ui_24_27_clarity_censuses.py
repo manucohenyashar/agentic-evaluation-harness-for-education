@@ -86,6 +86,12 @@ ID_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 ENGINEERING_WORDS = re.compile(r"\b(finalizes|finalized|finalize|batch|provisional|no-op)\b",
                                re.IGNORECASE)
 
+#: FR-UI-47's review header is mandated word for word, and its last sentence says the unreviewed
+#: answers "stay provisional" — the HLD's S9 wording, exempt from the word list (only that
+#: sentence; any other "provisional" on Review is still a finding).
+REVIEW_HEADER_PROVISIONAL = re.compile(
+    r"The remaining \d+ stay provisional and in your queue\.")
+
 #: The whole-number format line's own bounds — "A whole number from 1 to 8." — the one
 #: definition the field's check restates; the boundary arm reads its values from here.
 WHOLE_NUMBER_FORMAT = re.compile(r"A whole number from (-?\d+) to (-?\d+)")
@@ -131,9 +137,10 @@ def test_tc_ui_24_every_route_shows_no_id_and_no_engineering_word(eng7_world):
                 problems.append(f"{route}: rendered nothing beyond its heading")
             for hit in _hits(text):
                 problems.append(f"{route}: shows {hit}")
-            if route in ("/results", "/review") and ENGINEERING_WORDS.search(text):
+            worded = REVIEW_HEADER_PROVISIONAL.sub("", text) if route == "/review" else text
+            if route in ("/results", "/review") and ENGINEERING_WORDS.search(worded):
                 problems.append(f"{route}: shows an engineering word "
-                                f"({ENGINEERING_WORDS.search(text).group(0)!r})")
+                                f"({ENGINEERING_WORDS.search(worded).group(0)!r})")
             problems += spa.raw_errors_in(text)
             problems += log.foreign_requests()
         _fail_with(problems)
@@ -406,7 +413,7 @@ def test_tc_ui_26_refusals_show_what_why_next_as_three_sentences(
                                   "present: the evidence is there (2 points)")
                     _answer_gap(origin, package_id, str(gap["item_id"]), value)
             _goto(page, origin, draft_route, "unused")
-            field = page.locator("main input[inputmode='numeric']").first
+            field = page.locator("main input.whole-number-input").first
             if not field.count() or not field.is_visible():
                 problems.append("passing-score: the whole-number gap never became the "
                                 "current question")

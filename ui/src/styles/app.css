@@ -2169,3 +2169,132 @@ textarea:focus-visible {
 .examples-side p {
   margin: 0 0 var(--space-xs);
 }
+
+/*
+ * The review queue (FR-UI-47, NFR-UI-06): the budget line, the header and the first group fit
+ * one 1280x720 screen — the budget is one line, the sample papers sit three across, and the
+ * level choices run inline.
+ */
+.review-budget {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-xs);
+  margin: 0 0 var(--space-sm);
+}
+
+.review-budget input {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  color: var(--color-ink);
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: var(--font-size-sm);
+  padding: var(--space-xs) var(--space-sm);
+  width: 5rem;
+}
+
+.review-budget .field-format,
+.review-budget .field-invalid {
+  flex-basis: 100%;
+}
+
+.review-header {
+  margin-bottom: var(--space-xs);
+}
+
+.review-blind-link {
+  margin: 0 0 var(--space-sm);
+}
+
+.review-groups,
+.review-items {
+  list-style: none;
+  margin: 0 0 var(--space-md);
+  padding: 0;
+}
+
+.review-item-head {
+  font-size: var(--font-size-md);
+  margin: 0 0 var(--space-xs);
+}
+
+.review-pattern {
+  margin: 0 0 var(--space-xs);
+}
+
+.review-sample {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-sm);
+  list-style: none;
+  margin: 0 0 var(--space-xs);
+  padding: 0;
+}
+
+.review-paper {
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  padding: var(--space-xs) var(--space-sm);
+}
+
+.review-paper blockquote {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-style: italic;
+  margin: var(--space-xs) 0 0;
+  overflow: hidden;
+}
+
+.review-paper p {
+  margin: var(--space-xs) 0 0;
+}
+
+.review-levels {
+  border: 0;
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--space-md);
+  margin: var(--space-xs) 0 0;
+  padding: 0;
+}
+
+.review-levels legend {
+  font-weight: 700;
+  padding: 0;
+}
+
+.review-levels .field-format {
+  flex-basis: 100%;
+}
+
+.review-panel {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+
+.review-feedback {
+  margin: 0 0 var(--space-xs);
+  padding: 0;
+}
+
+.review-actions {
+  margin: var(--space-xs) 0;
+}
+
+.review-why {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+/* FR-UI-48 / CT-UI-12: every band shown sits inside its level control. */
+.band-control {
+  margin: var(--space-xs) 0 0;
+}
+
+.band-control .override {
+  margin-top: var(--space-xs);
+}

@@ -347,7 +347,7 @@ function AnswerForm({
         <p className="answer-supply">{placeholder.supply}</p>
       )}
       {spec.kind === "whole_number" ? (
-        <input {...control} type="text" inputMode="numeric" placeholder="e.g. 6" />
+        <input {...control} type="text" className="whole-number-input" placeholder="e.g. 6" />
       ) : (
         <textarea {...control} />
       )}
