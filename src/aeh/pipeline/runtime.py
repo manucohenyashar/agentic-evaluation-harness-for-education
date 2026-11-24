@@ -59,6 +59,20 @@ class _UnitPricedProvider:
         return getattr(self._inner, name)
 
 
+class _LocalTwinProvider(_UnitPricedProvider):
+    """`edge-local`'s recorded twin (FR-PIPE-22): recordings answer, but the run is shaped as the
+    live local run it replays.
+
+    The recordings were captured against a real local server (`tools/live_local_check.py
+    --record`), where a judge seat past the panel needs a real model (`_is_live`): an escalation
+    with no seat left is not widened. A plain recorded provider derives `escalation-arm-<k>`
+    seats instead, so the replay would widen cells the capture never widened and ask for
+    requests that were never recorded. Counting seats as the live run did keeps the replay
+    request for request."""
+
+    seats_as_live = True
+
+
 def _provider_for(config: Mapping[str, Any]) -> Any:
     """The provider that the run's backend profile names.
 
@@ -79,7 +93,11 @@ def _provider_for(config: Mapping[str, Any]) -> Any:
       fixture decision provider (`FR-CONF-19`). Before this, `dev-ci` could only replay, so
       no shipped command could grade through OpenRouter (live-test blocker B1).
     * `cloud-hosted` -> OpenRouter.
-    * `edge-local` -> `LocalServerProvider`.
+    * `edge-local` -> `LocalServerProvider`. With `HARNESS_FIXTURE_DIR` set it is the recorded
+      twin instead (FR-PIPE-22): `RecordedFixtureProvider` over that directory, so the
+      air-gapped journey runs the console's run start and the reading job on recordings with no
+      connection opened. The recordings are the local server's own replies, captured by
+      `tools/live_local_check.py --record` (FR-CONFORM-21), never hand-written.
 
     OpenRouter is a plain `OpenRouterProvider()`: no request asks for zero retention, because
     retention is managed by the operator's OpenRouter account, outside the harness (owner
@@ -107,6 +125,9 @@ def _provider_for(config: Mapping[str, Any]) -> Any:
     if profile == "cloud-hosted":
         return _UnitPricedProvider(OpenRouterProvider())
     if profile == "edge-local":
+        fixture_dir = os.environ.get("HARNESS_FIXTURE_DIR")
+        if fixture_dir:
+            return _LocalTwinProvider(RecordedFixtureProvider(fixture_dir=Path(str(fixture_dir))))
         # FR-PROV-47: the server declares the run's hardware profile's concurrency.
         hardware = getattr(config, "hardware_profile", None) or (
             config.get("hardware_profile") if hasattr(config, "get") else None)
@@ -232,6 +253,9 @@ def _is_live(provider: Any) -> bool:
     derived judge name like `escalation-arm-4` is not a model anyone serves."""
     from aeh.prov import LocalServerProvider, OpenRouterProvider
 
+    if getattr(provider, "seats_as_live", False) is True:
+        # `edge-local`'s recorded twin: replays a live local run, so it counts seats as one.
+        return True
     return isinstance(getattr(provider, "_inner", provider), (OpenRouterProvider, LocalServerProvider))
 
 

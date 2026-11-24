@@ -480,6 +480,7 @@ To change a corpus, change its generator under `harness/corpora/` and rebuild.
 | `F-JEV-SYNTH/recordings/` | **Captured, not generated.** F-SYNTH's first 8 submissions, engine on, base panel of 1 (TC-E2E-05) |
 | `F-JEV-DECISIONS/recordings/` | **Captured, not generated.** F-DEV-PIPE with the fixture decision engine on; `python -m tests.support.pipe_world` re-captures it |
 | `baselines/` | The §6.9 golden-baseline registry: which artifact, whose signature, on what grounds |
+| `F-LOCAL/` | **Captured, not generated, on the developer box.** ENG7's four sheets on `edge-local` against a local model server, decision engine off: the server's replies under `recordings/`, the configuration they ran under and `capture.json`. `python tools/live_local_check.py --record` writes it (FR-CONFORM-21); the air-gapped journey replays it (FR-PIPE-22) |
 | `F-AUTHOR/` | **Generated in-tree, not here.** The 13 authoring fixtures (AF-01..AF-13) for the package-authoring capability — documents + `expected.toml` per fixture, emitted by `fixtures/F-AUTHOR/build_authoring_fixtures.py` (§5.1 of the authoring design delta). Pinned by TC-AUTHOR-28's census, not by this module's `--check`; its `recordings/` half is captured, not generated |
 
 `F-ADV-PDF/` holds no `.pdf` files, deliberately: §4.7 says the corpus is *"generated, not
@@ -615,11 +616,16 @@ _RECORDED_GOLDENS = frozenset({"F-SCHEMA/post-migration-checksums.json"})
 #: `tests/support/pipe_world.py:capture(..., decision_engine=True)` for the same reason.
 #: `F-JEV-SYNTH/recordings/` is TC-E2E-05's engine-on, panel-of-one run over F-SYNTH's first
 #: eight submissions (`JevSynthWorld`), captured the same way.
+#: `F-LOCAL/` is the local smoke's capture (FR-CONFORM-21): ENG7 on `edge-local`, every
+#: reply a real local model server gave, written by `tools/live_local_check.py --record`
+#: with the configuration and `capture.json` beside them. Captured on the developer box,
+#: never generated or hand-written; the air-gapped journey (FR-PIPE-22) is what pins it.
 _RECORDED_GOLDEN_TREES = (
     "F-DEV-PIPE/recordings/",
     "F-DEV-PIPE-TWO-RUN/",
     "F-JEV-DECISIONS/recordings/",
     "F-JEV-SYNTH/recordings/",
+    "F-LOCAL/",
 )
 
 #: Trees emitted by a committed generator that lives *inside* the corpus, not under
