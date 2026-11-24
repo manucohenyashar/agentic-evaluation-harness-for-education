@@ -426,7 +426,11 @@ def record_graders_event(
 def graders_records(store: Any, *, kind: str,
                     package_version_id: str | None = None) -> list[dict[str, Any]]:
     """The `graders_record` rows of one kind, newest first, for one package version or for every
-    version, with `configuration` and `detail` decoded. Read-only."""
+    version, with `configuration` and `detail` decoded. Read-only: with no Tier D file on disk
+    there is no record, and the tier is not opened (opening would create and migrate it)."""
+    data_dir = getattr(store, "data_dir", None)
+    if data_dir is not None and not (Path(data_dir) / "durable.sqlite").exists():
+        return []
     if package_version_id is None:
         rows = store.durable().query(PKG_STATEMENTS["select_graders_records_all"], kind=kind)
     else:

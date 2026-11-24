@@ -1,19 +1,24 @@
 """The graders measured, from the console (FR-CONSOLE-88, FR-STATS-36, FR-CALIB-19, #889).
 
-Three pieces, each a thin composition over M-STATS and M-CALIB:
+Four pieces, each a thin composition over M-STATS, M-CALIB and the composition root:
 
 - `graders_status` is the System status read's `graders` block: the engine measurements from
   the latest promotion record, whether Jev-final is on, the latest consistency report of the
-  marked examples, and the latest scheduled MVVP.
-- `on_package_approved` schedules the MVVP when a test is published (FR-STATS-36).
-- `on_run_started` checks a started run's frozen grader configuration against the last
-  measured one: a changed FR-STATS-19 dimension (or a decision engine swapped in or out) runs
-  the MVVP, and a changed model dimension re-grades the test's marked examples (FR-CALIB-19).
-  Unchanged runs nothing.
+  marked examples, and the latest scheduled MVVP. Like every read it writes nothing, and with
+  no Tier D file it opens none.
+- `on_package_approved` schedules the MVVP when a test is published (FR-STATS-36), on a
+  server-owned thread with its own store; it never stops the approval.
+- `examples_regrade_after_run` is the marked examples' re-grade check (FR-CALIB-19) the
+  console's worker hands `aeh.pipeline.measure_graders_after_run` as its `after`: M-PIPE runs
+  the MVVP half itself and cannot import M-CALIB (CT-CALIB-01).
+- `on_run_started` makes the same comparison for a run the console names — its row's frozen
+  `run_config` against the last measured graders — and measures on a server-owned thread.
 
-Both triggers work on a server-owned thread with their own store, and neither can stop the
-approval or the run that triggered it: a measurement that fails is logged. Nothing here changes
-an engine or the Jev-final setting (ADR-50, CT-CONF-14).
+The console's `start run` does not measure at the start: the start must write exactly the rows
+`aeh run` writes (TC-CONSOLE-56), so both paths make the run-side check after the drive,
+through `aeh.pipeline.measure_graders_after_run`. The one-measurement-per-version claim is that
+module's, shared by every trigger. Nothing here changes an engine or the Jev-final setting
+(ADR-50, CT-CONF-14).
 """
 
 from __future__ import annotations
@@ -24,14 +29,17 @@ import threading
 from decimal import Decimal, InvalidOperation
 from typing import Any, Mapping
 
+from aeh.pipeline import claim_measurement, release_measurement
+# The composition root's one set of versions under measurement (the same object), bound here
+# too because this module's claim lived here first.
+from aeh.pipeline import MEASUREMENTS_IN_FLIGHT as _IN_FLIGHT  # noqa: F401
+
 LOGGER = logging.getLogger("aeh.console.graders")
 
-#: One measurement per package version at a time: two runs started together must not schedule
-#: two MVVPs, or two re-grades, for one change.
-_IN_FLIGHT: set[str] = set()
-_GUARD = threading.Lock()
-
-_RUN_FROZEN_CONFIG_SQL = "SELECT panel_config, provider_config FROM run WHERE run_id = :run_id"
+#: The run's whole frozen `RunConfig`, as `to_persisted_dict()` wrote it (M-ORCH). The
+#: `panel_config` / `provider_config` columns hold M-ORCH's own work-identity shapes, not that
+#: dict's keys, so they are not what `grader_configuration` reads.
+_RUN_FROZEN_CONFIG_SQL = "SELECT run_config FROM run WHERE run_id = :run_id"
 
 
 def _calib_reference() -> Any:
@@ -41,15 +49,6 @@ def _calib_reference() -> Any:
     except ImportError:
         return None
     return reference_set
-
-
-def _decimal(value: Any) -> Decimal | None:
-    if value is None or value == "":
-        return None
-    try:
-        return Decimal(str(value))
-    except (InvalidOperation, ValueError):
-        return None
 
 
 #: FR-AGG-20's setting, read off the console's effective configuration.
@@ -126,22 +125,19 @@ def graders_status(app: Any, run_row: Any) -> dict[str, Any]:
             "trigger": mvvp["trigger"],
             "outcome": mvvp["outcome"],
             "refusal": mvvp["detail"].get("refusal"),
-            "steps": mvvp["detail"].get("steps") or {},
+            "steps": _served_steps(mvvp["detail"].get("steps")),
         },
     }
 
 
-def _claim(version: str) -> bool:
-    with _GUARD:
-        if version in _IN_FLIGHT:
-            return False
-        _IN_FLIGHT.add(version)
-        return True
-
-
-def _release(version: str) -> None:
-    with _GUARD:
-        _IN_FLIGHT.discard(version)
+def _served_steps(stored: Any) -> dict[str, Any]:
+    """The MVVP's steps as System status serves them: each step's own outcome, keyed by its
+    number. The record keeps the requirement each step answers to; the screen names a step in
+    the teacher's words, so no requirement id is served (FR-UI-23)."""
+    if not isinstance(stored, Mapping):
+        return {}
+    return {str(number): {"outcome": step.get("outcome")}
+            for number, step in stored.items() if isinstance(step, Mapping)}
 
 
 def _on_thread(app: Any, version: str, name: str, work: Any) -> threading.Thread:
@@ -159,7 +155,7 @@ def _on_thread(app: Any, version: str, name: str, work: Any) -> threading.Thread
         except Exception:  # noqa: BLE001 - a measurement never fails its trigger
             LOGGER.exception("the graders' measurement %s did not finish", name)
         finally:
-            _release(version)
+            release_measurement(version)
             if store is not None:
                 store.close()
 
@@ -167,7 +163,7 @@ def _on_thread(app: Any, version: str, name: str, work: Any) -> threading.Thread
     try:
         thread.start()
     except Exception:
-        _release(version)
+        release_measurement(version)
         raise
     return thread
 
@@ -190,7 +186,7 @@ def on_package_approved(app: Any, package_version_id: str) -> threading.Thread |
     from aeh.stats import PACKAGE_APPROVAL_TRIGGER, schedule_mvvp
 
     configuration, ceiling = approval_configuration(app)
-    if not _claim(package_version_id):
+    if not claim_measurement(package_version_id):
         return None
 
     def work(store: Any) -> None:
@@ -201,59 +197,107 @@ def on_package_approved(app: Any, package_version_id: str) -> threading.Thread |
     return _on_thread(app, package_version_id, f"approval-{package_version_id}", work)
 
 
+def _decimal(value: Any) -> Decimal | None:
+    if value is None or value == "":
+        return None
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+
+
 def run_grader_configuration(store: Any, cohort_id: str,
                              run_id: str) -> tuple[dict[str, Any], Decimal | None]:
-    """The grader configuration and run cost ceiling a started run was frozen to."""
+    """The grader configuration and run cost ceiling a run was frozen to, from its row's
+    `run_config` column; `({}, None)` when the run or its frozen configuration is missing."""
     from aeh.stats import grader_configuration
 
     rows = list(store.cohort(cohort_id).query(_RUN_FROZEN_CONFIG_SQL, run_id=run_id))
     if not rows:
         return {}, None
-    row = dict(rows[0])
     try:
-        provider = json.loads(row.get("provider_config") or "{}")
+        persisted = json.loads(dict(rows[0]).get("run_config") or "{}")
     except (TypeError, ValueError):
-        provider = {}
+        persisted = {}
+    if not isinstance(persisted, dict) or not persisted:
+        return {}, None
+    provider = persisted.get("provider_config")
     ceiling = _decimal(provider.get("cost_ceiling")) if isinstance(provider, dict) else None
-    return grader_configuration(row), ceiling
+    return grader_configuration(persisted), ceiling
+
+
+def _examples_due(store: Any, package_version_id: str,
+                  configuration: Mapping[str, Any]) -> tuple[str, ...]:
+    reference = _calib_reference()
+    if reference is None or not configuration:
+        return ()
+    return tuple(reference.reference_set_due(store, package_version_id, configuration))
+
+
+def _regrade_examples(store: Any, package_version_id: str, configuration: Mapping[str, Any],
+                      changes: tuple[str, ...], config: Mapping[str, Any]) -> Any:
+    return _calib_reference().regrade_reference_set(
+        store, package_version_id, config=dict(config), trigger=",".join(changes),
+        configuration=configuration)
+
+
+def examples_regrade_after_run(config: Any) -> Any:
+    """The `after` the console's worker hands `aeh.pipeline.measure_graders_after_run`
+    (FR-CALIB-19): given the run's frozen grader configuration, re-grade the test's marked
+    examples when a model dimension changed since they were last graded. None when M-CALIB is
+    absent or the run has no configuration mapping to re-grade under."""
+    if _calib_reference() is None or not isinstance(config, Mapping):
+        return None
+    run_config = dict(config)
+
+    def after(store: Any, package_version_id: str, configuration: Mapping[str, Any]) -> Any:
+        changes = _examples_due(store, package_version_id, configuration)
+        if changes:
+            return _regrade_examples(store, package_version_id, configuration, changes,
+                                     run_config)
+        return None
+
+    return after
 
 
 def on_run_started(app: Any, *, run_id: str, cohort_id: str, package_version_id: str,
                    config: Any) -> threading.Thread | None:
-    """FR-STATS-36 / FR-CALIB-19: when the started run's graders differ from the ones last
-    measured for its test, run the MVVP (trigger: the changed dimensions) and re-grade the
-    test's marked examples; with no change, nothing runs. Returns the measuring thread, or
-    None when nothing is due."""
+    """FR-STATS-36 / FR-CALIB-19 for a run the console names: when its frozen graders (the row's
+    `run_config`) differ from the ones last measured for its test, run the MVVP (trigger: the
+    changed dimensions) and, given the run's `config`, re-grade the test's marked examples, on
+    a server-owned thread. Returns the measuring thread, or None when nothing is due or a
+    measurement of the version is already under way. The same comparison the worker makes
+    after a drive (`aeh.pipeline.measure_graders_after_run` with `examples_regrade_after_run`)."""
     from aeh.stats import mvvp_due, schedule_mvvp
 
     store = app._store
     configuration, ceiling = run_grader_configuration(store, cohort_id, run_id)
     if not configuration:
         return None
-    mvvp_changes = mvvp_due(store, package_version_id, configuration)
-    reference = _calib_reference()
-    reference_changes = (() if reference is None else
-                         reference.reference_set_due(store, package_version_id, configuration))
-    if not mvvp_changes and not reference_changes:
+    mvvp_changes = tuple(mvvp_due(store, package_version_id, configuration))
+    examples_changes = (_examples_due(store, package_version_id, configuration)
+                        if isinstance(config, Mapping) else ())
+    if not mvvp_changes and not examples_changes:
         return None
-    if not _claim(package_version_id):
+    if not claim_measurement(package_version_id):
         return None
+    run_config = dict(config) if isinstance(config, Mapping) else {}
 
     def work(worker_store: Any) -> None:
         if mvvp_changes:
             schedule_mvvp(worker_store, package_version_id=package_version_id,
                           trigger=",".join(mvvp_changes), configuration=configuration,
                           cost_ceiling=ceiling)
-        if reference_changes and isinstance(config, Mapping):
-            reference.regrade_reference_set(
-                worker_store, package_version_id, config=dict(config),
-                trigger=",".join(reference_changes), configuration=configuration)
+        if examples_changes:
+            _regrade_examples(worker_store, package_version_id, configuration,
+                              examples_changes, run_config)
 
     return _on_thread(app, package_version_id, f"run-{run_id}", work)
 
 
 __all__ = [
     "approval_configuration",
+    "examples_regrade_after_run",
     "graders_status",
     "jev_final_on",
     "on_package_approved",

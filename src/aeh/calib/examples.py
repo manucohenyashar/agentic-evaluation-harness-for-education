@@ -105,7 +105,9 @@ EXAMPLES_STATEMENTS: dict[str, Statement] = {
         "SELECT provider_config FROM run WHERE run_id = :run_id"
     ),
     "select_run_frozen_config": Statement(
-        "SELECT panel_config, provider_config FROM run WHERE run_id = :run_id"
+        # The whole frozen RunConfig (`to_persisted_dict()`), which `grader_configuration`
+        # reads; the panel_config / provider_config columns hold M-ORCH's own shapes.
+        "SELECT run_config FROM run WHERE run_id = :run_id"
     ),
     "select_run_scores": Statement(
         "SELECT submission_id, criterion_id, band, state, evidence_present "

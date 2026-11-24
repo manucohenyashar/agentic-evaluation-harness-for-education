@@ -726,11 +726,15 @@ def _approve_draft_package(app: Any, params: Mapping[str, Any]) -> ControlOutcom
             text, built.package_id, built.package_version, content_digest(text))
         commit_artifacts(path.parent, [(path, approved)])
         # FR-STATS-36 (#889): a published test's MVVP, on its own thread; a second press of
-        # an unchanged draft returned above and schedules nothing.
+        # an unchanged draft returned above and schedules nothing. The approval waits for it
+        # (bounded by a knob), so no measurement write lands after the approval answered.
         try:
             from .graders import on_package_approved
+            from .settings import approval_mvvp_wait_seconds
 
-            on_package_approved(app, built.package_version)
+            measuring = on_package_approved(app, built.package_version)
+            if measuring is not None:
+                measuring.join(approval_mvvp_wait_seconds())
         except Exception:  # noqa: BLE001 - the measurement never fails the approval
             import logging
 

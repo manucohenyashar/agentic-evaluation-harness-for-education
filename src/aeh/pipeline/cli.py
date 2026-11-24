@@ -24,6 +24,7 @@ from .runtime import (
 )
 from .decision_engine import _decision_provider_for_run
 from .background import resume_runs_in_background
+from .graders import measure_graders_after_run
 
 
 EXIT_OK = 0
@@ -597,6 +598,7 @@ def _dispatch_command(args: Any) -> int:
 
         if args.command == "console":
             from aeh.console import serve_console
+            from aeh.console.graders import examples_regrade_after_run
 
             config = effective_config(_load_config_file(args.config))
             store = _open_store(args.data_dir)
@@ -604,8 +606,10 @@ def _dispatch_command(args: Any) -> int:
             # reclaimed rather than sitting held while an operator watches a stalled queue.
             recover(store)
             # NFR-CONSOLE-08: a run the killed server was driving continues here, on a
-            # worker this server owns, once `recover` has reclaimed its leases.
-            resume_runs_in_background(store, config=config)
+            # worker this server owns, once `recover` has reclaimed its leases. Like a run
+            # the console starts, it re-grades the marked examples when due (FR-CALIB-19).
+            resume_runs_in_background(store, config=config,
+                                      measure_examples=examples_regrade_after_run(config))
             server = serve_console(store, cfg=config, config_path=args.config)
             if config.get("HARNESS_PROFILE"):
                 # Which backend a run started from this console will call (seam 4): the same
@@ -786,11 +790,16 @@ def _run_command(
     if callable(summary):
         print(summary())
     print(f"provider: {_describe_provider(provider)}")
-    return run_to_completion(
+    result = run_to_completion(
         store, run_id, provider=provider, run_config=run_config,
         decision_provider=decision_provider, judge_refs=judge_refs,
         extractor=applied.get("extractor"), synthesizer=applied.get("synthesizer"),
         retention_checked=retention_checked)
+    # FR-STATS-36 (#889): the same run-side graders check the console's worker makes after its
+    # drive, on a run stored `complete`; it never fails the run.
+    measure_graders_after_run(
+        store, run_id=run_id, cohort_id=args.cohort, package_version_id=args.package_version)
+    return result
 
 
 def _recorded_orch_knobs(run_row: Any) -> dict[str, Any]:

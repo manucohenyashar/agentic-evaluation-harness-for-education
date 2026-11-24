@@ -170,6 +170,17 @@ def _agg_knobs_of(row: Any) -> Any:
     return AggKnobs.from_record(section)
 
 
+def _persisted_config_of(row: Any) -> dict[str, Any] | None:
+    """The run's whole frozen `RunConfig` as `to_persisted_dict()` wrote it to the `run_config`
+    column, decoded; `None` when the row records none (a test double's run, or a row written
+    before the column)."""
+    try:
+        persisted = json.loads(_mapping_get(row, "run_config") or "{}")
+    except (TypeError, ValueError):
+        return None
+    return persisted if isinstance(persisted, dict) and persisted else None
+
+
 def _model_pin_records_of(
     row: Any,
 ) -> tuple[tuple[str, str, str, "str | None"], ...]:
