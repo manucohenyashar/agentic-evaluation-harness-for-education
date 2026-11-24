@@ -80,10 +80,12 @@ function overrideAnchor(submissionId: string): string {
  * beside **Change**, which opens this student's change form at that line — the one write path
  * (`OverrideForm`), reached from the band itself.
  */
-function LineBand({ band, submissionId, criterionId }: {
+function LineBand({ band, submissionId, criterionId, amendedFrom }: {
   band: string;
   submissionId: string;
   criterionId: string;
+  /** The stored level, shown "(amended from …)" inside the control when it differs. */
+  amendedFrom: string;
 }) {
   const open = (): void => {
     const form = document.getElementById(overrideAnchor(submissionId))
@@ -98,7 +100,10 @@ function LineBand({ band, submissionId, criterionId }: {
   };
   return (
     <span className="band-control" data-band-control="">
-      <span className="band-value">{band}</span>{" "}
+      <span className="band-value">{band}</span>
+      {amendedFrom !== band && (
+        <span className="band-note"> (amended from {amendedFrom})</span>
+      )}{" "}
       <button type="button" className="button button-small" onClick={open}>
         Change
       </button>
@@ -438,12 +443,8 @@ export function Results() {
                                           band={criterion.criterion_band}
                                           submissionId={student.submission_id}
                                           criterionId={criterion.criterion_id}
+                                          amendedFrom={criterion.stored_band}
                                         />
-                                      )}
-                                      {criterion.stored_band !== criterion.criterion_band && (
-                                        <span className="band-note">
-                                          {" "}(amended from {criterion.stored_band})
-                                        </span>
                                       )}
                                       {question.state === "not_final" &&
                                         question.not_final_reason !== null && (
@@ -480,12 +481,8 @@ export function Results() {
                                   band={criterion.criterion_band}
                                   submissionId={student.submission_id}
                                   criterionId={criterion.criterion_id}
+                                  amendedFrom={criterion.stored_band}
                                 />
-                              )}
-                              {criterion.stored_band !== criterion.criterion_band && (
-                                <span className="band-note">
-                                  {" "}(amended from {criterion.stored_band})
-                                </span>
                               )}
                               {criterion.flag !== null && (
                                 <span className={`badge badge-${flagTone(criterion.flag)}`}>

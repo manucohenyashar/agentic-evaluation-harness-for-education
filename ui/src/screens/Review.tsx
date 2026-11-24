@@ -89,9 +89,9 @@ function useQueueAction(onLanded: () => void) {
         // `refused`, so both count as "not marked".
         const landed = !isRefused(result) && result.dispatched !== false;
         report(landed ? textOutcome(said(result)) : textOutcome(refusedSaid(result), true));
-        if (landed || result.refresh_required === true) {
-          onLanded();
-        }
+        // A refusal re-reads too: whatever was refused (a stale or already-marked answer)
+        // the queue the teacher sees must be the one standing now.
+        onLanded();
       });
   };
   return { busy, post };
@@ -124,7 +124,14 @@ export function Review() {
               key={data.budget_minutes ?? "default"}
               current={data.budget_minutes ?? data.default_budget_minutes ?? 30}
               range={data.budget_range}
-              onGo={setBudget}
+              onGo={(minutes) => {
+                // Go always rebuilds: the same budget twice re-reads rather than doing nothing.
+                if (minutes === budget) {
+                  read.retry();
+                } else {
+                  setBudget(minutes);
+                }
+              }}
             />
             <p className="hub-state review-header" data-review-header="">
               {queueHeader(data)}
@@ -298,8 +305,8 @@ function ItemCard({
     result.refresh_required === true
       ? `${name}'s answer changed since the queue was built, so it was not marked. ` +
         "The queue now shows it as it stands."
-      : `${name}'s answer could not be marked; it may already be reviewed. Press Go to ` +
-        "rebuild the queue.";
+      : `${name}'s answer could not be marked; it may already be reviewed. The queue now ` +
+        "shows what is still waiting.";
   return (
     <article className="criterion-card review-item" data-component="review-item">
       <h2 className="review-item-head">
@@ -348,8 +355,7 @@ function ItemCard({
           busy={busy}
           onClick={() =>
             post("review action", { ...body, decision: "skip" },
-              (result) => plainText(result.detail ?? "") ||
-                `Skipped for now: ${name}'s answer stays in your queue.`,
+              () => `Skipped for now: ${name}'s answer stays in your queue.`,
               refusedSaid)
           }
         >
@@ -450,7 +456,7 @@ function GroupCard({
               (result) => plainText(result.detail ?? "") ||
                 `${group.size} answers marked ${chosen} as one decision.`,
               (result) => plainText(result.detail || result.error || "") ||
-                "Nothing was marked. Press Go to rebuild the queue.",
+                "Nothing was marked. The queue now shows what is still waiting.",
             )
           }
         >
