@@ -1033,6 +1033,7 @@ the first DELETE, on a file whose live FK graph contradicts `_COHORT_PURGE_ORDER
 | TC-STORE-23 | NFR-STORE-05 | Not automatable | Encryption at rest | See §2.3 Q-08 and §7.4. Covered by a deployment checklist item; only "the data directory path is configurable" is asserted | n/a | — |
 | TC-STORE-24 | FR-STORE-01, FR-STORE-03 | Observability / 2 | A saturated run | Write-queue depth, batch commit latency, per-tier file sizes, free disk space and `VACUUM` duration are emitted; the free-disk alert fires against a synthetic breach | Exact signal presence, see `OBS-02` | P1 |
 | TC-STORE-25 | FR-STORE-02 | Contract / 1 | A fresh interpreter opening a Tier P file, with and without the migration-contributing imports first (`#234`; the chains concatenate at import time, so the chain an open sees is only as long as the contributing modules imported so far — the *completeness* half of import order, which survives #269's root fix of the *ordering* half: `_VersionOrderedRegistry` sorts each chain at write time, but a module never imported contributes nothing to sort) | Without them the open is refused **at the open site** naming the cause (`IncompleteMigrationChainError`; the tier file is not created — `open_store`'s empty layout skeleton is made regardless), never a distant `no such column: parent_version_id` (#46's probe, PR #208); with them the open reaches the pinned full schema and the probe runs clean; and the `COMPLETE_SCHEMA_VERSIONS` pin matches the full chain in ascending version order (`#269`'s version-order guarantee), so a migration added without its pin bump — or an appender that breaks the write-time sort — fails the gate | Two subprocess runs, one per world, plus the in-process pin and chain-order check (`tests/regression/store/test_import_order_tier_p.py`) | P1 |
+| TC-STORE-34 | FR-STORE-07, CT-STORE-10 | Regression / 2 | A store whose cohort handle was opened and read on one thread, closed (as the console's `purge cohort` does) from another thread (`#890`: every console purge after a run was refused with sqlite3's same-thread `ProgrammingError`) | `store.close()` on the other thread raises nothing, and the ledger file then takes an exclusive lock and deletes | Exact exception absence plus file lock/delete (`tests/regression/store/test_tc_store_34_close_from_another_thread.py`) | P1 |
 
 ### 5.4 Module: Assessment Package Catalog (`M-PKG`)
 
@@ -4532,7 +4533,7 @@ python .claude/skills/create-test-plan/scripts/check_traceability.py --design do
 | FR-STORE-04 | TC-STORE-08, TC-STORE-21, FUZZ-07 | Integration, Property | P0 |
 | FR-STORE-05 | TC-STORE-07, OBS-02 | Integration, Observability | P1 |
 | FR-STORE-06 | TC-STORE-09, TC-STORE-22, SEC-09, FUZZ-07 | Integration, Property, Security | P1 |
-| FR-STORE-07 | TC-STORE-11, SEC-13 | Integration, Security | P0 |
+| FR-STORE-07 | TC-STORE-11, TC-STORE-34, SEC-13 | Integration, Security | P0 |
 | FR-STORE-08 | TC-STORE-15, SEC-15 | Art, Security | P0 |
 | FR-STORE-09 | TC-STORE-10, SEC-09, RES-02, TC-SMOKE-04 | Integration, Security, Resilience, Smoke | P0 |
 | FR-STORE-10 | TC-STORE-13, RES-01 | Resilience | P0 |

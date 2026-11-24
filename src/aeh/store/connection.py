@@ -297,8 +297,15 @@ def _open_tier(path: Path, tier: Tier, *, read_only: bool, busy_timeout_ms: int,
         )
 
     path.parent.mkdir(parents=True, exist_ok=True, mode=OWNER_ONLY_DIR)
+    # The handle reads through this connection on the opening thread only (`SqliteTierHandle.
+    # _connection_for_this_thread`); every other thread gets its own. The same-thread check is
+    # off for the reason `_read_connection` gives for those: the handle is *closed* from
+    # whichever thread purges or shuts down — on the console, a request thread that never
+    # opened it — and with the check on, that close raised `ProgrammingError` and left the
+    # connection open on the file (TC-STORE-34).
     connection = _connect(
-        path, read_only=read_only, busy_timeout_ms=busy_timeout_ms, retries=retries
+        path, read_only=read_only, busy_timeout_ms=busy_timeout_ms, retries=retries,
+        check_same_thread=False,
     )
 
     try:

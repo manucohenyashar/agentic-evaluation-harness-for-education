@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import dataclasses
 from typing import Any, Mapping
 
+from .agreement import GRADER_CONSISTENCY_NOTE
 from .errors import MergeRefused
 
 if TYPE_CHECKING:
@@ -71,6 +72,9 @@ class LiveAcceptanceReport:
     valid: bool
     failed_legs: tuple[str, ...]
     invalid_extremes: Mapping[str, Any]
+    #: FR-CONFORM-19: the engine and the panel are both graders, so their band agreement in
+    #: `per_criterion` (exact, adjacent, kappa, ordinal alpha) is consistency, not accuracy.
+    agreement_note: str = GRADER_CONSISTENCY_NOTE
 
 
 @dataclasses.dataclass(frozen=True)
