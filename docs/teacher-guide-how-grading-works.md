@@ -106,7 +106,7 @@ take more than a few minutes. If you are unsure, leave a line as shown.
 markers guessing, so the draft cannot be approved while any level of a judged line has no
 description. Where your documents give none, the review screen asks, in this shape:
 
-> *"What earns 'Good' on Question 2? Say what the answer does, not how good it is."*
+> *"What earns 'Good' on question 2? Say what the answer does, not how good it is."*
 
 Your one-sentence answer becomes that level's description. If a description you wrote leans on
 words like *good*, *excellent*, *correct* or *clearly*, the screen adds a **Note** suggesting you
@@ -306,7 +306,8 @@ match sometimes — often, when most answers sit at one level. *Agreement beyond
 that luck out: **1.00** means you and the system chose the same level every time, **0.00** means
 you matched no more often than luck alone would give, and a figure below 0 means less often
 than that. It is a figure between −1 and 1, never a percentage, and it is always shown with the
-number of answers it rests on. When every answer sat at one level it cannot be worked out, and
+number of answers it rests on. Below 30 answers a question's figure is shown with *"too few"*
+beside it; once it has 30, if every answer sat at one level the figure cannot be worked out, and
 the screen says that instead of showing a number.
 
 **What skipping costs.** **Skip and see results** changes no mark: your class is graded either
@@ -352,7 +353,7 @@ system's levels matched yours on the answers you marked, and how many answers th
 | Review the flagged marks | Every run | **No** |
 | Blind sample | Every run | **No** |
 | Whole-grade sample | Every run | **No** |
-| Finalize the batch | Every run | **No** — you press **Finalize** on the Results screen when you are satisfied; until then the grades sit ready to finalize |
+| Finalize the batch | Every run | **No** — you press **Approve all grades** on the Results screen when you are satisfied; until then the grades sit ready to finalize |
 
 Only set-up questions block, all of them once: the question list, the answer keys, and a
 description for any level that has none. After that, the answer is always no.
