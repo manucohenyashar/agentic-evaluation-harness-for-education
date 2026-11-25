@@ -91,6 +91,9 @@ def _student(detail: dict[str, Any], letters: bool) -> dict[str, Any]:
         lines.setdefault(str(line.get("question_id")), []).append({
             "criterion_id": line["criterion_id"],
             "label": line["label"],
+            # The line's question, so the hold-back finds the question a drawn line sits in
+            # and hides its points too (FR-CONSOLE-89; #878).
+            "question_id": line.get("question_id"),
             "level": line["criterion_band"],
         })
     student = {

@@ -237,7 +237,15 @@ def test_tc_ui_31_rows_by_question_and_the_exact_average_label(
                     if f"{question} · {int(awarded)} / {maximum}" not in shown:
                         problems.append(f"{student_name}: the {question} cell does not "
                                         f"read {awarded} / {maximum}")
-                if f"Total grade: {int(total)} / 8 — {grade}" not in shown:
+                # FR-UI-50 (#878): a student whose unreviewed lines could move their grade
+                # reads as the served range, not a point.
+                served = next((s for s in doc["students"] if student_name in (
+                    s.get("full_name"), s.get("student_ref"))), {})
+                if served.get("boundary_at_risk"):
+                    if "Total grade: " not in shown or " until " not in shown:
+                        problems.append(f"{student_name}: at risk, but the Total grade "
+                                        "column does not read as a range")
+                elif f"Total grade: {int(total)} / 8 — {grade}" not in shown:
                     problems.append(f"{student_name}: the Total grade column does not "
                                     f"read {total} / 8 — {grade}")
             if page.locator(".question-stat").count() == 0:

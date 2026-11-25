@@ -38,6 +38,9 @@ LINE_KEYS: frozenset[str] = frozenset({
     "new_points", "reason", "state_reason", "rationale", "flag", "routing", "cited", "quotes",
     "cited_quotes", "evidence", "graders", "panel", "verdicts", "feedback", "narrative",
     "why_flagged", "text", "not_final_reason", "confidence",
+    # The whole-grade sample's line level (FR-CONSOLE-93): a drawn line's level, held back
+    # like its band (#878).
+    "level",
 })
 
 #: A student's figures that *total − visible lines* would reveal a drawn line through.

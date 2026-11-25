@@ -44,12 +44,25 @@ function ParkedCard({
   const shared = sharedNames(choices);
   const duplicate = entry.duplicate_of ?? null;
   const earlierPresent = duplicate !== null && duplicate.submission_id !== null;
+  const crops = (entry.crops ?? []).length > 0
+    ? entry.crops ?? []
+    : entry.crop
+      ? [{ url: entry.crop, caption: "The page with the mark, as scanned", question_id: null }]
+      : [];
   const noteId = `note-${entry.submission_id}`;
   const studentId = `student-${entry.submission_id}`;
   return (
     <li className="parked-card">
       <p className="parked-reason">{entry.reason_label}</p>
       <p className="parked-match">{entry.match_note}</p>
+      {/* FR-UI-53: the mark as scanned, beside the reason and before the note field, for
+          every crop the ingest kept (FR-CONSOLE-96); a paper with none shows no image. */}
+      {crops.map((crop, index) => (
+        <figure key={`${crop.url}-${index}`} className="parked-crop">
+          <figcaption>The mark as scanned</figcaption>
+          <img src={crop.url} alt={crop.caption} />
+        </figure>
+      ))}
       {entry.resolutions.length > 0 && (
         <ul className="parked-resolutions">
           {entry.resolutions.map((sentence) => (

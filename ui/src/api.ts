@@ -158,6 +158,45 @@ export interface MonitorState {
   blind_sample?: string;
   blind_count?: number | null;
   blind_minutes?: number;
+  /** FR-CONSOLE-82/93, on a completed run: where to go next, in order. */
+  next?: { label: string; route: string }[];
+  /** FR-CONSOLE-95: the run's position as M-ORCH reports it (null with no ledger yet). */
+  stage?: string | null;
+  criterion_position?: { index: number; total: number; label: string | null } | null;
+  judge_position?: { index: number; total: number } | null;
+}
+
+/** FR-CONSOLE-94: a student's stored boundary risk — the range unreviewed lines could move
+ * the total across, and the grade letters at its ends (absent with no boundary table). */
+export interface BoundaryFields {
+  boundary_at_risk?: number | null;
+  score_low?: number | null;
+  score_high?: number | null;
+  grade_low?: string | null;
+  grade_high?: string | null;
+}
+
+/** FR-CONSOLE-93: the whole-grade sample, as the drawn students would receive their grades. */
+export interface WholeGradeDoc {
+  run_id: string;
+  population_note: string;
+  drawn_count: number;
+  short_sample_note: string | null;
+  students: WholeGradeStudent[];
+}
+
+export interface WholeGradeStudent extends HeldBack {
+  submission_id: string;
+  student_ref: string | null;
+  full_name?: string | null;
+  total: number | null;
+  total_points?: number | null;
+  total_max?: number | null;
+  grade?: string | null;
+  questions: (StudentQuestion & {
+    lines: ({ criterion_id: string; label: string; level: string } & HeldBack)[];
+  })[];
+  narrative: NarrativeRow[];
 }
 
 export interface ReviewItem {
@@ -381,7 +420,7 @@ export interface StageTiming {
   seconds: number;
 }
 
-export interface ResultStudent extends HeldBack {
+export interface ResultStudent extends HeldBack, BoundaryFields {
   submission_id: string;
   student_ref: string | null;
   /** The student's listed name — what the teacher knows them by (FR-CONSOLE-70). */
@@ -429,6 +468,8 @@ export interface ResultsScreen {
   run?: { state: string; started_at: string | null; ended_at: string | null } | null;
   /** FR-UI-33: the date an open review window defers finality to, in teacher words. */
   review_window_ends?: string | null;
+  /** FR-CONSOLE-94: the students whose unreviewed lines could move their grade. */
+  boundary_risk_count?: number;
 }
 
 export interface NarrativeRow extends HeldBack {
@@ -473,7 +514,7 @@ export interface AmendmentEntry {
   at: string;
 }
 
-export interface StudentDetail extends HeldBack {
+export interface StudentDetail extends HeldBack, BoundaryFields {
   run_id: string;
   submission_id: string;
   student_ref: string | null;
@@ -739,6 +780,16 @@ export interface RunEntry {
   stage: string;
   started_at: string | null;
   completed_at: string | null;
+  /** FR-UI-51: what graded the run, in teacher words, from its frozen configuration —
+   * the footer every grade view carries (null when the run's row cannot be read). */
+  provenance?: RunProvenance | null;
+}
+
+export interface RunProvenance {
+  /** "1" of "version 1"; empty when the catalog cannot name the version. */
+  version_label: string;
+  settings: string;
+  graders: string;
 }
 
 /** The context header's feed (FR-CONSOLE-48): empty collections when nothing is stored. */
@@ -783,6 +834,11 @@ export interface ParkedDoc {
     /** The matched student's listed name. */
     matched_name?: string | null;
     match_note: string;
+    /** FR-CONSOLE-96: the mark as scanned (a same-origin image URL), or null — then
+     * `crop_note` says none is kept. */
+    crop?: string | null;
+    crops?: { url: string; caption: string; question_id: string | null }[];
+    crop_note?: string | null;
     resolutions: string[];
     resolvable: boolean;
     /** The paper's student was not matched, but its pages were read: it can be given to

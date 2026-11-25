@@ -451,7 +451,9 @@ def _run_position(app: Any, run_row: Any) -> dict[str, Any]:
     label = None
     if criterion_id is not None:
         try:
-            label = _grading_point_labels(app, run_row).get(criterion_id, criterion_id)
+            # The question's label, or none: never the criterion's own id (FR-UI-23, #878).
+            label = _grading_point_labels(app, run_row).get(criterion_id)
+            label = None if label == criterion_id else label
         except Exception:  # noqa: BLE001 — an unreadable package names no label
             label = None
     return {
