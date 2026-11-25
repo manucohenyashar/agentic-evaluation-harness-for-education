@@ -25,6 +25,7 @@ Markers: `integration`.
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -43,7 +44,7 @@ def _cohort_of_run(root: Path, run_id: str) -> tuple[str, str]:
     """(cohort id, purpose) of the cohort file whose `run` table holds `run_id`."""
     found = []
     for path in sorted((root / "cohorts").glob("*.sqlite")):
-        with sqlite3.connect(path) as connection:
+        with closing(sqlite3.connect(path)) as connection:
             connection.row_factory = sqlite3.Row
             if connection.execute("SELECT 1 FROM run WHERE run_id = ?", (run_id,)).fetchall():
                 row = connection.execute("SELECT cohort_id, purpose FROM cohort").fetchone()

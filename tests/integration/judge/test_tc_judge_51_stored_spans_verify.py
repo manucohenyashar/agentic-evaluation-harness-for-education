@@ -58,6 +58,7 @@ class _RelocateOneCitation:
         self._inner = inner
         self.seeded: dict[str, Any] | None = None
         self.criterion_field: str | None = None
+        self.submission_field: str | None = None
 
     def complete(self, prompt: Any, model_ref: Any, params: Any) -> Any:
         completion = self._inner.complete(prompt, model_ref, params)
@@ -72,6 +73,7 @@ class _RelocateOneCitation:
                     "end": original["end"] + SHIFT}
         self.seeded = original
         self.criterion_field = dict(prompt.fields)["criterion"]
+        self.submission_field = dict(prompt.fields)["submission"]
         return dataclasses.replace(completion, text=json.dumps(reply))
 
     def __getattr__(self, name: str) -> Any:
@@ -135,6 +137,12 @@ def test_tc_judge_51_every_stored_span_verifies_and_reanchored_iff_relocated(
     (hit,) = relocated
     assert f"criterion_id: {hit['criterion_id']}\n" in wrapper.criterion_field + "\n", (
         "the re-anchored verdict is not the seeded unit's criterion")
+    # And the seeded unit's submission: the quote occurs in the request's submission field and
+    # in this verdict's canonical document only.
+    holders = {sid for sid, raw in documents.items()
+               if wrapper.seeded["text"].encode("utf-8") in raw}
+    assert wrapper.seeded["text"] in wrapper.submission_field
+    assert holders == {hit["submission_id"]}, (holders, hit["submission_id"])
     spans = json.loads(hit["cited_spans"])
     assert any((s["start"], s["end"], s["text"]) == (
         wrapper.seeded["start"], wrapper.seeded["end"], wrapper.seeded["text"]) for s in spans), (

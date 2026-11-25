@@ -13,7 +13,8 @@ judged line holistic) and once under the new ones (0.95, FR-PKG-29's default sco
 2. The review queue equals the cells with `routing != auto`, in both runs. The queue is the one
    M-REVIEW builds (`open_review(...).build_queue`, a read with `record=False`), with a budget
    that shows every flagged item.
-3. Escalation enqueues use the frozen thresholds. The escalation decision (`should_escalate`)
+3. Escalation enqueues use the frozen thresholds. (After each run is created, the environment
+   is flipped to the other multiplier, so every value the drive uses must be the frozen one.) The escalation decision (`should_escalate`)
    reads no auto-accept threshold and no multiplier. So the honest form of this oracle is that
    the multiplier moves no escalation: every cell's panel size and its set of judge work units
    are identical across the two runs.
@@ -74,6 +75,9 @@ def _drive(root: Any, monkeypatch: Any, multiplier: str | None) -> dict[str, Any
     world._run_cfg_overrides = _agg_from_environment  # the entry points' composition
     world.build_run()
     world.start_run()
+    # From here on the environment says the OTHER value, so the routing can only come from
+    # the run's frozen knobs: a hook that read the environment live would swap the runs.
+    monkeypatch.setenv(HOLISTIC_ENV, "0.95" if multiplier == "0.85" else "0.85")
     try:
         result = pipe_world.drive_composed(world)
         assert result.status == "complete", (result.status, result.pause_reason)
@@ -120,6 +124,7 @@ def _drive(root: Any, monkeypatch: Any, multiplier: str | None) -> dict[str, Any
     for entry in queue.shown:
         for item in getattr(entry, "members", None) or (entry,):
             shown.add((str(item.submission_id), str(item.criterion_id)))
+    bands = {cell: sorted(values) for cell, values in bands.items()}
     return {"models": models, "scores": scores, "bands": bands, "units": units,
             "metrics": metrics, "report": report, "queue": shown, "knobs": knobs}
 
