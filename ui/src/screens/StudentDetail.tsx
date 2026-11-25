@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { FileText, TriangleAlert } from "lucide-react";
 import type { CriterionDetail, LogsDoc, StudentDetail as DetailDoc } from "../api";
+import { GradeFooter } from "../components/GradeFooter";
 import { HeldBack } from "../components/HeldBack";
+import { rangeText, uncheckedCount } from "../gradeRange";
 import { ReadScreen } from "../components/ReadScreen";
 import { OverrideForm, type OverrideChange } from "../components/Override";
 import { useToast } from "../state/StateDisplay";
@@ -226,14 +228,23 @@ export function StudentDetail({ submissionId }: { submissionId: string }) {
             </p>
           ) : (
             <p className="hub-state">
-              {studentName(doc)} — total {doc.total ?? "—"}
+              {studentName(doc)}
+              {/* FR-UI-50: a grade that could still move shows its range below, not a point. */}
+              {rangeText(doc, uncheckedCount(doc.criteria)) === null
+                ? ` — total ${doc.total ?? "—"}` : ""}
               {doc.state !== null && doc.state !== ""
                 ? `, ${scoreStateLabel(doc.state).toLowerCase()}`
                 : ""}
               .
             </p>
           )}
-          {doc.hidden_until_blind !== true && doc.total_points != null && doc.total_max != null && (
+          {doc.hidden_until_blind !== true &&
+            rangeText(doc, uncheckedCount(doc.criteria)) !== null ? (
+            // FR-UI-50: a grade unreviewed lines could move reads as its range.
+            <p className="hub-state grade-range" data-grade-range="">
+              Total grade {rangeText(doc, uncheckedCount(doc.criteria))}.
+            </p>
+          ) : doc.hidden_until_blind !== true && doc.total_points != null && doc.total_max != null && (
             <p className="hub-state">
               Total grade {doc.total_points} / {doc.total_max}
               {doc.grade ? ` — ${doc.grade}` : ""}.
@@ -366,6 +377,8 @@ export function StudentDetail({ submissionId }: { submissionId: string }) {
               </ul>
             </section>
           )}
+          {/* FR-UI-51: one line below the content naming what produced this grade. */}
+          <GradeFooter runId={doc.run_id} />
         </>
         );
       }}

@@ -87,6 +87,64 @@ function BlindFirstBanner({ data }: { data: MonitorDoc }) {
   );
 }
 
+/**
+ * The completion banner once there is no blind sample to mark (FR-UI-49, FR-CONSOLE-82/93):
+ * the server's own `next`, in its order — the whole-grade sample, then the results.
+ */
+function CompletionBanner({ next }: { next: { label: string; route: string }[] }) {
+  const navigate = useNavigate();
+  return (
+    <div className="outcome-banner outcome-done" role="region" aria-label="Marking finished">
+      <p className="action-outcome">
+        <strong className="outcome-what">Marking finished.</strong>{" "}
+        {next.map((step, index) => (
+          <span key={step.route}>
+            <button
+              type="button"
+              className={index === 0 ? "button button-primary" : "button"}
+              onClick={() => navigate(step.route)}
+            >
+              {step.label}
+            </button>{" "}
+          </span>
+        ))}
+      </p>
+    </div>
+  );
+}
+
+/** What the run is doing, by stage, in the teacher's words. */
+const STAGE_WORDS: Record<string, string> = {
+  extract: "Reading the papers",
+  deterministic: "Marking the multiple-choice answers",
+  score: "Marking",
+};
+
+/**
+ * FR-UI-52: where the run is — "Marking · question <q> line <c> of <n> · grader <j> of <m>" —
+ * from the served position (FR-CONSOLE-95), and nothing per student. Shown only while the run
+ * is under way: once nothing is open the report points at the end of both axes.
+ */
+export function positionLine(data: MonitorDoc): string | null {
+  if (data.status !== "running" || !data.stage) {
+    return null;
+  }
+  const stage = STAGE_WORDS[data.stage] ?? null;
+  if (stage === null) {
+    return null;
+  }
+  const criterion = data.criterion_position;
+  const judge = data.judge_position;
+  if (data.stage !== "score" || !criterion || !judge || criterion.total === 0) {
+    return stage;
+  }
+  const question = criterion.label ? `question ${criterion.label} ` : "";
+  return (
+    `${stage} · ${question}line ${criterion.index} of ${criterion.total} · ` +
+    `grader ${judge.index} of ${judge.total}`
+  );
+}
+
 export function Monitor() {
   const read = useScreenRead<MonitorDoc>("/api/v1/monitor", useRunParams(), POLL_MS);
   return (
@@ -96,6 +154,8 @@ export function Monitor() {
           {data.status === "complete" && data.blind_sample === "open" && (
             <BlindFirstBanner data={data} />
           )}
+          {data.status === "complete" && data.blind_sample !== "open" &&
+            (data.next ?? []).length > 0 && <CompletionBanner next={data.next ?? []} />}
           <p className="hub-state">
             {data.run_id === null
               ? "The console serves no run."
@@ -103,6 +163,11 @@ export function Monitor() {
                 (data.pause_reason ? ` (paused: ${data.pause_reason})` : "") +
                 "."}
           </p>
+          {positionLine(data) !== null && (
+            <p className="monitor-position" data-run-position="">
+              {positionLine(data)}
+            </p>
+          )}
           {data.progress !== null && (
             <section className="panel">
               <h2>Progress</h2>

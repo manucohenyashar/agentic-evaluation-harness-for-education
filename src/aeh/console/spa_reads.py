@@ -388,6 +388,10 @@ def context_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
         else:
             cohorts.append(entry)
     packages = _package_rows(app, data_dir)
+    from .run_provenance import run_provenance
+    from .version_labels import version_label_for
+
+    version_label = version_label_for(app._store) if data_dir is not None else (lambda _v: None)
     unfinalized: dict[str, int] = {}
     runs: list[dict[str, Any]] = []
     for row in run_rows:
@@ -413,6 +417,10 @@ def context_read(console: Any, app: Any, query: Any) -> dict[str, Any]:
             "stage": stage,
             "started_at": row["started_at"],
             "completed_at": row["completed_at"],
+            # FR-UI-51 (#878): what graded the run, in teacher words — the footer every grade
+            # view carries, read from the run's frozen configuration.
+            "provenance": run_provenance(app, str(row["cohort_id"]), run_id,
+                                         str(row["package_version_id"]), version_label),
         })
     return {
         "classes": classes,

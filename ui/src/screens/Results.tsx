@@ -3,6 +3,8 @@ import { CircleCheck, TriangleAlert } from "lucide-react";
 import type { ResultsScreen as ResultsDoc, ResultStudent } from "../api";
 import { ConfirmDialog, useActionState } from "../components/Confirm";
 import { ElapsedClock } from "../components/Elapsed";
+import { GradeFooter } from "../components/GradeFooter";
+import { rangeText, uncheckedCount } from "../gradeRange";
 import {
   describedBy,
   errorIdFor,
@@ -62,11 +64,22 @@ function matchesFilters(student: ResultStudent, search: string, level: string, f
   if (level !== "" && !student.criteria.some((criterion) => criterion.criterion_band === level)) {
     return false;
   }
+  if (flag === COULD_MOVE) {
+    // FR-UI-50: the students whose unreviewed lines could move their grade (a held-back
+    // student's risk is not served, so they never match).
+    return Boolean(student.boundary_at_risk) && student.hidden_until_blind !== true;
+  }
   if (flag !== "" && !student.criteria.some((criterion) => criterion.flag === flag)) {
     return false;
   }
   return true;
 }
+
+/** The flag filter's FR-UI-50 choice: "Could move a grade". */
+const COULD_MOVE = "could_move_grade";
+
+/** The whole-grade sample's screen (FR-UI-49), offered from Results. */
+const WHOLE_GRADE_ROUTE = "/results/whole-grade";
 
 /** One bar in a stat chart, as the served stats name it: a filled share of the row, the
  * label beside it. A chart that is a table with bars, not a pooled histogram. */
@@ -237,6 +250,8 @@ export function Results() {
     // FR-UI-33's confirmation names what it does out of the API's own document: how many
     // answers were accepted as the AI graded them, and that a later change is recorded.
     const not_final = doc.not_final_questions ?? 0;
+    // FR-UI-50: of those, how many could move a student's grade — the served count.
+    const could_move = doc.boundary_risk_count ?? 0;
     const test = (doc.package_version_id ?? "").split("@")[0] ?? "";
     // FR-UI-39: approving does not close the blind sample, and while it is open (the read
     // holds its drawn marks back) the confirmation says so.
@@ -251,8 +266,9 @@ export function Results() {
             "You can still change a grade afterward; the change is recorded." + blindOpen
           : `Approve all grades for ${doc.cohort_id ?? "this class"} — ` +
             `${test || "this test"}? ${not_final} answers you have not checked will be ` +
-            "accepted as the AI graded them. You can still change a grade afterward; " +
-            "the change is recorded." + blindOpen,
+            `accepted as the AI graded them; ${could_move} of them could move a student's ` +
+            "grade. You can still change a grade afterward; the change is recorded." +
+            blindOpen,
       confirm: "Approve all",
       action: "finalize batch",
       body: { run_id: doc.run_id, actor: "operator" },
@@ -363,6 +379,7 @@ export function Results() {
                       <option value="second_opinion">Second opinion</option>
                       <option value="low_confidence">Low confidence</option>
                       <option value="not_final">Not final yet</option>
+                      <option value={COULD_MOVE}>Could move a grade</option>
                     </select>
                     <FormatLine id={formatIdFor("flag-filter")} spec="Show only the students with this flag" />
                   </label>
@@ -393,6 +410,10 @@ export function Results() {
                         {student.hidden_until_blind === true ? (
                           <span className="total-grade">
                             Total grade: <HeldBack link={false} />
+                          </span>
+                        ) : rangeText(student, uncheckedCount(student.criteria)) !== null ? (
+                          <span className="total-grade grade-range" data-grade-range="">
+                            Total grade: {rangeText(student, uncheckedCount(student.criteria))}
                           </span>
                         ) : student.total_points != null && student.total_max != null ? (
                           <span className="total-grade">
@@ -529,6 +550,8 @@ export function Results() {
             {doc.run_id !== null && doc.students.length > 0 && <Downloads key={doc.run_id} doc={doc} />}
             {doc.run_id !== null && <KeyCorrection key={`key-${doc.run_id}`} doc={doc} onDone={read.retry} />}
             {doc.run_id !== null && <ReviewWindow key={`window-${doc.run_id}`} runId={doc.run_id} onDone={read.retry} />}
+            {/* FR-UI-51: one line below the content naming what produced these grades. */}
+            <GradeFooter runId={doc.run_id} />
           </>
         );
       }}
@@ -577,7 +600,11 @@ function FinalGradesBanner({ doc, onApproveAll }: {
             <CircleCheck size={18} aria-hidden="true" />
             <strong className="outcome-what">All grades are final.</strong>
           </>
-        )}
+        )}{" "}
+        {/* FR-UI-49: a few whole grades read end to end, offered here as from Monitor. */}
+        <button type="button" className="button" onClick={() => navigate(WHOLE_GRADE_ROUTE)}>
+          Whole-grade sample
+        </button>
       </p>
     </div>
   );

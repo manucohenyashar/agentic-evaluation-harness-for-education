@@ -1288,6 +1288,60 @@ textarea:focus-visible {
   margin: 0 0 var(--space-xs);
 }
 
+/* FR-UI-53: the mark as scanned, kept small so the card's note and actions stay in view. */
+.parked-crop {
+  margin: 0 0 var(--space-sm);
+}
+
+.parked-crop figcaption {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  margin-bottom: var(--space-xs);
+}
+
+.parked-crop img {
+  display: block;
+  max-width: 100%;
+  max-height: 12rem;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+}
+
+/* FR-UI-51: the one provenance line below every grade view's content. */
+.grade-footer {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+  border-top: 1px solid var(--color-line);
+  margin-top: var(--space-md);
+  padding-top: var(--space-xs);
+}
+
+/* FR-UI-52: the run's position under its stage. */
+.monitor-position {
+  margin: 0 0 var(--space-sm);
+}
+
+/* FR-UI-49: the whole-grade question, its answers and Skip's cost, above the grades. */
+.whole-grade-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.whole-grade-ask .field-format,
+.whole-grade-skip-cost {
+  margin: var(--space-xs) 0 0;
+}
+
+.whole-grade-list {
+  list-style: none;
+  margin: var(--space-md) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-sm);
+}
+
 .parked-resolutions {
   margin: 0 0 var(--space-sm);
   padding-left: 1.25rem;

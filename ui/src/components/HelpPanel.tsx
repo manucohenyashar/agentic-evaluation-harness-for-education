@@ -40,7 +40,7 @@ const SCREEN_SECTIONS: Array<[route: string, keyword: string]> = [
 /** The screen id the ask's context carries: the route as a slug, with the parameterized
  * routes collapsed to their page. Whitespace-free, as `aeh/help/context.py` requires. */
 function screenIdOf(route: string): string {
-  if (route.startsWith("/results/students/")) {
+  if (route.startsWith("/results/students/") || route === "/results/whole-grade") {
     return "results";
   }
   if (route === "/review/blind") {

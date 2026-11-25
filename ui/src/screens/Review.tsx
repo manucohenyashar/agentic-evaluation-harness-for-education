@@ -7,6 +7,7 @@ import {
   type ReviewQueue as ReviewQueueDoc,
 } from "../api";
 import { FieldError, FormatLine, useFieldIds } from "../components/Field";
+import { GradeFooter } from "../components/GradeFooter";
 import { BusyButton, DisabledReason, isRefused, plainText, textOutcome, useOutcome } from "../components/Outcome";
 import { ReadScreen } from "../components/ReadScreen";
 import { useNavigate } from "../navigate";
@@ -167,6 +168,8 @@ export function Review() {
                 ))}
               </ul>
             )}
+            {/* FR-UI-51: the items' levels name what produced them. */}
+            <GradeFooter runId={data.run_id} />
           </>
         );
       }}

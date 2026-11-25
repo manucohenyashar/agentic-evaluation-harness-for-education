@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ComponentType, type ReactElement } from "react";
 import type { ContextDoc } from "./api";
+import { ContextDocContext } from "./components/GradeFooter";
 import { HelpPanel } from "./components/HelpPanel";
 import { Navigate, type SelectionPatch } from "./navigate";
 import { SelectionContext } from "./selection";
@@ -24,6 +25,7 @@ import { RunStart } from "./screens/RunStart";
 import { Settings } from "./screens/Settings";
 import { StudentDetail } from "./screens/StudentDetail";
 import { SystemStatus } from "./screens/SystemStatus";
+import { WholeGradeSample } from "./screens/WholeGradeSample";
 import { NotFound } from "./screens/screens";
 import { useContextPoll } from "./useContextPoll";
 import { ContextHeader } from "./wizard/ContextHeader";
@@ -207,6 +209,8 @@ export function App() {
     screen = <StudentDetail submissionId={student[1] ?? ""} />;
   } else if (address.path === "/review/blind") {
     screen = <BlindSample />;
+  } else if (address.path === "/results/whole-grade") {
+    screen = <WholeGradeSample />;
   } else if (address.path === "/help") {
     // The help screen reads nothing of its own (TC-REQ-129), so its degradation
     // (FR-UI-07) rides the shell's context read's failure: a named message and the
@@ -268,6 +272,7 @@ export function App() {
 
   return (
     <Navigate.Provider value={goTo}>
+      <ContextDocContext.Provider value={context}>
       <SelectionContext.Provider value={selection}>
       <ToastHost>
       <OutcomeHost route={address.path}>
@@ -302,6 +307,7 @@ export function App() {
       </OutcomeHost>
       </ToastHost>
       </SelectionContext.Provider>
+      </ContextDocContext.Provider>
     </Navigate.Provider>
   );
 }
