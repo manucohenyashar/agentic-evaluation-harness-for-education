@@ -98,7 +98,8 @@ you mark by judgement says how the system will mark it:
 
 Beside a choice the system made on its own it says *(chosen automatically)*. For up to six such
 lines it offers **Change**, with the two choices above; whichever you pick (even the one already
-shown) becomes your choice when you approve the draft. Any further lines are listed under the
+shown) reads *(your choice)* at once and is kept as your choice when you approve the draft. Any
+further lines are listed under the
 outline as *"chosen automatically and stays as shown"* rather than asked, so the questions never
 take more than a few minutes. If you are unsure, leave a line as shown.
 
@@ -243,15 +244,19 @@ version in this shape and ask you to approve it.
 How long a class-scale run takes has not been measured yet — the live-test guide tracks what the
 runs so far cost and took, and the first full-class run supplies the real figure. There is no
 overnight schedule to rely on: the run finishes when it finishes, and you read its progress on the
-monitor.
+monitor. While the answers are being marked, **Monitor run** (`/#/monitor`) says where the run
+is, in one line such as *"Marking · question Q2 line 3 of 12 · grader 2 of 3"*: which rubric line
+of how many is being marked (with its question, when the test names one), and by which of the
+graders. It never shows a figure per student,
+because the marking goes line by line across the whole class, not student by student.
 
 ### What you can do when the run is ready — optional review
 
 | Activity | Time | What it is for |
 |---|---|---|
 | **Blind sample** | 10–20 min | Offered first, when marking finishes. The system draws about 15 answers at random and you mark them at `/#/review/blind` **without seeing the system's marks**, on each question's own levels. It is the only honest measure of how closely the marking matches yours — see the next section. |
-| **Review the flagged marks** | You choose | The review queue (`/#/review`). Type how many minutes you have (*I have [30] minutes*) and press **Go**: the screen says how many of those minutes are set aside for the blind sample, shows the most useful flagged answers that fit in the rest, and says how many stay provisional and in your queue. Answers that all show the same pattern come as one group — three of the papers side by side, one level to choose, **Apply to all** or **Review one by one**. Every other answer shows its feedback, what the paper shows and the levels (the proposed one marked), then **Accept**, **Change** or **Skip**, and *Flagged because:* with the reason. |
-| **Whole-grade sample** | about 5 min | The system can draw 10–15 complete final grades for you to read through exactly as the student will see them — but no screen serves this in the current version, so it is not yet something you can do from the browser. |
+| **Review the flagged marks** | You choose | The review queue (`/#/review`): you say how many minutes you have, and it shows the flagged answers most worth checking in that time — see *The review queue* below. |
+| **Whole-grade sample** | about 5 min | 10 to 15 students' complete grades, drawn for you to read end to end exactly as each student will receive them, at `/#/results/whole-grade` — see *The whole-grade sample* below. |
 
 If you do none of these, the run's available results remain visible; provisional or ungraded work
 is still shown as such.
@@ -337,6 +342,121 @@ marking matched yours"**:
 Nothing in the block, or anywhere else, claims the marking is "accurate": it says how closely the
 system's levels matched yours on the answers you marked, and how many answers that rests on.
 
+### The review queue: the minutes you have, not a risk level
+
+**Where.** **Review** (`/#/review`), or **Check answers** on Results. At the top: *I have [30]
+minutes* and **Go**. Type how many minutes you can give it today — a whole number from 1 to 480 —
+and press **Go**; the queue is rebuilt for that time.
+
+**Why it asks for minutes.** A queue of "every answer above some risk level" has no end you can
+plan for: on a hard test it can be hundreds of answers, and the ones that matter most sit among
+the ones that hardly matter. So the system works the other way round. It ranks every flagged
+answer by how much your check is worth — how likely the mark is to be wrong, times how much it
+would change, for the time it takes you to check — and shows the best ones that fit in your
+minutes. Nothing is dropped: the answers that do not fit stay provisional and stay in your queue
+for another day, and the header says how many. The header reads, for example:
+
+> *"10 of those 30 minutes are reserved for the blind sample and spent there. These are the 14
+> highest-value answers of 63 flagged, in the other 20. The remaining 49 stay provisional and in
+> your queue."*
+
+The blind sample's minutes come off the top first, because it is the only measure of how well
+the marking matches yours. The blind sample itself is never listed in this queue; *Open the blind
+sample* takes you to its own screen.
+
+**Groups: one decision for answers that look alike.** When several answers on the same rubric
+line show the same pattern, they come as one card at the top: *"6 students · Q3 · line C3a — all
+show the same pattern"*, a sentence describing the pattern, three of the papers side by side, and
+the levels with the proposed one marked. Choose a level and press **Apply to all 6**: the screen
+answers *"6 answers marked Good as one decision; each is recorded on its own."* — every answer
+gets its own record, exactly as if you had marked them one at a time. If one of those answers
+changed after the queue was shown, it is refused by name and the rest go ahead. **Review one by
+one** lists the students instead, each linking to that student's own page.
+
+**Single answers.** Every other answer shows, in this order: its feedback, *What the paper shows*
+(the words the graders quoted), the levels — the proposed one marked *(proposed)*, and beside a
+level which graders chose it (*chosen by Grader 1, Grader 2*) — then **Accept**, **Change** or
+**Skip**, and finally *Flagged because:* with the reason in words: *panel disagreement*, *near a
+grade boundary*, *reading uncertain* or *this line is often changed*. There is no confidence
+number anywhere on the screen. **Skip** changes nothing: the answer stays provisional and in your
+queue.
+
+### Why a grade may show as a range, and what approving does to it
+
+While some of a student's answers are still unchecked, their grade is not settled. If checking
+those answers could move the student across a grade boundary, Results and the student's page show
+a range instead of a single figure — for example *"Total grade: 62–71 (B–C) until 3 answers are
+checked"*, or *"62–71 points until 3 answers are checked"* when the test has no grade boundaries.
+A student whose unchecked answers could not change their grade simply shows the grade. To find
+the students whose grade could move, choose **Could move a grade** in the *Flag* filter on
+Results; checking their answers in the review queue is the quickest way to settle them.
+
+**Approving.** **Approve all grades** on Results asks first, and the question counts what you are
+about to accept: *"Approve all grades for 10a — physics-midterm? 49 answers you have not checked
+will be accepted as the AI graded them; 7 of them could move a student's grade. You can still
+change a grade afterward; the change is recorded."* Approving accepts every unchecked answer as
+the AI marked it, so each student's grade is settled at the figure the system's own marks add up
+to — the range only showed how far that figure could have moved if you had checked. (If the test
+has a review window, the grades stay provisional until the window ends.)
+
+### The whole-grade sample
+
+The review queue shows single answers. The whole-grade sample shows something the queue cannot:
+a few students' **complete** results, read end to end exactly as each student will receive them.
+
+**Where you meet it.** Once marking has finished and no blind sample is waiting (you finished or
+skipped it, or none was drawn), **Monitor run**
+(`/#/monitor`) shows *Marking finished.* with **Check a few whole grades** and **See the
+results**; Results also carries a **Whole-grade sample** button. Both open
+`/#/results/whole-grade`.
+
+**What it shows.** 10 to 15 students, drawn from the answers the system accepted on its own, not
+the ones you reviewed — the screen says so. For each student: the feedback first, then the total
+and grade, then every question's points with the level of each rubric line. If fewer grades were
+accepted on their own, the screen says how many it could draw instead.
+
+**The one question.** *"Do these look like grades you would have given?"*
+
+- **Yes, they do** — records your answer (*"Recorded: these look like grades you would have
+  given."*).
+- **Open a student** — choose a student from the list beside it, and their own page opens, where
+  you can change a mark.
+- **Skip** — the screen says the cost before you press it: *"Skipping means nobody has read a
+  whole paper's result end to end; the grades are delivered either way."*
+
+Neither answer changes a mark, and neither counts toward the agreement figures: this is a check
+that the results read sensibly as a whole, not a measurement. While your blind sample is still
+open, the drawn students' hidden marks stay hidden here too.
+
+### The line under every grade
+
+Every screen that shows a grade — Results, a student's page, the whole-grade sample and the review
+queue — ends with one line naming what produced it, for example:
+
+> *"Marked with physics-midterm version 2 · settings an online AI service · graders three AI
+> graders"*
+
+That is the test and its version, where the marking ran (*an online AI service*, or *on this
+computer, nothing sent out*), and how many AI graders marked each answer. It is read from the
+settings the run was started with, not today's settings, so a test from last term opened from
+**Past tests** still names what marked it then. If a disputed grade comes back years later, this
+line says which version of the test and which graders produced it.
+
+### When the marking runs on this computer
+
+A school can run the whole system on one computer with the AI models on that computer too, so
+that no student work leaves it. The operator sets this up (the deployment tutorial, section 6);
+for you, the screens are the same. Three things tell you it is in use: the line under every grade
+reads *settings on this computer, nothing sent out*; the confirmation before **Load papers** reads
+the scans says *no cost: local models*; and nothing is sent to OpenRouter.
+
+On that computer a separate program, a *model server*, holds the AI models and answers the
+system's requests. Each model is recorded twice: by the exact model file that marked your class
+(that is what makes a grade traceable later), and by `served_as` — the name the model server
+lists that model under, which is the name the system asks the server for. If the operator renames
+a model in the server, only `served_as` changes; the record of which file marked your class does
+not.
+
 ---
 
 ## 6. Exactly what you must approve, and what is optional
@@ -353,7 +473,7 @@ system's levels matched yours on the answers you marked, and how many answers th
 | Review the flagged marks | Every run | **No** |
 | Blind sample | Every run | **No** |
 | Whole-grade sample | Every run | **No** |
-| Finalize the batch | Every run | **No** — you press **Approve all grades** on the Results screen when you are satisfied; until then the grades sit ready to finalize |
+| Finalize the batch | Every run | **No** — you press **Approve all grades** on the Results screen when you are satisfied; its confirmation says how many unchecked answers it accepts and how many of those could move a grade (section 5); until then the grades sit ready to finalize |
 
 Only set-up questions block, all of them once: the question list, the answer keys, and a
 description for any level that has none. After that, the answer is always no.
@@ -372,7 +492,8 @@ citation problems can also leave work ungraded or provisional, even when the run
 - Short written feedback for each rubric line — shown first, because it is the part that helps.
 - The exact quoted sentences from *their own paper* that the mark is based on.
 - The mark itself, shown second, changeable from the student's screen. A change to a final grade
-  needs a reason and is kept in the record beside the original.
+  needs a reason and is kept in the record beside the original. While unchecked answers could
+  still move the grade across a boundary, it shows as a range (section 5).
 - A flag on any mark the system was unsure about.
 - The grade state calculated with the package's policy when work can be settled; a parked paper
   or unresolved judging/citation problem may leave work ungraded or provisional.
@@ -395,7 +516,9 @@ citation problems can also leave work ungraded or provisional, even when the run
   every class that took this version, each class's contribution with its date, and per-question
   figures once there are enough.
 - Which papers were flagged, which you reviewed, and which are still provisional.
-- Which version of the rubric produced these grades, so a disputed grade can be traced years later.
+- Which version of the rubric produced these grades, so a disputed grade can be traced years later
+  — on screen, the line under every grade names the test version, where the marking ran and the
+  graders (section 5).
 
 **What you will never see:** a single confident headline like *"AI accuracy: 94%."* That number is
 misleading, and the system is deliberately built not to produce it. Even your marked examples
@@ -436,7 +559,8 @@ comes, it is a later version.
 - **Where student work goes.** When the system marks with online models, the papers' text is
   sent to them through OpenRouter. How long it may be kept there is governed by the privacy
   settings of your operator's OpenRouter account; the system does not ask for zero retention
-  itself. Ask your operator how the account is set.
+  itself. Ask your operator how the account is set. When the marking runs on this computer
+  instead (section 5), nothing is sent out at all.
 - **Grades will be issued that no human has looked at.** That is the point — the alternative at 300
   students is no feedback at all. Every such grade is labelled as unreviewed, backed by quoted
   evidence, and changeable by you at any time.

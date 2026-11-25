@@ -183,7 +183,7 @@ You pass one file with `--config`. It can hold a section for each profile, so on
 2. **The environment wins over the file** for these settings: `HARNESS_PROFILE`, `HARNESS_HARDWARE_PROFILE`, `HARNESS_COST_CEILING`, `HARNESS_COST_CURRENCY`, `HARNESS_CONCURRENCY`, `HARNESS_ALLOW_REMOTE_REAL_WORK`, `CONSOLE_BIND`, `CONSOLE_PORT`, and the decision-engine settings (`HARNESS_DECISION_ENGINE`, `HARNESS_DECISION_PROVIDER`, `HARNESS_JEV_BUILD`, `HARNESS_JEV_QUANTIZATION`, and three `HARNESS_JEV_...` limits).
 3. **Some settings can only live in the file:** `prompt_template_v`, the `transcriber` and `panel` models, `retention_setting`, and `allow_remote_real_work_supplied_by`.
 4. A run **keeps the profile it started with.** Resuming it under another profile is refused, and the message names the profile it expects.
-5. Model tables are written like this: `role`, `provider`, `build_id`, and (local mode only) `quantization`.
+5. Model tables are written like this: `role`, `provider`, `build_id`, and (local mode only) `quantization` and `served_as`.
 
 ### 5.3 The settings in plain words
 
@@ -268,6 +268,7 @@ role = "transcriber"
 provider = "local"
 build_id = "/models/qwen3-vl-8b-instruct-q4.gguf@sha256:<64 hex characters>"
 quantization = "q4"
+served_as = "qwen3-vl:8b-instruct-q4_K_M"
 
 # The judges. List 1, 3 or 5 of these blocks.
 [[profiles.edge-local.panel]]
@@ -275,6 +276,7 @@ role = "judge"
 provider = "local"
 build_id = "/models/qwen3-30b-a3b-q4.gguf@sha256:<64 hex characters>"
 quantization = "q4"
+served_as = "qwen3:30b-a3b-q4_K_M"
 ```
 
 Now the model line itself, part by part. This is the one place where the configuration asks you to assemble a string by hand, so every part of it is explained here.
@@ -288,6 +290,15 @@ Now the model line itself, part by part. This is the one place where the configu
 | The fingerprint | 64 hex characters | The SHA-256 hash of the weights file | `sha256sum /models/qwen3-30b-a3b-q4.gguf` (macOS / Linux) or `Get-FileHash -Algorithm SHA256 C:\models\qwen3-30b-a3b-q4.gguf` (Windows PowerShell). **The system does not check the fingerprint against the file** — the checker accepted one of all zeros. Put the real one in anyway: it is how you can later prove which exact model graded a student |
 | `quantization` (a separate line) | `q4` | How compressed the weights are | Any non-empty label works, but use the one the file's own name carries (`Q4_K_M` → `q4`), so the record later reads true. Missing or empty is refused |
 | `provider` (a separate line) | `local` | How the model is served: `local`, `local-server`, `ollama` or `vllm-mlx` | All four use the same code. Use `local` unless you want the name to describe your server |
+| `served_as` (a separate line) | `qwen3:30b-a3b-q4_K_M` | The name your model server serves this model under. The system asks the server for the model by this name; the `build_id` stays the record of which exact file graded | The name the server lists at `<address>/models` (see the table below). **Required in local mode:** without it the start is refused: *"panel[0] names a local model but not the name the server serves it under; add served_as = "..." with the name your model server lists the model under"*. It is not part of the build's identity, so renaming the model in the server is a config edit, not a new grader |
+
+Where each server gets the `served_as` name from (check it against your server's own documentation and its `<address>/models` list):
+
+| Server | The name it serves a model under |
+|---|---|
+| Ollama | The name `ollama list` shows, **tag included** (for example `qwen3:30b-a3b-q4_K_M`) |
+| llama.cpp (`llama-server`) | The `--alias` you started it with; without one, the server picks a name from the file, so set an alias |
+| vLLM | The `--served-model-name` you started it with; without one, the `--model` value |
 
 **On Windows**, write the path with forward slashes (`C:/models/x.gguf@sha256:...`) or in single quotes (`'C:\models\x.gguf@sha256:...'`). Both were accepted by the checker. In double quotes a backslash is a special character in TOML.
 
@@ -310,13 +321,15 @@ The address must **end in `/v1`**. The system adds `/chat/completions` to it (ch
 > A test against a stand-in server on this machine showed exactly what the system sends. It posts to `<address>/chat/completions` in the standard chat format, with one message per part of the prompt:
 >
 > ```json
-> {"model": "/models/x-q4.gguf@sha256:0000...0000",
+> {"model": "qwen3:30b-a3b-q4_K_M",
 >  "messages": [{"role": "user", "name": "instruction", "content": "Pick a band"},
 >               {"role": "user", "name": "submission", "content": "student text"}],
 >  "temperature": 0.0}
 > ```
 >
-> A page picture is sent as an image part (`"type": "image_url"` with a `data:image/png;base64,...` address), which is what vision models expect. One thing is still unusual: the `model` is the whole `build_id`, including the file path and the fingerprint. Servers such as Ollama, llama.cpp and vLLM usually want the name they serve the model under. **Whether your server accepts this as it is has not been checked.** Before a real test, send one real request and see. If the server refuses the model name, you will need to fix that; it is engineering work.
+> A page picture is sent as an image part (`"type": "image_url"` with a `data:image/png;base64,...` address), which is what vision models expect. The `model` is the block's `served_as` name (6.3), never the file path: the system records the `build_id` as the build that answered, and keeps the name the server reported beside it in the AI-call log. **A real server has still not been tried.** Before a real test, send one real request and see that the server accepts the `served_as` name.
+>
+> The system declares as many requests at a time as the hardware profile allows (4 on `unified-large`, 3 on `discrete-gpu`, 2 on `unified-small`). If your server was started with fewer parallel slots, set `HARNESS_LOCAL_MAX_CONCURRENCY` to the number it can take.
 
 ### 6.6 Start it
 
@@ -350,6 +363,22 @@ Checked: with this file the console started and `/runs/run-dev-pipe/monitor` ret
 | The request the system sends, and the address it uses | How fast or accurate the models are on your computer |
 | `aeh run` under `edge-local` on a finished practice run succeeds (nothing needed a model) | Windows |
 
+### 6.7 Try your server before a class: the local check
+
+Before grading a real class on this computer, run the local check. It asks your model server for every `served_as` name once, then builds the sample English test, reads its four answer sheets with your page-reading model, grades them with your judge (decision engine off), and prints what happened: the answer to each name, the sheets read, the answers marked per sheet, how often the model refused, how many marks quoted the paper, with `--panel-bands <file>`, how closely its levels matched a recorded panel run (consistency between graders, not accuracy; without the file that stage is reported as skipped), the time it took and the peak memory. It is a check of the path from the system to your server, **not** a test of whether your hardware is fast or good enough. Nothing leaves the machine.
+
+1. Copy [`docs/live-tests/config/live-test.edge-local.toml`](../live-tests/config/live-test.edge-local.toml) and fill in its two model blocks (`build_id`, `quantization`, `served_as`, as in 6.3). The check refuses a block that still holds a `<...>` placeholder or an all-zero fingerprint.
+2. Set `LOCAL_INFERENCE_BASE_URL` (6.5), or pass `--base-url`.
+3. Run it from the project folder:
+
+```bash
+python tools/live_local_check.py --config ~/aeh-config/live-test.edge-local.toml
+```
+
+It grades into a fresh temporary data folder unless you pass `--data-dir` (which must not already hold the sample class). It exits **0** when every stage ran, **1** when one failed (the report names it), and **2** when it refused before sending anything, with the reason — for example no server address, a profile other than `edge-local`, a model block still holding a placeholder, `HARNESS_FIXTURE_DIR` set (that would replay recordings instead of asking your server), a recording folder that already holds a capture, or the sample class already in the data folder. `--record` writes every reply your server gave to `fixtures/F-LOCAL/` (or `--record-dir`), with the configuration it ran under, so the same journey can later be replayed with no server at all.
+
+If your server is slow and replies time out, raise `HARNESS_PROV_CALL_TIMEOUT_S` (seconds per call, default 120). If it serves fewer requests at a time than the hardware profile allows, set `HARNESS_LOCAL_MAX_CONCURRENCY` (6.5). Both are in the knob table (section 10).
+
 ---
 
 ## 7. OpenRouter mode (`cloud-hosted` and `dev-ci`)
@@ -375,7 +404,7 @@ So use `dev-ci`. The two files are almost the same; the differences are in the t
 
 ### 7.3 The configuration files
 
-**`dev-ci`** (the shipped file for the first live test is [`docs/live-tests/config/live-test.dev-ci.toml`](../live-tests/config/live-test.dev-ci.toml); it is accepted by the checker, checked):
+**`dev-ci`** (two files ship for the live tests, both accepted by the checker, checked. [`docs/live-tests/config/live-test.dev-ci.toml`](../live-tests/config/live-test.dev-ci.toml) is the smoke profile: one judge, so it cannot show agreement. [`docs/live-tests/config/live-test.panel.toml`](../live-tests/config/live-test.panel.toml) is the one that can: three judges from three model families, three escalation judges, and the random extra-grader sample at 0.07. The smallest form of the file is):
 
 ```toml
 HARNESS_PROFILE = "dev-ci"
@@ -425,8 +454,8 @@ What each part means, and the rules (all checked unless said):
 * **`HARNESS_COST_CEILING`** is required for both profiles. **It counts estimates, not the bill.** Each model call is counted at the system's fixed price sheet before it is sent: about $0.007 a call with the default settings, while the real calls in 7.6 cost about $0.0001. So a ceiling of `5` stops a run after roughly 700 model calls, whatever OpenRouter actually charges; raise it if a run pauses on the ceiling, and keep OpenRouter's own spending limit (7.2) as the real stop. Without it: *"HARNESS_COST_CEILING is required for backend_profile 'cloud-hosted'"*. It must be a whole or decimal number, not negative. `5` is plenty for ten sample answer sheets. The environment can override it.
 * **`retention_setting`** is required for `cloud-hosted` only. It must be `provider-default` or `zero-retention`. It *records* the retention policy you set on your OpenRouter account. The system does **not** request or enforce it (see 7.6). Leaving it out is refused: *"retention_setting is required for backend_profile 'cloud-hosted'"*.
 * **Model names** are written `openrouter/<vendor>/<model>@<pin>`. The three parts mean different things and come from different places — the table under this list explains each one and how to obtain it. The `@...` part is required, and a moving tag such as `@latest` is refused. Do **not** give these a `quantization` line (the provider owns it).
-* **Do the models exist?** Yes, for the two names in the shipped files: both answered real calls on 2026-10-03 (checked). How to confirm any model yourself is in the table below.
-* **Judges:** one judge is the smallest test, but with one judge nobody can disagree, so the system cannot show agreement figures. For a real accuracy test, use **three** judges from different model families (add two more `[[profiles....panel]]` blocks). An even number such as two is refused: *"panel must hold [1, 3, 5] judges, got 2"*.
+* **Do the models exist?** Yes, for the two names in the example above: both answered real calls on 2026-10-03 (checked). The judges in `live-test.panel.toml` were listed on openrouter.ai, each with a zero-retention host, on 2026-11-19 (that matters only if your account's privacy settings require zero retention); apart from `qwen3-30b-a3b`, they have not yet answered a real call from this system. How to confirm any model yourself is in the table below.
+* **Judges:** one judge is the smallest test, but with one judge nobody can disagree, so the system cannot show agreement figures. For a real accuracy test, use **three** judges from different model families (add two more `[[profiles....panel]]` blocks), or start from `live-test.panel.toml`, which already has them. An even number such as two is refused: *"panel must hold [1, 3, 5] judges, got 2"*.
 * **`HARNESS_CONCURRENCY`** sets how many calls run at once. The default is 8. Here it *sets* the number (it does not just lower it): `20` is accepted. OpenRouter's own rate limits may refuse a high number.
 
 **The model string, part by part.** A model name such as `openrouter/qwen/qwen3-30b-a3b@2026-06-01` is three parts glued together, each with its own meaning and its own source:
@@ -731,6 +760,8 @@ All are optional. The default is the production value. They exist so a slower co
 | `HARNESS_CONSOLE_AUTO_OPEN` | Set `0`, `false` or `off` to stop the console opening the browser (or use `--no-open`) | browser opens |
 | `HARNESS_CONCURRENCY` | Calls at once (see 6.2 and 7.3) | Hardware limit (local); 8 (OpenRouter) |
 | `LOCAL_INFERENCE_BASE_URL` | Local model server address | `http://127.0.0.1:8080/v1` |
+| `HARNESS_LOCAL_MAX_CONCURRENCY` | Requests sent to the local model server at once, for a server started with fewer parallel slots (see 6.5) | The hardware profile's number |
+| `HARNESS_PROV_CALL_TIMEOUT_S` | Seconds one model call may take before it counts as failed; raise it for a slow local model (see 6.7) | 120 |
 | `OPENROUTER_API_KEY` | Your key (never in a file) | none |
 | `OPENROUTER_BASE_URL` | OpenRouter address | `https://openrouter.ai/api/v1` |
 | `HARNESS_FIXTURE_DIR` | Set it and `dev-ci` replays recordings from this folder instead of calling OpenRouter | not set |
@@ -785,6 +816,7 @@ Every message is the system's real wording (checked unless said).
 | `HARNESS_QA_MODEL is not a resolved build identity` | The Q&A model has a moving tag (`:free`, `@latest`) or no `@` pin | Pin it, e.g. `vendor/model@2026-09-01` |
 | `panel[0] is a provider-pinned build, but ... 'edge-local' requires a edge-weights build` | An OpenRouter-style name in local mode | Use a file path ending `.gguf` (or another weights suffix), plus fingerprint and `quantization` |
 | `panel[0] is not a resolved build identity` | Missing `@...` pin or fingerprint, a moving tag, or no `quantization` (local) | Pin the model (6.3, 7.3) |
+| `panel[0] names a local model but not the name the server serves it under` | A local model block has no `served_as` | Add `served_as` with the name your server lists (6.3) |
 | `panel must hold [1, 3, 5] judges, got 2` | Even panel | Use 1, 3 or 5 judges |
 | `HARNESS_COST_CEILING is required for backend_profile ...` | OpenRouter profiles need a limit | Add the ceiling and the currency |
 | `retention_setting is required for backend_profile 'cloud-hosted'` | Privacy choice not recorded | Add `retention_setting` |

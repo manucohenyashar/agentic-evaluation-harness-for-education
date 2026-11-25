@@ -363,6 +363,22 @@ Checked: with this file the console started and `/runs/run-dev-pipe/monitor` ret
 | The request the system sends, and the address it uses | How fast or accurate the models are on your computer |
 | `aeh run` under `edge-local` on a finished practice run succeeds (nothing needed a model) | Windows |
 
+### 6.7 Try your server before a class: the local check
+
+Before grading a real class on this computer, run the local check. It asks your model server for every `served_as` name once, then builds the sample English test, reads its four answer sheets with your page-reading model, grades them with your judge (decision engine off), and prints what happened: the answer to each name, the sheets read, the answers marked per sheet, how often the model refused, how many marks quoted the paper, with `--panel-bands <file>`, how closely its levels matched a recorded panel run (consistency between graders, not accuracy; without the file that stage is reported as skipped), the time it took and the peak memory. It is a check of the path from the system to your server, **not** a test of whether your hardware is fast or good enough. Nothing leaves the machine.
+
+1. Copy [`docs/live-tests/config/live-test.edge-local.toml`](../live-tests/config/live-test.edge-local.toml) and fill in its two model blocks (`build_id`, `quantization`, `served_as`, as in 6.3). The check refuses a block that still holds a `<...>` placeholder or an all-zero fingerprint.
+2. Set `LOCAL_INFERENCE_BASE_URL` (6.5), or pass `--base-url`.
+3. Run it from the project folder:
+
+```bash
+python tools/live_local_check.py --config ~/aeh-config/live-test.edge-local.toml
+```
+
+It grades into a fresh temporary data folder unless you pass `--data-dir` (which must not already hold the sample class). It exits **0** when every stage ran, **1** when one failed (the report names it), and **2** when it refused before sending anything, with the reason — for example no server address, a profile other than `edge-local`, a model block still holding a placeholder, `HARNESS_FIXTURE_DIR` set (that would replay recordings instead of asking your server), a recording folder that already holds a capture, or the sample class already in the data folder. `--record` writes every reply your server gave to `fixtures/F-LOCAL/` (or `--record-dir`), with the configuration it ran under, so the same journey can later be replayed with no server at all.
+
+If your server is slow and replies time out, raise `HARNESS_PROV_CALL_TIMEOUT_S` (seconds per call, default 120). If it serves fewer requests at a time than the hardware profile allows, set `HARNESS_LOCAL_MAX_CONCURRENCY` (6.5). Both are in the knob table (section 10).
+
 ---
 
 ## 7. OpenRouter mode (`cloud-hosted` and `dev-ci`)
@@ -744,6 +760,8 @@ All are optional. The default is the production value. They exist so a slower co
 | `HARNESS_CONSOLE_AUTO_OPEN` | Set `0`, `false` or `off` to stop the console opening the browser (or use `--no-open`) | browser opens |
 | `HARNESS_CONCURRENCY` | Calls at once (see 6.2 and 7.3) | Hardware limit (local); 8 (OpenRouter) |
 | `LOCAL_INFERENCE_BASE_URL` | Local model server address | `http://127.0.0.1:8080/v1` |
+| `HARNESS_LOCAL_MAX_CONCURRENCY` | Requests sent to the local model server at once, for a server started with fewer parallel slots (see 6.5) | The hardware profile's number |
+| `HARNESS_PROV_CALL_TIMEOUT_S` | Seconds one model call may take before it counts as failed; raise it for a slow local model (see 6.7) | 120 |
 | `OPENROUTER_API_KEY` | Your key (never in a file) | none |
 | `OPENROUTER_BASE_URL` | OpenRouter address | `https://openrouter.ai/api/v1` |
 | `HARNESS_FIXTURE_DIR` | Set it and `dev-ci` replays recordings from this folder instead of calling OpenRouter | not set |
