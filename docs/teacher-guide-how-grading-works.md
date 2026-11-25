@@ -98,8 +98,8 @@ you mark by judgement says how the system will mark it:
 
 Beside a choice the system made on its own it says *(chosen automatically)*. For up to six such
 lines it offers **Change**, with the two choices above; whichever you pick (even the one already
-shown) becomes your choice when you approve the draft, and the line then reads *(your choice)*
-instead. Any further lines are listed under the
+shown) reads *(your choice)* at once and is kept as your choice when you approve the draft. Any
+further lines are listed under the
 outline as *"chosen automatically and stays as shown"* rather than asked, so the questions never
 take more than a few minutes. If you are unsure, leave a line as shown.
 
@@ -397,14 +397,15 @@ will be accepted as the AI graded them; 7 of them could move a student's grade. 
 change a grade afterward; the change is recorded."* Approving accepts every unchecked answer as
 the AI marked it, so each student's grade is settled at the figure the system's own marks add up
 to — the range only showed how far that figure could have moved if you had checked. (If the test
-has a review window, the grades stay provisional until the window ends; section 6.)
+has a review window, the grades stay provisional until the window ends.)
 
 ### The whole-grade sample
 
 The review queue shows single answers. The whole-grade sample shows something the queue cannot:
 a few students' **complete** results, read end to end exactly as each student will receive them.
 
-**Where you meet it.** Once the blind sample is finished or skipped, **Monitor run**
+**Where you meet it.** Once marking has finished and no blind sample is waiting (you finished or
+skipped it, or none was drawn), **Monitor run**
 (`/#/monitor`) shows *Marking finished.* with **Check a few whole grades** and **See the
 results**; Results also carries a **Whole-grade sample** button. Both open
 `/#/results/whole-grade`.
