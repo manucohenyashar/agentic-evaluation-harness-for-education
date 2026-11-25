@@ -27,6 +27,7 @@ fields, and the class distribution. Reported in the PR as a duplication of the s
 
 from __future__ import annotations
 
+import csv
 import io
 
 import pytest
@@ -105,7 +106,7 @@ def test_tc_console_124_drawn_students_totals_are_held_back_while_the_draw_is_op
         # R60: the exports carry every total.
         status, text = served.get("/api/v1/results/export", run_id=served.run_id, format="csv")
         assert status == 200, text
-        header, *rows = [line.split(",") for line in text.strip().splitlines()]
+        header, *rows = list(csv.reader(io.StringIO(text.strip())))
         marks = {dict(zip(header, r))["submission_id"]: dict(zip(header, r))["mark"]
                  for r in rows}
         assert set(marks) == set(subs), marks

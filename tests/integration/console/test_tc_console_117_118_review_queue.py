@@ -21,6 +21,7 @@ submission id -> 117's order arm red.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Iterator
 
 import pytest
@@ -223,8 +224,8 @@ def test_tc_console_117_the_built_queue_is_served_as_the_service_builds_it(
         for bad in (0, 481, "thirty"):
             status, body = served.get("/api/v1/review-queue", run_id=served.run_id,
                                       budget_minutes=bad)
-            text = json.dumps(body)
-            assert status == 400 and "1" in text and "480" in text, (bad, status, body)
+            text = json.dumps(body, ensure_ascii=False)
+            assert status == 400 and re.search(r"\b1\b\D{1,12}\b480\b", text), (bad, status, body)
         for good in (1, 480):
             assert _queue(served, good)["budget_minutes"] == good
 
@@ -268,7 +269,13 @@ def test_tc_console_117_the_built_queue_is_served_as_the_service_builds_it(
 def test_tc_console_117_deterministic_lines_never_reach_the_queue(
         tmp_path, monkeypatch, network_guard):
     """TC-CONSOLE-117's deterministic arm, on the validity store (MCQ lines C-01…C-03 beside
-    two judged lines whose cells are queued)."""
+    two judged lines whose cells are queued), in the state M-DET writes (`auto`).
+
+    What keeps them out today is the routing filter: `criterion_score` has no evaluation-mode
+    column, so the store path's mode gate (`ranking._admitted`) defaults every row to judged
+    and a deterministic row routed `queued` WOULD be admitted. M-DET never writes that routing,
+    so it is a latent gap, reported in the PR rather than asserted on a state the system
+    does not produce."""
     from tests.support.validity_seed import ATOMIC, HOLISTIC, ValidityStore
 
     world = ValidityStore(tmp_path / "v")
@@ -283,7 +290,13 @@ def test_tc_console_117_deterministic_lines_never_reach_the_queue(
             document = _queue(served)
             served_criteria = {e["criterion_id"] for e in document["entries"]}
             assert served_criteria and served_criteria <= {ATOMIC, HOLISTIC}, served_criteria
-            assert document["flagged_total"] == 12, document["flagged_total"]
+            judged = served.rows("SELECT COUNT(*) AS n FROM criterion_score WHERE run_id = ? "
+                                 "AND routing IN ('queued', 'provisional')",
+                                 served.run_id)[0]["n"]
+            built = served.server.app._review_service(served.run_id).build_queue(
+                served.run_id, 30, record=False)
+            assert document["flagged_total"] == built.flagged_total == judged, (
+                document["flagged_total"], built.flagged_total, judged)
             assert not served_criteria & deterministic
     finally:
         world.close()
@@ -315,6 +328,7 @@ def test_tc_console_118_the_group_action_writes_one_label_per_member(
         assert len(labels) == group["size"], f"{len(labels)} labels for {group['size']} members"
         assert sorted(label["student_ref"] for label in labels) == sorted(members)
         assert all(label["criterion_id"] == group["criterion_id"] for label in labels)
+        assert all(label["band"] == group["proposed_band"] for label in labels), labels
         assert {label["label_type"] for label in labels} == {"accept"}, (
             [label["label_type"] for label in labels])
         assert f"{group['size']} answers marked {group['proposed_band']}" in outcome["detail"], (

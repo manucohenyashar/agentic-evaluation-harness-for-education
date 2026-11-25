@@ -195,6 +195,11 @@ def test_tc_console_121_the_monitor_serves_m_orchs_position_and_no_student(
             expected = _expected_position(served.root, served.run_id, questions)
             assert _position(monitor) == expected, (phase, _position(monitor), expected)
             assert monitor["criterion_position"]["label"], (phase, monitor["criterion_position"])
+            if phase == "mid-run":
+                # An anchor independent of the axis derivation: C2 is the first open line.
+                assert monitor["criterion_position"]["label"] == questions["C2"], (
+                    monitor["criterion_position"])
+                assert monitor["judge_position"] == {"index": 1, "total": 2}, monitor
             seen.append(json.dumps(_position(monitor), sort_keys=True))
             named = [k for k in _keys(monitor) if "student" in k.lower()
                      or "submission" in k.lower()]

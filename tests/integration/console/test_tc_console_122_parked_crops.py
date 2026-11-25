@@ -78,6 +78,7 @@ def test_tc_console_122_a_parked_mark_carries_a_same_origin_crop(
         monkeypatch.delenv(name, raising=False)
     store = open_store(tmp_data_dir)
     server = None
+    guard_down = False
     try:
         ids = _ingest_ps9(store, monkeypatch)
         stored_crops = [dict(row) for row in store.cohort("class-ps9").query(
@@ -85,7 +86,13 @@ def test_tc_console_122_a_parked_mark_carries_a_same_origin_crop(
             "ON d.document_id = r.document_id WHERE d.submission_id = :s "
             "AND r.region_kind = 'selection_mark' AND r.crop_ref IS NOT NULL", s=ids[DOUBLED])]
         assert stored_crops, "fixture: intake kept no crop of S9-004's doubled tick"
+        identity = dict(store.cohort("class-ps9").query(
+            "SELECT quarantined, v3_identity FROM submission WHERE submission_id = :s",
+            s=ids[NO_NAME])[0])
+        assert identity["quarantined"] == 1 and identity["v3_identity"] not in (None, "pass"), (
+            f"fixture: S9-006 is not parked by the identity check (V3): {identity}")
         network_guard.uninstall()
+        guard_down = True
         server = serve_console(store=store)
         port = server.socket.getsockname()[1]
         served = ServedRun(world=None, server=server, port=port, root=Path(tmp_data_dir))
@@ -125,6 +132,7 @@ def test_tc_console_122_a_parked_mark_carries_a_same_origin_crop(
         try:
             if server is not None:
                 server.terminate()
+            if guard_down:
                 network_guard.install()
         finally:
             store.close()
