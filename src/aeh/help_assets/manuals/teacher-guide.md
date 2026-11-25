@@ -25,7 +25,7 @@ There are two phases in the teacher's workflow; the operator also handles class 
   The system drafts the package from them; you answer what it left open and approve it.
   Two things block until you confirm: the question list  ·  the answer key for every
   multiple-choice question
-  Not in this version: the questions about your own marking (see Step 5)
+  Optional, recommended: mark a few example papers yourself (see Step 5)
                               |
                               v
   PHASE 2 - GRADE THE PAPERS (every time the test is run)
@@ -33,7 +33,8 @@ There are two phases in the teacher's workflow; the operator also handles class 
   Grading then proceeds without you, but it does not start itself and it is not tied
   to a time of day.
   When the run completes: students whose papers passed intake get the grades, feedback and evidence the run could produce; a parked paper or refusal may leave some work ungraded or provisional.
-  Review is optional. A blind sample, if you take one, is 10-20 minutes.
+  Review is optional. When marking finishes you are offered a blind sample first: about
+  15 answers you mark without seeing the system's marks, 10-20 minutes. You can skip it.
 ```
 
 The important rule: **review is not a grading gate.** If you are ill, busy, or simply do nothing,
@@ -61,9 +62,9 @@ If extraction detects a page gap or duplicate, treat that as an intake problem t
 using the document. The scanned *answer sheets* students hand in stay PDF-only — that is the
 paper-reading path, not the authoring one.
 
-A legacy upload page can store previously marked papers, but the current SPA has no such upload
-control and the stored papers are not used to grade another student's work. The ambiguity questions
-described in Step 5 are not in the SPA workflow.
+Papers you mark yourself come later, in Step 5, once the test is published: you upload
+*unmarked* copies there and enter your marks on a form. They are used only to check how the
+system reads your rubric — never to grade another student's work.
 
 ### Step 2 — Approve the question list ⚠️ **This one blocks. Nothing happens until you confirm it.**
 
@@ -89,39 +90,88 @@ Multiple-choice answers are then marked by simple lookup — no AI judgment is i
 The system shows your rubric back to you in its own words, broken into separate marking lines.
 You can correct it. If you skip this, it uses your rubric exactly as you wrote it.
 
-It will also ask, for some lines, whether they can be split into smaller checks. Example:
+**How each line will be marked.** On the draft review screen (`/#/package/review`) every line
+you mark by judgement says how the system will mark it:
 
-> *"Your line 'shows appropriate working, 5 marks' — can this be marked as four separate checks,
-> or does it only make sense judged as a whole?"*
+- *Marked as a simple check* — present or not; one grader decides unless graders disagree.
+- *Marked as an overall judgement* — three graders from the start; harder to accept without you.
 
-If you are unsure, say so. The system then keeps the line whole. Keeping it whole is always the
-safe option.
+Beside a choice the system made on its own it says *(chosen automatically)*. For up to six such
+lines it offers **Change**, with the two choices above; whichever you pick (even the one already
+shown) becomes your choice when you approve the draft. Any further lines are listed under the
+outline as *"chosen automatically and stays as shown"* rather than asked, so the questions never
+take more than a few minutes. If you are unsure, leave a line as shown.
 
-### Step 5 — Answer up to six questions about your own marking — ⏳ **not in this version**
+**Every level must say what earns it.** A level that is only a name ("Good", "B3") leaves the
+markers guessing, so the draft cannot be approved while any level of a judged line has no
+description. Where your documents give none, the review screen asks, in this shape:
 
-The teacher app has no control for it today. The console's older optional-setup page names the
-step as a surface that arrives in version 2, with nothing to work yet — the SPA's setup flow does
-not show it at all. It is listed here rather than hidden so that you do not go looking for a step
-you think you skipped by accident. **In this version the system will not tell you where your
-rubric is ambiguous.**
+> *"What earns 'Good' on question 2? Say what the answer does, not how good it is."*
 
-What it will do when it arrives: use the papers you already marked to find places where your rubric
-could be read two ways, and ask you to decide. It does **not** rewrite your rubric to match your
-marks. A real example of what you will eventually see:
+Your one-sentence answer becomes that level's description. If a description you wrote leans on
+words like *good*, *excellent*, *correct* or *clearly*, the screen adds a **Note** suggesting you
+say what the answer *does* instead (for example *"names the law and applies it to the case"*).
+The note never blocks approval.
 
-> Your rubric says *"shows appropriate work."*
-> On **Maya's** paper you gave 4 out of 5: she wrote the correct equation but dropped a minus sign.
-> On **Devon's** paper you gave 2 out of 5 for exactly the same pattern. Which did you mean?
->
-> ○ Correct method with an arithmetic slip earns near-full credit
-> ○ Arithmetic errors cap this mark regardless of method
-> ○ It depends on something else *(tell us what)*
+### Step 5 — Mark a few examples yourself (optional, recommended)
 
-Whatever you choose becomes the new wording in the rubric. **You are the author of every change.**
-The system only points at the ambiguity; it never decides what is being measured.
+**What the marked examples are for.** They check one thing: whether the system reads your rubric
+the way you do. You mark a handful of papers, the system marks the same papers with your rubric
+as written, and the screen shows you every place where the two of you chose a different level —
+so an unclear line in your rubric is found *before* it marks a whole class.
 
-There will never be more than six of these questions. Until this step exists, the system grades with
-your rubric exactly as you wrote it — which is also what happens if you skip the step once it does.
+**Where.** Once the test is published, open **Set up a test package** (`/#/package`); under
+*Your marked examples* press **Mark examples** beside the test. That opens
+`/#/package/examples`, which walks four sub-steps and offers **Skip this step** on every one of
+them until the step is done.
+
+1. **Upload unmarked copies** — 1 to 25 PDF answer sheets, one per student (10 to 15 is
+   recommended). They must be *clean* copies: a page with your marks on it is refused, by name —
+   *"Page 2 of maya.pdf has marks on it. Please upload an unmarked copy, and enter your marks in
+   the form."* The first upload also asks whose papers these are; on an online model only
+   made-up practice papers are sent.
+2. **Mark each paper** — on a form like the blind sample's: each answer, and the levels with
+   their descriptions. Choose a level for every part, then **Save my marks for this paper**. The
+   system never sees your marks while it marks.
+3. **Check my examples** — the system marks the papers with your rubric as written. It runs in
+   the background with a clock; the screen says what it cost, and it counts toward the run cost
+   limit.
+4. **See where the system read your rubric differently** — each difference side by side (the
+   answer, *You:* your level, *The system:* its level and its reason), grouped by cause:
+   - *The rubric may be unclear* — a question below asks how you meant it.
+   - *The system misread a clear rule* — reported; your rubric is not changed.
+   - *Two similar answers were marked differently* — both are shown side by side; nothing is
+     changed.
+
+Then come the **questions about your rubric** — at most six, each with examples from your papers:
+should the description of a level be broadened, narrowed or kept as it is, or put in your own
+words. Tick *My students saw this rubric before the test* if they did: the rubric is then not
+changed for this class, and your answers apply to the next one.
+
+**Why the examples never give a percentage.** Nothing on this step counts how often you and the
+system matched, and that is deliberate. The screen says why: *"With a dozen papers you chose, a
+percentage would not tell you how accurate the marking is. That's what the blind sample is
+for."* A dozen papers is far too few, and papers you picked yourself are not a fair draw of the
+class. The examples find *where* your rubric is read differently; the blind sample (section 5)
+is the only place the system measures how closely its marking matches yours.
+
+**What happens to your answers.** Answers that change a description make a *clarified version*
+of your rubric. It is not used straight away: it must pass two checks first.
+
+- An independent check of the wording: if it finds an answer your original and your clarified
+  rubric would mark differently — so the change could alter what the test measures — the
+  clarified version is set aside.
+- A check on your next class: that class is graded **and delivered** with your original rubric,
+  while the clarified version marks the same papers alongside. If it moves no more marks than
+  your school allows, your following class is graded with it; otherwise it is set aside.
+
+Either way the examples screen tells you where it stands in one sentence (for example *"Your
+clarified rubric is checked on your next class before it is used"*), starting a run says so too,
+and a class already graded keeps every mark it was given. **You are the author of every change.** The system only points at the
+difference; it never decides what is being measured.
+
+**If you skip.** Your test is marked with your rubric exactly as you wrote it. If questions were
+already shown when you skip, the parts they were about are recorded as possibly unclear.
 
 **What the system is never allowed to change:** your marks, your weights, the number of rubric
 lines, or what a line is measuring. Those are locked. It may only make the *wording* clearer.
@@ -199,17 +249,93 @@ monitor.
 
 | Activity | Time | What it is for |
 |---|---|---|
-| **Review the flagged marks** | You choose | The run flags marks for review. The SPA review screen (`/#/review`) shows how many marks are flagged and how many grades are still provisional, and lists item identifiers and kinds. Open a student's result to read feedback or change a grade; the decision is recorded there. The SPA has no time-budget picker or group-decision control. |
-| **Blind sample** | 10–20 min | The system draws 15–25 marks at random (submission/criterion seats), and you mark them at `/#/review/blind` **without seeing the system's marks**. Note: that screen currently offers generic B1–B5 labels, not the package's own band names, and cannot validly score custom-band packages — record it as blocked rather than inventing a mapping. This would otherwise be the honest measure of whether the system agrees with you. |
+| **Blind sample** | 10–20 min | Offered first, when marking finishes. The system draws about 15 answers at random and you mark them at `/#/review/blind` **without seeing the system's marks**, on each question's own levels. It is the only honest measure of how closely the marking matches yours — see the next section. |
+| **Review the flagged marks** | You choose | The review queue (`/#/review`). Type how many minutes you have (*I have [30] minutes*) and press **Go**: the screen says how many of those minutes are set aside for the blind sample, shows the most useful flagged answers that fit in the rest, and says how many stay provisional and in your queue. Answers that all show the same pattern come as one group — three of the papers side by side, one level to choose, **Apply to all** or **Review one by one**. Every other answer shows its feedback, what the paper shows and the levels (the proposed one marked), then **Accept**, **Change** or **Skip**, and *Flagged because:* with the reason. |
 | **Whole-grade sample** | about 5 min | The system can draw 10–15 complete final grades for you to read through exactly as the student will see them — but no screen serves this in the current version, so it is not yet something you can do from the browser. |
 
 If you do none of these, the run's available results remain visible; provisional or ungraded work
-is still shown as such. Skipping the blind sample costs you one thing only: the system cannot
-claim any new evidence about its own accuracy for this run, and it says so plainly rather than
-quoting an old number at you.
+is still shown as such.
 
-The console does not show an apply-to-all review action. The review system can group matching items
-in its queue, but that backend capability should not be read as an action in the teacher-facing SPA.
+### The blind sample: what it is, and why it is done blind
+
+**Where you meet it.** Starting a run already tells you that you will be asked to mark about 15
+answers yourself. When marking finishes, **Monitor run** (`/#/monitor`) shows: *"Marking
+finished. Mark 15 answers yourself first, without seeing the system's marks (about 10 min), or
+skip and see the results."* with two buttons, **Mark the sample** and **Skip and see results**.
+The sample is also one click away from the review queue (*Open the blind sample*) and from
+Results.
+
+**On the blind sample screen** (`/#/review/blind`) each drawn answer shows the student's name and
+the question, the student's answer as text, **View the page** to open the scanned page, and the
+question's own levels, each with its description. Nothing is preselected and nothing the system
+decided about the answer is shown. Your choice is saved as you make it (*"N of M marked"* keeps
+count), and you can change it until you press **Finish**. Finishing with answers still unmarked
+asks first: only the ones you marked count. After **Finish** your marks can't be changed, and the
+screen shows *Your marks beside the system's*: for each answer you marked, *You:* your level
+beside *The system:* its level, the differences first, each saying whether the system gave more
+or less credit than you. **See the results** opens Results.
+
+**While the sample is open, the drawn marks stay hidden.** On Results and on a student's page,
+the drawn answers' levels and points, and those students' totals, read *"Hidden until you mark
+your sample or skip it"*, with a **Mark the sample** link. They come back as soon as you finish
+or skip. Approving the grades on Results does not finish the sample — the confirmation says so,
+and you can still mark it afterwards. If the grades' review window ends first, the sample closes
+with the answers you marked by then.
+
+> **One thing the screens cannot hide.** The marks download on Results (the spreadsheet and the
+> CSV) carries every total, on purpose. If you open it while your sample is open, you have seen
+> the marks — so finish or skip the sample first.
+
+**Why marking without seeing the system's marks matters.** Once you have seen a mark, it pulls
+your own judgement towards it — everyone's does, it is how reading works. A comparison made
+after seeing the system's level measures how persuasive the system is, not how good its marking
+is. Marked blind, your level is your own, so where you and the system differ is real
+information.
+
+**Why one class is "too few".** A figure for one question needs at least 30 blind answers before
+it means much: with fewer, a couple of answers either way swings it a long way. One class's
+sample is about 15 answers spread over all the questions, so a single class almost never gets
+there, and the screens say so in words — *"Too few answers to rely on yet (12 of the 30
+needed)."* That is not a failure; it is the honest state of the evidence. The answers add up:
+every class that sits the same version of the test and marks its sample adds to that test's
+record, *"How well this test has been marked so far"* (on **Set up a test package**, `/#/package`,
+and on **Past tests**, `/#/past`), until each question has enough.
+
+**What "agreement beyond chance" means.** Two markers who chose levels at random would still
+match sometimes — often, when most answers sit at one level. *Agreement beyond chance* takes
+that luck out: **1.00** means you and the system chose the same level every time, **0.00** means
+you matched no more often than luck alone would give, and a figure below 0 means less often
+than that. It is a figure between −1 and 1, never a percentage, and it is always shown with the
+number of answers it rests on. Below 30 answers a question's figure is shown with *"too few"*
+beside it; once it has 30, if every answer sat at one level the figure cannot be worked out, and
+the screen says that instead of showing a number.
+
+**What skipping costs.** **Skip and see results** changes no mark: your class is graded either
+way, and Results opens at once. What you give up is evidence. Results then says *"You skipped
+the blind sample for this class, so there is no new evidence about accuracy."*, the test's
+record lists your class as *the blind sample was skipped*, and none of the figures — this
+test's, or the ones on **System status** (`/#/status`) — get any closer to having enough
+answers. The system never fills the gap with an older number.
+
+### Reading how closely the marking matched yours
+
+After you finish the sample, **Results** (`/#/results`) carries a block headed **"How closely the
+marking matched yours"**:
+
+- *"On the 15 answers you marked without seeing the system's marks, it gave the same level on
+  11."* — a plain count, never a percentage.
+- One line per question: *"Q1 (simple checks): agreement beyond chance 0.62 — 6 answers"*, with
+  the number of answers beside every figure. Simple checks and overall judgements are never
+  added together.
+- While any question has fewer than 30 answers: *"Too few answers to rely on yet (… of the 30
+  needed)."*
+- Where the system differed, by student name and question, and whether it gave more or less
+  credit than you — with **Review these**, which opens the side-by-side comparison.
+- When earlier classes took the same test, their record follows on its own labelled line,
+  never mixed into this class's figures.
+
+Nothing in the block, or anywhere else, claims the marking is "accurate": it says how closely the
+system's levels matched yours on the answers you marked, and how many answers that rests on.
 
 ---
 
@@ -220,15 +346,17 @@ in its queue, but that backend capability should not be read as an action in the
 | Confirm the question list | Set-up, once | **Yes** |
 | Give multiple-choice answer keys | Set-up, once | **Yes** |
 | Approve how your rubric was read | Set-up, once | No — defaults to your rubric as written |
-| Confirm which rubric lines can be split | Set-up, once | No — defaults to keeping them whole |
+| Say what earns each level of a judged line | Set-up, once | **Yes**, for a level with no description — the draft cannot be approved until each says what earns it |
+| Change how a line is marked (simple check or overall judgement) | Set-up, once | No — defaults to the choice shown |
 | Set how the final grade is calculated | Set-up, once (package edit, not a browser control) | No — defaults to a plain sum |
-| Answer the ambiguity questions | ⏳ Not in this version | No |
+| Mark examples and answer the questions about your rubric | Once per published test | No — skipping marks with your rubric as written |
 | Review the flagged marks | Every run | **No** |
 | Blind sample | Every run | **No** |
 | Whole-grade sample | Every run | **No** |
-| Finalize the batch | Every run | **No** — you press **Finalize** on the Results screen when you are satisfied; until then the grades sit ready to finalize |
+| Finalize the batch | Every run | **No** — you press **Approve all grades** on the Results screen when you are satisfied; until then the grades sit ready to finalize |
 
-Only two things block, both once, at set-up. After that, the answer is always no.
+Only set-up questions block, all of them once: the question list, the answer keys, and a
+description for any level that has none. After that, the answer is always no.
 
 A scanning problem can keep one student's work out of grading — a missing page, an unreadable
 mark, or a paper matched to the wrong test. Those issues are named for the operator to resolve;
@@ -257,14 +385,21 @@ citation problems can also leave work ungraded or provisional, even when the run
   question 3."* You walk into the next lesson knowing exactly what to reteach, and to whom.
 - For multiple-choice questions, the marks are checked against your key exactly. The per-question
   answer statistics are computed, but no screen shows the wrong-option breakdown yet.
-- An agreement figure for the blind sample, when the sample was taken — how often you and the
-  system agreed, with the count it is based on beside it. Skipping the sample means no figure, not
-  an old one.
+- When you marked the blind sample: the block **"How closely the marking matched yours"** on
+  Results (`/#/results`) — how many of your blind answers got the same level, *agreement beyond
+  chance* for each question with the number of answers beside it, *"too few"* below 30, and the
+  differences by student name (section 5). Skipping the sample means no new figure, never an old
+  one in its place.
+- For the test itself: **"How well this test has been marked so far"**, on **Set up a test
+  package** (`/#/package`) and **Past tests** (`/#/past`) — the blind answers collected across
+  every class that took this version, each class's contribution with its date, and per-question
+  figures once there are enough.
 - Which papers were flagged, which you reviewed, and which are still provisional.
 - Which version of the rubric produced these grades, so a disputed grade can be traced years later.
 
 **What you will never see:** a single confident headline like *"AI accuracy: 94%."* That number is
-misleading, and the system is deliberately built not to produce it.
+misleading, and the system is deliberately built not to produce it. Even your marked examples
+(Step 5) give no percentage: a dozen papers you chose cannot say how accurate the marking is.
 
 ---
 
@@ -291,10 +426,17 @@ comes, it is a later version.
 
 ## 9. Honest limits
 
-- **This version grades faithfully against your rubric as written, and never tells you where that
-  rubric is ambiguous.** That is the one thing described in this guide (Step 5) that the current
-  release does not do. You will not find a control for it in the teacher app this release; the
-  older optional-setup page only names it as a future version's surface.
+- **The system finds where your rubric may be unclear only if you mark examples** (Step 5). Skip
+  that step and it grades faithfully against your rubric as written, unclear lines included.
+- **One class is too few to measure the marking.** A class's blind sample is about 15 answers;
+  each question needs 30 before its figure means much. Expect *"too few"* for your first classes,
+  and let the test's record build up across classes.
+- **The blind sample is only as blind as you keep it.** The screens hide the drawn marks until
+  you finish or skip, but the marks download carries every total. Finish or skip first.
+- **Where student work goes.** When the system marks with online models, the papers' text is
+  sent to them through OpenRouter. How long it may be kept there is governed by the privacy
+  settings of your operator's OpenRouter account; the system does not ask for zero retention
+  itself. Ask your operator how the account is set.
 - **Grades will be issued that no human has looked at.** That is the point — the alternative at 300
   students is no feedback at all. Every such grade is labelled as unreviewed, backed by quoted
   evidence, and changeable by you at any time.
