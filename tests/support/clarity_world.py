@@ -4,7 +4,8 @@ helpers and the **Jev-final seed** the clarity cases read.
 **The ENG7 world.** The shipped `docs/live-tests/config/eng7-read-01.package.toml` (Q1 2, Q2 3,
 Q3 3, out of 8; C1 = C1a + C1b, an evidence checklist; grades pass = 6, not yet = 0), built
 through the real `aeh package build` path (`build_package`), and the sample-materials roster
-names (`E7-001`..`E7-004`; no real student data anywhere). The authoring variants of the same
+refs (`E7-001`..`E7-004`; the full names are Ines Moreau, Jonas Berg, Keiko Tanaka and Luis
+Ortega; no real student data anywhere). The authoring variants of the same
 test are `fixtures/F-AUTHOR/AF-22` (no grade table) and `AF-23` (pass named, no boundary).
 
 **The Jev-final seed.** Two students, each with four cells — one per §2.4 kind, on the four
@@ -80,7 +81,7 @@ JEV_GATE = 0.91
 JEV_THRESHOLD = 0.80
 JEV_BUILD = "openjev/jev-small@2026-06-01"
 
-#: The sample-materials names (`eng7-roster.txt`); students A and B.
+#: The sample-materials roster refs (`eng7-roster.txt`), used as this seed's display keys.
 STUDENT_A = "E7-001"
 STUDENT_B = "E7-002"
 STUDENTS = (STUDENT_A, STUDENT_B)
@@ -152,10 +153,10 @@ def _clock() -> str:
     return STAMP
 
 
-def roster_names() -> tuple[str, ...]:
-    """The ENG7 sample-materials class list, in file order (comments skipped)."""
-    lines = ENG7_ROSTER.read_text(encoding="utf-8").splitlines()
-    return tuple(s for s in (line.strip() for line in lines) if s and not s.startswith("#"))
+def roster_refs() -> tuple[str, ...]:
+    """The ENG7 sample-materials class list's internal refs, in file order (CSV)."""
+    from aeh.pipeline.rosters import read_roster_file
+    return tuple(entry.student_ref for entry in read_roster_file(ENG7_ROSTER))
 
 
 def build_eng7_package(store: Any) -> tuple[str, str]:
@@ -438,7 +439,7 @@ __all__ = [
     "AF22_DIR", "AF23_DIR", "CELL_KINDS", "COHORTS", "ENG7_PASS", "ENG7_QUESTIONS",
     "ENG7_SPEC", "ENG7_TOTAL_MAX", "EXPECTED_REASONS", "EXPECTED_ROLLUP", "JEV_GATE",
     "JEV_THRESHOLD", "JevFinalSeed", "JevFinalWorld", "SEED_BANDS", "STUDENTS", "STUDENT_A",
-    "STUDENT_B", "build_eng7_package", "canonical_snapshot", "roster_names", "score_rows",
+    "STUDENT_B", "build_eng7_package", "canonical_snapshot", "roster_refs", "score_rows",
     "seed_jev_final", "seed_jev_final_world",
     "eng7_assembly", "eng7_inventory", "eng7_rubric_values", "write_eng7_draft",
 ]

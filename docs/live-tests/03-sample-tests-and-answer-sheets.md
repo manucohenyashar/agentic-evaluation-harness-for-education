@@ -17,20 +17,20 @@ sample-materials/pdf/
 │   ├── 02-model-answer.pdf         the teacher's worked answers
 │   ├── 03-rubric.pdf               the marking scheme, in statement form
 │   ├── 04-blank-answer-sheet.pdf   a form to print and fill in BY HAND
-│   └── answer-sheets/              six finished sheets (S9-001 … S9-006)
+│   └── answer-sheets/              six finished sheets (S9-001 Aisha Bello … S9-006 Farah Nasser)
 └── ENG7-READ-01/                   Grade 7 English: Reading Response (8 marks; every rubric method)
     ├── 01-test-paper.pdf
     ├── 02-model-answer.pdf
     ├── 03-rubric.pdf
     ├── 04-blank-answer-sheet.pdf
-    └── answer-sheets/              four finished sheets (E7-001 … E7-004)
+    └── answer-sheets/              four finished sheets (E7-001 Ines Moreau … E7-004 Luis Ortega)
 ```
 
-Beside them, [`config/`](config/) holds what the system is given for each test: the package spec it publishes (`ps9-forces-01.package.toml`, `eng7-read-01.package.toml`) and the class list (`ps9-roster.txt`, `eng7-roster.txt`). Between them, the two tests use every way the system can score a rubric line (section 4a).
+Beside them, [`config/`](config/) holds what the system is given for each test: the package spec it publishes (`ps9-forces-01.package.toml`, `eng7-read-01.package.toml`) and the class list (`ps9-roster.txt`, `eng7-roster.txt`: a `full_name,student_ref` CSV). Between them, the two tests use every way the system can score a rubric line (section 4a).
 
 The four setup files per test are the ones the design says a teacher uploads: **test paper, model answer, rubric** (and, optionally, marked papers). The `answer-sheets/` are the "students" for the run.
 
-**Honest limit:** the sheets are *typed*, not handwritten. A typed page is the easy case for a page-reading model. These sheets rehearse the paper trail (names, ticks, wrong tests, blanks), not handwriting. To test handwriting, print the `04-blank-answer-sheet.pdf`, have two or three people fill it in by pen, scan to PDF, and add those files next to these. Keep the two printed lines (`Assessment: …` and `Student: …`) legible.
+**Honest limit:** the sheets are *typed*, not handwritten. A typed page is the easy case for a page-reading model. These sheets rehearse the paper trail (names, ticks, wrong tests, blanks), not handwriting. To test handwriting, print the `04-blank-answer-sheet.pdf`, have two or three people fill it in by pen, scan to PDF, and add those files next to these. Keep the printed `Assessment: …` and `Student: …` lines legible; the `Student ID:` line is optional.
 
 ## 2. Test 1: Grade 9 Physical Science, "Forces and Motion" (`PS9-FORCES-01`)
 
@@ -63,20 +63,20 @@ The exact band wording (what *Full*, *Adequate*, *Limited*, *None* each require)
 
 | Sheet | Student | Story | Q1 | Q2 | Q3 | Q4 | Q5a | Q5b | Expected total / grade | Intake (checked) |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `S9-001-strong` | S9-001 | Everything right, full explanations | C ✓ | B ✓ | C ✓ | Full | B ✓ | Full | **10 / A** | admitted (`ok`) |
-| `S9-002-middle` | S9-002 | One slip, two half answers | C ✓ | B ✓ | **B ✗** | Adequate (both forces, no "equal") | B ✓ | Adequate ("balanced", no link to steady speed) | **7 / B** | admitted |
-| `S9-003-weak` | S9-003 | Thinks a moving object needs a constant push | **D ✗** | **A ✗** | C ✓ | Limited (gravity named, table "is strong") | **A ✗** | Limited (friction, no balance) | **3 / D** | admitted |
-| `S9-004-doubled-mark-and-blank` | S9-004 | Two ticks on Q1; Q4 left empty | **A and C** | B ✓ | C ✓ | **none (blank)** | B ✓ | Full | **6 or 7 / B** once Q1 is decided | **parked**: `incomplete`, structure check (V2) fails |
-| `S9-005-wrong-test` | S9-005 | Handed in the English answers against this test | n/a | n/a | n/a | n/a | n/a | n/a | n/a | **parked**: `unmatched_assessment`, right-test check (V4) mismatch: the page names `ENG7-READ-01` |
-| `S9-006-no-name` | *(forgot to write it)* | A good paper with no name on it | C ✓ | B ✓ | C ✓ | Full | B ✓ | Full | **10 / A** if identity is established by a corrected rescan | **parked**: `incomplete`, identity check (V3) unmatched |
+| `S9-001-strong` | Aisha Bello | Everything right, full explanations | C ✓ | B ✓ | C ✓ | Full | B ✓ | Full | **10 / A** | admitted (`ok`) |
+| `S9-002-middle` | Daniel Kim | One slip, two half answers | C ✓ | B ✓ | **B ✗** | Adequate (both forces, no "equal") | B ✓ | Adequate ("balanced", no link to steady speed) | **7 / B** | admitted |
+| `S9-003-weak` | Mateo Rossi | Thinks a moving object needs a constant push | **D ✗** | **A ✗** | C ✓ | Limited (gravity named, table "is strong") | **A ✗** | Limited (friction, no balance) | **3 / D** | admitted |
+| `S9-004-doubled-mark-and-blank` | Dalia Haddad | Two ticks on Q1; Q4 left empty | **A and C** | B ✓ | C ✓ | **none (blank)** | B ✓ | Full | **6 or 7 / B** once Q1 is decided | **parked**: `incomplete`, structure check (V2) fails |
+| `S9-005-wrong-test` | Elif Demir | Handed in the English answers against this test | n/a | n/a | n/a | n/a | n/a | n/a | n/a | **parked**: `unmatched_assessment`, right-test check (V4) mismatch: the page names `ENG7-READ-01` |
+| `S9-006-no-name` | Farah Nasser *(forgot to write it)* | A good paper with no name on it | C ✓ | B ✓ | C ✓ | Full | B ✓ | Full | **10 / A** once the operator gives it to Farah Nasser | **parked**: `incomplete`, identity check (V3) unmatched |
 
 What each parked sheet is there to prove:
 
-* **`S9-004`**: the system must not guess which tick the student meant, and must not treat a **blank answer** as a scanning error. The operator looks at the image crop on S8, if one was stored, and decides (B8 applies here too).
-* **`S9-005`**: the "confident zero" trap. A paper for the wrong test would otherwise be scored 0 by every judge in agreement. The system must stop it before any judge sees it.
-* **`S9-006`**: nobody is silently assigned a grade they did not earn. Because V3 did not match an identity, `matched` release is refused. Close it as unresolvable, or add the student's ID to the sheet, rescan and read it again with `aeh ingest`. (The console still cannot record a manual student assignment; see B8 in [02](02-live-readiness-and-blockers.md).)
+* **Dalia Haddad's sheet (`S9-004`)**: the system must not guess which tick the student meant, and must not treat a **blank answer** as a scanning error. The operator looks at the image crop on S8, if one was stored, and decides (B8 applies here too).
+* **Elif Demir's sheet (`S9-005`)**: the "confident zero" trap. A paper for the wrong test would otherwise be scored 0 by every judge in agreement. The system must stop it before any judge sees it.
+* **Farah Nasser's sheet (`S9-006`)**: nobody is silently assigned a grade they did not earn. Because V3 did not match an identity, `matched` release is refused. Give it to Farah Nasser on the Parked screen (`assigned`; B8 in [02](02-live-readiness-and-blockers.md)), or have their full name written on the `Student:` line, rescan and read it again with `aeh ingest`. An ID alone would not resolve it.
 
-**What you should see in the class view** after the three parked sheets are handled: the three admitted sheets have grades (A, B, D). S9-004 may be released after an operator checks the mark, or closed as unresolvable; S9-005 should be closed or re-ingested under the correct package; S9-006 cannot be released as `matched` without an identity match, so close it or rescan after adding identity. Q3 shows two of the three initially admitted students correct; Q1 shows one wrong option chosen (D), the "needs a constant push" misconception.
+**What you should see in the class view** after the three parked sheets are handled: the three admitted sheets have grades (A, B, D). Dalia Haddad's S9-004 may be released after an operator checks the mark, or closed as unresolvable; Elif Demir's S9-005 should be closed or re-ingested under the correct package; Farah Nasser's S9-006 is assigned to Farah Nasser and graded (10 / A), or closed. Q3 shows two of the three initially admitted students correct; Q1 shows one wrong option chosen (D), the "needs a constant push" misconception.
 
 ## 3. Test 2: Grade 7 English, "The Lighthouse Keeper" (`ENG7-READ-01`): every rubric method
 
@@ -98,12 +98,12 @@ Grade policy: *total out of 8; 6 or more is a "pass", below 6 is "not yet a pass
 
 | Sheet | Student | Story | C1a | C1b | **C1** (sum) | C2 | C3 | Expected total | Intake (checked) |
 |---|---|---|---|---|---|---|---|---|---|
-| `E7-001-strong` | E7-001 | Names him, gives a reason with evidence (the small boat), clear change | present | present | **2** | full | evidenced | **8, pass** | admitted |
-| `E7-002-middle` | E7-002 | Right idea, no evidence | present | present | **2** | adequate | change | **6, pass** | admitted |
-| `E7-003-weak` | E7-003 | Retells, no reason, no change | absent | absent | **0** | limited | retell | **2, not yet** | admitted |
-| `E7-004-mostly-blank` | E7-004 | Names "Tomas." and leaves Q2 and Q3 empty | present | absent | **1** | none | none | **1, not yet** | admitted |
+| `E7-001-strong` | Ines Moreau | Names him, gives a reason with evidence (the small boat), clear change | present | present | **2** | full | evidenced | **8, pass** | admitted |
+| `E7-002-middle` | Jonas Berg | Right idea, no evidence | present | present | **2** | adequate | change | **6, pass** | admitted |
+| `E7-003-weak` | Keiko Tanaka | Retells, no reason, no change | absent | absent | **0** | limited | retell | **2, not yet** | admitted |
+| `E7-004-mostly-blank` | Luis Ortega | Names "Tomas." and leaves Q2 and Q3 empty | present | absent | **1** | none | none | **1, not yet** | admitted |
 
-`E7-004` matters twice. A blank answer is **a real non-answer, scored as one**: never a scanning problem, never a reason to park the paper. And its C1 is a **partial checklist** (one item of two), the case that shows the evidence sum adding up item by item rather than picking one band for the whole question.
+Luis Ortega's sheet (`E7-004`) matters twice. A blank answer is **a real non-answer, scored as one**: never a scanning problem, never a reason to park the paper. And its C1 is a **partial checklist** (one item of two), the case that shows the evidence sum adding up item by item rather than picking one band for the whole question.
 
 What each method is there to prove in the live run:
 
@@ -113,12 +113,18 @@ What each method is there to prove in the live run:
 
 ## 4. The class list
 
-The identity check (V3) matches the name on the page to the **roster**, so the roster must hold exactly these IDs before intake. Both lists ship as files, one entry per line, ready for `aeh cohort create --roster`:
+The identity check (V3) matches the **full name** written after `Student:` to the roster, so the roster must hold exactly these names before intake. Both lists ship as small CSVs with a `full_name,student_ref` header, ready for `aeh cohort create --roster`:
 
-* `PS9-FORCES-01` cohort: `S9-001` … `S9-006`, in [`config/ps9-roster.txt`](config/ps9-roster.txt)
-* `ENG7-READ-01` cohort: `E7-001` … `E7-004`, in [`config/eng7-roster.txt`](config/eng7-roster.txt)
+```
+full_name,student_ref
+Aisha Bello,S9-001
+…
+```
 
-Cohort IDs used by the check script are `coh-ps9-forces-01` and `coh-eng7-read-01`; the deployment tutorial's walkthrough uses `ps9-class` and `eng7-class`. Mark both `synthetic`. Note that `S9-006` is on the roster even though the page does not carry the name; that is the point.
+* `PS9-FORCES-01` cohort: Aisha Bello … Farah Nasser (refs `S9-001` … `S9-006`), in [`config/ps9-roster.txt`](config/ps9-roster.txt)
+* `ENG7-READ-01` cohort: Ines Moreau … Luis Ortega (refs `E7-001` … `E7-004`), in [`config/eng7-roster.txt`](config/eng7-roster.txt)
+
+The `student_ref` is the internal handle the tools and traces use; the screens, reports and these guides show the name. Cohort IDs used by the check script are `coh-ps9-forces-01` and `coh-eng7-read-01`; the deployment tutorial's walkthrough uses `ps9-class` and `eng7-class`. Mark both `synthetic`. Note that Farah Nasser is on the roster even though their page carries no name; that is the point.
 
 ## 4a. The package specs
 
@@ -135,13 +141,13 @@ Each test has a package spec in [`config/`](config/), built and published with `
 
 Each rule is there because a check in the code depends on it:
 
-1. **Two header lines, each on its own line, at the top:** `Assessment: <the test's ID>` and `Student: <the student's ID>`. The page-reading prompt tells the model to copy exactly these lines first. The first must equal the package's ID (case and extra spaces ignored); the second must be on the roster.
+1. **Two header lines, each on its own line, at the top:** `Assessment: <the test's ID>` and `Student: <the student's full name>`. The page-reading prompt tells the model to copy exactly these lines first. The first must equal the package's ID (case and extra spaces ignored); the second must match a roster `full_name` (case, accents, spacing and name order are forgiven). A `Student ID: <ref>` line may follow; it is optional, and it can only choose between two students whose names match equally — it never resolves a paper on its own.
 2. **One test ID, used everywhere.** `PS9-FORCES-01` is the printed test name, the package ID and the cohort's test. Change one and the right-test check reads a mismatch.
 3. **The package's ID is the test ID.** In the check script the package is created under that exact name.
 4. **Reprint each question above its answer space.** The right-test check compares the answer's words with the question's words (floor 0.10). With the question reprinted and transcribed, the admitted sheets scored 0.24 to 0.93. With only the handwriting transcribed, six of the seven good sheets scored 0.00 to 0.04 and were parked (`verify_sample_materials.py --answers-only` reproduces it). See the risk in [02](02-live-readiness-and-blockers.md).
 5. **Tick boxes for multiple choice, one per option, one tick per question.** Two ticks make the mark unreadable and the paper is parked, by design.
 6. **Paper intake accepts PDF only**, starting with the `%PDF-` marker; this applies to the scanned test and answer sheets sent through `aeh ingest` (checked). It does not constrain package authoring: the SPA's package-authoring screen accepts PDF, DOCX and TXT source documents.
-7. **Do not put instructions after `Student:`.** Whatever follows it on that line is read as the name.
+7. **Do not put instructions after `Student:` or `Student ID:`.** Whatever follows either label on its line is read as the value.
 
 ## 6. Rebuilding and checking the files
 
@@ -184,16 +190,26 @@ OK: the two packages carry every rubric method (key, bands, evidence_sum, genera
 
 Add `-v` to also print the right-test signals for each sheet.
 
+**Check the intended-bands table** (the source of the blind sample's "teacher" marks in `tools/live_validity_check.py`) against the sheets' reference points:
+
+```bash
+python docs/live-tests/sample-materials/intended_bands.py
+```
+
+It ends `every sheet's intended bands earn its reference points`, or exits 1 naming the sheet whose bands no longer add up.
+
 **What that check proves, and does not.** It proves the *files* fit the *rules*: the PDFs are sound and readable, the headers parse, the identity and right-test logic do what the table says, the three awkward sheets are parked for the right reasons, both package specs build and publish, and a run over them would grade every rubric line of every method (the multiple-choice keys by lookup, `deterministic`; every judged line by extraction and a judge, `extract+score`; the checklist C1 through its two items only). It does **not** prove a live model reads these pages correctly or picks the right band: a scripted stand-in plays the page reader and returns the text an ideal reader would, and the run is never started. Reading the pages and grading them is what the live test is for.
 
 ## 7. What the live test should show for these sheets
 
 If the live run works, the **deterministic** parts are exact and you can check them to the mark:
 
-* **Multiple-choice lines (C1, C2, C3, C5)** are marked by key lookup: no model decides them. S9-001 and S9-006 get 4 of 4; S9-002 gets 3 (missed Q3); S9-003 gets 1 (only Q3 right); S9-004 gets 3 so far (Q1 awaits the operator).
+* **Multiple-choice lines (C1, C2, C3, C5)** are marked by key lookup: no model decides them. Aisha Bello (S9-001) and Farah Nasser (S9-006) get 4 of 4; Daniel Kim (S9-002) gets 3 (missed Q3); Mateo Rossi (S9-003) gets 1 (only Q3 right); Dalia Haddad (S9-004) gets 3 so far (Q1 awaits the operator).
 * **The three parked sheets** are parked, for the reasons in the table, with no grade invented.
 
 The **judged** parts (the written lines C4, C6 on the physics test; the checklist items C1a, C1b and the lines C2, C3 on the English test) are what the system is being tested on. Compare them to the reference marks. The teacher guide's own warning applies: the middle bands are the hard ones, so treat a miss of one band as normal and a miss of two or more as a finding. The full scoring plan is in [04](04-test-day-plan.md).
+
+That one-band check is a reference-mark comparison for the readiness decision, not a chance-corrected statistic. The statistical evaluation — Cohen's κ, QWK, ordinal α, the 30-answer minimum and what to record — is in [04's statistical evaluation section](04-test-day-plan.md#statistical-evaluation-what-the-figures-mean).
 
 One part of the English test is **deterministic once its items are judged**, and can be checked to the mark: **C1 must equal C1a + C1b** for every student, whatever the judges decided about each item. `aeh results show` prints only each student's total and grade, so the line-by-line view comes from a read-only helper, which also does this check and exits 1 if a sum is wrong:
 
@@ -202,7 +218,7 @@ python docs/live-tests/sample-materials/show_criterion_marks.py --data-dir <fold
 ```
 
 ```
-E7-004  (sub-…)   total 1   grade not yet   state provisional
+Luis Ortega  (sub-…)   total 1   grade not yet   state provisional
     C1                1 / 2    evidence sum of C1a + C1b
       C1a             1        present (final)
       C1b             0        absent (final)
@@ -210,4 +226,4 @@ E7-004  (sub-…)   total 1   grade not yet   state provisional
     C3                0 / 3    none (final)
 ```
 
-(The shape of the output, with the expected marks for E7-004; checked against a graded run with a composite built by the repository's test fixtures, not yet against a live run.) A C1 that differs from the sum, or a C1 sent to a judge on its own, is a defect, not a judgment call.
+(The shape of the output, with the expected marks for Luis Ortega (E7-004); checked against a graded run with a composite built by the repository's test fixtures, not yet against a live run.) A C1 that differs from the sum, or a C1 sent to a judge on its own, is a defect, not a judgment call.

@@ -45,8 +45,7 @@ def _ingest_ps9(store, monkeypatch) -> dict[str, str]:
     catalog = PackageCatalog(store.package(built.package_id), package_id=built.package_id,
                              blobs=store.blobs())
     create_cohort(store, "class-ps9", "synthetic",
-                  [RosterEntry(full_name=s["student"] or "S9-006",
-                               student_ref=s["student"] or "S9-006")
+                  [RosterEntry(full_name=s["name"], student_ref=s["student"])
                    for s in sm.PHYSICS_SHEETS])
     files, reader, blobs = sm.build_all(), v.ScriptedReader(), store.blobs()
     ingestor = Ingestor(store.cohort("class-ps9"), blobs, reader, v.TRANSCRIBER,

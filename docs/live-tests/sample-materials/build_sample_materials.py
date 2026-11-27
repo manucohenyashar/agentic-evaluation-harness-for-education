@@ -180,13 +180,15 @@ ENGLISH_MODEL_ANSWER = [
 # --------------------------------------------------------------------------------------------
 # Student answer sheets
 # --------------------------------------------------------------------------------------------
-# Each sheet: file stem, header assessment id, student ref (None = the name line is left off),
-# a one-line note on what the sheet is there to test, and the answers.
+# Each sheet: file stem, header assessment id, the roster's full name and internal student ref,
+# whether the sheet carries the two identity lines at all (`writes_identity`; S9-006 forgot to
+# write a name), a one-line note on what the sheet is there to test, and the answers. Students
+# are identified by the name on the paper; the ref is the internal handle the tools use.
 # MCQ answers: a list of circled letters (two letters = a doubled mark).
 # Written answers: text, or "" for an empty answer space.
 
 PHYSICS_SHEETS = [
-    dict(stem="S9-001-strong", test=PHYSICS_ID, student="S9-001",
+    dict(stem="S9-001-strong", test=PHYSICS_ID, student="S9-001", name="Aisha Bello",
          note="Strong paper. Everything right, full written answers.",
          mcq={"Q1": ["C"], "Q2": ["B"], "Q3": ["C"], "Q5a": ["B"]},
          written={
@@ -197,7 +199,7 @@ PHYSICS_SHEETS = [
                     "the net force is zero, so the pedalling force is the same as the air resistance "
                     "and friction. This is Newton's first law."},
          reference_points=10),
-    dict(stem="S9-002-middle", test=PHYSICS_ID, student="S9-002",
+    dict(stem="S9-002-middle", test=PHYSICS_ID, student="S9-002", name="Daniel Kim",
          note="Middle paper. One multiple-choice slip, two partial written answers.",
          mcq={"Q1": ["C"], "Q2": ["B"], "Q3": ["B"], "Q5a": ["B"]},
          written={
@@ -205,7 +207,7 @@ PHYSICS_SHEETS = [
                    "it stays where it is.",
              "Q5b": "The forces are balanced so they cancel each other out."},
          reference_points=7),
-    dict(stem="S9-003-weak", test=PHYSICS_ID, student="S9-003",
+    dict(stem="S9-003-weak", test=PHYSICS_ID, student="S9-003", name="Mateo Rossi",
          note="Weak paper. Common misconception that a moving object needs a constant forward push.",
          mcq={"Q1": ["D"], "Q2": ["A"], "Q3": ["C"], "Q5a": ["A"]},
          written={
@@ -213,13 +215,14 @@ PHYSICS_SHEETS = [
              "Q5b": "You have to keep pedalling hard to keep going because of friction."},
          reference_points=3),
     dict(stem="S9-004-doubled-mark-and-blank", test=PHYSICS_ID, student="S9-004",
+         name="Dalia Haddad",
          note="Two marks circled on Q1 (a mark the reader cannot resolve) and Q4 left empty. "
               "Expect an operator quarantine item for Q1, never a guess.",
          mcq={"Q1": ["A", "C"], "Q2": ["B"], "Q3": ["C"], "Q5a": ["B"]},
          written={"Q4": "",
                   "Q5b": "The net force is zero because the speed is steady."},
          reference_points=None),
-    dict(stem="S9-005-wrong-test", test=ENGLISH_ID, student="S9-005",
+    dict(stem="S9-005-wrong-test", test=ENGLISH_ID, student="S9-005", name="Elif Demir",
          note="A student handed in the English paper's answers against the physics test. "
               "The page names a different assessment: expect the match check to park it.",
          mcq={},
@@ -228,7 +231,8 @@ PHYSICS_SHEETS = [
              "Q2": "Because a boat might need it.",
              "Q3": "He feels better about his job at the end."},
          reference_points=None),
-    dict(stem="S9-006-no-name", test=PHYSICS_ID, student=None,
+    dict(stem="S9-006-no-name", test=PHYSICS_ID, student="S9-006", name="Farah Nasser",
+         writes_identity=False,
          note="A good paper where the student forgot to write a name. The identity check cannot "
               "match it, so expect it to be parked for the operator to match by hand.",
          mcq={"Q1": ["C"], "Q2": ["B"], "Q3": ["C"], "Q5a": ["B"]},
@@ -242,7 +246,7 @@ PHYSICS_SHEETS = [
 ]
 
 ENGLISH_SHEETS = [
-    dict(stem="E7-001-strong", test=ENGLISH_ID, student="E7-001",
+    dict(stem="E7-001-strong", test=ENGLISH_ID, student="E7-001", name="Ines Moreau",
          note="Strong paper. Names, reason with evidence, clear change.",
          mcq={},
          written={
@@ -255,7 +259,7 @@ ENGLISH_SHEETS = [
                    "helps the fisherman he is sure it does, and he climbs the steps a little taller "
                    "than before."},
          reference_points=8),
-    dict(stem="E7-002-middle", test=ENGLISH_ID, student="E7-002",
+    dict(stem="E7-002-middle", test=ENGLISH_ID, student="E7-002", name="Jonas Berg",
          note="Middle paper. Right idea, little evidence.",
          mcq={},
          written={
@@ -263,7 +267,7 @@ ENGLISH_SHEETS = [
              "Q2": "Because somebody might need it to be safe at night.",
              "Q3": "He was sad at the start and happy at the end."},
          reference_points=6),
-    dict(stem="E7-003-weak", test=ENGLISH_ID, student="E7-003",
+    dict(stem="E7-003-weak", test=ENGLISH_ID, student="E7-003", name="Keiko Tanaka",
          note="Weak paper. Retells the passage, no reason, no change.",
          mcq={},
          written={
@@ -271,7 +275,7 @@ ENGLISH_SHEETS = [
              "Q2": "He lights it every night.",
              "Q3": "A boat came and the man shook his hand."},
          reference_points=2),
-    dict(stem="E7-004-mostly-blank", test=ENGLISH_ID, student="E7-004",
+    dict(stem="E7-004-mostly-blank", test=ENGLISH_ID, student="E7-004", name="Luis Ortega",
          note="Mostly blank. A genuine non-answer must be scored as an answer that is not there, "
               "never as a scanning problem.",
          mcq={},
@@ -384,18 +388,24 @@ class Doc:
 # The documents
 # --------------------------------------------------------------------------------------------
 
-def _header(doc: Doc, test_id: str, title: str, student: str | None, sheet: bool) -> None:
+def _header(doc: Doc, test_id: str, title: str, student: str | None = None,
+            student_id: str | None = None, sheet: bool = False) -> None:
+    """The printed identity head: the assessment line always, then — on a student sheet that
+    carries identity — the student's full name and their optional internal ID. V3 matches by
+    the name; the ID is a secondary signal and never resolves a paper on its own."""
     doc.line(f"Assessment: {test_id}", "b")
     if sheet:
         if student:
             doc.line(f"Student: {student}", "b")
+        if student_id:
+            doc.line(f"Student ID: {student_id}", "b")
     doc.line(title, "h")
     doc.blank()
 
 
 def physics_test() -> Doc:
     d = Doc()
-    _header(d, PHYSICS_ID, PHYSICS_TITLE, None, False)
+    _header(d, PHYSICS_ID, PHYSICS_TITLE)
     d.para("Time: 25 minutes. Total: 10 marks. Mark one letter for each multiple-choice question. "
            "Write your written answers in the spaces on the answer sheet.")
     d.blank()
@@ -417,7 +427,7 @@ def physics_test() -> Doc:
 
 def physics_rubric() -> Doc:
     d = Doc()
-    _header(d, PHYSICS_ID, "Marking Rubric - " + PHYSICS_TITLE, None, False)
+    _header(d, PHYSICS_ID, "Marking Rubric - " + PHYSICS_TITLE)
     _rubric_body(d, PHYSICS_RUBRIC)
     d.blank()
     d.line("Grade policy (plain language)", "b")
@@ -452,7 +462,7 @@ def _rubric_body(d: Doc, rubric: list) -> None:
 
 def physics_model_answer() -> Doc:
     d = Doc()
-    _header(d, PHYSICS_ID, "Model Answer - " + PHYSICS_TITLE, None, False)
+    _header(d, PHYSICS_ID, "Model Answer - " + PHYSICS_TITLE)
     for line in PHYSICS_MODEL_ANSWER:
         d.para(line)
         d.blank()
@@ -461,7 +471,7 @@ def physics_model_answer() -> Doc:
 
 def english_test() -> Doc:
     d = Doc()
-    _header(d, ENGLISH_ID, ENGLISH_TITLE, None, False)
+    _header(d, ENGLISH_ID, ENGLISH_TITLE)
     d.para("Time: 20 minutes. Read the passage, then answer all three questions in full sentences.")
     d.blank()
     d.line("The Lighthouse Keeper", "b")
@@ -497,7 +507,7 @@ ENGLISH_GRADE_POLICY_PASS_NO_BOUNDARY = (
 def english_rubric(grade_policy: str | None = ENGLISH_GRADE_POLICY) -> Doc:
     """The ENG7 rubric. `grade_policy=None` leaves the grade policy section out (AF-22)."""
     d = Doc()
-    _header(d, ENGLISH_ID, "Marking Rubric - " + ENGLISH_TITLE, None, False)
+    _header(d, ENGLISH_ID, "Marking Rubric - " + ENGLISH_TITLE)
     _rubric_body(d, ENGLISH_RUBRIC)
     if grade_policy is not None:
         d.line("Grade policy (plain language)", "b")
@@ -525,7 +535,7 @@ def english_authoring_variants() -> dict[str, dict[str, bytes]]:
 
 def english_model_answer() -> Doc:
     d = Doc()
-    _header(d, ENGLISH_ID, "Model Answer - " + ENGLISH_TITLE, None, False)
+    _header(d, ENGLISH_ID, "Model Answer - " + ENGLISH_TITLE)
     for line in ENGLISH_MODEL_ANSWER:
         d.para(line)
         d.blank()
@@ -548,11 +558,16 @@ def answer_sheet(sheet: dict, *, blank: bool = False) -> Doc:
     if blank:
         d.line(f"Assessment: {test_id}", "b")
         d.line("Student: ____________________", "b")
+        d.line("Student ID: ________________", "b")
         d.line("Answer Sheet - " + title, "h")
-        d.para("Write your student ID on the Student line above, then answer in the spaces below.")
+        d.para("Write your full name (first and last) on the Student line, and your student ID "
+               "if your school uses one, then answer in the spaces below.")
         d.blank()
     else:
-        _header(d, test_id, "Answer Sheet - " + title, sheet["student"], True)
+        writes_identity = sheet.get("writes_identity", True)
+        _header(d, test_id, "Answer Sheet - " + title,
+                sheet["name"] if writes_identity else None,
+                sheet["student"] if writes_identity else None, True)
 
     def written(qid: str, prompt: str, label: str | None = None) -> None:
         d.para(f"{label or qid}. {prompt}", "b")

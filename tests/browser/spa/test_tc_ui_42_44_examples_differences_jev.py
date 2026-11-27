@@ -278,12 +278,20 @@ def test_tc_ui_43_differences_by_cause_three_questions_fixed_sentence_and_no_rat
             assert sides.count() == 2, "the teacher inconsistency does not show both answers"
             # Both answers the system put at `none`, with the teacher's two different marks: the
             # shipped triage pairs E7-001 (retell) with the first other paper at the same system
-            # level and a different mark, E7-003 (evidenced).
+            # level and a different mark. The paired paper is one of the other three; a document
+            # id orders them, and that order is per ingest, not a contract. Assert the rule, not
+            # which paper happened to be first.
             first, second = sides.nth(0).inner_text(), sides.nth(1).inner_text()
             assert "E7-001-strong.pdf" in first and re.search(r"^You: retell$", first, re.M), (
                 f"the first side is not E7-001 marked retell:\n{first}")
-            assert "E7-003-weak.pdf" in second and re.search(r"^You: evidenced$", second, re.M), (
-                f"the paired side is not E7-003 with the teacher's own mark:\n{second}")
+            assert any(name in second for name in (
+                "E7-002-middle.pdf", "E7-003-weak.pdf", "E7-004-mostly-blank.pdf")), (
+                    f"the paired side is not another example:\n{second}")
+            assert re.search(r"^The system: none$", second, re.M), (
+                f"the paired side is not at the same system level:\n{second}")
+            paired_teacher = re.search(r"^You: (\S+)$", second, re.M)
+            assert paired_teacher and paired_teacher.group(1) != "retell", (
+                f"the paired side does not show a different teacher mark:\n{second}")
 
             # The questions: "Question N of 3", options, two examples each.
             for number in range(3):

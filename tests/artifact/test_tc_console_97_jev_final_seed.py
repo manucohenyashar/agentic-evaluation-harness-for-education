@@ -32,7 +32,7 @@ from aeh.store import open_store
 from tests.support.clarity_world import (CELL_KINDS, ENG7_QUESTIONS, ENG7_TOTAL_MAX,
                                          EXPECTED_REASONS, EXPECTED_ROLLUP, JEV_GATE,
                                          JEV_THRESHOLD, SEED_BANDS, STUDENTS,
-                                         canonical_snapshot, roster_names, score_rows,
+                                         canonical_snapshot, roster_refs, score_rows,
                                          seed_jev_final_world)
 
 CASE = "TC-CONSOLE-97 (seed half)"
@@ -80,8 +80,8 @@ def test_tc_console_97_seed_has_a_synthetic_and_a_real_cohort(seeded) -> None:
         assert set(seed.submissions) == set(STUDENTS)
     assert world.synthetic.package_version_id == world.real.package_version_id, (
         f"{CASE}: the two cohorts must administer one ENG7 version")
-    assert set(STUDENTS) <= set(roster_names()), (
-        f"{CASE}: the seed's students are not the sample-materials names")
+    assert set(STUDENTS) <= set(roster_refs()), (
+        f"{CASE}: the seed's students are not the sample-materials refs")
 
 
 @pytest.mark.parametrize("cohort", ["synthetic", "real"])

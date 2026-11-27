@@ -9,15 +9,16 @@
 The system can read submitted papers, assess rubric criteria, show evidence and feedback, and
 produce grades for a grading run. A teacher can review results and change a grade; changing a
 final grade requires a reason and preserves the previous revision. The teacher-facing console is
-a browser app, but class creation and scan intake still use operator commands, and a successful
-run does not by itself mean every grade is final. Results can remain provisional until finalized
-or until any review window has elapsed.
+a browser app that covers class creation, scan intake, grading, review, the blind sample,
+finalization, amendments and the downloads; a successful run does not by itself mean every
+grade is final. Results can remain provisional until finalized or until any review window has
+elapsed.
 
 ---
 
 ## 2. The whole life cycle at a glance
 
-There are two phases in the teacher's workflow; the operator also handles class setup and reading the scans.
+There are two phases in the teacher's workflow; the operator starts the console and can handle class setup and reading the scans, and the teacher can do both in the browser.
 
 ```
   PHASE 1 - SET UP THE TEST (once, about 30-60 minutes of your time)
@@ -341,6 +342,59 @@ marking matched yours"**:
 
 Nothing in the block, or anywhere else, claims the marking is "accurate": it says how closely the
 system's levels matched yours on the answers you marked, and how many answers that rests on.
+
+### The statistics behind the figures: κ, QWK and α
+
+**What kind of number it is.** *Agreement beyond chance* is a chance-corrected agreement
+statistic: it asks how much more often two markers agreed than they would have by luck, not how
+many marks were right. The system uses the statistic that fits the comparison:
+
+| Statistic | Where you meet it | What it compares |
+|---|---|---|
+| **Cohen's κ** (kappa) | The *How closely the marking matched yours* block on Results | Two markers — you and the system — one answer at a time |
+| **Quadratic weighted kappa (QWK)** | The test's detailed validation record, for ordered rubric lines | Two markers, with a one-level miss counting far less than a two-level miss |
+| **Ordinal Krippendorff's α** (alpha) | **System status**, and wherever several graders or Jev are compared | More than two markers, on ordered levels |
+
+All three subtract the agreement chance alone would produce. None is a percentage and none is an
+accuracy score: they say how closely the markers' levels matched, not whether the right level was
+chosen. The screens show the figure to two decimals, always beside the number of answers it rests
+on. The system also computes QWK for ordered lines and keeps it in the detailed validation
+record; it is not a second number on the Results block.
+
+On **System status**, the same kind of figure compares Jev's answers and the judges' against
+your blind marks. A warning that Jev agreed less well does not change its role; it is a signal
+to look, and the operator can turn the engine off for later runs.
+
+**Reading the number.** These are rules of thumb, not pass marks: about 0.6–0.8 is substantial
+agreement, above 0.8 is near-perfect, and at or below 0 means no better than chance (a negative
+figure means the two markers agreed less often than chance would give). The system sets no pass
+mark, never turns the figure into a grade, and never changes a mark because of it. A figure is
+meaningful only with its number of answers; below 30 the screen says *"too few"* and withholds
+the number.
+
+**What to do with a low figure.** A low or negative figure is a prompt to look, not a verdict:
+
+1. Open the differences by student and question and read the answers where you and the system
+   disagreed.
+2. Check the sample size first. Below 30 answers, record *"too few"* and wait for the next class;
+   do not revise the rubric from it.
+3. Look for a pattern. The same question marked in the same way but disagreeing with you across
+   several students can point at an ambiguous level description or a missing example; a scatter
+   of unrelated disagreements can point at the reading or the evidence extracted from the paper.
+4. If the pattern persists once there are enough answers, revise the rubric wording or add an
+   example, then collect a fresh sample. Never tune the rubric against a small sample — you would
+   fit the noise, not the rubric.
+5. Read the figure against the same test's record across earlier classes. Never compare figures
+   across different test versions, populations or backends; the system scopes each figure to the
+   test version and the settings it ran under.
+6. A low figure never changes a grade by itself. If a specific mark is wrong, correct it through
+   the normal review or amendment; the figure is evidence about the marking, not a hidden
+   adjustment.
+
+**Where the figures accumulate.** One class's blind sample is usually about 15 answers spread over
+several questions, so a question rarely reaches 30 in one administration. Each class that takes
+the same version and marks its sample adds to the test's record, *"How well this test has been
+marked so far"*; the system never fills a gap with an older test's number.
 
 ### The review queue: the minutes you have, not a risk level
 

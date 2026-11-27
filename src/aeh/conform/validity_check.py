@@ -438,7 +438,10 @@ def _play_blind(console: _Console, figures: ClassFigures,
     undrafted: list[str] = []
     for seat in read.get("seats", []):
         name = str(seat.get("student_name") or "")
-        student = next((ref for ref in bands if ref in name), None)
+        # The intended-band table is keyed by the roster's full name, which is what the seat
+        # carries. Exact, not substring: a name that is not in the table is a parked/unknown
+        # student and is left undrafted rather than matched to a different one.
+        student = name if name in bands else None
         band = bands.get(student or "", {}).get(str(seat.get("criterion_id")))
         offered = {str(b.get("name")) for b in seat.get("bands", [])}
         if band is None or band not in offered:

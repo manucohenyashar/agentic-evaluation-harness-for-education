@@ -31,7 +31,7 @@ Purpose: the operator and teacher learn the screens with nothing at stake.
 - [ ] `python docs/live-tests/sample-materials/check_config.py docs/live-tests/config/live-test.dev-ci.toml` prints `ACCEPTED`.
 - [ ] `python docs/live-tests/sample-materials/verify_sample_materials.py` ends with `OK: every sample sheet behaved at intake as the live-test guide says it will.`
 - [ ] An engineer has built the practice folder (`build_rehearsal_data.py`, see the [tutorial](../tutorials/operating-tutorial.md), section 2).
-- [ ] The operator has done the **ten-minute rehearsal** (tutorial section 8) once without help.
+- [ ] The operator has done the **ten-minute rehearsal** (tutorial section 10) once without help.
 - [ ] The teacher has opened `/#/review`, `/#/results` and a student result on the practice data, and can explain provisional vs final grades. S9/S12/S13 are legacy operator/audit pages, not the SPA's teacher workflow.
 - [ ] Both have practised: stop the console with Ctrl-C, start it again under the same profile, and see that pages and grades remain. If practical, exercise Pause/Resume on a practice run; record that a real live pause/resume cycle remains unverified.
 
@@ -46,7 +46,7 @@ All must be true. Each line is a checkable goal, listed in 02.
 - [ ] The teacher can make a class marked *made-up practice work* on the Classes screen (typed or from `config/eng7-roster.txt`) and sees its students listed.
 - [ ] Parked-paper handling is understood: the SPA shows each reason, gives a nameless paper to its student, releases or closes the others, and records every decision with its note.
 - [ ] Scans uploaded on the Papers inbox are read, and the intake statuses match the expected sample outcomes (`aeh ingest` reads the same way from a terminal).
-- [ ] `aeh run` under `dev-ci` with a key really calls OpenRouter, and the printed summary names the provider. The 2026-10-12 run was not a clean pass: citation refusals left grades provisional, and Jev faulted before dispatch.
+- [ ] `aeh run` under `dev-ci` with a key really calls OpenRouter, and the printed summary names the provider. The 2026-10-12 run was not a clean pass: citation refusals left grades provisional, and Jev faulted before dispatch. The citation refusal's cause was fixed after that run (quote-anchored citations, #918); a fresh live pass has not been recorded.
 - [ ] An OpenRouter spending limit is set and `HARNESS_COST_CEILING` is configured. The Jobs screen shows job cost so far; use OpenRouter's dashboard for the actual account spend.
 - [ ] Both packages (`PS9-FORCES-01`, `ENG7-READ-01`) are published from `config/ps9-forces-01.package.toml` and `config/eng7-read-01.package.toml`, with keys C, B, C and B for Q1, Q2, Q3 and Q5a, and the English package carrying one line of each rubric method (C1 evidence checklist with items C1a/C1b, C2 bands, C3 the teacher's own words).
 - [ ] A backup of an empty data folder exists, so "start again" is one copy.
@@ -60,7 +60,7 @@ All must be true. Each line is a checkable goal, listed in 02.
 | Seat | Person | Job |
 |---|---|---|
 | Teacher | one person | Uses the SPA to make the class and the test, review, blind-score, finalize/amend and download, and answers the questionnaire. Does **not** touch the terminal. |
-| Operator | one person | Creates the class and reads scans with the documented CLI steps, runs the console, watches jobs, and handles parked papers. |
+| Operator | one person | Runs the console (the one terminal step), watches jobs, reads scans on **Load papers**, and handles parked papers. The teacher can make the class in the SPA too. |
 | Engineer | one person, beside the operator | Helps with configuration or failure diagnosis; writes down every intervention and does not characterize the test as terminal-free. |
 | Observer | optional | Writes down what the teacher says and does, in their words. |
 
@@ -80,8 +80,8 @@ All must be true. Each line is a checkable goal, listed in 02.
 | T-0, 09:00 | Operator runs `check_config.py` and confirms `ACCEPTED`, starts the console with the approved config and settings ([05, step 0](05-console-teacher-walk.md#step-0-start-the-console-operator-the-one-terminal-step)), and opens the printed SPA URL. The teacher makes the physics class on the Classes screen ([05, step 1](05-console-teacher-walk.md#step-1-the-class-teacher)). | Operator + teacher | |
 | 09:15 | Teacher authors the package from the test, model answer and rubric in `/#/package/author`; reviews/edits the draft and approves it. Confirm the resulting published package version. For a prebuilt sample package, use the documented spec path instead. | Teacher + operator | |
 | 09:30 | Read the test paper and the six physics sheets on `/#/papers` ([05, step 3](05-console-teacher-walk.md#step-3-reading-the-papers-teacher-or-operator)); watch the reading job's progress there or on `/#/jobs`. | Operator | |
-| 09:50 | Confirm the expected three parked items (S9-004, S9-005, S9-006) and their reasons on the SPA Parked screen. | Operator | |
-| 10:00 | **Parked-paper drill** ([05, step 3](05-console-teacher-walk.md#the-physics-class-the-parking-drill)). S9-004: write the tick you read in the note and release it; correct the mark on the student's result if needed. S9-005: close it, noting which test it is, and upload it on the right class. S9-006: *This paper belongs to* → S9-006 → **Give it to this student**. Each decision is recorded with your note. | Operator | |
+| 09:50 | Confirm the expected three parked items — Dalia Haddad (S9-004), Elif Demir (S9-005), Farah Nasser (S9-006) — and their reasons on the SPA Parked screen. | Operator | |
+| 10:00 | **Parked-paper drill** ([05, step 3](05-console-teacher-walk.md#the-physics-class-the-parking-drill)). Dalia Haddad (S9-004): write the tick you read in the note and release it; correct the mark on the student's result if needed. Elif Demir (S9-005): close it, noting which test it is, and upload it on the right class. Farah Nasser (S9-006): *This paper belongs to* → Farah Nasser → **Give it to this student**. Each decision is recorded with your note. | Operator | |
 | 10:20 | **Start the run** from `/#/run` and confirm the priced preview. Watch `/#/monitor` or `/#/jobs`; note the start time and job cost shown. | Operator | |
 | 10:25 | **Recovery drill (if the run can safely be interrupted).** To test interruption recovery, stop the console with Ctrl-C while a run is running, then restart under the same profile; confirm that interrupted run resumes without repeated or missing work. This does not test recovery of an intentional pause: queue Resume in Jobs before stopping, and recovery resumes that paused run only if the request is still unapplied. `aeh recover` also reclaims leases and settles completed runs' ungraded or non-final grades. Recovery does not start pending runs or override an operator pause. Record each pause/resume cycle separately. | Operator | |
 | ~10:45 | Record the run status, end time, Jobs-screen cost and OpenRouter dashboard spend. Do not treat `complete` as proof every grade is final; inspect `grades_final` and any refusal details. | Operator | |
@@ -114,22 +114,22 @@ Copy this table and fill it in. One row per sheet. Leave a cell blank rather tha
 
 | Sheet | Intake status (expected in 03) | Matches expectation? | MCQ marks right? (expected in 03) | Written bands: system / teacher | Within one band? | Feedback helpful? (teacher, 1 line) | Notes |
 |---|---|---|---|---|---|---|---|
-| S9-001 | ok | | 4 of 4 | C4: / C6: | | | |
-| S9-002 | ok | | 3 of 4 | C4: / C6: | | | |
-| S9-003 | ok | | 1 of 4 | C4: / C6: | | | |
-| S9-004 | parked, `incomplete` | | 3 of 4 + Q1 by operator | C4 (none) / C6: | | | |
-| S9-005 | parked, `unmatched_assessment` | | n/a | n/a | | | |
-| S9-006 | parked, `incomplete` | | 4 of 4 only after a corrected rescan with identity is re-ingested; otherwise unscored | C4: / C6: | | | |
-| E7-001 | ok | | n/a | C1a: C1b: (C1 = sum?) C2: C3: | | | |
-| E7-002 | ok | | n/a | C1a: C1b: (C1 = sum?) C2: C3: | | | |
-| E7-003 | ok | | n/a | C1a: C1b: (C1 = sum?) C2: C3: | | | |
-| E7-004 | ok | | n/a | C1a: C1b: (C1 = sum?) C2: C3: | | | |
+| Aisha Bello (S9-001) | ok | | 4 of 4 | C4: / C6: | | | |
+| Daniel Kim (S9-002) | ok | | 3 of 4 | C4: / C6: | | | |
+| Mateo Rossi (S9-003) | ok | | 1 of 4 | C4: / C6: | | | |
+| Dalia Haddad (S9-004) | parked, `incomplete` | | 3 of 4 + Q1 by operator | C4 (none) / C6: | | | |
+| Elif Demir (S9-005) | parked, `unmatched_assessment` | | n/a | n/a | | | |
+| Farah Nasser (S9-006) | parked, `incomplete` | | 4 of 4 after the paper is given to Farah Nasser on Parked; otherwise unscored | C4: / C6: | | | |
+| Ines Moreau (E7-001) | ok | | n/a | C1a: C1b: (C1 = sum?) C2: C3: | | | |
+| Jonas Berg (E7-002) | ok | | n/a | C1a: C1b: (C1 = sum?) C2: C3: | | | |
+| Keiko Tanaka (E7-003) | ok | | n/a | C1a: C1b: (C1 = sum?) C2: C3: | | | |
+| Luis Ortega (E7-004) | ok | | n/a | C1a: C1b: (C1 = sum?) C2: C3: | | | |
 
 The English lines use the three scoring methods ([03, section 3](03-sample-tests-and-answer-sheets.md)): C1 is an evidence checklist whose mark is the sum of items C1a and C1b, C2 is a band line, C3 a line the teacher described in their own words. Read them with `show_criterion_marks.py` (03, section 7).
 
 ## How to judge the result
 
-These thresholds are **suggestions to agree before the day**, not rules of the system.
+These thresholds are **suggestions to agree before the day**, not rules of the system. They are readiness checks, not statistical ones; the section after the table explains the chance-corrected figures and what this test can and cannot establish.
 
 | Question | Pass | If not |
 |---|---|---|
@@ -143,6 +143,75 @@ These thresholds are **suggestions to agree before the day**, not rules of the s
 | Cost | Within the ceiling, read from OpenRouter's dashboard | If the run stopped early on the ceiling, record how far it got |
 
 Remember what the numbers cannot say: ten sheets and two tests cannot show accuracy, and typed pages say nothing about handwriting.
+
+## Statistical evaluation: what the figures mean
+
+The live test is a readiness test, not an accuracy measurement. Ten sheets, and the blind sample
+drawn from them, cannot estimate how often the marking is right; a per-question figure needs at
+least 30 blind answers before the system shows one. The run's job is to show that the machinery
+works and that the marks are plausible, not to produce a headline agreement number.
+
+### What the system computes
+
+| Statistic | Where you meet it | What it compares |
+|---|---|---|
+| **Cohen's κ** (kappa) | The *How closely the marking matched yours* block on Results | Two markers — the teacher and the system — one answer at a time |
+| **Quadratic weighted kappa (QWK)** | The test's detailed validation record, for ordered rubric lines | Two markers, with a one-level miss counting far less than a two-level miss |
+| **Ordinal Krippendorff's α** (alpha) | **System status**, where several graders or Jev are compared | More than two markers, on ordered levels |
+
+All three subtract the agreement chance alone would produce. None is a percentage and none is an
+accuracy score: they say how closely the markers' levels matched, not whether the right level was
+chosen. The screens show the figure to two decimals, always beside the number of answers it rests
+on. The system also computes QWK for ordered lines and keeps it in the detailed validation
+record; it is not a second number on the Results block.
+
+`tools/live_validity_check.py` prints the administration and package records for the sample
+classes; their validity figures carry chance-corrected κ and QWK where the data supports them.
+It marks the blind sample from `sample-materials/intended_bands.py`, the sample author's
+intended bands — **not a teacher's marks** — so its figures are evidence of consistency with the
+author's intent, not of accuracy with teachers. `tools/live_local_check.py` prints a readable
+per-line band-agreement block (exact/adjacent, κ and ordinal α) for a local model server; it is a
+developer consistency check over the pairs it has, not the teacher-facing 30-answer headline.
+
+### How to read a figure
+
+- **1.00** — perfect agreement; **0.00** — no better than chance; **below 0** — agreed less often
+  than chance would give.
+- Rules of thumb, not pass marks: about 0.6–0.8 is substantial agreement, above 0.8 is
+  near-perfect. The system sets no pass/fail on κ, never turns the figure into a grade, and never
+  changes a mark because of it.
+- A figure is meaningful only with its answer count. Below 30 the screen says *"too few"* and
+  withholds the number; record that, do not interpret it.
+- Simple checks and overall judgements are reported separately and never pooled. Figures are
+  scoped to the test version, population and backend they were measured on; never compare figures
+  across different versions or settings.
+
+### What to do on the day
+
+1. **Mark the blind sample and finish it** (or skip it, and record that no new evidence was
+   collected). The counting starts only when you mark without seeing the system's marks.
+2. **Record each question's figure or "too few", with its answer count.** These sample classes
+   hold six physics sheets and four English sheets, so in a fresh data folder no question can
+   reach 30 in this run; every figure will read *"too few"*. That is the honest state, not a
+   failure.
+3. **Read the differences before the number.** Open the differences by student and question and
+   note whether they cluster on one question (usually rubric ambiguity or a missing example) or
+   scatter (usually the reading or the evidence extracted from the paper).
+4. **Do not revise the rubric during the test.** Record what you saw; change the rubric afterwards,
+   with enough answers to see a pattern, then collect a fresh sample.
+5. **Use the validity tool for a fuller read, not as a pass/fail gate.** Its figures against the
+   author's intended bands are consistency evidence; its dataset is the sample set, not a
+   teacher's class.
+6. **Do not report a percentage, a single class's figure as the test's accuracy, or a figure
+   computed below 30 answers as a result.** The one thing the figures support is a statement about
+   how closely the markers' levels matched, with the answer count beside it.
+
+### What to put on the record sheet
+
+For each question, write the figure (or *"too few"*), its answer count, and the differences you
+inspected. If you ran `tools/live_validity_check.py`, file its report with the record. The pass
+criteria in the table above remain the readiness criteria; κ is evidence about consistency, not a
+pass/fail gate for this test.
 
 ## Questions for the teacher (ask, don't lead)
 

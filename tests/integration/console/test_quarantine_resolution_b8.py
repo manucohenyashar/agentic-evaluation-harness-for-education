@@ -43,8 +43,7 @@ def parked(tmp_data_dir, monkeypatch):
     # #620: a roster entry needs a name; the sample sheets write the ID on the `Student:`
     # line, so that is the name each paper is matched by.
     create_cohort(store, "class-ps9", "synthetic",
-                  [RosterEntry(full_name=s["student"] or "S9-006",
-                               student_ref=s["student"] or "S9-006")
+                  [RosterEntry(full_name=s["name"], student_ref=s["student"])
                    for s in sm.PHYSICS_SHEETS])
     files, reader, blobs = sm.build_all(), v.ScriptedReader(), store.blobs()
     ingestor = Ingestor(store.cohort("class-ps9"), blobs, reader, v.TRANSCRIBER,

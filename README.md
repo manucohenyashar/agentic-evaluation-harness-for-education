@@ -272,13 +272,13 @@ its own origin — the bundle ships as package data, so an install needs no tool
 render time makes no external request. A CDN reference is a console that renders blank at a
 school with no internet — the deployment this system exists for.
 
-**The console is the teacher-facing SPA; terminal commands still handle class setup/roster changes and scan intake**
-(NFR-CONSOLE-09). Documentation and onboarding are written to that split, with the shipped
-state stated plainly: the SPA covers package authoring, run control, review, blind sampling,
-finalization and amendment, while class creation/roster editing, scan reading and result
-exports still use `aeh` commands (`aeh cohort create`, `aeh ingest`, `aeh results export`).
-These are known gaps in teacher-independent operation, not merely debugging tasks. The parity is
-an inventory: every `aeh` subcommand either has a console path or is listed in the console's
+**The console is the teacher-facing SPA and covers the whole teacher day** (NFR-CONSOLE-09).
+Documentation and onboarding are written to that split, with the shipped state stated plainly:
+the SPA covers class creation and roster editing, package authoring, scan upload and reading,
+run control, review, blind sampling, finalization, amendment and the result downloads. The
+`aeh` commands (`aeh cohort create`, `aeh ingest`, `aeh run`, `aeh results export`) remain for
+scripting, debugging and starting the console with its key and settings. The parity is an
+inventory: every `aeh` subcommand either has a console path or is listed in the console's
 debugging-only help (`GET /api/v1/cli-help`) with the reason it has none. Some generated
 inventory descriptions remain stale; see `TC-CONSOLE-58` and follow the controls described in
 the operator tutorial for the shipped authoring path. A subcommand added later without such

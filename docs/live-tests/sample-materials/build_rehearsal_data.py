@@ -38,6 +38,19 @@ import aeh.judge, aeh.orch, aeh.pkg, aeh.review, aeh.synth  # noqa: E401,E402,F4
 
 from tests.support import pipe_world  # noqa: E402
 
+#: The three demo students' display names. The replayed corpus writes opaque refs on the
+#: stored papers (so the recordings stay byte-identical); the roster's `full_name` is what
+#: every console screen and download shows, so set it after the run is built. These names are
+#: deliberately distinct from the live-test sample students, so the two demo classes cannot
+#: be confused.
+DEMO_NAMES = {"P-0001": "Nadia Rahman", "P-0002": "Oliver Grant", "P-0003": "Sofia Mendes"}
+
+
+def _name_demo_students(store, cohort_id: str) -> None:
+    with store.cohort(cohort_id).transaction() as tx:
+        for ref, name in DEMO_NAMES.items():
+            tx.execute("UPDATE roster SET full_name = :n WHERE student_ref = :r", n=name, r=ref)
+
 
 def main(argv: list[str]) -> int:
     target = Path(argv[0]).expanduser() if argv else Path.home() / "aeh-rehearsal"
@@ -58,10 +71,12 @@ def main(argv: list[str]) -> int:
         world.start_run()
         print("3/3 driving the run to completion ...")
         result = pipe_world.drive_composed(world)
+        _name_demo_students(world.store, world.cohort_id)
         print(f"    run status: {result.status}")
         print(f"\nrun id ............ {world.run_id}")
         print(f"cohort id ......... {world.cohort_id}")
         print(f"package version ... {world.version}")
+        print(f"students .......... {', '.join(DEMO_NAMES.values())}")
         print(f"\nstart the console:  python -m aeh console --data-dir {target}")
         world.store.close()
         return 0 if result.status == "complete" else 1

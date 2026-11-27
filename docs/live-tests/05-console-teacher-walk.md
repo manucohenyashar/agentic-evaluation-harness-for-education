@@ -41,8 +41,8 @@ Open **Set up a class** in the left sidebar (`/#/class`).
 1. **Class name:** `eng7-class` (lower-case letters, digits, `-`, `_` or `.`).
 2. **Whose work is this?** choose **made-up practice work**. This is the consent class; it can never be changed afterwards, and only made-up work may go to OpenRouter without consent ([01, the consent rule](01-hosting-and-configuration.md)).
 3. **Students:** either
-   * **Type or paste them** — one per line: `E7-001`, `E7-002`, `E7-003`, `E7-004`; or
-   * **Import a class list file** — choose `docs\live-tests\config\eng7-roster.txt`. The screen lists the four students it found (and any problem line, with its line number) before anything is written.
+   * **Type or paste them** — one full name per line: `Ines Moreau`, `Jonas Berg`, `Keiko Tanaka`, `Luis Ortega` (the paste also accepts first name, last name and an optional ID, separated by tabs); or
+   * **Import a class list file** — choose `docs\live-tests\config\eng7-roster.txt`, a `full_name,student_ref` CSV. The screen lists the four students by name (and any problem line, with its line number) before anything is written.
 4. **Make the class.**
 
 **Expect:** *Class eng7-class is ready.* The class appears above the form with its four students, each *no paper yet*, and the top bar's *Class* switcher names it. The home page's stage 1 is *Done — 4 students.*
@@ -95,11 +95,11 @@ Sending a sheet again is harmless: it is reported *already read* and never grade
 
 Repeat steps 1–3 for physics: class `ps9-class` from `docs\live-tests\config\ps9-roster.txt`, package `PS9-FORCES-01` (route A from `…\PS9-FORCES-01\`'s three documents, or route B with `ps9-forces-01.package.toml`), and the test paper plus the six sheets in `…\PS9-FORCES-01\answer-sheets\`.
 
-**Expect:** *3 paper(s) ready to grade, 3 parked* — S9-004 (`incomplete`, a doubled tick), S9-005 (`unmatched assessment`, the wrong test), S9-006 (`incomplete`, no name). The screen links to **Parked**, where each paper is resolved with a note that is recorded with your name and the time:
+**Expect:** *3 paper(s) ready to grade, 3 parked* — Dalia Haddad (S9-004, `incomplete`, a doubled tick), Elif Demir (S9-005, `unmatched assessment`, the wrong test), Farah Nasser (S9-006, `incomplete`, no name). The screen links to **Parked**, where each paper is resolved with a note that is recorded with your name and the time:
 
-* **S9-006 (no name):** *This paper belongs to* → choose the student (only students with no paper yet are offered; with the shipped roster that is `S9-006`) → **Give it to this student**. It is graded as theirs.
-* **S9-004 (doubled tick):** write which tick you read in the note (for example *Q1 is C — the second tick was crossed out*) and **Release to scoring**; correct that mark later on the student's result if it needs it.
-* **S9-005 (wrong test):** **Close as unresolvable**, note which test it is, and upload it on the right class's **Load papers**.
+* **Farah Nasser (no name):** *This paper belongs to* → choose them (only students with no paper yet are offered; with the shipped roster that is Farah Nasser) → **Give it to this student**. It is graded as theirs.
+* **Dalia Haddad (doubled tick):** write which tick you read in the note (for example *Q1 is C — the second tick was crossed out*) and **Release to scoring**; correct that mark later on the student's result if it needs it.
+* **Elif Demir (wrong test):** **Close as unresolvable**, note which test it is, and upload it on the right class's **Load papers**.
 
 ## Step 4: the grading run (teacher or operator)
 
@@ -116,7 +116,7 @@ Choose the class in the top bar if it is not already chosen, then open **Start a
 As in [04](04-test-day-plan.md), 11:00–11:40:
 
 * **Review queue** (`/#/review`): what is flagged, and how many marks are still provisional.
-* **Blind sample** (`/#/review/blind`): each drawn answer offers **that question's own levels** from the package (for example *Full, Adequate, Limited, None*), with nothing preselected and no system mark shown. Choose the level you would give.
+* **Blind sample** (`/#/review/blind`): each drawn answer offers **that question's own levels** from the package (for example *Full, Adequate, Limited, None*), with nothing preselected and no system mark shown. Choose the level you would give. After Finish, Results shows *agreement beyond chance* per question with its answer count; that is chance-corrected agreement (Cohen's κ), not a percentage or an accuracy score. [04's statistical evaluation section](04-test-day-plan.md#statistical-evaluation-what-the-figures-mean) explains the figure and the 30-answer minimum.
 * **Results** (`/#/results`): every student's total and grade; open a student for the feedback and each line's level. **Change a final grade** needs a reason and keeps the original. **Finalize the batch** stamps the run as delivered.
 
 ## Step 6: download the results (teacher)
@@ -141,7 +141,7 @@ The same screen also has **Correct an answer key** (a multiple-choice key found 
 
 | What | Why | Instead |
 |---|---|---|
-| Starting the console, with the key and the two `HARNESS_ORCH_…` settings | Environment settings are read when the console starts | Step 0, once |
+| Starting the console, with the key and the config file | Environment settings are read when the console starts | Step 0, once |
 | The exact sample package (route B) | Building from a spec file is a developer route | Route A, or the one `aeh package build` line |
 | `show_criterion_marks.py` (C1 = C1a + C1b) | It is an engineer's check script | Run it after the session, as the README's step 4 says |
 

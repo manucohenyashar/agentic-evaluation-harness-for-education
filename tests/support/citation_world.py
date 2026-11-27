@@ -4,7 +4,8 @@
 by ingesting the four answer sheets through the operator path (`tests/support/eng7_sample.py`'s
 `ingest_eng7`: `aeh package build`, `aeh cohort create`, `aeh ingest`, with only the OpenRouter
 transport stood in). The ingest runs once per test session (about four seconds) and its documents
-are cached by student name. Nothing here hand-writes region markup: the `<!-- region: ... -->`
+are cached by the roster's internal student ref (the sample names stay in the documents).
+Nothing here hand-writes region markup: the `<!-- region: ... -->`
 headers, the `question_id=` tags and the closes are what M-INGEST wrote.
 
 **The judged unit (rung 1 + a real store).** `citation_world` seeds one judged unit over that
@@ -78,9 +79,8 @@ def _ingest_once() -> None:
     store = open_store(root / "data")
     try:
         rows = store.cohort(ENG7_COHORT).query(
-            "SELECT r.full_name AS name, d.markdown AS markdown FROM document d "
-            "JOIN submission s ON s.submission_id = d.submission_id "
-            "JOIN roster r ON r.student_ref = s.student_ref")
+            "SELECT s.student_ref AS name, d.markdown AS markdown FROM document d "
+            "JOIN submission s ON s.submission_id = d.submission_id")
         for row in rows:
             _CANONICAL[row["name"]] = row["markdown"]
     finally:

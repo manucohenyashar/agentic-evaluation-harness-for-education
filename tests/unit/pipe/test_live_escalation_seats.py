@@ -148,8 +148,8 @@ def physics(tmp_data_dir, tmp_path, monkeypatch):
     finally:
         store.close()
     roster = tmp_path / "roster.txt"
-    roster.write_text("\n".join(s["student"] or "S9-006" for s in sm.PHYSICS_SHEETS),
-                      encoding="utf-8")
+    roster.write_text("full_name,student_ref\n" + "\n".join(
+        f"{s['name']},{s['student']}" for s in sm.PHYSICS_SHEETS), encoding="utf-8")
     data = str(tmp_data_dir)
     with redirect_stdout(io.StringIO()) as out:
         assert cli.main(["package", "build", "--data-dir", data, "--spec", str(SAMPLE_SPEC)]) == 0

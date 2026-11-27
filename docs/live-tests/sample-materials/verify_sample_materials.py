@@ -176,10 +176,13 @@ def assessment_transcript(test_id: str) -> str:
 def sheet_transcript(sheet: dict) -> str:
     """The page as an ideal reader returns it: header lines first, then one region per question.
     A written answer's region carries the printed question and the student's words together,
-    because the reader is asked to transcribe the page verbatim."""
+    because the reader is asked to transcribe the page verbatim. The `Student:` line carries
+    the roster's full name and the `Student ID:` line its internal ref; the no-name sheet
+    carries neither."""
     out = [f"Assessment: {sheet['test']}"]
-    if sheet["student"]:
-        out.append(f"Student: {sheet['student']}")
+    if sheet.get("writes_identity", True):
+        out.append(f"Student: {sheet['name']}")
+        out.append(f"Student ID: {sheet['student']}")
     out.append("")
     if sheet["test"] == sm.PHYSICS_ID or sheet["mcq"]:
         for qid, _prompt, options, _key in sm.PHYSICS_MCQ:

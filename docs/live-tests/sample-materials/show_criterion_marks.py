@@ -99,8 +99,11 @@ def main(argv: list[str]) -> int:
     store = open_store(args.data_dir.expanduser())
     problems: list[str] = []
     try:
-        students = {row["submission_id"]: row["student_ref"] for row in store.cohort(
-            args.cohort).query("SELECT submission_id, student_ref FROM submission")}
+        students = {
+            row["submission_id"]: (str(row["full_name"] or "") or str(row["student_ref"]))
+            for row in store.cohort(args.cohort).query(
+                "SELECT s.submission_id, s.student_ref, r.full_name FROM submission s "
+                "LEFT JOIN roster r ON r.student_ref = s.student_ref")}
         records = run_grade_records(store, args.run)
         if not records:
             print(f"run {args.run} has no grades yet: let it finish (aeh run), then try again.")

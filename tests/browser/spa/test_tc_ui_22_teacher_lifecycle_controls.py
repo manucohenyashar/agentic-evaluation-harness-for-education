@@ -90,7 +90,10 @@ def test_tc_ui_22_class_papers_parked_and_run_start_from_the_browser(
     config = effective_config(cli._load_config_file(str(DEV_CI_CONFIG)))
     server = serve_console(store, cfg=config, config_path=str(DEV_CI_CONFIG))
     origin = f"http://127.0.0.1:{server.port}"
-    roster = "\n".join(s["student"] or "S9-006" for s in sm.PHYSICS_SHEETS)
+    # The SPA's paste columns are first name, last name, optional student ID.
+    roster = "\n".join(
+        f"{s['name'].split(' ', 1)[0]}\t{s['name'].split(' ', 1)[1]}\t{s['student']}"
+        for s in sm.PHYSICS_SHEETS)
     try:
         with spa.spa_page(origin) as (page, log):
             # 1. the class, through the form
@@ -116,12 +119,11 @@ def test_tc_ui_22_class_papers_parked_and_run_start_from_the_browser(
             card = page.locator("li.parked-card").filter(has=page.get_by_label("This paper belongs to"))
             card.first.wait_for()
             card.first.get_by_label("This paper belongs to").select_option("S9-006")
-            card.first.get_by_label("Your note (optional)").fill("the hand matches S9-006")
+            card.first.get_by_label("Your note (optional)").fill("the hand matches Farah Nasser")
             card.first.get_by_role("button", name="Give it to this student").click()
             page.get_by_role("dialog").get_by_role("button", name="Give it").click()
-            # FR-UI-22: the outcome names the student by name (the roster's name is the
-            # ref here — the sample class lists S9-006 under that name).
-            page.get_by_role("status").filter(has_text="was given to S9-006").wait_for()
+            # FR-UI-22: the outcome names the student by the roster's full name.
+            page.get_by_role("status").filter(has_text="was given to Farah Nasser").wait_for()
 
             # 4. a new grading run, from the run screen
             page.goto(origin + "/#/run?class=ps9-class")
@@ -153,15 +155,15 @@ def test_tc_ui_22_class_papers_parked_and_run_start_from_the_browser(
             assert not log.foreign_requests(), log.foreign_requests()
 
         handle = store.cohort("ps9-class")
-        # The typed list names each student; the console generates their references, so the
-        # paper is checked against the roster NAME the operator chose.
+        # The typed list carried each student's full name and the sample ref; the paper is
+        # checked against the roster NAME the operator chose.
         assigned = list(handle.query(
             "SELECT r.full_name, d.note FROM quarantine_decision d "
             "JOIN submission s ON s.submission_id = d.submission_id "
             "JOIN roster r ON r.student_ref = s.student_ref "
             "WHERE d.resolution = 'assigned'"))
         assert [(r["full_name"], r["note"]) for r in assigned] \
-            == [("S9-006", "the hand matches S9-006")]
+            == [("Farah Nasser", "the hand matches Farah Nasser")]
         runs = list(handle.query("SELECT package_version_id FROM run"))
         assert [r["package_version_id"] for r in runs] == [version]
     finally:

@@ -135,8 +135,8 @@ def test_tc_conform_20_smoke_profile_prints_every_section_offline(
                              eng7.split("Verification-refusal rate:")[0], re.M)
     assert len(sheet_lines) == 4, sheet_lines
     for sheet in english:
-        assert any(sheet["student"] in name for name, _, _ in sheet_lines), (
-            sheet["student"], sheet_lines)
+        assert any(sheet["name"] in name for name, _, _ in sheet_lines), (
+            sheet["name"], sheet_lines)
     assert all(int(lines) > 0 for _, _, lines in sheet_lines), sheet_lines
     assert out.rstrip().endswith(DISCLAIMER), out[-600:]
 

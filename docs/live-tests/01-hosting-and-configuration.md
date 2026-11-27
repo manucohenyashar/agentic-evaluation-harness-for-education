@@ -74,7 +74,7 @@ Check it worked:
 aeh --help
 ```
 
-You should see `usage: aeh [-h] {run,recover,console,cohort,package,author,ingest,results} ...` with these eight top-level commands:
+You should see `usage: aeh [-h] {run,recover,console,cohort,package,author,ingest,results,logs} ...` with these nine top-level commands:
 
 - `run`, `recover`, `console`
 - `cohort` (create, show or extend a class roster)
@@ -82,6 +82,7 @@ You should see `usage: aeh [-h] {run,recover,console,cohort,package,author,inges
 - `author` (draft from teacher-authored documents, then review the draft)
 - `ingest` (read test papers and answer sheets)
 - `results` (show or export grades)
+- `logs` (read the AI-call log, by student name)
 
 (`python -m aeh ...` does the same thing and always works, even if `aeh` is not on your PATH.) The install and this `aeh --help` output were checked in a clean environment; reading a PDF through it was checked with the sample-sheet script.
 

@@ -213,7 +213,8 @@ def reading_world(tmp_data_dir, monkeypatch, capsys, network_guard, *,
                "fake": fake, "provider": provider, "events": events,
                "transcriber": TRANSCRIBER, "store": store,
                "transcriber_build": configured_builds(DEV_CI_CONFIG)[0],
-               "roster": "\n".join(s["student"] or "S9-006" for s in sm.PHYSICS_SHEETS)}
+               "roster": "full_name,student_ref\n" + "\n".join(
+                   f"{s['name']},{s['student']}" for s in sm.PHYSICS_SHEETS)}
     finally:
         fake.release()
         census.__exit__(None, None, None)

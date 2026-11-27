@@ -224,11 +224,10 @@ def test_tc_pipe_29_the_sample_sheets_meet_the_real_intake_gates(tmp_data_dir, m
         built = build_package(store, _spec())
         catalog = _catalog(store, built)
         sheets = sm.PHYSICS_SHEETS
-        # #620: a roster entry needs a name; the sample sheets write the ID on the
-        # `Student:` line, so that is the name each paper is matched by.
+        # #620: a roster entry needs a name; each sample sheet writes that full name on the
+        # `Student:` line, so it is what the paper is matched by (the ID is the secondary ref).
         create_cohort(store, "class-ps9", "synthetic",
-                      [RosterEntry(full_name=sheet["student"] or "S9-006",
-                                   student_ref=sheet["student"] or "S9-006")
+                      [RosterEntry(full_name=sheet["name"], student_ref=sheet["student"])
                        for sheet in sheets])
         files = sm.build_all()
         reader, blobs = v.ScriptedReader(), store.blobs()

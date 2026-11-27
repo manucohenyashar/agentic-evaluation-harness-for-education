@@ -5,9 +5,10 @@ Everything needed to host, configure and run a live grading test of the system t
 ## The one-minute version
 
 * **You can run a live test today, from the terminal.** The shipped commands create the class, publish the test, read the scanned answer sheets with a real page-reading model, and grade them with real judge models on OpenRouter. Data retention is governed by your OpenRouter account's privacy settings, which you must set; the system does not ask for zero retention (owner decision 2026-11-22). The steps are [below](#run-the-live-test-step-by-step).
-* **Run it with an engineer beside you the first time.** The physics sample was exercised against real OpenRouter on 2026-10-09 and 2026-10-10; the latest recorded run completed but S9-003's Q4 mark was missing after citation verification, so it was not a clean pass. A clean end-to-end pass across both sample classes has not been demonstrated. A separate one-student authoring walk on 2026-10-12 had citation refusals that left grades provisional and a decision-engine call that faulted before dispatch. The next supervised run may still surface surprises (see [what to watch for](#what-to-watch-for-on-the-first-run)).
+* **Run it with an engineer beside you the first time.** The physics sample was exercised against real OpenRouter on 2026-10-09 and 2026-10-10; the latest recorded run completed but Mateo Rossi's (S9-003) Q4 mark was missing after citation verification, so it was not a clean pass. The cause was fixed afterwards by quote-anchored citations (#918), but a fresh live pass has not been recorded. A clean end-to-end pass across both sample classes has not been demonstrated. A separate one-student authoring walk on 2026-10-12 had citation refusals that left grades provisional and a decision-engine call that faulted before dispatch. The next supervised run may still surface surprises (see [what to watch for](#what-to-watch-for-on-the-first-run)).
 * **The console now covers the whole teacher day — [`05-console-teacher-walk.md`](05-console-teacher-walk.md) is this test without the terminal.** In the browser the teacher makes the class (typed or from a class list file), drafts the test from their own documents, reviews and approves it, uploads the test paper and answer sheets and has them read through the same intake checks as `aeh ingest`, starts and watches the grading run, reviews flagged marks, completes the blind sample on the package's own levels, finalizes and amends a grade, and downloads the marks (spreadsheet or CSV), a student's report and the test itself. The operator starts the console once from a terminal with the key and settings. The console path was checked offline against a stand-in page reader on 2026-10-18; it has not yet run against real OpenRouter. Every parked-paper decision is recorded (who, when, the student, the operator's note), and a nameless or unmatched paper can be given to the student it belongs to. See [`02-live-readiness-and-blockers.md`](02-live-readiness-and-blockers.md) for the remaining gaps.
 * **The two sample tests cover every kind of rubric line.** The physics test has multiple-choice keys and band lines. The English test has one line of each scoring method: an evidence checklist (`evidence_sum`), a band line (`bands`) and a line the teacher described in their own words (`general`). Run both to grade every rubric type.
+* **The live test is a readiness test, not an accuracy measurement.** Ten sheets cannot produce a meaningful per-question agreement figure: the system needs 30 blind answers for a question and shows *"too few"* below that. The figures are chance-corrected — Cohen's κ for your blind sample, ordinal Krippendorff's α for graders on System status, and QWK in the detailed validation record. [04's statistical evaluation section](04-test-day-plan.md#statistical-evaluation-what-the-figures-mean) explains what they mean and what to record.
 
 ## Run the live test, step by step
 
@@ -24,7 +25,7 @@ Windows PowerShell, from the project folder (the one that contains `pyproject.to
    python -m pip install .
    python -m aeh --help
    ```
-   The last line should list `run, recover, console, cohort, package, author, ingest, results`.
+   The last line should list `run, recover, console, cohort, package, author, ingest, results, logs`.
 2. **Get an OpenRouter key** at openrouter.ai, and **set a spending limit in OpenRouter's dashboard** (for example $5). That limit is the real stop: the system's own ceiling only checks an estimate.
 3. **Look at the models** in [`config/live-test.dev-ci.toml`](config/live-test.dev-ci.toml). It ships with one page-reading model and one judge, both of which answered real zero-retention calls on 2026-10-03 (retention is now governed by your OpenRouter account's privacy settings, which you must set; the system no longer requests it). If you change them, check the new ones on openrouter.ai/models first. Every line of that file is explained in its comments. That file is a **smoke profile**: with one judge nobody can disagree, so it cannot show agreement. When the test should say how far the system's marks agree with the teacher's, use [`config/live-test.panel.toml`](config/live-test.panel.toml) instead: three judges from three model families, three escalation judges and the random extra-grader sample on (`$CFG` in Step 0 is the line to change).
 
@@ -67,7 +68,7 @@ python -m aeh ingest --data-dir $D --cohort ps9-class --package-version $V --con
 python -m aeh run --data-dir $D --cohort ps9-class --package-version $V --config $CFG
 ```
 
-**Expect at 2c:** three sheets `ok`, two `incomplete` (S9-004 has two ticks on one question; S9-006 has no name) and one `unmatched_assessment` (S9-005 is the wrong test). Those three are parked on purpose.
+**Expect at 2c:** three sheets `ok`, two `incomplete` (Dalia Haddad's S9-004 has two ticks on one question; Farah Nasser's S9-006 has no name) and one `unmatched_assessment` (Elif Demir's S9-005 is the wrong test). Those three are parked on purpose.
 **Expect at 2d:** a line starting `provider: OpenRouter`, then a JSON result. Copy its `run_id`. `"status": "complete"` and exit code 0 mean the run finished — also read its `grades_final`: if some judge answers were refused, the marks are held provisional and `grades_final` is 0 even though the run finished (see the table below).
 
 ### Step 3: the English test (evidence checklist, bands, teacher's own words)
@@ -82,7 +83,7 @@ python -m aeh ingest --data-dir $D --cohort eng7-class --package-version $VE --c
 python -m aeh run --data-dir $D --cohort eng7-class --package-version $VE --config $CFG
 ```
 
-**Expect:** all four sheets `ok` at intake, and a `complete` run. Copy this run's `run_id` too.
+**Expect:** all four sheets (`Ines Moreau`, `Jonas Berg`, `Keiko Tanaka`, `Luis Ortega`) `ok` at intake, and a `complete` run. Copy this run's `run_id` too.
 
 ### Step 3b: a test from the teacher's own documents (the authoring walk)
 
@@ -100,10 +101,11 @@ python -m aeh author review --draft $D\authoring\<package-id>.package.draft.toml
 # Publish it, exactly like 2b
 $V = (python -m aeh package build --data-dir $D --spec $D\authoring\<package-id>.package.draft.toml | ConvertFrom-Json).package_version
 
-# The class, exactly like 2a: a roster file, one student name per line
-# (docs\live-tests\config\ps9-roster.txt shows the shape). synthetic is for
-# made-up students only; real students need the consented path (see
-# 01-hosting-and-configuration.md, the consent rule).
+# The class, exactly like 2a: a roster file of students' full names
+# (docs\live-tests\config\ps9-roster.txt shows the CSV shape:
+# full_name,student_ref). synthetic is for made-up students only; real
+# students need the consented path (see 01-hosting-and-configuration.md,
+# the consent rule).
 python -m aeh cohort create --data-dir $D --cohort teachers-class --consent synthetic --roster "path\to\roster.txt"
 
 # Read the scanned sheets and grade them, exactly like 2c and 2d but with the
@@ -144,7 +146,7 @@ Compare the marks with the expected ones in [`03-sample-tests-and-answer-sheets.
 | `aeh run` exits 3 | The run did not finish. Read `status` and `pause_reason` in its output (for example, the cost ceiling or an OpenRouter refusal such as `No endpoints found matching your data policy`), fix the cause, and record the pause. Resume through the console's Jobs screen or queue the appropriate Resume request. Rerunning `aeh run` does not resume a paused run; it starts pending runs. Startup recovery resumes a run that was running when interrupted, or a paused run only when an unapplied Resume request is queued. |
 | Many judge answers quarantined with "not the pinned order" | The judge model returns its answer fields in a different order than the system requires. Record it; it is a design question, not something to fix on the day. |
 | The run fails or pauses over the decision engine (Jev) | A Jev call was refused, or the drafted rubric tripped a check the decision path makes (band names carrying numerals did this on the 2026-10-12 live pass — the run stops before any grading). Record it. Setting `$env:HARNESS_DECISION_ENGINE = "off"` keeps later runs off Jev; a run already paused over it stays paused until resumed (the row above). |
-| `aeh run` reports `"status": "complete"` but `grades_final` is 0 | Some judge answers were refused, and the students' marks are held provisional rather than settled over a refused answer. The refusal lines are in the run's `stages` output and name the rule each one broke (on the 2026-10-12 live pass, judge citations failed the byte-exact document check — `FR-JUDGE-17`). Copy those lines into the record; do not read the provisional totals as settled marks. |
+| `aeh run` reports `"status": "complete"` but `grades_final` is 0 | Some judge answers were refused, and the students' marks are held provisional rather than settled over a refused answer. The refusal lines are in the run's `stages` output and name the rule each one broke (on the 2026-10-12 live pass, judge citations failed the byte-exact document check — `FR-JUDGE-17`; the prompt/verification shape that caused it was fixed by quote-anchored citations, #918). Copy those lines into the record; do not read the provisional totals as settled marks. |
 | `already exists` from `cohort create` or `package build` | Classes and packages are never overwritten. Use a new data folder (`$D`), or carry on with the one you already made. |
 | `aeh author draft` exits 1, nothing written | The document step failed before anything could be written: usually the key, credit, or a model name OpenRouter doesn't know — the warnings above it say which. A draft that finished but left items open does **not** exit 1: it prints its report's name and the report says what is still open. |
 | The draft says `N unresolved`, or its report names items still open | The model could not settle those items. The report (`<package-id>.authoring-report.md`) lists which and why. Answer them at review if the teacher can, or re-draft with a clearer document. Never build a draft that is not ready — the build refuses it (next row). |
@@ -153,11 +155,25 @@ Compare the marks with the expected ones in [`03-sample-tests-and-answer-sheets.
 ### What to watch for on the first run
 
 These have mostly been seen once now (2026-10-12, the authoring walk below), so the open questions are narrower: whether the page-reading model's markup clears intake on scan-quality sheets (it did on a typed generated sheet), what a full class really costs and takes (the one-student integration record reports a cost of
-$0.154447 but has no durable elapsed-time measure; a six-student class is still unmeasured), how often the judge's citations survive the byte-exact document check (on the pass below, most of
-the four judged units were refused — the refusals held the marks provisional; the run's own record
-carries the exact counts), and whether the Jev decision engine answers (it has still never
-answered: the run stopped before dispatching to it). The full list is in
+$0.154447 but has no durable elapsed-time measure; a six-student class is still unmeasured), whether a live judge now cites cleanly after the quote-anchored fix (#918; the 2026-10-12 pass
+predates it, and on that pass most of the four judged units were refused, holding the marks
+provisional), and whether the Jev decision engine answers (it has still never answered: the run
+stopped before dispatching to it). The full list is in
 [`02`](02-live-readiness-and-blockers.md).
+
+## Statistical evaluation, in one paragraph
+
+The live test is a readiness test, not an accuracy measurement. Ten sheets cannot give a
+per-question agreement figure; the system needs 30 blind answers per question and shows
+*"too few"* below that. When it does show one, it is chance-corrected — **Cohen's κ** for your
+blind sample on Results, **ordinal Krippendorff's α** when several graders or Jev are compared
+on System status, and **QWK** in the test's detailed validation record. 1.00 is perfect, 0.00 is
+chance, below 0 is worse; none is a percentage or an accuracy score, and none changes a mark.
+Rules of thumb: 0.6–0.8 substantial, above 0.8 near-perfect; the system sets no pass mark. Read
+the figure with its answer count and the differences by student and question, and let the
+evidence accumulate across classes on the same test version. The full section — including what
+to record on the day and what to do with a low figure — is in
+[04](04-test-day-plan.md#statistical-evaluation-what-the-figures-mean).
 
 ## Read in this order
 
@@ -168,7 +184,7 @@ answered: the run stopped before dispatching to it). The full list is in
 | 3 | [`../tutorials/deployment-tutorial.md`](../tutorials/deployment-tutorial.md) | The engineer beside the operator | The full command-line path (section 8), with what each command prints and every refusal explained |
 | 4 | [`../tutorials/operating-tutorial.md`](../tutorials/operating-tutorial.md) | The operator and the teacher | How the console works, all its pages and commands, and the phases of the grading life cycle |
 | 5 | [`03-sample-tests-and-answer-sheets.md`](03-sample-tests-and-answer-sheets.md) | Preparing the test | Two sample tests covering every rubric scoring method, rubrics, keys, ten answer sheets (including three awkward ones), expected results |
-| 6 | [`04-test-day-plan.md`](04-test-day-plan.md) | Running the day | Stages, roles, timeline, record sheet, pass criteria, teacher questions |
+| 6 | [`04-test-day-plan.md`](04-test-day-plan.md) | Running the day | Stages, roles, timeline, record sheet, pass criteria, teacher questions, and the statistical evaluation (Cohen's κ/QWK/α, the 30-answer minimum, what to record) |
 | 7 | [`05-console-teacher-walk.md`](05-console-teacher-walk.md) | The teacher and the operator on the day | The same test driven entirely from the console: class, test, papers, run, review, downloads |
 
 ## What is in the other folders
@@ -177,19 +193,23 @@ answered: the run stopped before dispatching to it). The full list is in
 |---|---|
 | [`config/live-test.dev-ci.toml`](config/live-test.dev-ci.toml) | The configuration for the test, with every line explained: the `dev-ci` profile, the page-reading model, the judge, the cost ceiling, the Jev decision engine. A smoke profile: one judge, so it cannot show agreement. |
 | [`config/live-test.panel.toml`](config/live-test.panel.toml) | The same `dev-ci` profile with a panel that can show agreement: three judges from three model families, three escalation judges, and the random extra-grader sample at 0.07 (its comment says how to raise it for a small class). |
+| [`config/live-test.edge-local.toml`](config/live-test.edge-local.toml) | The local-mode template `tools/live_local_check.py` takes: the `edge-local` profile with the two model blocks (and `served_as`) to fill in. Nothing leaves the machine. |
 | [`config/ps9-forces-01.package.toml`](config/ps9-forces-01.package.toml), [`config/eng7-read-01.package.toml`](config/eng7-read-01.package.toml) | The two package specs `aeh package build` publishes. Physics: multiple-choice keys and band lines. English: one line of each scoring method — evidence checklist (`evidence_sum`), `bands`, and the teacher's own words (`general`). Build both to grade every rubric type. |
-| [`config/ps9-roster.txt`](config/ps9-roster.txt), [`config/eng7-roster.txt`](config/eng7-roster.txt) | The two class lists for `aeh cohort create --roster` |
+| [`config/ps9-roster.txt`](config/ps9-roster.txt), [`config/eng7-roster.txt`](config/eng7-roster.txt) | The two class lists for `aeh cohort create --roster`: a `full_name,student_ref` CSV. The screens and reports show the names; the refs are internal. |
 | [`sample-materials/pdf/`](sample-materials/pdf/) | The sample PDFs (18 files): tests, model answers, rubrics, blank answer sheets, finished answer sheets |
 | [`sample-materials/build_sample_materials.py`](sample-materials/build_sample_materials.py) | Rebuilds those PDFs, identically every time (standard library only) |
 | [`sample-materials/verify_sample_materials.py`](sample-materials/verify_sample_materials.py) | Builds both packages from their specs, runs every sample sheet through the system's real intake checks, and checks that a run would grade every rubric method, with no network and no cost |
 | [`sample-materials/check_config.py`](sample-materials/check_config.py) | Tells you whether a configuration file will be accepted, before you start anything |
 | [`sample-materials/show_criterion_marks.py`](sample-materials/show_criterion_marks.py) | After a run: each student's mark per rubric line (a checklist with its items beneath), and a check that every checklist mark is the sum of its items |
-| [`sample-materials/build_rehearsal_data.py`](sample-materials/build_rehearsal_data.py) | Builds a practice data folder (a finished run over three demo students, no network) to rehearse the console on. Needs the developer install (`pip install -e . -r requirements-dev.txt`). |
+| [`sample-materials/intended_bands.py`](sample-materials/intended_bands.py) | The band each sample answer was written to earn, per judged line — the "teacher" marks `tools/live_validity_check.py` uses for its blind sample. Self-checks against each sheet's reference points. |
+| [`sample-materials/build_rehearsal_data.py`](sample-materials/build_rehearsal_data.py) | Builds a practice data folder (a finished run over three demo students — Nadia Rahman, Oliver Grant, Sofia Mendes — no network) to rehearse the console on. Needs the developer install (`pip install -e . -r requirements-dev.txt`). |
+| [`../../tools/live_validity_check.py`](../../tools/live_validity_check.py) | The live validity check: builds both sample classes, grades them through the console on a named profile, marks the blind sample from `intended_bands.py`, and prints the refusal rate, cited share, agreement figures and purge outcome. Refuses a non-synthetic class. |
+| [`../../tools/live_local_check.py`](../../tools/live_local_check.py) | The local smoke: probes a local model server's `served_as` names, reads and grades the four English sheets on `edge-local`, and prints what happened. Nothing leaves the machine (deployment tutorial, section 6.7). |
 
 ## How this was checked
 
-* **Against real OpenRouter (2026-10-12): the authoring walk (Step 3b), end to end.** `aeh author draft` read a one-page Year-7 fractions test paper and drafted `math7-fractions-01` with the config's models: the questions, the rubric and the grade boundaries it resolved itself, and the summary line and authoring report named what it left open. The review walk filled the rest (the teacher name and one model answer) and printed the build command only when the draft was ready; a premature build was refused naming the sentinel field. The build published, a generated answer sheet cleared every intake gate (`ok`, `v0`–`v4` match), and the run finished — recorded cost **about $0.15** for one student. Most of the four judge replies were refused by the byte-exact citation check (see the `grades_final` row above), so the marks stayed provisional; the verified verdict was applied. The run record and its integration test disagree on the refusal count, so this guide does not state a precise count. Two findings from the same pass are recorded in the table above: a stored pause does not resume on rerun, and the decision engine faulted before dispatch because the drafted band names carry numerals the decision request may not carry.
+* **Against real OpenRouter (2026-10-12): the authoring walk (Step 3b), end to end.** `aeh author draft` read a one-page Year-7 fractions test paper and drafted `math7-fractions-01` with the config's models: the questions, the rubric and the grade boundaries it resolved itself, and the summary line and authoring report named what it left open. The review walk filled the rest (the teacher name and one model answer) and printed the build command only when the draft was ready; a premature build was refused naming the sentinel field. The build published, a generated answer sheet cleared every intake gate (`ok`, `v0`–`v4` match), and the run finished — recorded cost **about $0.15** for one student. Most of the four judge replies were refused by the byte-exact citation check (see the `grades_final` row above), so the marks stayed provisional; the verified verdict was applied. The prompt/verification shape that caused those refusals was fixed afterwards by quote-anchored citations (#918); this record describes the old run. The run record and its integration test disagree on the refusal count, so this guide does not state a precise count. Two findings from the same pass are recorded in the table above: a stored pause does not resume on rerun, and the decision engine faulted before dispatch because the drafted band names carry numerals the decision request may not carry.
 * **Against real OpenRouter (2026-10-03):** a one-field call, a judge-style three-field call, and a page image to the vision model, each answered through a zero-retention host by the models the config ships with.
 * **Against a stand-in for OpenRouter on the same machine:** the command-line path through `cohort create`, `package build`, `ingest` and `run`, and the request format (which, since 2026-11-22, carries no zero-retention fields).
-* **Offline, with no model:** both package specs build and publish, all ten sample sheets go through the real intake checks as the guide says, and a `dev-ci` run over each class would grade every rubric line of every method (`verify_sample_materials.py`). `show_criterion_marks.py` was checked against a graded run built by the repository's test fixtures.
-* **Not yet checked:** the two sample classes end to end against real OpenRouter (the 2026-10-12 pass covered the authoring walk and a one-student run), a real model reading these tutorial pages, the Jev decision engine answering a real call (it has only ever faulted before dispatch), and real cost and run time for a full class. Those are what the first live test shows.
+* **Offline, with no model:** both package specs build and publish, all ten sample sheets go through the real intake checks as the guide says, and a `dev-ci` run over each class would grade every rubric line of every method (`verify_sample_materials.py`); the intended-band table adds up against every sheet (`intended_bands.py`). `show_criterion_marks.py` was checked against a graded run built by the repository's test fixtures. `tools/live_validity_check.py` runs both sample classes through the console on a stand-in transport and drafts the blind sample from `intended_bands.py` (`tests/integration/conform/test_tc_conform_20_live_check_tool.py`); `tools/live_local_check.py` is the operator's pre-class smoke against their own model server (deployment tutorial, section 6.7).
+* **Not yet checked:** the two sample classes end to end against real OpenRouter (the 2026-10-12 pass covered the authoring walk and a one-student run), a live pass after the quote-anchored citation fix (#918), a real model reading these tutorial pages, the Jev decision engine answering a real call (it has only ever faulted before dispatch), and real cost and run time for a full class. Those are what the first live test shows.

@@ -123,7 +123,8 @@ def console(tmp_data_dir, monkeypatch, capsys, network_guard):
     try:
         yield {"port": server.port, "version": version, "paper": paper, "sheets": sheets,
                "fake": fake, "expected": dict(v.EXPECTED_STATUS),
-               "roster": "\n".join(s["student"] or "S9-006" for s in sm.PHYSICS_SHEETS)}
+               "roster": "full_name,student_ref\n" + "\n".join(
+                   f"{s['name']},{s['student']}" for s in sm.PHYSICS_SHEETS)}
     finally:
         census.__exit__(None, None, None)
         server.terminate()

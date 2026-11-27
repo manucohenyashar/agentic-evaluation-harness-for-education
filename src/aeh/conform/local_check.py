@@ -335,7 +335,8 @@ def _grade(store: Any, config: Mapping[str, Any], run_config: Any, cohort_id: st
 
 
 _SELECT_RUN_BANDS = Statement(
-    "SELECT r.full_name, c.criterion_id, c.band, c.state FROM criterion_score c "
+    "SELECT s.student_ref, r.full_name, c.criterion_id, c.band, c.state "
+    "FROM criterion_score c "
     "JOIN submission s ON s.submission_id = c.submission_id "
     "LEFT JOIN roster r ON r.student_ref = s.student_ref "
     "WHERE c.run_id = :run_id ORDER BY r.full_name, c.criterion_id")
@@ -349,12 +350,21 @@ def _band_orders(spec: Path) -> dict[str, list[str]]:
 
 
 def _run_bands(store: Any, cohort_id: str, run_id: str) -> dict[str, dict[str, str]]:
+    """Each scored cell by student, keyed by the roster's full name AND by the internal ref.
+    The two keys share one mapping, so a `--panel-bands` file saved under either the name
+    (the current sample materials) or the ref (an older file) finds the same cells."""
     bands: dict[str, dict[str, str]] = {}
     for row in store.cohort(cohort_id).query(_SELECT_RUN_BANDS, run_id=run_id):
         if str(row["state"]) in _UNSCORED_STATES:
             continue
-        bands.setdefault(str(row["full_name"] or ""), {})[str(row["criterion_id"])] = str(
-            row["band"])
+        display = str(row["full_name"] or row["student_ref"] or "")
+        ref = str(row["student_ref"] or "")
+        if not display and not ref:
+            continue
+        inner = bands.setdefault(display or ref, {})
+        if ref and ref != display:
+            bands[ref] = inner
+        inner[str(row["criterion_id"])] = str(row["band"])
     return bands
 
 
@@ -363,14 +373,15 @@ def band_agreement(local: Mapping[str, Mapping[str, str]],
                    orders: Mapping[str, Sequence[str]]) -> dict[str, Any]:
     """The local run's bands against the panel run's, per banded line: exact and adjacent
     agreement, Cohen's kappa and ordinal alpha (`chance_corrected_agreement`), over the cells
-    both runs banded. A panel key matches the local student whose name contains it (the sample
-    sheets' IDs). Unmeasured figures are None, never 0."""
+    both runs banded. A panel key is matched exactly against the local student's full name or
+    internal ref (both are keys of `local`); the substring check is kept for a name written
+    with extra words. Unmeasured figures are None, never 0."""
     per_criterion: dict[str, Any] = {}
     pooled: list[tuple[int, int]] = []
     for criterion, order in sorted(orders.items()):
         pairs: list[tuple[int, int]] = []
         for key, panel_bands in sorted(panel.items()):
-            name = next((n for n in local if key and key in n), None)
+            name = key if key in local else next((n for n in local if key and key in n), None)
             mine, theirs = (local.get(name or "", {}).get(criterion),
                             panel_bands.get(criterion))
             if mine in order and theirs in order:
@@ -684,8 +695,8 @@ def _load_panel_bands(path: str | None) -> Mapping[str, Mapping[str, str]] | Non
     if not isinstance(document, dict) or not all(
             isinstance(v, dict) for v in document.values()):
         raise LocalCheckRefused(
-            f"{path} must be a JSON object of sheet ID -> {{line: band}}, for example "
-            '{"E7-001": {"C2": "full"}}.')
+            f"{path} must be a JSON object of student -> {{line: band}}, by the roster's full "
+            'name or its internal ref, for example {"Ines Moreau": {"C2": "full"}}.')
     return {str(k): {str(c): str(b) for c, b in v.items()} for k, v in document.items()}
 
 
@@ -712,7 +723,8 @@ def main(argv: Sequence[str] | None = None, *, transport: Any = None) -> int:
                         help="write every reply as a recording (default folder: fixtures/F-LOCAL)")
     parser.add_argument("--record-dir", default=None)
     parser.add_argument("--panel-bands", default=None,
-                        help="JSON: sheet ID -> {line: band} from a recorded panel run")
+                        help="JSON: student (full name or ref) -> {line: band} from a "
+                             "recorded panel run")
     args = parser.parse_args(argv)
     data_dir = Path(args.data_dir) if args.data_dir else Path(
         tempfile.mkdtemp(prefix="aeh-local-check-"))
